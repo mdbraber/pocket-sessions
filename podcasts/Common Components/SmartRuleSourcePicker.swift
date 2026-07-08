@@ -90,15 +90,24 @@ struct SmartRuleSourcePickerView: View {
                                 selectedUuids.insert(item.uuid)
                             }
                         } label: {
-                            HStack {
+                            HStack(spacing: 12) {
+                                // The same checkbox the podcast rule picker's cells use
+                                ZStack {
+                                    Image(selectedUuids.contains(item.uuid) ? "checkbox-selected" : "checkbox-unselected")
+                                        .renderingMode(.template)
+                                        .foregroundColor(AppTheme.color(for: .primaryInteractive01, theme: theme))
+                                    if selectedUuids.contains(item.uuid) {
+                                        Image("tick")
+                                            .renderingMode(.template)
+                                            .foregroundColor(AppTheme.color(for: .primaryInteractive02, theme: theme))
+                                    }
+                                }
+                                .frame(width: 24, height: 24)
+
                                 Text(item.name)
+                                    .font(.callout.weight(.medium))
                                     .foregroundColor(AppTheme.color(for: .primaryText01, theme: theme))
                                 Spacer()
-                                if selectedUuids.contains(item.uuid) {
-                                    Image(systemName: "checkmark")
-                                        .font(.subheadline.weight(.semibold))
-                                        .foregroundColor(AppTheme.color(for: .primaryInteractive01, theme: theme))
-                                }
                             }
                         }
                         .listRowBackground(AppTheme.color(for: .primaryUi01, theme: theme))
