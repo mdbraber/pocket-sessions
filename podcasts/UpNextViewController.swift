@@ -771,9 +771,13 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
 
         for (type, label) in Self.filterTypeLabels {
             let isActiveType = activeFilter?.type == type
-            optionsPicker.addAction(action: OptionAction(label: label, secondaryLabel: isActiveType ? activeFilter?.title : nil, selected: isActiveType) { [weak self] in
-                self?.presentFilterItemPicker(for: type, title: label)
-            })
+            let action = OptionAction(label: label, secondaryLabel: isActiveType ? activeFilter?.title : nil) {}
+            // A submenu presents the item list on top; choosing there dismisses both,
+            // and the row renders a disclosure chevron.
+            action.submenu = { [weak self] in
+                self?.makeFilterItemPicker(for: type, title: label)
+            }
+            optionsPicker.addAction(action: action)
         }
 
         optionsPicker.present(from: self)
@@ -788,7 +792,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
 
     /// Step two: the items of the chosen kind. Only one filter can be active — richer
     /// combinations are what smart playlists are for.
-    private func presentFilterItemPicker(for type: UpNextFilterType, title: String) {
+    private func makeFilterItemPicker(for type: UpNextFilterType, title: String) -> OptionsPicker {
         let optionsPicker = OptionsPicker(title: title.localizedUppercase, themeOverride: themeOverride)
         let activeFilter = Settings.upNextFilter()
 
@@ -813,7 +817,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
             })
         }
 
-        optionsPicker.present(from: self)
+        return optionsPicker
     }
 
     private func setupSortButtonIfNecessary() {

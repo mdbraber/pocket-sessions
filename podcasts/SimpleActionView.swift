@@ -123,6 +123,21 @@ class SimpleActionView: UIView {
                 imageView.widthAnchor.constraint(equalToConstant: 24)
             ])
             previousView = imageView
+        } else if action.submenu != nil || action.showsDisclosure {
+            // Rows that lead to another screen get the standard trailing disclosure chevron
+            let image = UIImage(systemName: "chevron.right", withConfiguration: UIImage.SymbolConfiguration(pointSize: 14, weight: .semibold))?
+                .withTintColor(ThemeColor.primaryIcon02(for: themeOverride), renderingMode: .alwaysOriginal)
+            let imageView = UIImageView(image: image)
+            imageView.contentMode = .center
+            imageView.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(imageView)
+
+            NSLayoutConstraint.activate([
+                imageView.centerYAnchor.constraint(equalTo: centerYAnchor),
+                imageView.heightAnchor.constraint(equalToConstant: 24),
+                imageView.widthAnchor.constraint(equalToConstant: 16)
+            ])
+            previousView = imageView
         }
         // Horizontal chain: label — secondaryLabel — accessory (tick/switch) — trailing edge.
         // Only some of those exist for any given action; link whichever are present, so a
