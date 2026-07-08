@@ -428,8 +428,25 @@ class Settings: NSObject {
             UserDefaults.standard.removeObject(forKey: Settings.playbackSessionUuidKey)
         }
         UserDefaults.standard.removeObject(forKey: Settings.playbackSessionPausedKey)
+        UserDefaults.standard.removeObject(forKey: Settings.playbackSessionLastEpisodeKey)
 
         NotificationCenter.postOnMainThread(notification: Constants.Notifications.playbackSessionChanged)
+    }
+
+    static let playbackSessionLastEpisodeKey = "SJPlaybackSessionLastEpisode"
+
+    /// The most recently played session episode — a paused session's collapsed view offers
+    /// it as the "resume here" row.
+    class func playbackSessionLastEpisodeUuid() -> String? {
+        UserDefaults.standard.string(forKey: Settings.playbackSessionLastEpisodeKey)
+    }
+
+    class func setPlaybackSessionLastEpisodeUuid(_ uuid: String?) {
+        if let uuid {
+            UserDefaults.standard.set(uuid, forKey: Settings.playbackSessionLastEpisodeKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: Settings.playbackSessionLastEpisodeKey)
+        }
     }
 
     static let playbackSessionPausedKey = "SJPlaybackSessionPaused"

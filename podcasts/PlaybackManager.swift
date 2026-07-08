@@ -675,6 +675,7 @@ class PlaybackManager: ServerPlaybackDelegate {
         defer { isLoadingSessionEpisode = false }
         load(episode: first, autoPlay: true, overrideUpNext: false)
         currentEpisodeIsFromSession = true
+        Settings.setPlaybackSessionLastEpisodeUuid(first.uuid)
 
         // With an empty queue, load() replaces the whole Up Next table with the new episode,
         // which would silently drop what was playing — put it back at the top of the queue.
@@ -700,6 +701,7 @@ class PlaybackManager: ServerPlaybackDelegate {
         // jumping within the session must never push the session episode into the queue.
         switchTo(episodeToPlay: episode, moveExistingToUpNext: resumingFromQueue && !currentEpisodeIsFromSession, autoPlay: true)
         currentEpisodeIsFromSession = true
+        Settings.setPlaybackSessionLastEpisodeUuid(episode.uuid)
     }
 
     /// Advances within the active session instead of the queue. Returns false when there's
@@ -719,6 +721,7 @@ class PlaybackManager: ServerPlaybackDelegate {
         defer { isLoadingSessionEpisode = false }
         switchTo(episodeToPlay: next, moveExistingToUpNext: false, autoPlay: autoPlay)
         currentEpisodeIsFromSession = true
+        Settings.setPlaybackSessionLastEpisodeUuid(next.uuid)
         numberOfEpisodesToSleepAfter -= 1
         return true
     }

@@ -16,7 +16,6 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         case .nowPlayingSection:
             return 1
         case .sessionSection:
-            if Settings.playbackSessionPaused(), !pausedSessionExpanded { return 0 }
             return sessionEpisodes?.count ?? 0
         case .upNextSection:
             if PlaybackManager.shared.queue.upNextCount() == 0 { return 1 } // empty state cell
@@ -253,8 +252,9 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         if section == .nowPlayingSection {
             return false
         } else if section == .sessionSection {
-            // Manual playlist sessions are drag-reorderable (it reorders the playlist itself)
-            return Settings.playbackSession()?.type == .playlist
+            // Manual playlist sessions are drag-reorderable (it reorders the playlist
+            // itself) — but not the collapsed view's single "resume here" row
+            return Settings.playbackSession()?.type == .playlist && sessionExpanded
         } else if section == .upNextSection, PlaybackManager.shared.queue.upNextCount() == 0 || isShowingFilterEmptyNotice {
             return false
         }
