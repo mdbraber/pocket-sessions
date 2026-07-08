@@ -16,8 +16,8 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         case .nowPlayingSection:
             return 1
         case .upNextSection:
-            let count = PlaybackManager.shared.queue.upNextCount()
-            return count == 0 ? 1 : count
+            if PlaybackManager.shared.queue.upNextCount() == 0 { return 1 } // empty state cell
+            return visibleUpNextCount
         }
     }
 
@@ -89,7 +89,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         playerCell.shouldShowSelect(show: isMultiSelectEnabled, animate: false)
         playerCell.delegate = self
 
-        if let episode = PlaybackManager.shared.queue.episodeAt(index: indexPath.row) {
+        if let episode = PlaybackManager.shared.queue.episodeAt(index: queueIndex(forVisibleRow: indexPath.row)) {
             playerCell.populateFrom(episode: episode)
             playerCell.showTick = selectedEpisodesContains(uuid: episode.uuid)
             // With an Up Next filter active, dim episodes playback will skip. They stay fully
@@ -110,7 +110,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
             return indexPath
         }
 
-        if let episode = DataManager.sharedManager.playlistEpisodeAt(index: indexPath.row + 1) {
+        if let episode = DataManager.sharedManager.playlistEpisodeAt(index: queueIndex(forVisibleRow: indexPath.row) + 1) {
             if selectedEpisodesContains(uuid: episode.episodeUuid) {
                 tableView.delegate?.tableView?(tableView, didDeselectRowAt: indexPath)
                 return nil
@@ -123,7 +123,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         if isMultiSelectEnabled, tableData[indexPath.section] == .upNextSection {
             // the cell below is optional because cellForRow only returns a cell if it's visible, and we don't need to tick cells that don't exist
-            if let episode = DataManager.sharedManager.playlistEpisodeAt(index: indexPath.row + 1) {
+            if let episode = DataManager.sharedManager.playlistEpisodeAt(index: queueIndex(forVisibleRow: indexPath.row) + 1) {
                 if !multiSelectGestureInProgress {
                     // If the episode is already selected move to the end of the array
                     selectedEpisodesRemove(uuid: episode.episodeUuid)
@@ -153,7 +153,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
                 return
             }
 
-            guard let episode = PlaybackManager.shared.queue.episodeAt(index: indexPath.row) else { return }
+            guard let episode = PlaybackManager.shared.queue.episodeAt(index: queueIndex(forVisibleRow: indexPath.row)) else { return }
 
             let playOnTap = Settings.playUpNextOnTap()
 
@@ -169,7 +169,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
     }
 
     func tableView(_ tableView: UITableView, didDeselectRowAt indexPath: IndexPath) {
-        if let episode = DataManager.sharedManager.playlistEpisodeAt(index: indexPath.row + 1), let index = selectedPlayListEpisodes.firstIndex(of: episode) {
+        if let episode = DataManager.sharedManager.playlistEpisodeAt(index: queueIndex(forVisibleRow: indexPath.row) + 1), let index = selectedPlayListEpisodes.firstIndex(of: episode) {
             selectedPlayListEpisodes.remove(at: index)
             if let cell = upNextTable.cellForRow(at: indexPath) as? PlayerCell? {
                 cell?.showTick = false
@@ -194,7 +194,11 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
 
         let playQueue = PlaybackManager.shared.queue
 
-        playQueue.moveEpisode(from: sourceIndexPath.row, to: destinationIndexPath.row)
+        if visibleQueueIndices != nil {
+            moveVisibleEpisode(fromVisibleRow: sourceIndexPath.row, toVisibleRow: destinationIndexPath.row)
+        } else {
+            playQueue.moveEpisode(from: sourceIndexPath.row, to: destinationIndexPath.row)
+        }
 
         // This logic is reversed because the lower the row number the higher it is in the queue
         let didMoveUp = destinationIndexPath.row < sourceIndexPath.row
@@ -315,7 +319,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
     @objc func tableLongPressed(_ sender: UILongPressGestureRecognizer) {
         let touchPoint = sender.location(in: upNextTable)
         guard let indexPath = upNextTable.indexPathForRow(at: touchPoint), tableData[indexPath.section] == .upNextSection,
-              let episode = PlaybackManager.shared.queue.episodeAt(index: indexPath.row) else { return }
+              let episode = PlaybackManager.shared.queue.episodeAt(index: queueIndex(forVisibleRow: indexPath.row)) else { return }
 
         if sender.state == .began {
             if isMultiSelectEnabled {

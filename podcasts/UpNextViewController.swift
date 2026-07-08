@@ -62,6 +62,20 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
     /// Uuids of queued episodes matching the active Up Next filter, or nil when no filter is set.
     /// Refreshed by `refreshUpNextFilterMatches()`; used for row dimming and the header count.
     var upNextFilterMatchingUuids: Set<String>?
+
+    /// Queue indices of the rows shown in the Up Next section, in display order.
+    /// nil when every queued episode is shown (no filter, or "show skipped" mode).
+    var visibleQueueIndices: [Int]?
+
+    /// Maps a visible table row to its index in the full queue.
+    func queueIndex(forVisibleRow row: Int) -> Int {
+        guard let visibleQueueIndices, row < visibleQueueIndices.count else { return row }
+        return visibleQueueIndices[row]
+    }
+
+    var visibleUpNextCount: Int {
+        visibleQueueIndices?.count ?? PlaybackManager.shared.queue.upNextCount()
+    }
     var selectedPlayListEpisodes = [PlaylistEpisode]() {
         didSet {
             multiSelectActionBar.setSelectedCount(count: selectedPlayListEpisodes.count)
@@ -403,18 +417,56 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
         reloadTable()
     }
 
-    /// Recomputes which queued episodes match the active filter (nil when no filter is set).
+    /// Recomputes which queued episodes match the active filter (nil when no filter is set),
+    /// and which queue indices are visible when the compact "hide skipped" view is on.
     func refreshUpNextFilterMatches() {
         guard FeatureFlag.upNextFilter.enabled, let filter = Settings.upNextFilter() else {
             upNextFilterMatchingUuids = nil
+            visibleQueueIndices = nil
             return
         }
-        upNextFilterMatchingUuids = filter.matchingEpisodeUuids(in: PlaybackManager.shared.queue.allEpisodes(includeNowPlaying: false))
+        let episodes = PlaybackManager.shared.queue.allEpisodes(includeNowPlaying: false)
+        let matching = filter.matchingEpisodeUuids(in: episodes)
+        upNextFilterMatchingUuids = matching
+        visibleQueueIndices = Settings.upNextFilterHideSkipped()
+            ? episodes.enumerated().compactMap { matching.contains($0.element.uuid) ? $0.offset : nil }
+            : nil
+    }
+
+    /// Slot-model reorder for the compact view: visible (matching) episodes swap among the
+    /// queue positions they already occupy, so hidden episodes never move. Playback order of
+    /// matching episodes always equals exactly what the compact list shows.
+    func moveVisibleEpisode(fromVisibleRow: Int, toVisibleRow: Int) {
+        guard let visibleIndices = visibleQueueIndices,
+              fromVisibleRow < visibleIndices.count, toVisibleRow < visibleIndices.count else { return }
+
+        let queue = PlaybackManager.shared.queue
+        var newOrder = queue.allEpisodes(includeNowPlaying: false)
+        guard let maxIndex = visibleIndices.max(), maxIndex < newOrder.count else {
+            refreshUpNextFilterMatches()
+            return
+        }
+
+        var visibleEpisodes = visibleIndices.map { newOrder[$0] }
+        let moved = visibleEpisodes.remove(at: fromVisibleRow)
+        visibleEpisodes.insert(moved, at: toVisibleRow)
+        for (slot, queueIndex) in visibleIndices.enumerated() {
+            newOrder[queueIndex] = visibleEpisodes[slot]
+        }
+        queue.reorderUpNext(sortedEpisodes: newOrder)
     }
 
     @objc private func filterButtonTapped() {
         let optionsPicker = OptionsPicker(title: L10n.upNextFilterTitle.localizedUppercase, themeOverride: themeOverride)
         let activeFilter = Settings.upNextFilter()
+
+        if activeFilter != nil {
+            let hideSkipped = Settings.upNextFilterHideSkipped()
+            let toggleLabel = hideSkipped ? L10n.upNextFilterShowSkipped : L10n.upNextFilterHideSkipped
+            optionsPicker.addAction(action: OptionAction(label: toggleLabel) {
+                Settings.setUpNextFilterHideSkipped(!hideSkipped)
+            })
+        }
 
         optionsPicker.addAction(action: OptionAction(label: L10n.upNextFilterEverything, selected: activeFilter == nil) {
             Settings.setUpNextFilter(nil)

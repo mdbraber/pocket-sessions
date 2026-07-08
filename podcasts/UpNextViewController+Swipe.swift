@@ -12,11 +12,17 @@ extension UpNextViewController: SwipeTableViewCellDelegate {
         switch orientation {
         case .left:
             let moveToTopAction = SwipeAction(style: .default, title: nil) { [weak self] _, indexPath in
-                guard let self, let episode = PlaybackManager.shared.queue.episodeAt(index: indexPath.row) else { return }
+                guard let self, let episode = PlaybackManager.shared.queue.episodeAt(index: self.queueIndex(forVisibleRow: indexPath.row)) else { return }
 
                 Analytics.track(.episodeSwipeActionPerformed, properties: ["action": "up_next_move_up", "source": "up_next"])
 
-                PlaybackManager.shared.queue.move(episode: episode, to: 0, fireNotification: false)
+                if self.visibleQueueIndices != nil {
+                    // Compact view: "top" means the first matching slot — as high as the
+                    // episode can go without displacing any hidden (skipped) episode.
+                    self.moveVisibleEpisode(fromVisibleRow: indexPath.row, toVisibleRow: 0)
+                } else {
+                    PlaybackManager.shared.queue.move(episode: episode, to: 0, fireNotification: false)
+                }
                 self.moveRow(at: indexPath, to: IndexPath(row: 0, section: indexPath.section), in: tableView)
             }
             moveToTopAction.image = UIImage(named: "upnext-movetotop")
@@ -24,11 +30,17 @@ extension UpNextViewController: SwipeTableViewCellDelegate {
             moveToTopAction.accessibilityLabel = L10n.moveToTop
             moveToTopAction.hidesWhenSelected = true
             let moveToBottomAction = SwipeAction(style: .default, title: nil) { [weak self] _, indexPath in
-                guard let self, let episode = PlaybackManager.shared.queue.episodeAt(index: indexPath.row) else { return }
+                guard let self, let episode = PlaybackManager.shared.queue.episodeAt(index: self.queueIndex(forVisibleRow: indexPath.row)) else { return }
 
-                let queueCount = PlaybackManager.shared.queue.upNextCount()
-                PlaybackManager.shared.queue.move(episode: episode, to: queueCount - 1, fireNotification: false)
-                self.moveRow(at: indexPath, to: IndexPath(row: queueCount - 1, section: indexPath.section), in: tableView)
+                if let visibleIndices = self.visibleQueueIndices {
+                    // Compact view: "bottom" means the last matching slot; hidden episodes stay put.
+                    self.moveVisibleEpisode(fromVisibleRow: indexPath.row, toVisibleRow: visibleIndices.count - 1)
+                    self.moveRow(at: indexPath, to: IndexPath(row: visibleIndices.count - 1, section: indexPath.section), in: tableView)
+                } else {
+                    let queueCount = PlaybackManager.shared.queue.upNextCount()
+                    PlaybackManager.shared.queue.move(episode: episode, to: queueCount - 1, fireNotification: false)
+                    self.moveRow(at: indexPath, to: IndexPath(row: queueCount - 1, section: indexPath.section), in: tableView)
+                }
                 Analytics.track(.episodeSwipeActionPerformed, properties: ["action": "up_next_move_down", "source": "up_next"])
             }
             moveToBottomAction.image = UIImage(named: "upnext-movetobottom")
@@ -38,11 +50,12 @@ extension UpNextViewController: SwipeTableViewCellDelegate {
             return [moveToTopAction, moveToBottomAction]
         case .right:
             let deleteAction = SwipeAction(style: .destructive, title: nil) { [weak self] _, indexPath in
-                guard let self, let episode = PlaybackManager.shared.queue.episodeAt(index: indexPath.row) else { return }
+                guard let self, let episode = PlaybackManager.shared.queue.episodeAt(index: self.queueIndex(forVisibleRow: indexPath.row)) else { return }
 
                 self.changedViaSwipeToRemove = true
                 PlaybackManager.shared.removeIfPlayingOrQueued(episode: episode, fireNotification: true, userInitiated: true)
                 Analytics.track(.episodeSwipeActionPerformed, properties: ["action": "delete", "source": "up_next"])
+                self.refreshUpNextFilterMatches()
                 let remainingEpisodes = PlaybackManager.shared.queue.upNextCount()
                 if remainingEpisodes > 0 {
                     do {
@@ -68,7 +81,7 @@ extension UpNextViewController: SwipeTableViewCellDelegate {
             deleteAction.backgroundColor = ThemeColor.support05(for: themeOverride)
             deleteAction.accessibilityLabel = L10n.removeFromUpNext
 
-            if let episode = DataManager.sharedManager.episodeInUpNextAt(index: indexPath.row + 1) as? Episode {
+            if let episode = DataManager.sharedManager.episodeInUpNextAt(index: queueIndex(forVisibleRow: indexPath.row) + 1) as? Episode {
                 let shareAction = SwipeAction(style: .default, title: nil) { [weak self] _, _ in
                     guard let self else { return }
                     Analytics.track(

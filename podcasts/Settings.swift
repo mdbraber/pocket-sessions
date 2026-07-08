@@ -387,6 +387,19 @@ class Settings: NSObject {
         NotificationCenter.postOnMainThread(notification: Constants.Notifications.upNextFilterChanged)
     }
 
+    static let upNextFilterHideSkippedKey = "SJUpNextFilterHideSkipped"
+
+    /// When true and a filter is active, the Up Next list shows only matching episodes
+    /// (compact view). Skipped episodes stay in the queue, just hidden from the list.
+    class func upNextFilterHideSkipped() -> Bool {
+        FeatureFlag.upNextFilter.enabled && UserDefaults.standard.bool(forKey: Settings.upNextFilterHideSkippedKey)
+    }
+
+    class func setUpNextFilterHideSkipped(_ hide: Bool) {
+        UserDefaults.standard.set(hide, forKey: Settings.upNextFilterHideSkippedKey)
+        NotificationCenter.postOnMainThread(notification: Constants.Notifications.upNextFilterChanged)
+    }
+
     // MARK: - Discover Region
 
     private static let chartRegion = "SJChartRegion"

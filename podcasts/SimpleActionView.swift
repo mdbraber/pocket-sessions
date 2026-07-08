@@ -124,7 +124,13 @@ class SimpleActionView: UIView {
             ])
             previousView = imageView
         }
-        if previousView != label {
+        // Horizontal chain: label — secondaryLabel — accessory (tick/switch) — trailing edge.
+        // Only some of those exist for any given action; link whichever are present, so a
+        // secondary label never ends up without horizontal constraints.
+        if let secondaryLabel, previousView != secondaryLabel {
+            secondaryLabel.trailingAnchor.constraint(equalTo: previousView.leadingAnchor, constant: -10).isActive = true
+            label.trailingAnchor.constraint(equalTo: secondaryLabel.leadingAnchor, constant: -10).isActive = true
+        } else if previousView != label {
             label.trailingAnchor.constraint(equalTo: previousView.leadingAnchor, constant: -10).isActive = true
         }
         trailingAnchor.constraint(equalTo: previousView.trailingAnchor, constant: 20).isActive = true
