@@ -21,8 +21,10 @@ class PodcastFilterOverlayController: PodcastChooserViewController, PodcastSelec
     private var cancellables = Set<AnyCancellable>()
     private var viewModel: SmartRuleToggleViewModel!
     private var excludeViewModel: SmartRuleToggleViewModel!
+    // Nil-safe: the superclass's viewDidLoad reloads the table before the view models are
+    // assigned, so this getter can run while viewModel is still nil.
     private var switchIsOn: Bool {
-        viewModel.toggleIsOn
+        viewModel?.toggleIsOn ?? filterToEdit?.filterAllPodcasts ?? true
     }
     private lazy var searchBar: UIView? = {
         let view = UIView()
