@@ -100,7 +100,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
 
     func updateSessionHeader() {
         guard let session = Settings.playbackSession() else { return }
-        let remaining = session.remainingCount(after: PlaybackManager.shared.currentEpisode()?.uuid)
+        let remaining = session.remainingCount(excluding: PlaybackManager.shared.currentEpisode()?.uuid)
         sessionHeaderLabel.text = L10n.playbackSessionHeader(session.title ?? L10n.playbackSessionTabSession, remaining.localized())
         sessionSortButton.isHidden = session.type != .smartPlaylist
         let sortImage = UIImage(named: "podcast-sort")?
@@ -638,7 +638,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
     /// active session's remaining episodes.
     func refreshUpNextFilterMatches() {
         if FeatureFlag.playbackSessions.enabled, let session = Settings.playbackSession() {
-            sessionEpisodes = session.remainingEpisodes(after: PlaybackManager.shared.currentEpisode()?.uuid)
+            sessionEpisodes = session.remainingEpisodes(excluding: PlaybackManager.shared.currentEpisode()?.uuid)
         } else {
             sessionEpisodes = nil
         }
