@@ -17,6 +17,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
             return 1
         case .upNextSection:
             if PlaybackManager.shared.queue.upNextCount() == 0 { return 1 } // empty state cell
+            if isShowingFilterEmptyNotice { return 1 }
             return visibleUpNextCount
         }
     }
@@ -83,6 +84,22 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
             return emptyCell
         }
 
+        if isShowingFilterEmptyNotice {
+            let emptyCell = tableView.dequeueReusableCell(withIdentifier: UpNextViewController.emptyStateCell, for: indexPath) as! EmptyStateCell
+            emptyCell.configure(title: L10n.upNextFilterEmptyTitle,
+                                message: L10n.upNextFilterEmptyDescription(Settings.upNextFilter()?.title ?? ""),
+                                icon: { Image(systemName: "funnel") },
+                actions: [
+                    .init(title: L10n.upNextFilterClear) {
+                        Settings.setUpNextFilter(nil)
+                    },
+                    .init(title: L10n.upNextFilterShowSkipped) {
+                        Settings.setUpNextFilterHideSkipped(false)
+                    }
+                ])
+            return emptyCell
+        }
+
         let playerCell = tableView.dequeueReusableCell(withIdentifier: UpNextViewController.playerCell, for: indexPath) as! PlayerCell
         playerCell.themeOverride = themeOverride
         playerCell.shouldShowSelect(show: isMultiSelectEnabled, animate: false)
@@ -108,6 +125,8 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         guard !multiSelectGestureInProgress, tableData[indexPath.section] == .upNextSection else {
             return indexPath
         }
+
+        if isShowingFilterEmptyNotice { return nil }
 
         if let episode = DataManager.sharedManager.playlistEpisodeAt(index: queueIndex(forVisibleRow: indexPath.row) + 1) {
             if selectedEpisodesContains(uuid: episode.episodeUuid) {
@@ -152,6 +171,8 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
                 return
             }
 
+            if isShowingFilterEmptyNotice { return }
+
             guard let episode = PlaybackManager.shared.queue.episodeAt(index: queueIndex(forVisibleRow: indexPath.row)) else { return }
 
             let playOnTap = Settings.playUpNextOnTap()
@@ -182,7 +203,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         let section = tableData[indexPath.section]
         if section == .nowPlayingSection {
             return false
-        } else if section == .upNextSection, PlaybackManager.shared.queue.upNextCount() == 0 {
+        } else if section == .upNextSection, PlaybackManager.shared.queue.upNextCount() == 0 || isShowingFilterEmptyNotice {
             return false
         }
         return true
@@ -236,14 +257,14 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
     func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
         let section = tableData[indexPath.section]
         if section == .nowPlayingSection { return UpNextViewController.nowPlayingRowHeight }
-        if PlaybackManager.shared.queue.upNextCount() == 0 { return UpNextViewController.emptyStateRowHeight }
+        if PlaybackManager.shared.queue.upNextCount() == 0 || isShowingFilterEmptyNotice { return UpNextViewController.emptyStateRowHeight }
         return UpNextViewController.upNextRowHeight
     }
 
     func tableView(_ tableView: UITableView, estimatedHeightForRowAt indexPath: IndexPath) -> CGFloat {
         let section = tableData[indexPath.section]
         if section == .nowPlayingSection { return UpNextViewController.nowPlayingRowHeight }
-        if PlaybackManager.shared.queue.upNextCount() == 0 { return UpNextViewController.emptyStateRowHeight }
+        if PlaybackManager.shared.queue.upNextCount() == 0 || isShowingFilterEmptyNotice { return UpNextViewController.emptyStateRowHeight }
         return UpNextViewController.upNextRowHeight
     }
 
@@ -318,6 +339,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
     @objc func tableLongPressed(_ sender: UILongPressGestureRecognizer) {
         let touchPoint = sender.location(in: upNextTable)
         guard let indexPath = upNextTable.indexPathForRow(at: touchPoint), tableData[indexPath.section] == .upNextSection,
+              !isShowingFilterEmptyNotice,
               let episode = PlaybackManager.shared.queue.episodeAt(index: queueIndex(forVisibleRow: indexPath.row)) else { return }
 
         if sender.state == .began {

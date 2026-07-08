@@ -81,6 +81,12 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
     var visibleUpNextCount: Int {
         visibleQueueIndices?.count ?? PlaybackManager.shared.queue.upNextCount()
     }
+
+    /// True when the compact filtered view has nothing to show even though the queue isn't
+    /// empty — the Up Next section then shows a single explanatory notice cell instead.
+    var isShowingFilterEmptyNotice: Bool {
+        visibleQueueIndices?.isEmpty == true && PlaybackManager.shared.queue.upNextCount() > 0
+    }
     var selectedPlayListEpisodes = [PlaylistEpisode]() {
         didSet {
             multiSelectActionBar.setSelectedCount(count: selectedPlayListEpisodes.count)
