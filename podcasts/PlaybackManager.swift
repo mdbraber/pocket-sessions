@@ -170,6 +170,12 @@ class PlaybackManager: ServerPlaybackDelegate {
         FileLog.shared.addMessage("Loading \(episode.displayableTitle()) with UUID \(episode.uuid) autoPlay \(autoPlay) overrideUpNext: \(overrideUpNext)")
 
         let episodeIsChanging = episode.uuid != currentEpisode()?.uuid
+        // Captured before the reset below: an interrupted session episode must not be
+        // pushed into Up Next — it stays in the (paused) session's own list.
+        let interruptedEpisodeIsFromSession = currentEpisodeIsFromSession
+        if episodeIsChanging, !isLoadingSessionEpisode {
+            currentEpisodeIsFromSession = false
+        }
 
         // explicitly playing something else pauses the session — it stays saved and
         // collapsed in Up Next, and playing one of its episodes resumes it
@@ -182,7 +188,7 @@ class PlaybackManager: ServerPlaybackDelegate {
         // if the user has built an Up Next list, preserve that but make this the currently playing episode
         if !overrideUpNext && !switchingToDifferentUpNextEpisode && queue.upNextCount() > 0 {
             if let currEpisode = currentEpisode(), currEpisode.uuid != episode.uuid {
-                switchTo(episodeToPlay: episode, moveExistingToUpNext: true, autoPlay: true, completion: completion)
+                switchTo(episodeToPlay: episode, moveExistingToUpNext: !interruptedEpisodeIsFromSession, autoPlay: true, completion: completion)
 
                 return
             }
@@ -640,13 +646,21 @@ class PlaybackManager: ServerPlaybackDelegate {
         if upNextIndex >= queue.upNextCount() { return }
 
         if let episodeToPlay = queue.episodeAt(index: upNextIndex) {
-            switchTo(episodeToPlay: episodeToPlay, moveExistingToUpNext: true, autoPlay: true)
+            // An interrupted session episode returns to its session, never into Up Next
+            switchTo(episodeToPlay: episodeToPlay, moveExistingToUpNext: !currentEpisodeIsFromSession, autoPlay: true)
         }
     }
 
     /// True while a session start/advance is loading its own episode, so the
     /// steering-away check in `load` doesn't end the session it belongs to.
     private var isLoadingSessionEpisode = false
+
+    /// True while the now-playing episode came from the playback session rather than the
+    /// queue. Session episodes never move into Up Next when interrupted — they stay in the
+    /// (paused) session's own list instead. Seeded for app relaunch mid-session.
+    private lazy var currentEpisodeIsFromSession: Bool = {
+        FeatureFlag.playbackSessions.enabled && Settings.playbackSession() != nil && !Settings.playbackSessionPaused()
+    }()
 
     /// Starts a playback session: plays its first unfinished episode now (the interrupted
     /// episode moves to the top of Up Next, like any "play now") and advances through the
@@ -660,6 +674,7 @@ class PlaybackManager: ServerPlaybackDelegate {
         isLoadingSessionEpisode = true
         defer { isLoadingSessionEpisode = false }
         load(episode: first, autoPlay: true, overrideUpNext: false)
+        currentEpisodeIsFromSession = true
 
         // With an empty queue, load() replaces the whole Up Next table with the new episode,
         // which would silently drop what was playing — put it back at the top of the queue.
@@ -681,7 +696,10 @@ class PlaybackManager: ServerPlaybackDelegate {
         }
         isLoadingSessionEpisode = true
         defer { isLoadingSessionEpisode = false }
-        switchTo(episodeToPlay: episode, moveExistingToUpNext: resumingFromQueue, autoPlay: true)
+        // Resuming from queue playback returns that queue episode to the top of Up Next;
+        // jumping within the session must never push the session episode into the queue.
+        switchTo(episodeToPlay: episode, moveExistingToUpNext: resumingFromQueue && !currentEpisodeIsFromSession, autoPlay: true)
+        currentEpisodeIsFromSession = true
     }
 
     /// Advances within the active session instead of the queue. Returns false when there's
@@ -700,6 +718,7 @@ class PlaybackManager: ServerPlaybackDelegate {
         isLoadingSessionEpisode = true
         defer { isLoadingSessionEpisode = false }
         switchTo(episodeToPlay: next, moveExistingToUpNext: false, autoPlay: autoPlay)
+        currentEpisodeIsFromSession = true
         numberOfEpisodesToSleepAfter -= 1
         return true
     }
@@ -733,6 +752,7 @@ class PlaybackManager: ServerPlaybackDelegate {
         }
 
         queue.removeTopEpisode(fireNotification: false)
+        currentEpisodeIsFromSession = false
         chapterManager.clearChapterInfo()
         cleanupCurrentPlayer(permanent: !autoPlay)
 

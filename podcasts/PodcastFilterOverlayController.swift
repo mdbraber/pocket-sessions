@@ -271,8 +271,9 @@ class PodcastFilterOverlayController: PodcastChooserViewController, PodcastSelec
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         switch section {
         case 0:
-            // With a particular selection, a second row toggles include/exclude semantics
-            return switchIsOn ? 1 : 2
+            // Row 0: the All-podcasts toggle; row 1: include/exclude semantics for the
+            // selection (only takes effect when a particular selection is saved)
+            return 2
         default:
             return allPodcasts.isEmpty ? 1 : allPodcasts.count
         }
