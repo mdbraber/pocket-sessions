@@ -61,6 +61,19 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         return headerView
     }
 
+    func tableView(_ tableView: UITableView, viewForFooterInSection section: Int) -> UIView? {
+        guard tableData[section] == .sessionSection, collapsedSessionMoreCount > 0 else { return nil }
+        let count = collapsedSessionMoreCount
+        sessionMoreFooterLabel.text = count == 1 ? L10n.playbackSessionMoreEpisodeSingular : L10n.playbackSessionMoreEpisodesPlural(count.localized())
+        return sessionMoreFooterView
+    }
+
+    func tableView(_ tableView: UITableView, heightForFooterInSection section: Int) -> CGFloat {
+        guard tableData[section] == .sessionSection, collapsedSessionMoreCount > 0 else { return .leastNormalMagnitude }
+        let metrics = UIFontMetrics(forTextStyle: .footnote)
+        return metrics.scaledValue(for: 28)
+    }
+
     func tableView(_ tableView: UITableView, heightForHeaderInSection section: Int) -> CGFloat {
         let section = tableData[section]
         let metrics = UIFontMetrics(forTextStyle: .footnote)

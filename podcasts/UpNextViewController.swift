@@ -94,12 +94,12 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
         sessionChevronButton.translatesAutoresizingMaskIntoConstraints = false
 
         NSLayoutConstraint.activate([
-            sessionHeaderLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
-            sessionHeaderLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-            sessionChevronButton.leadingAnchor.constraint(equalTo: sessionHeaderLabel.trailingAnchor, constant: 6),
+            sessionChevronButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             sessionChevronButton.centerYAnchor.constraint(equalTo: view.centerYAnchor),
             sessionChevronButton.widthAnchor.constraint(equalToConstant: 20),
             sessionChevronButton.heightAnchor.constraint(equalToConstant: 20),
+            sessionHeaderLabel.leadingAnchor.constraint(equalTo: sessionChevronButton.trailingAnchor, constant: 6),
+            sessionHeaderLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor),
             endSessionButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             endSessionButton.centerYAnchor.constraint(equalTo: view.centerYAnchor),
             endSessionButton.widthAnchor.constraint(equalToConstant: 20),
@@ -108,13 +108,36 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
             sessionSortButton.centerYAnchor.constraint(equalTo: view.centerYAnchor),
             sessionSortButton.widthAnchor.constraint(equalToConstant: 24),
             sessionSortButton.heightAnchor.constraint(equalToConstant: 24),
-            sessionChevronButton.trailingAnchor.constraint(lessThanOrEqualTo: sessionSortButton.leadingAnchor, constant: -10)
+            sessionHeaderLabel.trailingAnchor.constraint(lessThanOrEqualTo: sessionSortButton.leadingAnchor, constant: -10)
         ])
 
         sessionHeaderLabel.isUserInteractionEnabled = true
         sessionHeaderLabel.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(sessionHeaderTapped)))
         return view
     }()
+
+    /// Footer under a collapsed paused session's single resume row: "X more episodes".
+    lazy var sessionMoreFooterView: UIView = {
+        let view = UIView()
+        sessionMoreFooterLabel.style = .primaryText02
+        sessionMoreFooterLabel.font = UIFont.font(ofSize: 13, scalingWith: .footnote)
+        view.addSubview(sessionMoreFooterLabel)
+        sessionMoreFooterLabel.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            sessionMoreFooterLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            sessionMoreFooterLabel.topAnchor.constraint(equalTo: view.topAnchor, constant: 2),
+            sessionMoreFooterLabel.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -20)
+        ])
+        return view
+    }()
+
+    let sessionMoreFooterLabel = ThemeableLabel()
+
+    /// How many session episodes are hidden behind the collapsed paused view's resume row.
+    var collapsedSessionMoreCount: Int {
+        guard let session = Settings.playbackSession(), Settings.playbackSessionPaused(), !sessionExpanded else { return 0 }
+        return max(0, session.remainingCount(excluding: nil) - (sessionEpisodes?.count ?? 0))
+    }
 
     func updateSessionHeader() {
         guard let session = Settings.playbackSession() else { return }

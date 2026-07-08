@@ -5135,6 +5135,12 @@
 /* Title of the sort picker shown when sorting a smart playlist during a playback session */
 "playback_session_sort_title" = "Sort Playlist";
 
+/* Footer under a collapsed paused session's resume row when exactly one more episode remains */
+"playback_session_more_episode_singular" = "1 more episode";
+
+/* Footer under a collapsed paused session's resume row. %1$@ is the number of additional episodes */
+"playback_session_more_episodes_plural" = "%1$@ more episodes";
+
 /* Title shown at the top of the Up Next sort options picker */
 "up_next_sort_title" = "Sort Up Next";
 
