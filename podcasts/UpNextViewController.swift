@@ -640,7 +640,13 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
         indicatorConfig.contentInsets = .zero
         indicatorConfig.image = nil
         if let filter = Settings.upNextFilter(), let title = filter.title {
-            let typeLabel = filter.type == .folder ? L10n.upNextFilterTypeFolder : L10n.upNextFilterTypeSmartPlaylist
+            let typeLabel: String
+            switch filter.type {
+            case .podcast: typeLabel = L10n.playbackSessionTypePodcast
+            case .folder: typeLabel = L10n.upNextFilterTypeFolder
+            case .smartPlaylist: typeLabel = L10n.upNextFilterTypeSmartPlaylist
+            case .playlist: typeLabel = L10n.playbackSessionTypePlaylist
+            }
             var attributedTitle = AttributedString(L10n.upNextFilterIndicator(title, typeLabel))
             attributedTitle.font = UIFont.font(ofSize: 13, weight: .medium, scalingWith: .footnote)
             attributedTitle.foregroundColor = AppTheme.colorForStyle(.primaryIcon01, themeOverride: themeOverride)
@@ -710,6 +716,8 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
         queue.reorderUpNext(sortedEpisodes: newOrder)
     }
 
+    /// Step one of the two-step filter picker: choose the kind (or None to clear).
+    /// The active filter's type row shows its current selection as a secondary label.
     @objc private func filterButtonTapped() {
         let optionsPicker = OptionsPicker(title: L10n.upNextFilterTitle.localizedUppercase, themeOverride: themeOverride)
         let activeFilter = Settings.upNextFilter()
@@ -718,38 +726,46 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
             Settings.setUpNextFilter(nil)
         })
 
-        // The active filter is pinned directly under "Everything", so the current
-        // selection is always visible without scrolling.
-        if let activeFilter, let title = activeFilter.title {
-            let icon: String?
-            let typeLabel: String
-            switch activeFilter.type {
-            case .folder:
-                icon = "folder-empty"
-                typeLabel = L10n.upNextFilterTypeFolder
-            case .smartPlaylist:
-                icon = DataManager.sharedManager.findPlaylist(uuid: activeFilter.uuid)?.iconImageName()
-                typeLabel = L10n.upNextFilterTypeSmartPlaylist
-            }
-            optionsPicker.addAction(action: OptionAction(label: title, secondaryLabel: typeLabel, icon: icon, selected: true) {
-                // Already active — picking it again changes nothing.
+        for (type, label) in Self.filterTypeLabels {
+            let isActiveType = activeFilter?.type == type
+            optionsPicker.addAction(action: OptionAction(label: label, secondaryLabel: isActiveType ? activeFilter?.title : nil, selected: isActiveType) { [weak self] in
+                self?.presentFilterItemPicker(for: type, title: label)
             })
         }
 
-        let folders = DataManager.sharedManager.allFolders()
-            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-        for folder in folders {
-            let filter = UpNextFilter(type: .folder, uuid: folder.uuid)
-            if filter == activeFilter { continue }
-            optionsPicker.addAction(action: OptionAction(label: folder.name, secondaryLabel: L10n.upNextFilterTypeFolder, icon: "folder-empty") {
-                Settings.setUpNextFilter(filter)
-            })
+        optionsPicker.present(from: self)
+    }
+
+    private static let filterTypeLabels: [(UpNextFilterType, String)] = [
+        (.podcast, L10n.playbackSessionTypePodcast),
+        (.folder, L10n.upNextFilterTypeFolder),
+        (.smartPlaylist, L10n.upNextFilterTypeSmartPlaylist),
+        (.playlist, L10n.playbackSessionTypePlaylist)
+    ]
+
+    /// Step two: the items of the chosen kind. Only one filter can be active — richer
+    /// combinations are what smart playlists are for.
+    private func presentFilterItemPicker(for type: UpNextFilterType, title: String) {
+        let optionsPicker = OptionsPicker(title: title.localizedUppercase, themeOverride: themeOverride)
+        let activeFilter = Settings.upNextFilter()
+
+        let items: [(uuid: String, name: String, icon: String?)]
+        switch type {
+        case .podcast:
+            items = DataManager.sharedManager.allPodcastsOrderedByTitle().map { ($0.uuid, $0.title ?? "", nil) }
+        case .folder:
+            items = DataManager.sharedManager.allFolders()
+                .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+                .map { ($0.uuid, $0.name, "folder-empty") }
+        case .smartPlaylist:
+            items = DataManager.sharedManager.allSmartPlaylists(includeDeleted: false).map { ($0.uuid, $0.playlistName, $0.iconImageName()) }
+        case .playlist:
+            items = DataManager.sharedManager.allManualPlaylists(includeDeleted: false).map { ($0.uuid, $0.playlistName, $0.iconImageName()) }
         }
 
-        for playlist in DataManager.sharedManager.allSmartPlaylists(includeDeleted: false) {
-            let filter = UpNextFilter(type: .smartPlaylist, uuid: playlist.uuid)
-            if filter == activeFilter { continue }
-            optionsPicker.addAction(action: OptionAction(label: playlist.playlistName, secondaryLabel: L10n.upNextFilterTypeSmartPlaylist, icon: playlist.iconImageName()) {
+        for item in items {
+            let filter = UpNextFilter(type: type, uuid: item.uuid)
+            optionsPicker.addAction(action: OptionAction(label: item.name, icon: item.icon, selected: filter == activeFilter) {
                 Settings.setUpNextFilter(filter)
             })
         }

@@ -1914,8 +1914,10 @@ extension UserDefaults {
 // MARK: - Up Next Filter
 
 enum UpNextFilterType: String {
+    case podcast
     case folder
     case smartPlaylist
+    case playlist
 }
 
 /// The Up Next play filter: when set, automatic playback advance only picks queue episodes
@@ -1927,18 +1929,25 @@ struct UpNextFilter: Equatable {
 
     var title: String? {
         switch type {
+        case .podcast:
+            return DataManager.sharedManager.findPodcast(uuid: uuid, includeUnsubscribed: true)?.title
         case .folder:
             return DataManager.sharedManager.findFolder(uuid: uuid)?.name
-        case .smartPlaylist:
+        case .smartPlaylist, .playlist:
             return DataManager.sharedManager.findPlaylist(uuid: uuid)?.playlistName
         }
     }
 
     /// Which of the given episodes the filter currently matches, by uuid.
-    /// Folder membership resolves through the in-memory podcast cache; smart playlists
-    /// run the playlist query once and intersect by episode uuid.
+    /// Podcast and folder membership resolve through the in-memory podcast cache;
+    /// playlists (smart or manual) run the playlist query once and intersect by uuid.
     func matchingEpisodeUuids(in episodes: [BaseEpisode]) -> Set<String> {
         switch type {
+        case .podcast:
+            return Set(episodes.compactMap { episode -> String? in
+                guard let episode = episode as? Episode, episode.podcastUuid == uuid else { return nil }
+                return episode.uuid
+            })
         case .folder:
             let podcastsInFolder = Set(DataManager.sharedManager.allPodcasts(includeUnsubscribed: false)
                 .filter { $0.folderUuid == uuid }
@@ -1947,8 +1956,8 @@ struct UpNextFilter: Equatable {
                 guard let episode = episode as? Episode, podcastsInFolder.contains(episode.podcastUuid) else { return nil }
                 return episode.uuid
             })
-        case .smartPlaylist:
-            guard let playlist = DataManager.sharedManager.findPlaylist(uuid: uuid), !playlist.manual else { return [] }
+        case .smartPlaylist, .playlist:
+            guard let playlist = DataManager.sharedManager.findPlaylist(uuid: uuid) else { return [] }
             let query = PlaylistQueryBuilder.query(clause: .episode, for: playlist, episodeUuidToAdd: nil, limit: 0, shouldShowArchived: playlist.showArchivedEpisodes)
             let playlistUuids = Set(DataManager.sharedManager.findPlaylistEpisodesWhere(query: query, arguments: nil).map(\.uuid))
             return Set(episodes.map(\.uuid)).intersection(playlistUuids)
