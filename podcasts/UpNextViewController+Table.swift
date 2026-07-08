@@ -292,7 +292,17 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
     // MARK: - Swipe Actions
 
     func tableView(_ tableView: UITableView, canEditRowAt indexPath: IndexPath) -> Bool {
-        tableData[indexPath.section] == .upNextSection
+        switch tableData[indexPath.section] {
+        case .upNextSection:
+            return true
+        case .sessionSection:
+            // A row must be editable for its reorder control to show; manual playlist
+            // sessions are drag-reorderable. Swipe actions are blocked separately in the
+            // SwipeCellKit delegate, so no other editing UI appears.
+            return Settings.playbackSession()?.type == .playlist
+        case .nowPlayingSection:
+            return false
+        }
     }
 
     // MARK: - Cell Heights
