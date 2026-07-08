@@ -40,9 +40,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         if FeatureFlag.upNextSort.enabled {
             sortButton.isHidden = PlaybackManager.shared.queue.upNextCount() == 0
         }
-        if FeatureFlag.upNextFilter.enabled {
-            filterButton.isHidden = PlaybackManager.shared.queue.upNextCount() == 0
-        }
+        updateFilterHeaderButtons()
         return headerView
     }
 

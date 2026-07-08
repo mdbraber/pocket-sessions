@@ -57,7 +57,10 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
     let shuffleButton = HitTargetButton(frame: CGRect(x: 0, y: 0, width: 24, height: 24))
     let sortButton = HitTargetButton(frame: CGRect(x: 0, y: 0, width: 24, height: 24))
     let filterButton = HitTargetButton(frame: CGRect(x: 0, y: 0, width: 24, height: 24))
+    let hideSkippedButton = HitTargetButton(frame: CGRect(x: 0, y: 0, width: 24, height: 24))
     let clearQueueButton = HitTargetButton(frame: CGRect(x: 0, y: 0, width: 93, height: 16))
+    private var filterTrailingToHideSkipped: NSLayoutConstraint?
+    private var filterTrailingToShuffle: NSLayoutConstraint?
 
     /// Uuids of queued episodes matching the active Up Next filter, or nil when no filter is set.
     /// Refreshed by `refreshUpNextFilterMatches()`; used for row dimming and the header count.
@@ -133,17 +136,28 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
         ])
 
         if FeatureFlag.upNextFilter.enabled {
+            headerView.addSubview(hideSkippedButton)
+            hideSkippedButton.translatesAutoresizingMaskIntoConstraints = false
+            hideSkippedButton.setContentCompressionResistancePriority(.required, for: .horizontal)
+            NSLayoutConstraint.activate([
+                hideSkippedButton.trailingAnchor.constraint(equalTo: shuffleButton.leadingAnchor, constant: -16),
+                hideSkippedButton.centerYAnchor.constraint(equalTo: headerView.centerYAnchor),
+                hideSkippedButton.widthAnchor.constraint(equalToConstant: 24),
+                hideSkippedButton.heightAnchor.constraint(equalToConstant: 24)
+            ])
+
             headerView.addSubview(filterButton)
             filterButton.translatesAutoresizingMaskIntoConstraints = false
             filterButton.setContentCompressionResistancePriority(.required, for: .horizontal)
+            filterTrailingToHideSkipped = filterButton.trailingAnchor.constraint(equalTo: hideSkippedButton.leadingAnchor, constant: -16)
+            filterTrailingToShuffle = filterButton.trailingAnchor.constraint(equalTo: shuffleButton.leadingAnchor, constant: -16)
             NSLayoutConstraint.activate([
-                filterButton.trailingAnchor.constraint(equalTo: shuffleButton.leadingAnchor, constant: -16),
                 filterButton.centerYAnchor.constraint(equalTo: headerView.centerYAnchor),
                 filterButton.leadingAnchor.constraint(greaterThanOrEqualTo: remainingLabel.trailingAnchor, constant: 10),
                 filterButton.widthAnchor.constraint(equalToConstant: 24),
                 filterButton.heightAnchor.constraint(equalToConstant: 24)
             ])
-            filterButton.isHidden = PlaybackManager.shared.queue.upNextCount() == 0
+            updateFilterHeaderButtons()
         }
 
         headerView.addSubview(clearQueueButton)
@@ -396,6 +410,23 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
         NotificationCenter.default.addObserver(self, selector: #selector(upNextFilterDidChange), name: Constants.Notifications.upNextFilterChanged, object: nil)
         updateFilterButtonImage()
         filterButton.addTarget(self, action: #selector(filterButtonTapped), for: .touchUpInside)
+        hideSkippedButton.addTarget(self, action: #selector(hideSkippedButtonTapped), for: .touchUpInside)
+    }
+
+    /// Shows/hides the header filter buttons and swaps the funnel's trailing constraint so
+    /// no gap is left where the (hidden) eye button sits when no filter is active.
+    func updateFilterHeaderButtons() {
+        guard FeatureFlag.upNextFilter.enabled else { return }
+        let queueEmpty = PlaybackManager.shared.queue.upNextCount() == 0
+        filterButton.isHidden = queueEmpty
+        hideSkippedButton.isHidden = queueEmpty || Settings.upNextFilter() == nil
+        filterTrailingToHideSkipped?.isActive = false
+        filterTrailingToShuffle?.isActive = false
+        (hideSkippedButton.isHidden ? filterTrailingToShuffle : filterTrailingToHideSkipped)?.isActive = true
+    }
+
+    @objc private func hideSkippedButtonTapped() {
+        Settings.setUpNextFilterHideSkipped(!Settings.upNextFilterHideSkipped())
     }
 
     @objc private func updateFilterButtonImage() {
@@ -410,10 +441,20 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
         filterButton.imageView?.adjustsImageSizeForAccessibilityContentSizeCategory = true
         filterButton.imageView?.contentMode = .scaleAspectFit
         filterButton.accessibilityLabel = L10n.upNextFilterTitle
+
+        let hideSkipped = Settings.upNextFilterHideSkipped()
+        let eyeStyle: ThemeStyle = hideSkipped ? .primaryIcon01 : .primaryIcon02
+        let eyeImage = UIImage(systemName: hideSkipped ? "eye.slash.fill" : "eye", withConfiguration: symbolConfiguration)?
+            .withTintColor(AppTheme.colorForStyle(eyeStyle, themeOverride: themeOverride), renderingMode: .alwaysOriginal)
+        hideSkippedButton.setImage(eyeImage, for: .normal)
+        hideSkippedButton.imageView?.adjustsImageSizeForAccessibilityContentSizeCategory = true
+        hideSkippedButton.imageView?.contentMode = .scaleAspectFit
+        hideSkippedButton.accessibilityLabel = hideSkipped ? L10n.upNextFilterShowSkipped : L10n.upNextFilterHideSkipped
     }
 
     @objc private func upNextFilterDidChange() {
         updateFilterButtonImage()
+        updateFilterHeaderButtons()
         reloadTable()
     }
 
@@ -460,14 +501,6 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
         let optionsPicker = OptionsPicker(title: L10n.upNextFilterTitle.localizedUppercase, themeOverride: themeOverride)
         let activeFilter = Settings.upNextFilter()
 
-        if activeFilter != nil {
-            let hideSkipped = Settings.upNextFilterHideSkipped()
-            let toggleLabel = hideSkipped ? L10n.upNextFilterShowSkipped : L10n.upNextFilterHideSkipped
-            optionsPicker.addAction(action: OptionAction(label: toggleLabel) {
-                Settings.setUpNextFilterHideSkipped(!hideSkipped)
-            })
-        }
-
         optionsPicker.addAction(action: OptionAction(label: L10n.upNextFilterEverything, selected: activeFilter == nil) {
             Settings.setUpNextFilter(nil)
         })
@@ -476,7 +509,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
         for folder in folders {
             let filter = UpNextFilter(type: .folder, uuid: folder.uuid)
-            optionsPicker.addAction(action: OptionAction(label: folder.name, secondaryLabel: L10n.upNextFilterTypeFolder, icon: "folder-goto", selected: filter == activeFilter) {
+            optionsPicker.addAction(action: OptionAction(label: folder.name, secondaryLabel: L10n.upNextFilterTypeFolder, icon: "folder-empty", selected: filter == activeFilter) {
                 Settings.setUpNextFilter(filter)
             })
         }
