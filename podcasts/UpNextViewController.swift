@@ -61,6 +61,8 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
     let filterIndicatorButton = UIButton(type: .custom)
     let clearFilterButton = HitTargetButton(frame: CGRect(x: 0, y: 0, width: 20, height: 20))
     let clearQueueButton = HitTargetButton(frame: CGRect(x: 0, y: 0, width: 93, height: 16))
+    private var filterTrailingToHideSkipped: NSLayoutConstraint?
+    private var filterTrailingToShuffle: NSLayoutConstraint?
 
     /// Uuids of queued episodes matching the active Up Next filter, or nil when no filter is set.
     /// Refreshed by `refreshUpNextFilterMatches()`; used for row dimming and the header count.
@@ -100,22 +102,22 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
     lazy var headerView: UIView = {
         let headerView = UIView(frame: CGRect(x: 0, y: 0, width: 0, height: 48))
 
-        // All queue controls live on the header's bottom row. When a filter is active an
-        // indicator row appears above them and the header grows (see heightForHeaderInSection).
-        let bottomRow = UILayoutGuide()
-        headerView.addLayoutGuide(bottomRow)
+        // All queue controls live on the header's top row. When a filter is active an
+        // indicator line appears below them and the header grows (see heightForHeaderInSection).
+        let controlsRow = UILayoutGuide()
+        headerView.addLayoutGuide(controlsRow)
         NSLayoutConstraint.activate([
-            bottomRow.leadingAnchor.constraint(equalTo: headerView.leadingAnchor),
-            bottomRow.trailingAnchor.constraint(equalTo: headerView.trailingAnchor),
-            bottomRow.bottomAnchor.constraint(equalTo: headerView.bottomAnchor),
-            bottomRow.heightAnchor.constraint(equalToConstant: 48)
+            controlsRow.leadingAnchor.constraint(equalTo: headerView.leadingAnchor),
+            controlsRow.trailingAnchor.constraint(equalTo: headerView.trailingAnchor),
+            controlsRow.topAnchor.constraint(equalTo: headerView.topAnchor),
+            controlsRow.heightAnchor.constraint(equalToConstant: 48)
         ])
 
         updateTimeRemainingLabel()
         headerView.addSubview(remainingLabel)
         NSLayoutConstraint.activate([
             remainingLabel.leadingAnchor.constraint(equalTo: headerView.leadingAnchor, constant: 20),
-            remainingLabel.centerYAnchor.constraint(equalTo: bottomRow.centerYAnchor)
+            remainingLabel.centerYAnchor.constraint(equalTo: controlsRow.centerYAnchor)
         ])
 
         if FeatureFlag.upNextSort.enabled {
@@ -124,7 +126,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
             sortButton.setContentCompressionResistancePriority(.required, for: .horizontal)
             NSLayoutConstraint.activate([
                 sortButton.trailingAnchor.constraint(equalTo: headerView.trailingAnchor, constant: -20),
-                sortButton.centerYAnchor.constraint(equalTo: bottomRow.centerYAnchor),
+                sortButton.centerYAnchor.constraint(equalTo: controlsRow.centerYAnchor),
                 sortButton.widthAnchor.constraint(equalToConstant: 24),
                 sortButton.heightAnchor.constraint(equalToConstant: 24)
             ])
@@ -139,38 +141,47 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
         shuffleButton.setContentCompressionResistancePriority(.required, for: .horizontal)
         NSLayoutConstraint.activate([
             shuffleButton.trailingAnchor.constraint(equalTo: trailingButtonAnchor, constant: trailingButtonConstant),
-            shuffleButton.centerYAnchor.constraint(equalTo: bottomRow.centerYAnchor),
+            shuffleButton.centerYAnchor.constraint(equalTo: controlsRow.centerYAnchor),
             shuffleButton.leadingAnchor.constraint(greaterThanOrEqualTo: remainingLabel.trailingAnchor, constant: 10),
             shuffleButton.widthAnchor.constraint(equalToConstant: 24),
             shuffleButton.heightAnchor.constraint(equalToConstant: 24)
         ])
 
         if FeatureFlag.upNextFilter.enabled {
-            // The funnel (no filter active) and the eye (filter active) share the slot left
-            // of shuffle — they're never visible at the same time.
-            for button in [filterButton, hideSkippedButton] {
-                headerView.addSubview(button)
-                button.translatesAutoresizingMaskIntoConstraints = false
-                button.setContentCompressionResistancePriority(.required, for: .horizontal)
-                NSLayoutConstraint.activate([
-                    button.trailingAnchor.constraint(equalTo: shuffleButton.leadingAnchor, constant: -16),
-                    button.centerYAnchor.constraint(equalTo: bottomRow.centerYAnchor),
-                    button.leadingAnchor.constraint(greaterThanOrEqualTo: remainingLabel.trailingAnchor, constant: 10),
-                    button.widthAnchor.constraint(equalToConstant: 24),
-                    button.heightAnchor.constraint(equalToConstant: 24)
-                ])
-            }
+            // The funnel sits left of the eye; the eye only appears while a filter is active,
+            // so the funnel's trailing constraint swaps between the two anchors.
+            headerView.addSubview(hideSkippedButton)
+            hideSkippedButton.translatesAutoresizingMaskIntoConstraints = false
+            hideSkippedButton.setContentCompressionResistancePriority(.required, for: .horizontal)
+            NSLayoutConstraint.activate([
+                hideSkippedButton.trailingAnchor.constraint(equalTo: shuffleButton.leadingAnchor, constant: -16),
+                hideSkippedButton.centerYAnchor.constraint(equalTo: controlsRow.centerYAnchor),
+                hideSkippedButton.widthAnchor.constraint(equalToConstant: 24),
+                hideSkippedButton.heightAnchor.constraint(equalToConstant: 24)
+            ])
 
-            // Indicator row above the controls: funnel + active filter name opens the picker,
-            // the cross clears the filter.
+            headerView.addSubview(filterButton)
+            filterButton.translatesAutoresizingMaskIntoConstraints = false
+            filterButton.setContentCompressionResistancePriority(.required, for: .horizontal)
+            filterTrailingToHideSkipped = filterButton.trailingAnchor.constraint(equalTo: hideSkippedButton.leadingAnchor, constant: -16)
+            filterTrailingToShuffle = filterButton.trailingAnchor.constraint(equalTo: shuffleButton.leadingAnchor, constant: -16)
+            NSLayoutConstraint.activate([
+                filterButton.centerYAnchor.constraint(equalTo: controlsRow.centerYAnchor),
+                filterButton.leadingAnchor.constraint(greaterThanOrEqualTo: remainingLabel.trailingAnchor, constant: 10),
+                filterButton.widthAnchor.constraint(equalToConstant: 24),
+                filterButton.heightAnchor.constraint(equalToConstant: 24)
+            ])
+
+            // Indicator line under "Playing x of x": blue "Filter: Name (Type)" text that
+            // opens the picker, and a cross that clears the filter.
             headerView.addSubview(filterIndicatorButton)
             filterIndicatorButton.translatesAutoresizingMaskIntoConstraints = false
             headerView.addSubview(clearFilterButton)
             clearFilterButton.translatesAutoresizingMaskIntoConstraints = false
             NSLayoutConstraint.activate([
                 filterIndicatorButton.leadingAnchor.constraint(equalTo: headerView.leadingAnchor, constant: 20),
-                filterIndicatorButton.centerYAnchor.constraint(equalTo: headerView.topAnchor, constant: 18),
-                filterIndicatorButton.heightAnchor.constraint(equalToConstant: 24),
+                filterIndicatorButton.bottomAnchor.constraint(equalTo: headerView.bottomAnchor, constant: -6),
+                filterIndicatorButton.heightAnchor.constraint(equalToConstant: 20),
                 clearFilterButton.leadingAnchor.constraint(equalTo: filterIndicatorButton.trailingAnchor, constant: 8),
                 clearFilterButton.centerYAnchor.constraint(equalTo: filterIndicatorButton.centerYAnchor),
                 clearFilterButton.widthAnchor.constraint(equalToConstant: 20),
@@ -185,7 +196,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
         clearQueueButton.setContentCompressionResistancePriority(.required, for: .horizontal)
         NSLayoutConstraint.activate([
             clearQueueButton.trailingAnchor.constraint(equalTo: trailingButtonAnchor, constant: trailingButtonConstant),
-            clearQueueButton.centerYAnchor.constraint(equalTo: bottomRow.centerYAnchor),
+            clearQueueButton.centerYAnchor.constraint(equalTo: controlsRow.centerYAnchor),
             clearQueueButton.leadingAnchor.constraint(greaterThanOrEqualTo: remainingLabel.trailingAnchor, constant: 10)
         ])
 
@@ -435,16 +446,19 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
         clearFilterButton.addTarget(self, action: #selector(clearFilterButtonTapped), for: .touchUpInside)
     }
 
-    /// Shows/hides the header filter controls. With a filter active, the funnel moves from
-    /// the trailing button cluster into the indicator row above the queue controls.
+    /// Shows/hides the header filter controls, and swaps the funnel's trailing constraint so
+    /// no gap is left where the (hidden) eye button sits when no filter is active.
     func updateFilterHeaderButtons() {
         guard FeatureFlag.upNextFilter.enabled else { return }
         let queueEmpty = PlaybackManager.shared.queue.upNextCount() == 0
         let filterActive = Settings.upNextFilter() != nil
-        filterButton.isHidden = queueEmpty || filterActive
+        filterButton.isHidden = queueEmpty
         hideSkippedButton.isHidden = queueEmpty || !filterActive
         filterIndicatorButton.isHidden = queueEmpty || !filterActive
         clearFilterButton.isHidden = filterIndicatorButton.isHidden
+        filterTrailingToHideSkipped?.isActive = false
+        filterTrailingToShuffle?.isActive = false
+        (hideSkippedButton.isHidden ? filterTrailingToShuffle : filterTrailingToHideSkipped)?.isActive = true
     }
 
     @objc private func hideSkippedButtonTapped() {
@@ -456,10 +470,12 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
     }
 
     @objc private func updateFilterButtonImage() {
+        let filterActive = Settings.upNextFilter() != nil
         let symbolConfiguration = UIImage.SymbolConfiguration(pointSize: 18, weight: .medium)
-        let funnel = (UIImage(systemName: "funnel", withConfiguration: symbolConfiguration)
+        let funnelStyle: ThemeStyle = filterActive ? .primaryIcon01 : .primaryIcon02
+        let funnel = (UIImage(systemName: filterActive ? "funnel.fill" : "funnel", withConfiguration: symbolConfiguration)
             ?? UIImage(systemName: "line.3.horizontal.decrease", withConfiguration: symbolConfiguration))?
-            .withTintColor(AppTheme.colorForStyle(.primaryIcon02, themeOverride: themeOverride), renderingMode: .alwaysOriginal)
+            .withTintColor(AppTheme.colorForStyle(funnelStyle, themeOverride: themeOverride), renderingMode: .alwaysOriginal)
         filterButton.setImage(funnel, for: .normal)
         filterButton.imageView?.adjustsImageSizeForAccessibilityContentSizeCategory = true
         filterButton.imageView?.contentMode = .scaleAspectFit
@@ -474,16 +490,15 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
         hideSkippedButton.imageView?.contentMode = .scaleAspectFit
         hideSkippedButton.accessibilityLabel = hideSkipped ? L10n.upNextFilterShowSkipped : L10n.upNextFilterHideSkipped
 
-        // Indicator row: filled funnel + the active filter's name, and the clear cross.
+        // Indicator line: "Filter: Name (Type)" in the enabled blue; opens the picker.
         var indicatorConfig = filterIndicatorButton.configuration ?? .plain()
         indicatorConfig.contentInsets = .zero
-        indicatorConfig.imagePadding = 7
-        indicatorConfig.image = UIImage(systemName: "funnel.fill", withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .medium))?
-            .withTintColor(AppTheme.colorForStyle(.primaryIcon01, themeOverride: themeOverride), renderingMode: .alwaysOriginal)
-        if let title = Settings.upNextFilter()?.title {
-            var attributedTitle = AttributedString(title)
-            attributedTitle.font = UIFont.font(ofSize: 14, weight: .medium, scalingWith: .footnote)
-            attributedTitle.foregroundColor = AppTheme.colorForStyle(.primaryText01, themeOverride: themeOverride)
+        indicatorConfig.image = nil
+        if let filter = Settings.upNextFilter(), let title = filter.title {
+            let typeLabel = filter.type == .folder ? L10n.upNextFilterTypeFolder : L10n.upNextFilterTypeSmartPlaylist
+            var attributedTitle = AttributedString(L10n.upNextFilterIndicator(title, typeLabel))
+            attributedTitle.font = UIFont.font(ofSize: 13, weight: .medium, scalingWith: .footnote)
+            attributedTitle.foregroundColor = AppTheme.colorForStyle(.primaryIcon01, themeOverride: themeOverride)
             indicatorConfig.attributedTitle = attributedTitle
         }
         filterIndicatorButton.configuration = indicatorConfig
