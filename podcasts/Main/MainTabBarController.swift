@@ -142,6 +142,7 @@ class MainTabBarController: UITabBarController, NavigationProtocol {
         NotificationCenter.default.addObserver(self, selector: #selector(refreshUpNextTabBadge), name: Constants.Notifications.upNextQueueChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(refreshUpNextTabBadge), name: Constants.Notifications.upNextEpisodeRemoved, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(refreshUpNextTabBadge), name: Constants.Notifications.playbackTrackChanged, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(refreshUpNextTabBadge), name: Constants.Notifications.upNextFilterChanged, object: nil)
         // `upNextEpisodeAdded` refreshes the badge via the genie animation's tail, not here.
         NotificationCenter.default.addObserver(self, selector: #selector(animateEpisodeAddedToUpNext(_:)), name: Constants.Notifications.upNextEpisodeAdded, object: nil)
         refreshUpNextTabBadge()
@@ -1237,7 +1238,13 @@ extension MainTabBarController {
         guard #available(iOS 26.0, *) else { return }
 
         // Clamping lives in `composeUpNextTabImage`; track the true count here.
-        let count = PlaybackManager.shared.queue.upNextCount()
+        // With an Up Next filter active, count only the episodes that will play.
+        let count: Int
+        if FeatureFlag.upNextFilter.enabled, let filter = Settings.upNextFilter() {
+            count = filter.matchingEpisodeUuids(in: PlaybackManager.shared.queue.allEpisodes(includeNowPlaying: false)).count
+        } else {
+            count = PlaybackManager.shared.queue.upNextCount()
+        }
         let previous = previousUpNextCount
         previousUpNextCount = count
 
