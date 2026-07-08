@@ -52,7 +52,8 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
             return 16
         case .upNextSection:
             let metrics = UIFontMetrics(forTextStyle: .footnote)
-            let filterRowVisible = FeatureFlag.upNextFilter.enabled && Settings.upNextFilter() != nil && PlaybackManager.shared.queue.upNextCount() > 0
+            let sessionActive = FeatureFlag.playbackSessions.enabled && Settings.playbackSession() != nil
+            let filterRowVisible = sessionActive || (FeatureFlag.upNextFilter.enabled && Settings.upNextFilter() != nil && PlaybackManager.shared.queue.upNextCount() > 0)
             return metrics.scaledValue(for: 48) + (filterRowVisible ? 26 : 0)
         }
     }

@@ -171,6 +171,12 @@ class PlaybackManager: ServerPlaybackDelegate {
 
         let episodeIsChanging = episode.uuid != currentEpisode()?.uuid
 
+        // explicitly playing something else ends the active session — steering away
+        if FeatureFlag.playbackSessions.enabled, episodeIsChanging, !isLoadingSessionEpisode, Settings.playbackSession() != nil {
+            FileLog.shared.addMessage("Playback session ended: a different episode was played explicitly")
+            Settings.setPlaybackSession(nil)
+        }
+
         // if the user has built an Up Next list, preserve that but make this the currently playing episode
         if !overrideUpNext && !switchingToDifferentUpNextEpisode && queue.upNextCount() > 0 {
             if let currEpisode = currentEpisode(), currEpisode.uuid != episode.uuid {
@@ -607,6 +613,8 @@ class PlaybackManager: ServerPlaybackDelegate {
             AnalyticsEpisodeHelper.shared.episodeRemovedFromUpNext(episode: episode)
         }
         if isNowPlayingEpisode(episodeUuid: episode?.uuid) {
+            if advanceSessionIfNeeded(autoPlay: playing()) { return }
+
             autoplayIfNeeded()
             if queue.upNextCount() > 0 {
                 playNextEpisode(autoPlay: playing())
@@ -632,6 +640,43 @@ class PlaybackManager: ServerPlaybackDelegate {
         if let episodeToPlay = queue.episodeAt(index: upNextIndex) {
             switchTo(episodeToPlay: episodeToPlay, moveExistingToUpNext: true, autoPlay: true)
         }
+    }
+
+    /// True while a session start/advance is loading its own episode, so the
+    /// steering-away check in `load` doesn't end the session it belongs to.
+    private var isLoadingSessionEpisode = false
+
+    /// Starts a playback session: plays its first unfinished episode now (the interrupted
+    /// episode moves to the top of Up Next, like any "play now") and advances through the
+    /// session's list until it runs dry, then playback returns to the queue.
+    func startPlaybackSession(_ session: PlaybackSession) {
+        guard FeatureFlag.playbackSessions.enabled, let first = session.nextEpisode(after: nil) else { return }
+
+        FileLog.shared.addMessage("Starting playback session from \(session.type.rawValue) \(session.uuid)")
+        Settings.setPlaybackSession(session)
+        isLoadingSessionEpisode = true
+        defer { isLoadingSessionEpisode = false }
+        load(episode: first, autoPlay: true, overrideUpNext: false)
+    }
+
+    /// Advances within the active session instead of the queue. Returns false when there's
+    /// no active session, or the session just ran dry (it's then ended, and the caller
+    /// falls through to normal queue handling — which is the "return to your queue" step).
+    private func advanceSessionIfNeeded(autoPlay: Bool) -> Bool {
+        guard FeatureFlag.playbackSessions.enabled, let session = Settings.playbackSession() else { return false }
+
+        guard let next = session.nextEpisode(after: currentEpisode()?.uuid) else {
+            FileLog.shared.addMessage("Playback session finished — returning to the Up Next queue")
+            Settings.setPlaybackSession(nil)
+            return false
+        }
+
+        FileLog.shared.addMessage("Playback session: advancing to \(next.displayableTitle())")
+        isLoadingSessionEpisode = true
+        defer { isLoadingSessionEpisode = false }
+        switchTo(episodeToPlay: next, moveExistingToUpNext: false, autoPlay: autoPlay)
+        numberOfEpisodesToSleepAfter -= 1
+        return true
     }
 
     private func playNextEpisode(autoPlay: Bool) {
@@ -1292,6 +1337,9 @@ class PlaybackManager: ServerPlaybackDelegate {
                 EpisodeManager.cleanupUnusedBuffers(episode: episode)
             }
         }
+
+        // a playback session advances from its own list before the queue is consulted
+        if advanceSessionIfNeeded(autoPlay: !(numberOfEpisodesToSleepAfter == 1)) { return }
 
         // check to see if there's another episode we should be moving onto
         if queue.upNextCount() == 0 {

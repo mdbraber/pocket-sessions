@@ -400,6 +400,37 @@ class Settings: NSObject {
         NotificationCenter.postOnMainThread(notification: Constants.Notifications.upNextFilterChanged)
     }
 
+    static let playbackSessionTypeKey = "SJPlaybackSessionType"
+    static let playbackSessionUuidKey = "SJPlaybackSessionUuid"
+
+    /// The active playback session, or nil when the Up Next queue plays normally.
+    /// Device-local (never synced), like the Up Next filter.
+    class func playbackSession() -> PlaybackSession? {
+        guard FeatureFlag.playbackSessions.enabled,
+              let typeValue = UserDefaults.standard.string(forKey: Settings.playbackSessionTypeKey),
+              let type = PlaybackSessionType(rawValue: typeValue),
+              let uuid = UserDefaults.standard.string(forKey: Settings.playbackSessionUuidKey)
+        else {
+            return nil
+        }
+
+        return PlaybackSession(type: type, uuid: uuid)
+    }
+
+    class func setPlaybackSession(_ session: PlaybackSession?) {
+        guard FeatureFlag.playbackSessions.enabled else { return }
+
+        if let session {
+            UserDefaults.standard.set(session.type.rawValue, forKey: Settings.playbackSessionTypeKey)
+            UserDefaults.standard.set(session.uuid, forKey: Settings.playbackSessionUuidKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: Settings.playbackSessionTypeKey)
+            UserDefaults.standard.removeObject(forKey: Settings.playbackSessionUuidKey)
+        }
+
+        NotificationCenter.postOnMainThread(notification: Constants.Notifications.playbackSessionChanged)
+    }
+
     // MARK: - Discover Region
 
     private static let chartRegion = "SJChartRegion"
@@ -1907,5 +1938,56 @@ struct UpNextFilter: Equatable {
             let playlistUuids = Set(DataManager.sharedManager.findPlaylistEpisodesWhere(query: query, arguments: nil).map(\.uuid))
             return Set(episodes.map(\.uuid)).intersection(playlistUuids)
         }
+    }
+}
+
+// MARK: - Playback Session
+
+enum PlaybackSessionType: String {
+    case podcast
+    case playlist
+    case smartPlaylist
+}
+
+/// Supplies a session's episodes in display order. The main app injects an implementation
+/// at launch (`EpisodesDataManager`); targets without one simply never advance a session.
+protocol PlaybackSessionEpisodeSource {
+    func orderedEpisodes(for session: PlaybackSession) -> [BaseEpisode]
+}
+
+/// A temporary playback source that plays instead of the Up Next queue: a podcast (in its
+/// own sort order), a manual playlist, or a smart playlist. The queue is never modified;
+/// when the session runs out of unfinished episodes, playback returns to the queue.
+struct PlaybackSession: Equatable {
+    let type: PlaybackSessionType
+    let uuid: String
+
+    /// Injected by the app at launch; see `PlaybackSessionEpisodeSource`.
+    static var episodeSource: PlaybackSessionEpisodeSource?
+
+    var title: String? {
+        switch type {
+        case .podcast:
+            return DataManager.sharedManager.findPodcast(uuid: uuid, includeUnsubscribed: true)?.title
+        case .playlist, .smartPlaylist:
+            return DataManager.sharedManager.findPlaylist(uuid: uuid)?.playlistName
+        }
+    }
+
+    /// The next unfinished episode after the given one in the session's order; from the
+    /// start of the list when nil (or an episode not in the list) is passed.
+    func nextEpisode(after episodeUuid: String?) -> BaseEpisode? {
+        let episodes = Self.episodeSource?.orderedEpisodes(for: self) ?? []
+        let startIndex = episodeUuid.flatMap { uuid in episodes.firstIndex(where: { $0.uuid == uuid }).map { $0 + 1 } } ?? 0
+        guard startIndex <= episodes.count else { return nil }
+        return episodes[startIndex...].first { !$0.played() }
+    }
+
+    /// How many unfinished episodes remain after the given one.
+    func remainingCount(after episodeUuid: String?) -> Int {
+        let episodes = Self.episodeSource?.orderedEpisodes(for: self) ?? []
+        let startIndex = episodeUuid.flatMap { uuid in episodes.firstIndex(where: { $0.uuid == uuid }).map { $0 + 1 } } ?? 0
+        guard startIndex <= episodes.count else { return 0 }
+        return episodes[startIndex...].filter { !$0.played() }.count
     }
 }

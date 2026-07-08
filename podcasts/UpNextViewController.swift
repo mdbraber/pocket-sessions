@@ -445,22 +445,65 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
         guard FeatureFlag.upNextFilter.enabled, filterButton.allTargets.isEmpty else { return }
         NotificationCenter.default.addObserver(self, selector: #selector(updateFilterButtonImage), name: Constants.Notifications.themeChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(upNextFilterDidChange), name: Constants.Notifications.upNextFilterChanged, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(upNextFilterDidChange), name: Constants.Notifications.playbackSessionChanged, object: nil)
         updateFilterButtonImage()
         filterButton.addTarget(self, action: #selector(filterButtonTapped), for: .touchUpInside)
         hideSkippedButton.addTarget(self, action: #selector(hideSkippedButtonTapped), for: .touchUpInside)
         filterIndicatorButton.addTarget(self, action: #selector(filterButtonTapped), for: .touchUpInside)
         clearFilterButton.addTarget(self, action: #selector(clearFilterButtonTapped), for: .touchUpInside)
+
+        if FeatureFlag.playbackSessions.enabled {
+            // Interim entry point until the content screens get their own Play buttons:
+            // long-pressing the funnel offers starting a session.
+            filterButton.addGestureRecognizer(UILongPressGestureRecognizer(target: self, action: #selector(filterButtonLongPressed(_:))))
+        }
+    }
+
+    @objc private func filterButtonLongPressed(_ gesture: UILongPressGestureRecognizer) {
+        guard gesture.state == .began else { return }
+        let optionsPicker = OptionsPicker(title: L10n.playbackSessionPickerTitle.localizedUppercase, themeOverride: themeOverride)
+
+        if Settings.playbackSession() != nil {
+            optionsPicker.addAction(action: OptionAction(label: L10n.playbackSessionEnd) {
+                Settings.setPlaybackSession(nil)
+            })
+        }
+
+        for playlist in DataManager.sharedManager.allManualPlaylists(includeDeleted: false) {
+            let session = PlaybackSession(type: .playlist, uuid: playlist.uuid)
+            optionsPicker.addAction(action: OptionAction(label: playlist.playlistName, secondaryLabel: L10n.playbackSessionTypePlaylist, icon: playlist.iconImageName()) {
+                PlaybackManager.shared.startPlaybackSession(session)
+            })
+        }
+
+        for playlist in DataManager.sharedManager.allSmartPlaylists(includeDeleted: false) {
+            let session = PlaybackSession(type: .smartPlaylist, uuid: playlist.uuid)
+            optionsPicker.addAction(action: OptionAction(label: playlist.playlistName, secondaryLabel: L10n.upNextFilterTypeSmartPlaylist, icon: playlist.iconImageName()) {
+                PlaybackManager.shared.startPlaybackSession(session)
+            })
+        }
+
+        for podcast in DataManager.sharedManager.allPodcastsOrderedByTitle() {
+            let session = PlaybackSession(type: .podcast, uuid: podcast.uuid)
+            optionsPicker.addAction(action: OptionAction(label: podcast.title ?? "", secondaryLabel: L10n.playbackSessionTypePodcast) {
+                PlaybackManager.shared.startPlaybackSession(session)
+            })
+        }
+
+        optionsPicker.present(from: self)
     }
 
     /// Shows/hides the header filter controls, and swaps the funnel's trailing constraint so
     /// no gap is left where the (hidden) eye button sits when no filter is active.
+    /// A playback session takes over the indicator line while it runs (the filter is dormant).
     func updateFilterHeaderButtons() {
         guard FeatureFlag.upNextFilter.enabled else { return }
         let queueEmpty = PlaybackManager.shared.queue.upNextCount() == 0
         let filterActive = Settings.upNextFilter() != nil
+        let sessionActive = FeatureFlag.playbackSessions.enabled && Settings.playbackSession() != nil
         filterButton.isHidden = queueEmpty
-        hideSkippedButton.isHidden = queueEmpty || !filterActive
-        filterIndicatorButton.isHidden = queueEmpty || !filterActive
+        hideSkippedButton.isHidden = queueEmpty || !filterActive || sessionActive
+        filterIndicatorButton.isHidden = sessionActive ? false : (queueEmpty || !filterActive)
         clearFilterButton.isHidden = filterIndicatorButton.isHidden
         filterTrailingToHideSkipped?.isActive = false
         filterTrailingToShuffle?.isActive = false
@@ -472,7 +515,11 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
     }
 
     @objc private func clearFilterButtonTapped() {
-        Settings.setUpNextFilter(nil)
+        if FeatureFlag.playbackSessions.enabled, Settings.playbackSession() != nil {
+            Settings.setPlaybackSession(nil)
+        } else {
+            Settings.setUpNextFilter(nil)
+        }
     }
 
     @objc private func updateFilterButtonImage() {
@@ -496,13 +543,26 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
         hideSkippedButton.imageView?.contentMode = .scaleAspectFit
         hideSkippedButton.accessibilityLabel = hideSkipped ? L10n.upNextFilterShowSkipped : L10n.upNextFilterHideSkipped
 
-        // Indicator line: "Filter: Name (Type)" in the enabled blue; opens the picker.
+        // Indicator line in the enabled blue: an active session takes precedence over the
+        // filter ("Playing from: …" vs "Filter: …"); tapping it opens the picker.
         var indicatorConfig = filterIndicatorButton.configuration ?? .plain()
         indicatorConfig.contentInsets = .zero
         indicatorConfig.image = nil
-        if let filter = Settings.upNextFilter(), let title = filter.title {
+        var indicatorText: String?
+        if FeatureFlag.playbackSessions.enabled, let session = Settings.playbackSession(), let title = session.title {
+            let typeLabel: String
+            switch session.type {
+            case .podcast: typeLabel = L10n.playbackSessionTypePodcast
+            case .playlist: typeLabel = L10n.playbackSessionTypePlaylist
+            case .smartPlaylist: typeLabel = L10n.upNextFilterTypeSmartPlaylist
+            }
+            indicatorText = L10n.playbackSessionIndicator(title, typeLabel)
+        } else if let filter = Settings.upNextFilter(), let title = filter.title {
             let typeLabel = filter.type == .folder ? L10n.upNextFilterTypeFolder : L10n.upNextFilterTypeSmartPlaylist
-            var attributedTitle = AttributedString(L10n.upNextFilterIndicator(title, typeLabel))
+            indicatorText = L10n.upNextFilterIndicator(title, typeLabel)
+        }
+        if let indicatorText {
+            var attributedTitle = AttributedString(indicatorText)
             attributedTitle.font = UIFont.font(ofSize: 13, weight: .medium, scalingWith: .footnote)
             attributedTitle.foregroundColor = AppTheme.colorForStyle(.primaryIcon01, themeOverride: themeOverride)
             indicatorConfig.attributedTitle = attributedTitle
@@ -684,6 +744,12 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
     }
 
     @objc func updateTimeRemainingLabel() {
+        if FeatureFlag.playbackSessions.enabled, let session = Settings.playbackSession(), let title = session.title {
+            let remaining = session.remainingCount(after: PlaybackManager.shared.currentEpisode()?.uuid)
+            remainingLabel.text = L10n.playbackSessionHeader(title, remaining.localized())
+            return
+        }
+
         if FeatureFlag.upNextFilter.enabled, Settings.upNextFilter() != nil, let matchingUuids = upNextFilterMatchingUuids {
             let episodes = PlaybackManager.shared.queue.allEpisodes(includeNowPlaying: false)
             let matchingEpisodes = episodes.filter { matchingUuids.contains($0.uuid) }

@@ -3,7 +3,18 @@ import PocketCastsServer
 import PocketCastsUtils
 import DifferenceKit
 
-class EpisodesDataManager {
+class EpisodesDataManager: PlaybackSessionEpisodeSource {
+    /// Playback sessions reuse the same episode lists the app's screens show, so a session
+    /// plays exactly what the user sees, in the same order (podcast sort, playlist order).
+    func orderedEpisodes(for session: PlaybackSession) -> [BaseEpisode] {
+        switch session.type {
+        case .podcast:
+            return episodes(for: .podcast(uuid: session.uuid))
+        case .playlist, .smartPlaylist:
+            return episodes(for: .filter(uuid: session.uuid))
+        }
+    }
+
     // MARK: - Playlist episodes
 
     /// Return the list of episodes for a given playlist

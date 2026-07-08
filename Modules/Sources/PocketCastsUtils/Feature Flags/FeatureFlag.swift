@@ -98,6 +98,10 @@ public enum FeatureFlag: String, CaseIterable {
     /// Filter Up Next playback to a folder or smart playlist (personal fork feature)
     case upNextFilter
 
+    /// Temporary playback sessions from a playlist or podcast that play instead of the
+    /// Up Next queue, returning to it when done (personal fork feature)
+    case playbackSessions
+
     /// Push two auto downloads on subscribe of a podcast
     case autoDownloadOnSubscribe
 
@@ -395,6 +399,8 @@ public enum FeatureFlag: String, CaseIterable {
         case .upNextShuffle:
             true
         case .upNextFilter:
+            true
+        case .playbackSessions:
             true
         case .autoDownloadOnSubscribe:
             true

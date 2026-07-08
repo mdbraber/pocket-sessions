@@ -44,6 +44,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         DataManager.logger = SentryLogger()
         ServerConfig.shared.errorLogger = SentryLogger()
 
+        PlaybackSession.episodeSource = EpisodesDataManager()
+
         appInstallState = appLifecycleAnalytics.checkApplicationInstalledOrUpgraded()
 
         if let appInstallState {

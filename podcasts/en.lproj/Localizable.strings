@@ -5084,6 +5084,24 @@
 /* Type tag shown next to a smart playlist in the Up Next playback filter picker */
 "up_next_filter_type_smart_playlist" = "Smart Playlist";
 
+/* Indicator line in the Up Next header while a playback session is active. %1$@ is the session's name, %2$@ its type ('Podcast', 'Playlist' or 'Smart Playlist') */
+"playback_session_indicator" = "Playing from: %1$@ (%2$@)";
+
+/* Up Next header label while a playback session is active. %1$@ is the session's name, %2$@ the number of episodes remaining */
+"playback_session_header" = "Playing from %1$@ · %2$@ to go";
+
+/* Title of the picker that starts a playback session */
+"playback_session_picker_title" = "Start Session";
+
+/* Option that ends the active playback session, returning playback to the Up Next queue */
+"playback_session_end" = "End Session";
+
+/* Type tag for a podcast in the playback session picker */
+"playback_session_type_podcast" = "Podcast";
+
+/* Type tag for a manual playlist in the playback session picker */
+"playback_session_type_playlist" = "Playlist";
+
 /* Title shown at the top of the Up Next sort options picker */
 "up_next_sort_title" = "Sort Up Next";
 
