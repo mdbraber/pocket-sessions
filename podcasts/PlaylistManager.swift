@@ -67,6 +67,10 @@ class PlaylistManager {
     class func delete(playlist: EpisodeFilter?, fireEvent: Bool) {
         guard let playlist else { return }
 
+        if playlist.manual {
+            handleManualPlaylistDeleted(playlistUuid: playlist.uuid)
+        }
+
         if SyncManager.isUserLoggedIn() {
             playlist.wasDeleted = true
             playlist.syncStatus = SyncStatus.notSynced.rawValue
@@ -126,6 +130,34 @@ class PlaylistManager {
             podcastUuids.remove(at: indexOfUuid)
             playlist.podcastUuids = podcastUuids.joined(separator: ",")
             if SyncManager.isUserLoggedIn() { playlist.syncStatus = SyncStatus.notSynced.rawValue }
+            DataManager.sharedManager.save(playlist: playlist)
+        }
+    }
+
+    /// Fork rules: when a folder is deleted, drop it from every smart playlist's folder
+    /// rule — mirroring what handlePodcastUnsubscribed does for the podcast rule.
+    class func handleFolderDeleted(folderUuid: String) {
+        for playlist in DataManager.sharedManager.allSmartPlaylists(includeDeleted: false) where !playlist.folderUuids.isEmpty {
+            var uuids = playlist.folderUuids.components(separatedBy: ",")
+            guard let index = uuids.firstIndex(of: folderUuid) else { continue }
+
+            uuids.remove(at: index)
+            playlist.folderUuids = uuids.joined(separator: ",")
+            if uuids.isEmpty { playlist.foldersExcluded = false }
+            DataManager.sharedManager.save(playlist: playlist)
+        }
+    }
+
+    /// Fork rules: when a manual playlist is deleted, drop it from every smart playlist's
+    /// playlist rule.
+    class func handleManualPlaylistDeleted(playlistUuid: String) {
+        for playlist in DataManager.sharedManager.allSmartPlaylists(includeDeleted: false) where !playlist.manualPlaylistUuids.isEmpty {
+            var uuids = playlist.manualPlaylistUuids.components(separatedBy: ",")
+            guard let index = uuids.firstIndex(of: playlistUuid) else { continue }
+
+            uuids.remove(at: index)
+            playlist.manualPlaylistUuids = uuids.joined(separator: ",")
+            if uuids.isEmpty { playlist.manualPlaylistsExcluded = false }
             DataManager.sharedManager.save(playlist: playlist)
         }
     }

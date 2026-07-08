@@ -1,7 +1,7 @@
 import Foundation
 
 enum SmartPlaylistRule: Int, CaseIterable, Identifiable {
-    case podcast, duration, episode, releaseDate, downloadStatus, mediaType, starred
+    case podcast, folder, manualPlaylist, duration, episode, releaseDate, downloadStatus, mediaType, starred
 
     var id: Int { rawValue }
 
@@ -9,6 +9,10 @@ enum SmartPlaylistRule: Int, CaseIterable, Identifiable {
         switch self {
         case .podcast:
             return "filter_podcasts"
+        case .folder:
+            return "folder-empty"
+        case .manualPlaylist:
+            return "filter_list"
         case .episode:
             return "filter_play"
         case .downloadStatus:
@@ -28,7 +32,7 @@ enum SmartPlaylistRule: Int, CaseIterable, Identifiable {
         switch self {
         case .releaseDate, .downloadStatus, .mediaType, .starred:
             return true
-        case .podcast, .duration, .episode:
+        case .podcast, .folder, .manualPlaylist, .duration, .episode:
             return false
         }
     }
@@ -38,6 +42,10 @@ enum SmartPlaylistRule: Int, CaseIterable, Identifiable {
         switch self {
         case .podcast:
             value = L10n.podcastsPlural
+        case .folder:
+            value = L10n.smartRuleFolders
+        case .manualPlaylist:
+            value = L10n.smartRulePlaylists
         case .episode:
             value = L10n.filterEpisodeStatus
         case .downloadStatus:

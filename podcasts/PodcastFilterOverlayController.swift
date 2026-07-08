@@ -20,6 +20,7 @@ class PodcastFilterOverlayController: PodcastChooserViewController, PodcastSelec
     private var searchController: PCSearchBarController?
     private var cancellables = Set<AnyCancellable>()
     private var viewModel: SmartRuleToggleViewModel!
+    private var excludeViewModel: SmartRuleToggleViewModel!
     private var switchIsOn: Bool {
         viewModel.toggleIsOn
     }
@@ -88,6 +89,12 @@ class PodcastFilterOverlayController: PodcastChooserViewController, PodcastSelec
                 self?.selectAllSwitchValueChanged()
             }
             .store(in: &cancellables)
+        excludeViewModel = SmartRuleToggleViewModel(
+            toggleIsOn: filterToEdit.podcastsExcluded,
+            title: L10n.smartRuleExcludeTitle,
+            enabledString: L10n.smartRuleExcludeSubtitleOn,
+            disabledString: L10n.smartRuleExcludeSubtitleOff
+        )
         setupSaveButton()
 
         if filterToEdit.filterAllPodcasts {
@@ -182,9 +189,11 @@ class PodcastFilterOverlayController: PodcastChooserViewController, PodcastSelec
         if selectedUuids.count == podcasts.count || selectedUuids.isEmpty {
             filterToEdit.podcastUuids = ""
             filterToEdit.filterAllPodcasts = true
+            filterToEdit.podcastsExcluded = false
         } else {
             filterToEdit.podcastUuids = selectedUuids.joined(separator: ",")
             filterToEdit.filterAllPodcasts = false
+            filterToEdit.podcastsExcluded = excludeViewModel.toggleIsOn
         }
 
         filterToEdit.podcastSmartRuleApplied = true
@@ -260,7 +269,8 @@ class PodcastFilterOverlayController: PodcastChooserViewController, PodcastSelec
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         switch section {
         case 0:
-            return 1
+            // With a particular selection, a second row toggles include/exclude semantics
+            return switchIsOn ? 1 : 2
         default:
             return allPodcasts.isEmpty ? 1 : allPodcasts.count
         }
@@ -271,8 +281,9 @@ class PodcastFilterOverlayController: PodcastChooserViewController, PodcastSelec
             let cell = podcastTable.dequeueReusableCell(withIdentifier: podcastsSmartRuleHeaderCellId)!
             cell.backgroundColor = AppTheme.colorForStyle(.primaryUi01)
             cell.contentView.backgroundColor = AppTheme.colorForStyle(.primaryUi01)
+            let toggleModel: SmartRuleToggleViewModel = indexPath.row == 0 ? viewModel : excludeViewModel
             cell.contentConfiguration = UIHostingConfiguration {
-                SmartRuleToggleHeaderView(viewModel: viewModel)
+                SmartRuleToggleHeaderView(viewModel: toggleModel)
                     .environmentObject(Theme.sharedTheme)
                     .frame(maxWidth: .infinity, minHeight: 70.0, alignment: .leading)
             }

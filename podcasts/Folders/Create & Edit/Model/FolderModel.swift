@@ -90,6 +90,7 @@ class FolderModel: ObservableObject {
         guard let folderUuid else { return }
 
         DataManager.sharedManager.delete(folderUuid: folderUuid, markAsDeleted: SyncManager.isUserLoggedIn())
+        PlaylistManager.handleFolderDeleted(folderUuid: folderUuid)
         NotificationCenter.postOnMainThread(notification: Constants.Notifications.folderDeleted, object: folderUuid)
     }
 

@@ -57,6 +57,10 @@ class PlaylistPreviewViewModel: ObservableObject {
         switch rule {
         case .podcast:
             return newPlaylist.podcastSmartRuleApplied
+        case .folder:
+            return newPlaylist.folderSmartRuleApplied
+        case .manualPlaylist:
+            return newPlaylist.manualPlaylistSmartRuleApplied
         case .episode:
             return newPlaylist.episodesSmartRuleApplied
         case .downloadStatus:
@@ -75,7 +79,17 @@ class PlaylistPreviewViewModel: ObservableObject {
     func ruleText(for rule: SmartPlaylistRule) -> String? {
         switch rule {
         case .podcast:
-            return newPlaylist.filterAllPodcasts ? L10n.filterValueAll : "\(newPlaylist.podcastUuids.components(separatedBy: ",").count)"
+            guard !newPlaylist.filterAllPodcasts else { return L10n.filterValueAll }
+            let count = "\(newPlaylist.podcastUuids.components(separatedBy: ",").count)"
+            return newPlaylist.podcastsExcluded ? L10n.smartRuleCountExcluded(count) : L10n.smartRuleCountIncluded(count)
+        case .folder:
+            guard !newPlaylist.folderUuids.isEmpty else { return L10n.off }
+            let count = "\(newPlaylist.folderUuids.components(separatedBy: ",").count)"
+            return newPlaylist.foldersExcluded ? L10n.smartRuleCountExcluded(count) : L10n.smartRuleCountIncluded(count)
+        case .manualPlaylist:
+            guard !newPlaylist.manualPlaylistUuids.isEmpty else { return L10n.off }
+            let count = "\(newPlaylist.manualPlaylistUuids.components(separatedBy: ",").count)"
+            return newPlaylist.manualPlaylistsExcluded ? L10n.smartRuleCountExcluded(count) : L10n.smartRuleCountIncluded(count)
         case .episode:
             var episodeTypes: [String] = []
             if newPlaylist.filterUnplayed {
