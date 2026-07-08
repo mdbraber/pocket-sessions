@@ -33,6 +33,16 @@ public class EpisodeFilter: NSObject {
     @objc public var showArchivedEpisodes: Bool = false
     @objc public var playlistUpdateDate: Date?
 
+    // Fork-only smart rule fields: folder and manual-playlist sources with include/exclude
+    // semantics (podcastsExcluded applies to the stock podcastUuids rule). The official sync
+    // protocol doesn't know these — they're preserved across full sync via
+    // copyForkOnlyFields(from:), and never uploaded.
+    @objc public var folderUuids = ""
+    @objc public var manualPlaylistUuids = ""
+    @objc public var podcastsExcluded = false
+    @objc public var foldersExcluded = false
+    @objc public var manualPlaylistsExcluded = false
+
     // Internal tracking
     @GRDBIgnore
     public var isNew: Bool = false
@@ -46,6 +56,10 @@ public class EpisodeFilter: NSObject {
     public var mediaTypeSmartRuleApplied: Bool = false
     @GRDBIgnore
     public var downloadStatusSmartRuleApplied: Bool = false
+    @GRDBIgnore
+    public var folderSmartRuleApplied: Bool = false
+    @GRDBIgnore
+    public var manualPlaylistSmartRuleApplied: Bool = false
 
     override public init() {}
 
@@ -110,6 +124,16 @@ public class EpisodeFilter: NSObject {
         } else {
             podcastUuids = podcasts.joined(separator: ",")
         }
+    }
+
+    /// Copies the fork-only fields from another instance. Used by the full-sync path,
+    /// which rebuilds playlists from the server proto (which can't carry these fields).
+    public func copyForkOnlyFields(from other: EpisodeFilter) {
+        folderUuids = other.folderUuids
+        manualPlaylistUuids = other.manualPlaylistUuids
+        podcastsExcluded = other.podcastsExcluded
+        foldersExcluded = other.foldersExcluded
+        manualPlaylistsExcluded = other.manualPlaylistsExcluded
     }
 
     override public func isEqual(_ object: Any?) -> Bool {

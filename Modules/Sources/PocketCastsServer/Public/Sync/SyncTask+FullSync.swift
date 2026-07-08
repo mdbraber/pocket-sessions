@@ -10,6 +10,8 @@ extension SyncTask {
         playlists.forEach { playlist, serverEpisodes in
             // if we have this playlist locally, assume the server version is more up to date, so blow ours away
             if let localPlaylist = DataManager.sharedManager.findPlaylist(uuid: playlist.uuid) {
+                // fork-only rule fields aren't in the sync proto — carry them across the rebuild
+                playlist.copyForkOnlyFields(from: localPlaylist)
                 DataManager.sharedManager.delete(playlist: localPlaylist)
             }
 

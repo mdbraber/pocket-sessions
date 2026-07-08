@@ -30,7 +30,12 @@ class PlaylistDataManager {
         "shorterThan",
         "manual",
         "showArchivedEpisodes",
-        "playlistUpdateDate"
+        "playlistUpdateDate",
+        "folderUuids",
+        "manualPlaylistUuids",
+        "podcastsExcluded",
+        "foldersExcluded",
+        "manualPlaylistsExcluded"
     ]
 
     func count(includeDeleted: Bool, dbQueue: PCDBQueue) -> Int {
@@ -541,6 +546,11 @@ class PlaylistDataManager {
         playlist.manual = rs.bool(forColumn: "manual")
         playlist.showArchivedEpisodes = rs.bool(forColumn: "showArchivedEpisodes")
         playlist.playlistUpdateDate = DBUtils.convertDate(value: rs.double(forColumn: "playlistUpdateDate"))
+        playlist.folderUuids = DBUtils.nonNilStringFromColumn(resultSet: rs, columnName: "folderUuids")
+        playlist.manualPlaylistUuids = DBUtils.nonNilStringFromColumn(resultSet: rs, columnName: "manualPlaylistUuids")
+        playlist.podcastsExcluded = rs.bool(forColumn: "podcastsExcluded")
+        playlist.foldersExcluded = rs.bool(forColumn: "foldersExcluded")
+        playlist.manualPlaylistsExcluded = rs.bool(forColumn: "manualPlaylistsExcluded")
 
         return playlist
     }
@@ -573,6 +583,11 @@ class PlaylistDataManager {
         values.append(playlist.manual)
         values.append(playlist.showArchivedEpisodes)
         values.append(DBUtils.nullIfNil(value: updateDate ?? playlist.playlistUpdateDate))
+        values.append(playlist.folderUuids)
+        values.append(playlist.manualPlaylistUuids)
+        values.append(playlist.podcastsExcluded)
+        values.append(playlist.foldersExcluded)
+        values.append(playlist.manualPlaylistsExcluded)
 
         if includeUuidForWhere {
             values.append(playlist.uuid)

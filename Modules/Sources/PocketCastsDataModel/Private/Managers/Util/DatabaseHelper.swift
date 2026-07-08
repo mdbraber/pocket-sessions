@@ -17,6 +17,7 @@ class DatabaseHelper {
 
                 var newSchemaVersion = startingSchemaVersion
                 upgradeIfRequired(schemaVersion: &newSchemaVersion, db: db)
+                applyForkSchemaAdditions(db: db)
 
                 if newSchemaVersion != startingSchemaVersion {
                     FileLog.shared.addMessage("Schema update from \(startingSchemaVersion) to \(newSchemaVersion)")
@@ -28,6 +29,37 @@ class DatabaseHelper {
             }
         }
         return databaseWasCreated
+    }
+
+    /// Fork-local schema additions, kept OUTSIDE the upstream schema-version chain so
+    /// upstream migrations rebase cleanly: idempotent column-existence checks instead of
+    /// version numbers. These columns never sync (the server's protocol doesn't know them).
+    private class func applyForkSchemaAdditions(db: PCDatabase) {
+        let forkColumns: [(name: String, definition: String)] = [
+            ("folderUuids", "TEXT NOT NULL DEFAULT ''"),
+            ("manualPlaylistUuids", "TEXT NOT NULL DEFAULT ''"),
+            ("podcastsExcluded", "BOOLEAN DEFAULT FALSE"),
+            ("foldersExcluded", "BOOLEAN DEFAULT FALSE"),
+            ("manualPlaylistsExcluded", "BOOLEAN DEFAULT FALSE")
+        ]
+
+        do {
+            var existingColumns = Set<String>()
+            let resultSet = try db.executeQuery("PRAGMA table_info(SJFilteredPlaylist)", values: nil)
+            while resultSet.next() {
+                if let name = resultSet.string(forColumn: "name") {
+                    existingColumns.insert(name)
+                }
+            }
+            resultSet.close()
+
+            for column in forkColumns where !existingColumns.contains(column.name) {
+                try db.executeUpdate("ALTER TABLE SJFilteredPlaylist ADD COLUMN \(column.name) \(column.definition);", values: nil)
+                FileLog.shared.addMessage("Fork schema: added SJFilteredPlaylist.\(column.name)")
+            }
+        } catch {
+            FileLog.shared.addMessage("Fork schema additions failed \(db.lastErrorCode()): \(db.lastErrorMessage())")
+        }
     }
 
     private class func upgradeIfRequired(schemaVersion: inout Int32, db: PCDatabase) {
