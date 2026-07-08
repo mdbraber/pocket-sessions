@@ -91,7 +91,12 @@ struct SmartRuleSourcePickerView: View {
                             }
                         } label: {
                             HStack(spacing: 12) {
-                                // The same checkbox the podcast rule picker's cells use
+                                Text(item.name)
+                                    .font(.callout.weight(.medium))
+                                    .foregroundColor(AppTheme.color(for: .primaryText01, theme: theme))
+                                Spacer()
+
+                                // The same trailing checkbox the podcast rule picker's cells use
                                 ZStack {
                                     Image(selectedUuids.contains(item.uuid) ? "checkbox-selected" : "checkbox-unselected")
                                         .renderingMode(.template)
@@ -103,11 +108,6 @@ struct SmartRuleSourcePickerView: View {
                                     }
                                 }
                                 .frame(width: 24, height: 24)
-
-                                Text(item.name)
-                                    .font(.callout.weight(.medium))
-                                    .foregroundColor(AppTheme.color(for: .primaryText01, theme: theme))
-                                Spacer()
                             }
                         }
                         .listRowBackground(AppTheme.color(for: .primaryUi01, theme: theme))
