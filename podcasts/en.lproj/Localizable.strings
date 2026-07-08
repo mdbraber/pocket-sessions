@@ -5060,6 +5060,9 @@
 /* Up Next header label when a playback filter is active. %1$@ is the number of episodes matching the filter, %2$@ the total number of queued episodes, %3$@ the time remaining for matching episodes (e.g. '2h 10m') */
 "up_next_filter_header" = "Playing %1$@ of %2$@ · %3$@ left";
 
+/* Accessibility label of the cross button in the Up Next header that removes the active playback filter */
+"up_next_filter_clear" = "Clear Filter";
+
 /* Option in the Up Next playback filter picker that hides the episodes the filter will skip (compact view) */
 "up_next_filter_hide_skipped" = "Hide Skipped Episodes";
 
