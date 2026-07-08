@@ -10,7 +10,7 @@ extension UpNextViewController: SwipeTableViewCellDelegate {
 
     func tableView(_ tableView: UITableView, editActionsForRowAt indexPath: IndexPath, for orientation: SwipeActionsOrientation) -> [SwipeAction]? {
         // Session rows aren't queue rows — no move/remove swipe actions apply to them.
-        if sessionEpisodes != nil { return nil }
+        if showingSessionList { return nil }
 
         switch orientation {
         case .left:

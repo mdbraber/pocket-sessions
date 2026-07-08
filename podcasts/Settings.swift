@@ -1974,10 +1974,15 @@ struct PlaybackSession: Equatable {
         }
     }
 
+    /// The session's full episode list in display order (empty without an injected source).
+    func orderedEpisodes() -> [BaseEpisode] {
+        Self.episodeSource?.orderedEpisodes(for: self) ?? []
+    }
+
     /// The unfinished episodes remaining after the given one in the session's order; from
     /// the start of the list when nil (or an episode not in the list) is passed.
     func remainingEpisodes(after episodeUuid: String?) -> [BaseEpisode] {
-        let episodes = Self.episodeSource?.orderedEpisodes(for: self) ?? []
+        let episodes = orderedEpisodes()
         let startIndex = episodeUuid.flatMap { uuid in episodes.firstIndex(where: { $0.uuid == uuid }).map { $0 + 1 } } ?? 0
         guard startIndex <= episodes.count else { return [] }
         return episodes[startIndex...].filter { !$0.played() }

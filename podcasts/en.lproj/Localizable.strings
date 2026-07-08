@@ -5102,11 +5102,14 @@
 /* Type tag for a manual playlist in the playback session picker */
 "playback_session_type_playlist" = "Playlist";
 
-/* Title of the row standing in for the Up Next queue while a playback session is active. %1$@ is the number of queued episodes */
-"playback_session_queue_collapsed_title" = "Your Up Next queue (%1$@)";
+/* Label of the pill that shows the session's episodes while a playback session is active (used when the session has no title) */
+"playback_session_tab_session" = "Session";
 
-/* Subtitle of the row standing in for the Up Next queue while a playback session is active */
-"playback_session_queue_collapsed_subtitle" = "Untouched — resumes when the session ends";
+/* Label of the pill that shows the untouched Up Next queue while a playback session is active. %1$@ is the number of queued episodes */
+"playback_session_tab_up_next" = "Up Next (%1$@)";
+
+/* Title of the sort picker shown when sorting a smart playlist during a playback session */
+"playback_session_sort_title" = "Sort Playlist";
 
 /* Title shown at the top of the Up Next sort options picker */
 "up_next_sort_title" = "Sort Up Next";
