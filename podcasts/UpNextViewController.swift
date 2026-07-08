@@ -64,6 +64,11 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
     let sessionHeaderLabel = ThemeableLabel()
     let sessionSortButton = HitTargetButton(frame: CGRect(x: 0, y: 0, width: 24, height: 24))
     let endSessionButton = HitTargetButton(frame: CGRect(x: 0, y: 0, width: 20, height: 20))
+    let sessionChevronButton = HitTargetButton(frame: CGRect(x: 0, y: 0, width: 20, height: 20))
+
+    /// Whether a paused session's episode list is expanded. Active sessions always show
+    /// their episodes; paused sessions collapse to just the header bar.
+    var pausedSessionExpanded = false
     private var filterTrailingToHideSkipped: NSLayoutConstraint?
     private var filterTrailingToShuffle: NSLayoutConstraint?
 
@@ -81,10 +86,16 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
         endSessionButton.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(sessionSortButton)
         sessionSortButton.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(sessionChevronButton)
+        sessionChevronButton.translatesAutoresizingMaskIntoConstraints = false
 
         NSLayoutConstraint.activate([
             sessionHeaderLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             sessionHeaderLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            sessionChevronButton.leadingAnchor.constraint(equalTo: sessionHeaderLabel.trailingAnchor, constant: 6),
+            sessionChevronButton.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            sessionChevronButton.widthAnchor.constraint(equalToConstant: 20),
+            sessionChevronButton.heightAnchor.constraint(equalToConstant: 20),
             endSessionButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             endSessionButton.centerYAnchor.constraint(equalTo: view.centerYAnchor),
             endSessionButton.widthAnchor.constraint(equalToConstant: 20),
@@ -93,16 +104,20 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
             sessionSortButton.centerYAnchor.constraint(equalTo: view.centerYAnchor),
             sessionSortButton.widthAnchor.constraint(equalToConstant: 24),
             sessionSortButton.heightAnchor.constraint(equalToConstant: 24),
-            sessionHeaderLabel.trailingAnchor.constraint(lessThanOrEqualTo: sessionSortButton.leadingAnchor, constant: -10)
+            sessionChevronButton.trailingAnchor.constraint(lessThanOrEqualTo: sessionSortButton.leadingAnchor, constant: -10)
         ])
+
+        sessionHeaderLabel.isUserInteractionEnabled = true
+        sessionHeaderLabel.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(sessionHeaderTapped)))
         return view
     }()
 
     func updateSessionHeader() {
         guard let session = Settings.playbackSession() else { return }
-        let remaining = session.remainingCount(excluding: PlaybackManager.shared.currentEpisode()?.uuid)
+        let paused = Settings.playbackSessionPaused()
+        let remaining = session.remainingCount(excluding: paused ? nil : PlaybackManager.shared.currentEpisode()?.uuid)
         sessionHeaderLabel.text = L10n.playbackSessionHeader(session.title ?? L10n.playbackSessionTabSession, remaining.localized())
-        sessionSortButton.isHidden = session.type != .smartPlaylist
+        sessionSortButton.isHidden = session.type != .smartPlaylist || (paused && !pausedSessionExpanded)
         let sortImage = UIImage(named: "podcast-sort")?
             .withTintColor(AppTheme.colorForStyle(.primaryIcon02, themeOverride: themeOverride), renderingMode: .alwaysOriginal)
         sessionSortButton.setImage(sortImage, for: .normal)
@@ -111,6 +126,18 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
             .withTintColor(AppTheme.colorForStyle(.primaryIcon02, themeOverride: themeOverride), renderingMode: .alwaysOriginal)
         endSessionButton.setImage(endImage, for: .normal)
         endSessionButton.accessibilityLabel = L10n.playbackSessionEnd
+
+        // Paused sessions collapse to this bar; the chevron expands/collapses the list.
+        sessionChevronButton.isHidden = !paused
+        let chevronImage = UIImage(systemName: pausedSessionExpanded ? "chevron.up" : "chevron.down", withConfiguration: UIImage.SymbolConfiguration(pointSize: 11, weight: .bold))?
+            .withTintColor(AppTheme.colorForStyle(.primaryIcon01, themeOverride: themeOverride), renderingMode: .alwaysOriginal)
+        sessionChevronButton.setImage(chevronImage, for: .normal)
+    }
+
+    @objc private func sessionHeaderTapped() {
+        guard FeatureFlag.playbackSessions.enabled, Settings.playbackSession() != nil, Settings.playbackSessionPaused() else { return }
+        pausedSessionExpanded.toggle()
+        reloadTable()
     }
 
     /// Uuids of queued episodes matching the active Up Next filter, or nil when no filter is set.
@@ -509,6 +536,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
         if FeatureFlag.playbackSessions.enabled {
             endSessionButton.addTarget(self, action: #selector(endSessionTapped), for: .touchUpInside)
             sessionSortButton.addTarget(self, action: #selector(sessionSortTapped), for: .touchUpInside)
+            sessionChevronButton.addTarget(self, action: #selector(sessionHeaderTapped), for: .touchUpInside)
         }
     }
 
@@ -628,6 +656,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
     }
 
     @objc private func upNextFilterDidChange() {
+        pausedSessionExpanded = false
         updateFilterButtonImage()
         updateFilterHeaderButtons()
         reloadTable()
@@ -638,7 +667,9 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
     /// active session's remaining episodes.
     func refreshUpNextFilterMatches() {
         if FeatureFlag.playbackSessions.enabled, let session = Settings.playbackSession() {
-            sessionEpisodes = session.remainingEpisodes(excluding: PlaybackManager.shared.currentEpisode()?.uuid)
+            // While paused the queue is playing, so no session episode is excluded as "current"
+            let excludedUuid = Settings.playbackSessionPaused() ? nil : PlaybackManager.shared.currentEpisode()?.uuid
+            sessionEpisodes = session.remainingEpisodes(excluding: excludedUuid)
         } else {
             sessionEpisodes = nil
         }

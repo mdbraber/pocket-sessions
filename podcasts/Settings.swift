@@ -427,7 +427,22 @@ class Settings: NSObject {
             UserDefaults.standard.removeObject(forKey: Settings.playbackSessionTypeKey)
             UserDefaults.standard.removeObject(forKey: Settings.playbackSessionUuidKey)
         }
+        UserDefaults.standard.removeObject(forKey: Settings.playbackSessionPausedKey)
 
+        NotificationCenter.postOnMainThread(notification: Constants.Notifications.playbackSessionChanged)
+    }
+
+    static let playbackSessionPausedKey = "SJPlaybackSessionPaused"
+
+    /// Whether the saved session is paused: it stays collapsed in Up Next while the queue
+    /// plays normally, and playing one of its episodes resumes it.
+    class func playbackSessionPaused() -> Bool {
+        FeatureFlag.playbackSessions.enabled && UserDefaults.standard.bool(forKey: Settings.playbackSessionPausedKey)
+    }
+
+    class func setPlaybackSessionPaused(_ paused: Bool) {
+        guard FeatureFlag.playbackSessions.enabled else { return }
+        UserDefaults.standard.set(paused, forKey: Settings.playbackSessionPausedKey)
         NotificationCenter.postOnMainThread(notification: Constants.Notifications.playbackSessionChanged)
     }
 

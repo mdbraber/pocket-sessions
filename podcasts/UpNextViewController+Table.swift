@@ -16,6 +16,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         case .nowPlayingSection:
             return 1
         case .sessionSection:
+            if Settings.playbackSessionPaused(), !pausedSessionExpanded { return 0 }
             return sessionEpisodes?.count ?? 0
         case .upNextSection:
             if PlaybackManager.shared.queue.upNextCount() == 0 { return 1 } // empty state cell
@@ -27,14 +28,15 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
     // MARK: - Section Headers
 
     func tableView(_ tableView: UITableView, viewForHeaderInSection section: Int) -> UIView? {
-        // During a session its header sits above the Now Playing card — the playing episode
-        // belongs to the session. The session's remaining rows follow the card, headerless.
-        if tableData[section] == .nowPlayingSection, sessionEpisodes != nil {
+        // An active session's header sits above the Now Playing card — the playing episode
+        // belongs to the session, and its remaining rows follow the card headerless. A
+        // paused session keeps its (collapsible) header bar on its own section instead.
+        if tableData[section] == .nowPlayingSection, sessionEpisodes != nil, !Settings.playbackSessionPaused() {
             updateSessionHeader()
             return sessionHeaderView
         }
         if tableData[section] == .sessionSection {
-            if PlaybackManager.shared.currentEpisode() == nil {
+            if Settings.playbackSessionPaused() || PlaybackManager.shared.currentEpisode() == nil {
                 updateSessionHeader()
                 return sessionHeaderView
             }
@@ -65,11 +67,13 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         let metrics = UIFontMetrics(forTextStyle: .footnote)
         switch section {
         case .nowPlayingSection:
-            return sessionEpisodes != nil ? metrics.scaledValue(for: 40) : 16
+            let sessionAboveCard = sessionEpisodes != nil && !Settings.playbackSessionPaused()
+            return sessionAboveCard ? metrics.scaledValue(for: 40) : 16
         case .sessionSection:
-            // The session header lives above the Now Playing card; this is just a spacer
-            // (unless nothing is playing, in which case the header falls back here).
-            return PlaybackManager.shared.currentEpisode() == nil ? metrics.scaledValue(for: 40) : 8
+            // Active session: the header lives above the Now Playing card, this is a spacer.
+            // Paused session (or nothing playing): the header bar renders here.
+            let headerHere = Settings.playbackSessionPaused() || PlaybackManager.shared.currentEpisode() == nil
+            return headerHere ? metrics.scaledValue(for: 40) : 8
         case .upNextSection:
             let filterRowVisible = FeatureFlag.upNextFilter.enabled && Settings.upNextFilter() != nil && PlaybackManager.shared.queue.upNextCount() > 0
             return metrics.scaledValue(for: 48) + (filterRowVisible ? 26 : 0)

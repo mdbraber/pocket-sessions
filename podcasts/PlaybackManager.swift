@@ -171,10 +171,12 @@ class PlaybackManager: ServerPlaybackDelegate {
 
         let episodeIsChanging = episode.uuid != currentEpisode()?.uuid
 
-        // explicitly playing something else ends the active session — steering away
-        if FeatureFlag.playbackSessions.enabled, episodeIsChanging, !isLoadingSessionEpisode, Settings.playbackSession() != nil {
-            FileLog.shared.addMessage("Playback session ended: a different episode was played explicitly")
-            Settings.setPlaybackSession(nil)
+        // explicitly playing something else pauses the session — it stays saved and
+        // collapsed in Up Next, and playing one of its episodes resumes it
+        if FeatureFlag.playbackSessions.enabled, episodeIsChanging, !isLoadingSessionEpisode,
+           Settings.playbackSession() != nil, !Settings.playbackSessionPaused() {
+            FileLog.shared.addMessage("Playback session paused: a different episode was played explicitly")
+            Settings.setPlaybackSessionPaused(true)
         }
 
         // if the user has built an Up Next list, preserve that but make this the currently playing episode
@@ -667,20 +669,26 @@ class PlaybackManager: ServerPlaybackDelegate {
         }
     }
 
-    /// Plays a specific episode from the active session without ending it. Unlike a normal
-    /// "play now", nothing is pushed into Up Next — the queue stays untouched.
+    /// Plays a specific episode from the session without ending it, resuming the session
+    /// when it was paused. Resuming interrupts queue playback, so that episode returns to
+    /// the top of Up Next; jumping within an active session just swaps session episodes
+    /// and the queue stays untouched.
     func play(sessionEpisode episode: BaseEpisode) {
         guard FeatureFlag.playbackSessions.enabled, Settings.playbackSession() != nil else { return }
+        let resumingFromQueue = Settings.playbackSessionPaused()
+        if resumingFromQueue {
+            Settings.setPlaybackSessionPaused(false)
+        }
         isLoadingSessionEpisode = true
         defer { isLoadingSessionEpisode = false }
-        switchTo(episodeToPlay: episode, moveExistingToUpNext: false, autoPlay: true)
+        switchTo(episodeToPlay: episode, moveExistingToUpNext: resumingFromQueue, autoPlay: true)
     }
 
     /// Advances within the active session instead of the queue. Returns false when there's
     /// no active session, or the session just ran dry (it's then ended, and the caller
     /// falls through to normal queue handling — which is the "return to your queue" step).
     private func advanceSessionIfNeeded(autoPlay: Bool) -> Bool {
-        guard FeatureFlag.playbackSessions.enabled, let session = Settings.playbackSession() else { return false }
+        guard FeatureFlag.playbackSessions.enabled, let session = Settings.playbackSession(), !Settings.playbackSessionPaused() else { return false }
 
         guard let next = session.nextEpisode(after: currentEpisode()?.uuid) else {
             FileLog.shared.addMessage("Playback session finished — returning to the Up Next queue")
