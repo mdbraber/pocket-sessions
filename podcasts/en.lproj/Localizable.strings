@@ -5084,10 +5084,7 @@
 /* Type tag shown next to a smart playlist in the Up Next playback filter picker */
 "up_next_filter_type_smart_playlist" = "Smart Playlist";
 
-/* Indicator line in the Up Next header while a playback session is active. %1$@ is the session's name, %2$@ its type ('Podcast', 'Playlist' or 'Smart Playlist') */
-"playback_session_indicator" = "Playing from: %1$@ (%2$@)";
-
-/* Up Next header label while a playback session is active. %1$@ is the session's name, %2$@ the number of episodes remaining */
+/* Header label of the session section in Up Next. %1$@ is the session's name, %2$@ the number of episodes remaining */
 "playback_session_header" = "Playing from %1$@ · %2$@ to go";
 
 /* Title of the picker that starts a playback session */
@@ -5102,11 +5099,8 @@
 /* Type tag for a manual playlist in the playback session picker */
 "playback_session_type_playlist" = "Playlist";
 
-/* Label of the pill that shows the session's episodes while a playback session is active (used when the session has no title) */
+/* Fallback name for a playback session whose playlist title can't be resolved */
 "playback_session_tab_session" = "Session";
-
-/* Label of the pill that shows the untouched Up Next queue while a playback session is active. %1$@ is the number of queued episodes */
-"playback_session_tab_up_next" = "Up Next (%1$@)";
 
 /* Title of the sort picker shown when sorting a smart playlist during a playback session */
 "playback_session_sort_title" = "Sort Playlist";

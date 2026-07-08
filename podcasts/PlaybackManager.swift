@@ -654,9 +654,17 @@ class PlaybackManager: ServerPlaybackDelegate {
 
         FileLog.shared.addMessage("Starting playback session from \(session.type.rawValue) \(session.uuid)")
         Settings.setPlaybackSession(session)
+        let interruptedEpisode = currentEpisode()
         isLoadingSessionEpisode = true
         defer { isLoadingSessionEpisode = false }
         load(episode: first, autoPlay: true, overrideUpNext: false)
+
+        // With an empty queue, load() replaces the whole Up Next table with the new episode,
+        // which would silently drop what was playing — put it back at the top of the queue.
+        if let interruptedEpisode, interruptedEpisode.uuid != first.uuid, !queue.contains(episode: interruptedEpisode) {
+            FileLog.shared.addMessage("Playback session: returning interrupted episode \(interruptedEpisode.displayableTitle()) to Up Next")
+            queue.add(episode: interruptedEpisode, fireNotification: true, partOfBulkAdd: false, toTop: true)
+        }
     }
 
     /// Plays a specific episode from the active session without ending it. Unlike a normal
