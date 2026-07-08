@@ -27,9 +27,18 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
     // MARK: - Section Headers
 
     func tableView(_ tableView: UITableView, viewForHeaderInSection section: Int) -> UIView? {
-        if tableData[section] == .sessionSection {
+        // During a session its header sits above the Now Playing card — the playing episode
+        // belongs to the session. The session's remaining rows follow the card, headerless.
+        if tableData[section] == .nowPlayingSection, sessionEpisodes != nil {
             updateSessionHeader()
             return sessionHeaderView
+        }
+        if tableData[section] == .sessionSection {
+            if PlaybackManager.shared.currentEpisode() == nil {
+                updateSessionHeader()
+                return sessionHeaderView
+            }
+            return nil
         }
         guard tableData[section] == .upNextSection, tableData.count > 1 else { return nil }
         let headerView = self.headerView
@@ -53,14 +62,15 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
 
     func tableView(_ tableView: UITableView, heightForHeaderInSection section: Int) -> CGFloat {
         let section = tableData[section]
+        let metrics = UIFontMetrics(forTextStyle: .footnote)
         switch section {
         case .nowPlayingSection:
-            return 16
+            return sessionEpisodes != nil ? metrics.scaledValue(for: 40) : 16
         case .sessionSection:
-            let metrics = UIFontMetrics(forTextStyle: .footnote)
-            return metrics.scaledValue(for: 36)
+            // The session header lives above the Now Playing card; this is just a spacer
+            // (unless nothing is playing, in which case the header falls back here).
+            return PlaybackManager.shared.currentEpisode() == nil ? metrics.scaledValue(for: 40) : 8
         case .upNextSection:
-            let metrics = UIFontMetrics(forTextStyle: .footnote)
             let filterRowVisible = FeatureFlag.upNextFilter.enabled && Settings.upNextFilter() != nil && PlaybackManager.shared.queue.upNextCount() > 0
             return metrics.scaledValue(for: 48) + (filterRowVisible ? 26 : 0)
         }

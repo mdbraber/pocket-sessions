@@ -810,7 +810,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
                 totalDuration += episode.duration.seconds - PlaybackManager.shared.currentTime()
             }
             let time = TimeFormatter.shared.multipleUnitFormattedShortTime(time: totalDuration)
-            remainingLabel.text = L10n.upNextFilterHeader(matchingEpisodes.count.localized(), episodes.count.localized(), time)
+            remainingLabel.text = L10n.upNextHeaderPrefix(L10n.upNextFilterHeader(matchingEpisodes.count.localized(), episodes.count.localized(), time))
             return
         }
 
@@ -820,13 +820,15 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
         }
         let time = TimeFormatter.shared.multipleUnitFormattedShortTime(time: totalDuration)
         let count = PlaybackManager.shared.queue.upNextCount()
+        let stockText: String
         if count == 0 {
-            remainingLabel.text = L10n.queueUpNextHeaderTimeLeft(time)
+            stockText = L10n.queueUpNextHeaderTimeLeft(time)
         } else if count == 1 {
-            remainingLabel.text = L10n.queueUpNextHeaderOneEpisode(time)
+            stockText = L10n.queueUpNextHeaderOneEpisode(time)
         } else {
-            remainingLabel.text = L10n.queueUpNextHeaderPlural(count.localized(), time)
+            stockText = L10n.queueUpNextHeaderPlural(count.localized(), time)
         }
+        remainingLabel.text = FeatureFlag.upNextFilter.enabled ? L10n.upNextHeaderPrefix(stockText) : stockText
     }
 
     // MARK: - UIGestureRecongizerDelegate
