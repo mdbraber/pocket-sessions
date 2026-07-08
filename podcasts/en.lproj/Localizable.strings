@@ -5085,10 +5085,10 @@
 "up_next_filter_type_smart_playlist" = "Smart Playlist";
 
 /* Header label of the session section in Up Next. %1$@ is the session's name, %2$@ the number of episodes remaining */
-"playback_session_header" = "Session from %1$@ · %2$@ to go";
+"playback_session_header" = "Session: %1$@ · %2$@ to go";
 
 /* Header label of a collapsed session in Up Next. %1$@ is the session's name, %2$@ the number of episodes remaining, %3$@ the time remaining (e.g. '3h 12m') */
-"playback_session_header_collapsed" = "Session from %1$@ · %2$@ episodes · %3$@ left";
+"playback_session_header_collapsed" = "Session: %1$@ · %2$@ episodes · %3$@ left";
 
 /* Prefix wrapped around the Up Next queue header label to name the section while a session or filter shares the screen. %1$@ is the stock header text (e.g. '5 episodes · 5h 5m left') */
 "up_next_header_prefix" = "Up Next: %1$@";
