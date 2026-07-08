@@ -5051,6 +5051,21 @@
 /* Toast message displayed when the user enables the Up Next Shuffle option */
 "up_next_shuffle_toast_message" = "Shuffle is on. Episodes will play in random order.";
 
+/* Title shown at the top of the Up Next playback filter picker. Also the accessibility label of the filter button in the Up Next header */
+"up_next_filter_title" = "Play Only From";
+
+/* Option in the Up Next playback filter picker that clears the filter so the whole queue plays */
+"up_next_filter_everything" = "Everything in Up Next";
+
+/* Up Next header label when a playback filter is active. %1$@ is the number of episodes matching the filter, %2$@ the total number of queued episodes, %3$@ the time remaining for matching episodes (e.g. '2h 10m') */
+"up_next_filter_header" = "Playing %1$@ of %2$@ · %3$@ left";
+
+/* Type tag shown next to a folder in the Up Next playback filter picker */
+"up_next_filter_type_folder" = "Folder";
+
+/* Type tag shown next to a smart playlist in the Up Next playback filter picker */
+"up_next_filter_type_smart_playlist" = "Smart Playlist";
+
 /* Title shown at the top of the Up Next sort options picker */
 "up_next_sort_title" = "Sort Up Next";
 

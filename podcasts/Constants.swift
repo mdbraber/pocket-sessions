@@ -12,6 +12,7 @@ struct Constants {
         static let upNextEpisodeRemoved = NSNotification.Name(rawValue: "SJUpNextEpisodeRemoved")
         static let upNextQueueChanged = NSNotification.Name(rawValue: "SJUpNextChanged")
         static let upNextShuffleToggle = NSNotification.Name(rawValue: "SJUpNextShuffleToggle")
+        static let upNextFilterChanged = NSNotification.Name(rawValue: "SJUpNextFilterChanged")
         static let playbackStarted = NSNotification.Name(rawValue: "SJPlaybackStart")
         static let playbackStarting = NSNotification.Name(rawValue: "SJPlaybackStarting")
         static let playbackPaused = NSNotification.Name(rawValue: "SJPlaybackPaused")

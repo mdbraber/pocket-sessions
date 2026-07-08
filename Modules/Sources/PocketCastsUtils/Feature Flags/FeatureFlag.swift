@@ -95,6 +95,9 @@ public enum FeatureFlag: String, CaseIterable {
     /// Enable the Up Next shuffle button
     case upNextShuffle
 
+    /// Filter Up Next playback to a folder or smart playlist (personal fork feature)
+    case upNextFilter
+
     /// Push two auto downloads on subscribe of a podcast
     case autoDownloadOnSubscribe
 
@@ -390,6 +393,8 @@ public enum FeatureFlag: String, CaseIterable {
         case .endOfYear2024:
             false
         case .upNextShuffle:
+            true
+        case .upNextFilter:
             true
         case .autoDownloadOnSubscribe:
             true

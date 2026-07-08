@@ -356,6 +356,37 @@ class Settings: NSObject {
         return UserDefaults.standard.bool(forKey: Settings.upNextShuffleKey)
     }
 
+    static let upNextFilterTypeKey = "SJUpNextFilterType"
+    static let upNextFilterUuidKey = "SJUpNextFilterUuid"
+
+    /// The active Up Next play filter, or nil when the whole queue plays.
+    /// Deliberately device-local (never synced), so this fork feature can't affect other clients.
+    class func upNextFilter() -> UpNextFilter? {
+        guard FeatureFlag.upNextFilter.enabled,
+              let typeValue = UserDefaults.standard.string(forKey: Settings.upNextFilterTypeKey),
+              let type = UpNextFilterType(rawValue: typeValue),
+              let uuid = UserDefaults.standard.string(forKey: Settings.upNextFilterUuidKey)
+        else {
+            return nil
+        }
+
+        return UpNextFilter(type: type, uuid: uuid)
+    }
+
+    class func setUpNextFilter(_ filter: UpNextFilter?) {
+        guard FeatureFlag.upNextFilter.enabled else { return }
+
+        if let filter {
+            UserDefaults.standard.set(filter.type.rawValue, forKey: Settings.upNextFilterTypeKey)
+            UserDefaults.standard.set(filter.uuid, forKey: Settings.upNextFilterUuidKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: Settings.upNextFilterTypeKey)
+            UserDefaults.standard.removeObject(forKey: Settings.upNextFilterUuidKey)
+        }
+
+        NotificationCenter.postOnMainThread(notification: Constants.Notifications.upNextFilterChanged)
+    }
+
     // MARK: - Discover Region
 
     private static let chartRegion = "SJChartRegion"
@@ -1818,5 +1849,50 @@ extension UserDefaults {
         return savedInts
             .compactMap { PlayerAction(int: $0) }
             .filter { $0.isAvailable }
+    }
+}
+
+// MARK: - Up Next Filter
+
+enum UpNextFilterType: String {
+    case folder
+    case smartPlaylist
+}
+
+/// The Up Next play filter: when set, automatic playback advance only picks queue episodes
+/// that belong to this folder or smart playlist. The queue itself is never trimmed or
+/// reordered by the filter — skipped episodes keep their place and relative order.
+struct UpNextFilter: Equatable {
+    let type: UpNextFilterType
+    let uuid: String
+
+    var title: String? {
+        switch type {
+        case .folder:
+            return DataManager.sharedManager.findFolder(uuid: uuid)?.name
+        case .smartPlaylist:
+            return DataManager.sharedManager.findPlaylist(uuid: uuid)?.playlistName
+        }
+    }
+
+    /// Which of the given episodes the filter currently matches, by uuid.
+    /// Folder membership resolves through the in-memory podcast cache; smart playlists
+    /// run the playlist query once and intersect by episode uuid.
+    func matchingEpisodeUuids(in episodes: [BaseEpisode]) -> Set<String> {
+        switch type {
+        case .folder:
+            let podcastsInFolder = Set(DataManager.sharedManager.allPodcasts(includeUnsubscribed: false)
+                .filter { $0.folderUuid == uuid }
+                .map(\.uuid))
+            return Set(episodes.compactMap { episode -> String? in
+                guard let episode = episode as? Episode, podcastsInFolder.contains(episode.podcastUuid) else { return nil }
+                return episode.uuid
+            })
+        case .smartPlaylist:
+            guard let playlist = DataManager.sharedManager.findPlaylist(uuid: uuid), !playlist.manual else { return [] }
+            let query = PlaylistQueryBuilder.query(clause: .episode, for: playlist, episodeUuidToAdd: nil, limit: 0, shouldShowArchived: playlist.showArchivedEpisodes)
+            let playlistUuids = Set(DataManager.sharedManager.findPlaylistEpisodesWhere(query: query, arguments: nil).map(\.uuid))
+            return Set(episodes.map(\.uuid)).intersection(playlistUuids)
+        }
     }
 }

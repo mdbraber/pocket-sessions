@@ -639,7 +639,17 @@ class PlaybackManager: ServerPlaybackDelegate {
         if queueCount == 0 { return }
 
         var index = 0
-        if FeatureFlag.upNextShuffle.enabled, queueCount > 1, Settings.upNextShuffleEnabled() {
+        if FeatureFlag.upNextFilter.enabled, let filter = Settings.upNextFilter() {
+            let upcomingEpisodes = (0 ..< queueCount).compactMap { queue.episodeAt(index: $0) }
+            let matchingUuids = filter.matchingEpisodeUuids(in: upcomingEpisodes)
+            guard let matchingIndex = upcomingEpisodes.firstIndex(where: { matchingUuids.contains($0.uuid) }) else {
+                FileLog.shared.addMessage("Play Next Episode: no queued episodes match the Up Next filter, stopping playback")
+                stopPlaybackKeepingQueue()
+                return
+            }
+            index = matchingIndex
+            FileLog.shared.addMessage("Play Next Episode with Up Next filter: playing episode \(index) out of \(queueCount)")
+        } else if FeatureFlag.upNextShuffle.enabled, queueCount > 1, Settings.upNextShuffleEnabled() {
             index = Int.random(in: 0..<queueCount)
             FileLog.shared.addMessage("Play Next Episode with Shuffle enabled: playing episode \(index) out of \(queueCount)")
         }
@@ -648,7 +658,7 @@ class PlaybackManager: ServerPlaybackDelegate {
 
         FileLog.shared.addMessage("Play Next Episode \(nextEpisode.displayableTitle())")
 
-        if FeatureFlag.upNextShuffle.enabled, queueCount > 1, index > 0 {
+        if index > 0 {
             queue.move(episode: nextEpisode, to: 0)
         }
 
@@ -777,6 +787,25 @@ class PlaybackManager: ServerPlaybackDelegate {
         setAudioSessionVideoProperties()
 
         return nil
+    }
+
+    /// Ends playback the way the natural end-of-queue path does, but without touching the
+    /// rest of the queue — used when an Up Next filter is active and nothing in the queue
+    /// matches. `endPlayback` is unsuitable here because it removes all queued episodes.
+    private func stopPlaybackKeepingQueue() {
+        if let episode = currentEpisode() {
+            queue.remove(episode: episode, fireNotification: false)
+        }
+        NotificationCenter.postOnMainThread(notification: Constants.Notifications.playbackEnded)
+        cleanupCurrentPlayer(permanent: true)
+
+        #if os(watchOS)
+            WatchNowPlayingHelper.clearNowPlayingInfo()
+        #else
+            NowPlayingHelper.clearNowPlayingInfo()
+        #endif
+
+        cancelSleepTimer()
     }
 
     func endPlayback(saveCurrentEpisode: Bool = true) {

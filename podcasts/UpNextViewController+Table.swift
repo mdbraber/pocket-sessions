@@ -40,6 +40,9 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         if FeatureFlag.upNextSort.enabled {
             sortButton.isHidden = PlaybackManager.shared.queue.upNextCount() == 0
         }
+        if FeatureFlag.upNextFilter.enabled {
+            filterButton.isHidden = PlaybackManager.shared.queue.upNextCount() == 0
+        }
         return headerView
     }
 
@@ -89,6 +92,13 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         if let episode = PlaybackManager.shared.queue.episodeAt(index: indexPath.row) {
             playerCell.populateFrom(episode: episode)
             playerCell.showTick = selectedEpisodesContains(uuid: episode.uuid)
+            // With an Up Next filter active, dim episodes playback will skip. They stay fully
+            // interactive: reorder, swipe, and tap-to-play are unaffected by the filter.
+            if let matchingUuids = upNextFilterMatchingUuids {
+                playerCell.contentView.alpha = matchingUuids.contains(episode.uuid) ? 1 : 0.35
+            } else {
+                playerCell.contentView.alpha = 1
+            }
         }
         return playerCell
     }
@@ -266,6 +276,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
     }
 
     @objc func reloadTable() {
+        refreshUpNextFilterMatches()
         refreshSections()
         upNextTable.reloadData()
     }

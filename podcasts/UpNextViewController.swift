@@ -56,7 +56,12 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
     // Use HitTargetButton so these small header controls meet Apple's recommended 44x44pt minimum tap target without changing their visible size.
     let shuffleButton = HitTargetButton(frame: CGRect(x: 0, y: 0, width: 24, height: 24))
     let sortButton = HitTargetButton(frame: CGRect(x: 0, y: 0, width: 24, height: 24))
+    let filterButton = HitTargetButton(frame: CGRect(x: 0, y: 0, width: 24, height: 24))
     let clearQueueButton = HitTargetButton(frame: CGRect(x: 0, y: 0, width: 93, height: 16))
+
+    /// Uuids of queued episodes matching the active Up Next filter, or nil when no filter is set.
+    /// Refreshed by `refreshUpNextFilterMatches()`; used for row dimming and the header count.
+    var upNextFilterMatchingUuids: Set<String>?
     var selectedPlayListEpisodes = [PlaylistEpisode]() {
         didSet {
             multiSelectActionBar.setSelectedCount(count: selectedPlayListEpisodes.count)
@@ -112,6 +117,20 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
             shuffleButton.widthAnchor.constraint(equalToConstant: 24),
             shuffleButton.heightAnchor.constraint(equalToConstant: 24)
         ])
+
+        if FeatureFlag.upNextFilter.enabled {
+            headerView.addSubview(filterButton)
+            filterButton.translatesAutoresizingMaskIntoConstraints = false
+            filterButton.setContentCompressionResistancePriority(.required, for: .horizontal)
+            NSLayoutConstraint.activate([
+                filterButton.trailingAnchor.constraint(equalTo: shuffleButton.leadingAnchor, constant: -16),
+                filterButton.centerYAnchor.constraint(equalTo: headerView.centerYAnchor),
+                filterButton.leadingAnchor.constraint(greaterThanOrEqualTo: remainingLabel.trailingAnchor, constant: 10),
+                filterButton.widthAnchor.constraint(equalToConstant: 24),
+                filterButton.heightAnchor.constraint(equalToConstant: 24)
+            ])
+            filterButton.isHidden = PlaybackManager.shared.queue.upNextCount() == 0
+        }
 
         headerView.addSubview(clearQueueButton)
         clearQueueButton.translatesAutoresizingMaskIntoConstraints = false
@@ -354,6 +373,70 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
             clearQueueButton.addTarget(self, action: #selector(clearQueueTapped), for: .touchUpInside)
         }
         setupSortButtonIfNecessary()
+        setupFilterButtonIfNecessary()
+    }
+
+    private func setupFilterButtonIfNecessary() {
+        guard FeatureFlag.upNextFilter.enabled, filterButton.allTargets.isEmpty else { return }
+        NotificationCenter.default.addObserver(self, selector: #selector(updateFilterButtonImage), name: Constants.Notifications.themeChanged, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(upNextFilterDidChange), name: Constants.Notifications.upNextFilterChanged, object: nil)
+        updateFilterButtonImage()
+        filterButton.addTarget(self, action: #selector(filterButtonTapped), for: .touchUpInside)
+    }
+
+    @objc private func updateFilterButtonImage() {
+        let isActive = Settings.upNextFilter() != nil
+        let style: ThemeStyle = isActive ? .primaryIcon01 : .primaryIcon02
+        let symbolConfiguration = UIImage.SymbolConfiguration(pointSize: 18, weight: .medium)
+        let funnel = UIImage(systemName: isActive ? "funnel.fill" : "funnel", withConfiguration: symbolConfiguration)
+            ?? UIImage(systemName: "line.3.horizontal.decrease", withConfiguration: symbolConfiguration)
+        let image = funnel?
+            .withTintColor(AppTheme.colorForStyle(style, themeOverride: themeOverride), renderingMode: .alwaysOriginal)
+        filterButton.setImage(image, for: .normal)
+        filterButton.imageView?.adjustsImageSizeForAccessibilityContentSizeCategory = true
+        filterButton.imageView?.contentMode = .scaleAspectFit
+        filterButton.accessibilityLabel = L10n.upNextFilterTitle
+    }
+
+    @objc private func upNextFilterDidChange() {
+        updateFilterButtonImage()
+        reloadTable()
+    }
+
+    /// Recomputes which queued episodes match the active filter (nil when no filter is set).
+    func refreshUpNextFilterMatches() {
+        guard FeatureFlag.upNextFilter.enabled, let filter = Settings.upNextFilter() else {
+            upNextFilterMatchingUuids = nil
+            return
+        }
+        upNextFilterMatchingUuids = filter.matchingEpisodeUuids(in: PlaybackManager.shared.queue.allEpisodes(includeNowPlaying: false))
+    }
+
+    @objc private func filterButtonTapped() {
+        let optionsPicker = OptionsPicker(title: L10n.upNextFilterTitle.localizedUppercase, themeOverride: themeOverride)
+        let activeFilter = Settings.upNextFilter()
+
+        optionsPicker.addAction(action: OptionAction(label: L10n.upNextFilterEverything, selected: activeFilter == nil) {
+            Settings.setUpNextFilter(nil)
+        })
+
+        let folders = DataManager.sharedManager.allFolders()
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        for folder in folders {
+            let filter = UpNextFilter(type: .folder, uuid: folder.uuid)
+            optionsPicker.addAction(action: OptionAction(label: folder.name, secondaryLabel: L10n.upNextFilterTypeFolder, icon: "folder-goto", selected: filter == activeFilter) {
+                Settings.setUpNextFilter(filter)
+            })
+        }
+
+        for playlist in DataManager.sharedManager.allSmartPlaylists(includeDeleted: false) {
+            let filter = UpNextFilter(type: .smartPlaylist, uuid: playlist.uuid)
+            optionsPicker.addAction(action: OptionAction(label: playlist.playlistName, secondaryLabel: L10n.upNextFilterTypeSmartPlaylist, icon: playlist.iconImageName(), selected: filter == activeFilter) {
+                Settings.setUpNextFilter(filter)
+            })
+        }
+
+        optionsPicker.present(from: self)
     }
 
     private func setupSortButtonIfNecessary() {
@@ -432,6 +515,18 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
     }
 
     @objc func updateTimeRemainingLabel() {
+        if FeatureFlag.upNextFilter.enabled, Settings.upNextFilter() != nil, let matchingUuids = upNextFilterMatchingUuids {
+            let episodes = PlaybackManager.shared.queue.allEpisodes(includeNowPlaying: false)
+            let matchingEpisodes = episodes.filter { matchingUuids.contains($0.uuid) }
+            var totalDuration = matchingEpisodes.reduce(0.0) { $0 + max(0, $1.duration - $1.playedUpTo) }
+            if let episode = PlaybackManager.shared.currentEpisode() {
+                totalDuration += episode.duration.seconds - PlaybackManager.shared.currentTime()
+            }
+            let time = TimeFormatter.shared.multipleUnitFormattedShortTime(time: totalDuration)
+            remainingLabel.text = L10n.upNextFilterHeader(matchingEpisodes.count.localized(), episodes.count.localized(), time)
+            return
+        }
+
         var totalDuration = PlaybackManager.shared.queue.upNextTotalDuration(includePlayingEpisode: false)
         if let episode = PlaybackManager.shared.currentEpisode() {
             totalDuration += episode.duration.seconds - PlaybackManager.shared.currentTime()

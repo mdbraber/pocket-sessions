@@ -1,4 +1,5 @@
 import PocketCastsDataModel
+import PocketCastsUtils
 import UIKit
 
 class UpNextButton: UIButton {
@@ -33,6 +34,7 @@ class UpNextButton: UIButton {
         NotificationCenter.default.addObserver(self, selector: #selector(upNextChanged), name: Constants.Notifications.playbackTrackChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(episodeRemoved(_:)), name: Constants.Notifications.upNextEpisodeRemoved, object: nil)
 
+        NotificationCenter.default.addObserver(self, selector: #selector(upNextChanged), name: Constants.Notifications.upNextFilterChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(themeDidChange), name: Constants.Notifications.themeChanged, object: nil)
     }
 
@@ -104,7 +106,14 @@ class UpNextButton: UIButton {
     override func draw(_ rect: CGRect) {
         guard let context = UIGraphicsGetCurrentContext() else { return }
         context.clear(rect)
-        let upNextCount = min(999, PlaybackManager.shared.queue.upNextCount())
+        // With an Up Next filter active, the badge counts only the episodes that will play.
+        let queueCount: Int
+        if FeatureFlag.upNextFilter.enabled, let filter = Settings.upNextFilter() {
+            queueCount = filter.matchingEpisodeUuids(in: PlaybackManager.shared.queue.allEpisodes(includeNowPlaying: false)).count
+        } else {
+            queueCount = PlaybackManager.shared.queue.upNextCount()
+        }
+        let upNextCount = min(999, queueCount)
         if upNextCount <= 0 {
             let bgImage = UIImage(named: "upnext")?.tintedImage(iconColor)
             let imageFrame = CGRect(x: 10, y: 10, width: 24, height: 24)
