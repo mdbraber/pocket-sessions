@@ -1974,20 +1974,20 @@ struct PlaybackSession: Equatable {
         }
     }
 
-    /// The next unfinished episode after the given one in the session's order; from the
-    /// start of the list when nil (or an episode not in the list) is passed.
-    func nextEpisode(after episodeUuid: String?) -> BaseEpisode? {
+    /// The unfinished episodes remaining after the given one in the session's order; from
+    /// the start of the list when nil (or an episode not in the list) is passed.
+    func remainingEpisodes(after episodeUuid: String?) -> [BaseEpisode] {
         let episodes = Self.episodeSource?.orderedEpisodes(for: self) ?? []
         let startIndex = episodeUuid.flatMap { uuid in episodes.firstIndex(where: { $0.uuid == uuid }).map { $0 + 1 } } ?? 0
-        guard startIndex <= episodes.count else { return nil }
-        return episodes[startIndex...].first { !$0.played() }
+        guard startIndex <= episodes.count else { return [] }
+        return episodes[startIndex...].filter { !$0.played() }
     }
 
-    /// How many unfinished episodes remain after the given one.
+    func nextEpisode(after episodeUuid: String?) -> BaseEpisode? {
+        remainingEpisodes(after: episodeUuid).first
+    }
+
     func remainingCount(after episodeUuid: String?) -> Int {
-        let episodes = Self.episodeSource?.orderedEpisodes(for: self) ?? []
-        let startIndex = episodeUuid.flatMap { uuid in episodes.firstIndex(where: { $0.uuid == uuid }).map { $0 + 1 } } ?? 0
-        guard startIndex <= episodes.count else { return 0 }
-        return episodes[startIndex...].filter { !$0.played() }.count
+        remainingEpisodes(after: episodeUuid).count
     }
 }

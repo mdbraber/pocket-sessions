@@ -7,6 +7,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
     static let playerCell = "PlayerCell"
     static let nowPlayingCell = "UpNextNowPlayingCell"
     static let emptyStateCell = "EmptyStateCell"
+    static let sessionQueueInfoCell = "SessionQueueInfoCell"
     static let upNextSection = 1
     static var upNextRowHeight: CGFloat = UITableView.automaticDimension
 
@@ -67,6 +68,10 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
     /// Uuids of queued episodes matching the active Up Next filter, or nil when no filter is set.
     /// Refreshed by `refreshUpNextFilterMatches()`; used for row dimming and the header count.
     var upNextFilterMatchingUuids: Set<String>?
+
+    /// The active session's remaining episodes, shown in place of the queue while a
+    /// playback session runs. nil when no session is active.
+    var sessionEpisodes: [BaseEpisode]?
 
     /// Queue indices of the rows shown in the Up Next section, in display order.
     /// nil when every queued episode is shown (no filter, or "show skipped" mode).
@@ -451,46 +456,6 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
         hideSkippedButton.addTarget(self, action: #selector(hideSkippedButtonTapped), for: .touchUpInside)
         filterIndicatorButton.addTarget(self, action: #selector(filterButtonTapped), for: .touchUpInside)
         clearFilterButton.addTarget(self, action: #selector(clearFilterButtonTapped), for: .touchUpInside)
-
-        if FeatureFlag.playbackSessions.enabled {
-            // Interim entry point until the content screens get their own Play buttons:
-            // long-pressing the funnel offers starting a session.
-            filterButton.addGestureRecognizer(UILongPressGestureRecognizer(target: self, action: #selector(filterButtonLongPressed(_:))))
-        }
-    }
-
-    @objc private func filterButtonLongPressed(_ gesture: UILongPressGestureRecognizer) {
-        guard gesture.state == .began else { return }
-        let optionsPicker = OptionsPicker(title: L10n.playbackSessionPickerTitle.localizedUppercase, themeOverride: themeOverride)
-
-        if Settings.playbackSession() != nil {
-            optionsPicker.addAction(action: OptionAction(label: L10n.playbackSessionEnd) {
-                Settings.setPlaybackSession(nil)
-            })
-        }
-
-        for playlist in DataManager.sharedManager.allManualPlaylists(includeDeleted: false) {
-            let session = PlaybackSession(type: .playlist, uuid: playlist.uuid)
-            optionsPicker.addAction(action: OptionAction(label: playlist.playlistName, secondaryLabel: L10n.playbackSessionTypePlaylist, icon: playlist.iconImageName()) {
-                PlaybackManager.shared.startPlaybackSession(session)
-            })
-        }
-
-        for playlist in DataManager.sharedManager.allSmartPlaylists(includeDeleted: false) {
-            let session = PlaybackSession(type: .smartPlaylist, uuid: playlist.uuid)
-            optionsPicker.addAction(action: OptionAction(label: playlist.playlistName, secondaryLabel: L10n.upNextFilterTypeSmartPlaylist, icon: playlist.iconImageName()) {
-                PlaybackManager.shared.startPlaybackSession(session)
-            })
-        }
-
-        for podcast in DataManager.sharedManager.allPodcastsOrderedByTitle() {
-            let session = PlaybackSession(type: .podcast, uuid: podcast.uuid)
-            optionsPicker.addAction(action: OptionAction(label: podcast.title ?? "", secondaryLabel: L10n.playbackSessionTypePodcast) {
-                PlaybackManager.shared.startPlaybackSession(session)
-            })
-        }
-
-        optionsPicker.present(from: self)
     }
 
     /// Shows/hides the header filter controls, and swaps the funnel's trailing constraint so
@@ -583,8 +548,15 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
     }
 
     /// Recomputes which queued episodes match the active filter (nil when no filter is set),
-    /// and which queue indices are visible when the compact "hide skipped" view is on.
+    /// which queue indices are visible when the compact "hide skipped" view is on, and the
+    /// active session's remaining episodes.
     func refreshUpNextFilterMatches() {
+        if FeatureFlag.playbackSessions.enabled, let session = Settings.playbackSession() {
+            sessionEpisodes = session.remainingEpisodes(after: PlaybackManager.shared.currentEpisode()?.uuid)
+        } else {
+            sessionEpisodes = nil
+        }
+
         guard FeatureFlag.upNextFilter.enabled, let filter = Settings.upNextFilter() else {
             upNextFilterMatchingUuids = nil
             visibleQueueIndices = nil

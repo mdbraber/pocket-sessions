@@ -5102,6 +5102,12 @@
 /* Type tag for a manual playlist in the playback session picker */
 "playback_session_type_playlist" = "Playlist";
 
+/* Title of the row standing in for the Up Next queue while a playback session is active. %1$@ is the number of queued episodes */
+"playback_session_queue_collapsed_title" = "Your Up Next queue (%1$@)";
+
+/* Subtitle of the row standing in for the Up Next queue while a playback session is active */
+"playback_session_queue_collapsed_subtitle" = "Untouched — resumes when the session ends";
+
 /* Title shown at the top of the Up Next sort options picker */
 "up_next_sort_title" = "Sort Up Next";
 

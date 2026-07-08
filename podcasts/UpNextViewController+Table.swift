@@ -16,6 +16,10 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         case .nowPlayingSection:
             return 1
         case .upNextSection:
+            if let sessionEpisodes {
+                // session episodes plus the collapsed-queue info row (when there is a queue)
+                return sessionEpisodes.count + (PlaybackManager.shared.queue.upNextCount() > 0 ? 1 : 0)
+            }
             if PlaybackManager.shared.queue.upNextCount() == 0 { return 1 } // empty state cell
             if isShowingFilterEmptyNotice { return 1 }
             return visibleUpNextCount
@@ -69,6 +73,41 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
                 nowPlayingCell.populateFrom(episode: episode)
             }
             return nowPlayingCell
+        }
+
+        if let sessionEpisodes {
+            if indexPath.row < sessionEpisodes.count {
+                let playerCell = tableView.dequeueReusableCell(withIdentifier: UpNextViewController.playerCell, for: indexPath) as! PlayerCell
+                playerCell.themeOverride = themeOverride
+                playerCell.shouldShowSelect(show: false, animate: false)
+                playerCell.delegate = self
+                playerCell.populateFrom(episode: sessionEpisodes[indexPath.row])
+                playerCell.showTick = false
+                playerCell.contentView.alpha = 1
+                return playerCell
+            }
+
+            // The queue "moves aside" while the session plays: a compact info row stands in
+            // for it, and the full list returns untouched when the session ends.
+            let cell: UITableViewCell
+            if let reusedCell = tableView.dequeueReusableCell(withIdentifier: UpNextViewController.sessionQueueInfoCell) {
+                cell = reusedCell
+            } else {
+                cell = UITableViewCell(style: .subtitle, reuseIdentifier: UpNextViewController.sessionQueueInfoCell)
+            }
+            var config = UIListContentConfiguration.subtitleCell()
+            config.text = L10n.playbackSessionQueueCollapsedTitle(PlaybackManager.shared.queue.upNextCount().localized())
+            config.secondaryText = L10n.playbackSessionQueueCollapsedSubtitle
+            config.textProperties.color = AppTheme.colorForStyle(.primaryText01, themeOverride: themeOverride)
+            config.textProperties.font = UIFont.font(ofSize: 15, weight: .medium, scalingWith: .subheadline)
+            config.secondaryTextProperties.color = AppTheme.colorForStyle(.primaryText02, themeOverride: themeOverride)
+            config.secondaryTextProperties.font = UIFont.font(ofSize: 13, scalingWith: .footnote)
+            config.textToSecondaryTextVerticalPadding = 2
+            config.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 14, leading: 20, bottom: 14, trailing: 20)
+            cell.contentConfiguration = config
+            cell.backgroundColor = .clear
+            cell.selectionStyle = .none
+            return cell
         }
 
         if PlaybackManager.shared.queue.upNextCount() == 0 {
@@ -129,6 +168,10 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
 
         if isShowingFilterEmptyNotice { return nil }
 
+        if let sessionEpisodes {
+            return !isMultiSelectEnabled && indexPath.row < sessionEpisodes.count ? indexPath : nil
+        }
+
         if let episode = DataManager.sharedManager.playlistEpisodeAt(index: queueIndex(forVisibleRow: indexPath.row) + 1) {
             if selectedEpisodesContains(uuid: episode.episodeUuid) {
                 tableView.delegate?.tableView?(tableView, didDeselectRowAt: indexPath)
@@ -174,6 +217,14 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
 
             if isShowingFilterEmptyNotice { return }
 
+            if let sessionEpisodes {
+                if indexPath.row < sessionEpisodes.count {
+                    AnalyticsPlaybackHelper.shared.currentSource = .upNext
+                    PlaybackManager.shared.play(sessionEpisode: sessionEpisodes[indexPath.row])
+                }
+                return
+            }
+
             guard let episode = PlaybackManager.shared.queue.episodeAt(index: queueIndex(forVisibleRow: indexPath.row)) else { return }
 
             let playOnTap = Settings.playUpNextOnTap()
@@ -190,6 +241,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
     }
 
     func tableView(_ tableView: UITableView, didDeselectRowAt indexPath: IndexPath) {
+        if sessionEpisodes != nil { return }
         if let episode = DataManager.sharedManager.playlistEpisodeAt(index: queueIndex(forVisibleRow: indexPath.row) + 1), let index = selectedPlayListEpisodes.firstIndex(of: episode) {
             selectedPlayListEpisodes.remove(at: index)
             if let cell = upNextTable.cellForRow(at: indexPath) as? PlayerCell? {
@@ -204,7 +256,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         let section = tableData[indexPath.section]
         if section == .nowPlayingSection {
             return false
-        } else if section == .upNextSection, PlaybackManager.shared.queue.upNextCount() == 0 || isShowingFilterEmptyNotice {
+        } else if section == .upNextSection, PlaybackManager.shared.queue.upNextCount() == 0 || isShowingFilterEmptyNotice || sessionEpisodes != nil {
             return false
         }
         return true
@@ -250,7 +302,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
     // MARK: - Swipe Actions
 
     func tableView(_ tableView: UITableView, canEditRowAt indexPath: IndexPath) -> Bool {
-        tableData[indexPath.section] == .upNextSection
+        tableData[indexPath.section] == .upNextSection && sessionEpisodes == nil
     }
 
     // MARK: - Cell Heights
@@ -258,6 +310,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
     func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
         let section = tableData[indexPath.section]
         if section == .nowPlayingSection { return UpNextViewController.nowPlayingRowHeight }
+        if sessionEpisodes != nil { return UpNextViewController.upNextRowHeight }
         if PlaybackManager.shared.queue.upNextCount() == 0 || isShowingFilterEmptyNotice { return UpNextViewController.emptyStateRowHeight }
         return UpNextViewController.upNextRowHeight
     }
@@ -265,6 +318,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
     func tableView(_ tableView: UITableView, estimatedHeightForRowAt indexPath: IndexPath) -> CGFloat {
         let section = tableData[indexPath.section]
         if section == .nowPlayingSection { return UpNextViewController.nowPlayingRowHeight }
+        if sessionEpisodes != nil { return UpNextViewController.upNextRowHeight }
         if PlaybackManager.shared.queue.upNextCount() == 0 || isShowingFilterEmptyNotice { return UpNextViewController.emptyStateRowHeight }
         return UpNextViewController.upNextRowHeight
     }
@@ -340,7 +394,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
     @objc func tableLongPressed(_ sender: UILongPressGestureRecognizer) {
         let touchPoint = sender.location(in: upNextTable)
         guard let indexPath = upNextTable.indexPathForRow(at: touchPoint), tableData[indexPath.section] == .upNextSection,
-              !isShowingFilterEmptyNotice,
+              !isShowingFilterEmptyNotice, sessionEpisodes == nil,
               let episode = PlaybackManager.shared.queue.episodeAt(index: queueIndex(forVisibleRow: indexPath.row)) else { return }
 
         if sender.state == .began {

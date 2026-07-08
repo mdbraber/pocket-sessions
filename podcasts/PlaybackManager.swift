@@ -659,6 +659,15 @@ class PlaybackManager: ServerPlaybackDelegate {
         load(episode: first, autoPlay: true, overrideUpNext: false)
     }
 
+    /// Plays a specific episode from the active session without ending it. Unlike a normal
+    /// "play now", nothing is pushed into Up Next — the queue stays untouched.
+    func play(sessionEpisode episode: BaseEpisode) {
+        guard FeatureFlag.playbackSessions.enabled, Settings.playbackSession() != nil else { return }
+        isLoadingSessionEpisode = true
+        defer { isLoadingSessionEpisode = false }
+        switchTo(episodeToPlay: episode, moveExistingToUpNext: false, autoPlay: true)
+    }
+
     /// Advances within the active session instead of the queue. Returns false when there's
     /// no active session, or the session just ran dry (it's then ended, and the caller
     /// falls through to normal queue handling — which is the "return to your queue" step).
