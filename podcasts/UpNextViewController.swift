@@ -142,8 +142,16 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
     func updateSessionHeader() {
         guard let session = Settings.playbackSession() else { return }
         let paused = Settings.playbackSessionPaused()
-        let remaining = session.remainingCount(excluding: paused ? nil : PlaybackManager.shared.currentEpisode()?.uuid)
-        sessionHeaderLabel.text = L10n.playbackSessionHeader(session.title ?? L10n.playbackSessionTabSession, remaining.localized())
+        let remainingEpisodes = session.remainingEpisodes(excluding: paused ? nil : PlaybackManager.shared.currentEpisode()?.uuid)
+        let title = session.title ?? L10n.playbackSessionTabSession
+        if sessionExpanded {
+            sessionHeaderLabel.text = L10n.playbackSessionHeader(title, remainingEpisodes.count.localized())
+        } else {
+            // Collapsed: the list is hidden, so the header carries the queue-style metrics
+            let totalDuration = remainingEpisodes.reduce(0.0) { $0 + max(0, $1.duration - $1.playedUpTo) }
+            let time = TimeFormatter.shared.multipleUnitFormattedShortTime(time: totalDuration)
+            sessionHeaderLabel.text = L10n.playbackSessionHeaderCollapsed(title, remainingEpisodes.count.localized(), time)
+        }
         sessionSortButton.isHidden = session.type != .smartPlaylist || !sessionExpanded
         let sortImage = UIImage(named: "podcast-sort")?
             .withTintColor(AppTheme.colorForStyle(.primaryIcon02, themeOverride: themeOverride), renderingMode: .alwaysOriginal)
@@ -154,9 +162,10 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
         endSessionButton.setImage(endImage, for: .normal)
         endSessionButton.accessibilityLabel = L10n.playbackSessionEnd
 
-        // The chevron expands/collapses the session's episode list in any state.
+        // The chevron expands/collapses the session's episode list in any state:
+        // pointing down while expanded, right while collapsed (standard disclosure).
         sessionChevronButton.isHidden = false
-        let chevronImage = UIImage(systemName: sessionExpanded ? "chevron.up" : "chevron.down", withConfiguration: UIImage.SymbolConfiguration(pointSize: 11, weight: .bold))?
+        let chevronImage = UIImage(systemName: sessionExpanded ? "chevron.down" : "chevron.right", withConfiguration: UIImage.SymbolConfiguration(pointSize: 11, weight: .bold))?
             .withTintColor(AppTheme.colorForStyle(.primaryIcon01, themeOverride: themeOverride), renderingMode: .alwaysOriginal)
         sessionChevronButton.setImage(chevronImage, for: .normal)
     }
