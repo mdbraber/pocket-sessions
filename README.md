@@ -26,7 +26,7 @@ A personal fork by [@mdbraber](https://github.com/mdbraber) adding a set of play
 <table>
   <tr>
     <td align="center"><img src="docs/fork/playlist-play-as-session.png" width="160" /><br /><sub>Play as Session</sub></td>
-    <td align="center"><img src="docs/fork/session-in-up-next.png" width="160" /><br /><sub>Session + Up Next</sub></td>
+    <td align="center"><img src="docs/fork/session-in-up-next.png" width="160" /><br /><sub>Session / Up Next pills</sub></td>
     <td align="center"><img src="docs/fork/up-next-filter.png" width="160" /><br /><sub>Queue lens + recents</sub></td>
     <td align="center"><img src="docs/fork/smart-rules.png" width="160" /><br /><sub>Extended smart rules</sub></td>
     <td align="center"><img src="docs/fork/smart-rule-folders.png" width="160" /><br /><sub>Folder rule + exclude</sub></td>
@@ -35,9 +35,10 @@ A personal fork by [@mdbraber](https://github.com/mdbraber) adding a set of play
 
 ### Playback Sessions
 
-- **Play as Session**: a playlist (manual or smart) plays *instead of* the Up Next queue. The queue is never modified; when the session runs out of unfinished episodes, playback returns to it. Ending a session (✕) hands playback straight to the first (filter-matching) queued episode.
-- The session is a **live mirror** of its playlist: reorder in the session or on the playlist screen and both change; the session re-reads the playlist on every advance.
-- Up Next shows the **playing world on top** (its header above the Now Playing card, with a ticking "N episodes · X left" line under the card) and the **parked world below** (dimmed title, own counts, collapsible via chevron). The Up Next tab and screen title read "Session" with the session's count while one is active.
+- **Play as Session**: a playlist (manual or smart) or a podcast plays *instead of* the Up Next queue. The queue is never modified; when the session runs out of unfinished episodes, playback returns to it. Ending a session (✕) hands playback straight to the first (filter-matching) queued episode.
+- The session is a **live mirror** of its playlist: reorder in the session or on the playlist screen and both change; the session re-reads the playlist on every advance. A podcast's *Play as Session* runs through a one-podcast smart playlist (created on first use), so podcast sessions get custom order, the New inbox, and reorder/sort like any other smart playlist session.
+- The Up Next screen has a **pill switcher** (Up Next left, Session right): each pill carries its world's episode count, and the world that owns playback is marked with a speaker glyph. One world shows at a time in the stock layout — Now Playing card on top only where playback lives. The pill **auto-follows** playback ownership; tapping the other pill is a view-only *peek* that never changes what plays. The tab and screen title follow whichever world is playing.
+- The session header shows the source's name (tap to open it) over a ticking "N episodes · X left" line, plus **switch session** (⇄, picks from the most recent sessions — count configurable in Settings → General), **go to source** (↗), and ✕ to end. Ending a session stays on the Session view, which offers a *Choose a session to listen* empty state.
 - Session rows behave like queue rows: standard episode swipes, drag-to-reorder, tap per the "Play Up Next On Tap" setting; the session's sort picker mirrors the playlist's sort options (including custom order) and restarts playback from the new top.
 
 ### Smart Playlist Custom Order (Lineup + New)
