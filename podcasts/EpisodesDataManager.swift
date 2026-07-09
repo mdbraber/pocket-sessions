@@ -11,6 +11,25 @@ class EpisodesDataManager: PlaybackSessionEpisodeSource {
         case .podcast:
             return episodes(for: .podcast(uuid: session.uuid))
         case .playlist, .smartPlaylist:
+            // Custom-order overlay: sessions play the Lineup only — inbox episodes are held
+            // out of playback until triaged (auto-add playlists absorb them first).
+            if let filter = DataManager.sharedManager.findPlaylist(uuid: session.uuid), filter.usesCustomOrderOverlay {
+                var episodes = playlistEpisodes(for: filter).map { $0.episode }
+                var positioned = Set(DataManager.sharedManager.positionedEpisodeUuids(for: filter))
+                if filter.newEpisodesAutoAdd {
+                    let inboxUuids = episodes.map(\.uuid).filter { !positioned.contains($0) }
+                    if !inboxUuids.isEmpty {
+                        DataManager.sharedManager.insertIntoCustomOrder(episodeUuids: inboxUuids, for: filter)
+                        episodes = playlistEpisodes(for: filter).map { $0.episode }
+                        positioned = Set(DataManager.sharedManager.positionedEpisodeUuids(for: filter))
+                    }
+                }
+                let lineup = episodes.filter { positioned.contains($0.uuid) }
+                // An empty lineup (nothing triaged yet — e.g. the playlist gained custom
+                // order without being seeded) would make Play All dead; fall back to the
+                // on-screen order so the session always has something to play.
+                return lineup.isEmpty ? episodes : lineup
+            }
             return episodes(for: .filter(uuid: session.uuid))
         }
     }

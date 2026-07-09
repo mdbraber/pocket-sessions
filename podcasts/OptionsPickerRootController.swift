@@ -233,6 +233,37 @@ class OptionsPickerRootController: UIViewController, UISheetPresentationControll
         label.setContentCompressionResistancePriority(.required, for: .vertical)
     }
 
+    /// A small secondary section label between rows (e.g. "Recent" in the Up Next
+    /// filter picker). Suppresses the hairline that would otherwise sit right under it.
+    func addSectionTitle(_ title: String) {
+        addDivider()
+
+        let containerView = UIView()
+        containerView.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            containerView.heightAnchor.constraint(greaterThanOrEqualToConstant: 32)
+        ])
+        stackView.addArrangedSubview(containerView)
+
+        let label = UILabel()
+        label.font = UIFont.font(ofSize: 13, weight: .bold, scalingWith: .footnote)
+        label.adjustsFontForContentSizeCategory = true
+        label.text = title
+        label.textColor = AppTheme.colorForStyle(.primaryText02, themeOverride: themeOverride)
+        label.translatesAutoresizingMaskIntoConstraints = false
+        containerView.addSubview(label)
+        NSLayoutConstraint.activate([
+            containerView.leadingAnchor.constraint(equalTo: stackView.layoutMarginsGuide.leadingAnchor),
+            containerView.trailingAnchor.constraint(equalTo: stackView.layoutMarginsGuide.trailingAnchor),
+            label.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: layoutHorizontalMargin),
+            label.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -layoutHorizontalMargin),
+            label.topAnchor.constraint(equalTo: containerView.topAnchor, constant: 12),
+            label.bottomAnchor.constraint(equalTo: containerView.bottomAnchor, constant: -4)
+        ])
+
+        actionsAdded = 0
+    }
+
     private func addDivider() {
         let containerView = UIView()
         containerView.translatesAutoresizingMaskIntoConstraints = false

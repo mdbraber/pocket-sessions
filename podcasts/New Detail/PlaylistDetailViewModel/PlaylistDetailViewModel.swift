@@ -12,6 +12,7 @@ class PlaylistDetailViewModel: ObservableObject {
     enum Section: String, ContentEquatable, ContentIdentifiable {
         case header
         case archive
+        case inbox
         case episodes
 
         func isContentEqual(to source: Section) -> Bool {
@@ -29,8 +30,87 @@ class PlaylistDetailViewModel: ObservableObject {
     let dataManager: DataManager
     let episodesDataManager: EpisodesDataManager
 
+    /// All visible episodes in display order: inbox (if any) followed by the lineup.
     var episodes: [ListEpisode] {
-        dataSource.first(where: { $0.model == .episodes })?.elements as? [ListEpisode] ?? []
+        dataSource
+            .filter { $0.model == .inbox || $0.model == .episodes }
+            .flatMap { $0.elements.compactMap { $0 as? ListEpisode } }
+    }
+
+    /// Fork: unpositioned episodes awaiting triage (the "New" section). Empty unless the
+    /// custom-order overlay is active.
+    var inboxEpisodes: [ListEpisode] {
+        dataSource.first(where: { $0.model == .inbox })?.elements.compactMap { $0 as? ListEpisode } ?? []
+    }
+
+    /// Fork: the positioned episodes (the "Lineup"), excluding the insert-marker row.
+    var lineupEpisodes: [ListEpisode] {
+        dataSource.first(where: { $0.model == .episodes })?.elements.compactMap { $0 as? ListEpisode } ?? []
+    }
+
+    var hasInboxSection: Bool {
+        dataSource.contains { $0.model == .inbox }
+    }
+
+    var usesCustomOrderOverlay: Bool {
+        playlist.usesCustomOrderOverlay
+    }
+
+    /// The episode backing a table row, resilient to placeholder rows (marker, empty states)
+    /// sharing a section with episodes.
+    func listEpisode(at indexPath: IndexPath) -> ListEpisode? {
+        dataSource[safe: indexPath.section]?.elements[safe: indexPath.row] as? ListEpisode
+    }
+
+    func isMarkerRow(at indexPath: IndexPath) -> Bool {
+        dataSource[safe: indexPath.section]?.elements[safe: indexPath.row] is PlaylistInsertMarkerPlaceholder
+    }
+
+    func section(at index: Int) -> Section? {
+        dataSource[safe: index]?.model
+    }
+
+    /// Fork: synchronously moves an element (episode or marker) within the episodes
+    /// section, keeping the table's data source consistent during an inline drag reorder.
+    /// Persistence happens separately after the drop.
+    func moveLineupElement(from sourceRow: Int, to destinationRow: Int) {
+        guard let index = dataSource.firstIndex(where: { $0.model == .episodes }) else { return }
+        var elements = dataSource[index].elements
+        guard let element = elements[safe: sourceRow] else { return }
+        elements.remove(at: sourceRow)
+        elements.insert(element, at: min(destinationRow, elements.count))
+        dataSource[index] = ArraySection(model: .episodes, elements: elements)
+    }
+
+    /// Fork: the marker's current position expressed as a lineup index (episode rows
+    /// above it), read from the live elements so it's correct mid-reorder.
+    func markerLineupIndex() -> Int? {
+        guard let elements = dataSource.first(where: { $0.model == .episodes })?.elements,
+              let markerIndex = elements.firstIndex(where: { $0 is PlaylistInsertMarkerPlaceholder }) else { return nil }
+        return elements.prefix(markerIndex).compactMap { $0 as? ListEpisode }.count
+    }
+
+    /// Fork: moves an inbox element into the episodes section at the given element index —
+    /// triage by drag. Persistence happens separately via commitLineupOrder().
+    func moveInboxElementToLineup(fromInboxRow: Int, toEpisodesRow: Int) {
+        guard let inboxIndex = dataSource.firstIndex(where: { $0.model == .inbox }),
+              let episodesIndex = dataSource.firstIndex(where: { $0.model == .episodes }) else { return }
+
+        var inboxElements = dataSource[inboxIndex].elements
+        guard let element = inboxElements[safe: fromInboxRow] else { return }
+        inboxElements.remove(at: fromInboxRow)
+        dataSource[inboxIndex] = ArraySection(model: .inbox, elements: inboxElements)
+
+        var episodeElements = dataSource[episodesIndex].elements
+        episodeElements.insert(element, at: min(toEpisodesRow, episodeElements.count))
+        dataSource[episodesIndex] = ArraySection(model: .episodes, elements: episodeElements)
+    }
+
+    /// Fork: persists the lineup exactly as currently displayed (after a cross-section
+    /// drag), then reloads so sections rebuild (e.g. an emptied inbox disappears).
+    func commitLineupOrder() {
+        dataManager.setCustomOrder(episodeUuids: lineupEpisodes.map { $0.episode.uuid }, for: playlist)
+        reloadEpisodeList()
     }
 
     var isManualPlaylist: Bool {
@@ -205,9 +285,55 @@ class PlaylistDetailViewModel: ObservableObject {
 
     func updatePlaylist(sortType type: PlaylistSort) {
         if playlist.sortType == type.rawValue { return }
+        // Fork: seed the lineup from the currently displayed order when a smart playlist
+        // first switches to custom order, so the switch is a visual no-op. Existing rows
+        // are kept when switching away, so switching back restores the hand-made order.
+        if !isManualPlaylist, type == .dragAndDrop, dataManager.positionedEpisodeUuids(for: playlist).isEmpty {
+            playlist.customOrderLastInsertedUuid = ""
+            dataManager.setCustomOrder(episodeUuids: episodes.map { $0.episode.uuid }, for: playlist)
+        }
         playlist.syncStatus = SyncStatus.notSynced.rawValue
         playlist.sortType = type.rawValue
         dataManager.save(playlist: playlist)
+    }
+
+    // MARK: - Fork: custom-order overlay actions
+
+    /// Places episodes into the lineup at the insert marker ("Add to lineup").
+    func addToLineup(episodeUuids: [String]) {
+        guard !episodeUuids.isEmpty else { return }
+        dataManager.insertIntoCustomOrder(episodeUuids: episodeUuids, for: playlist)
+        reloadEpisodeList()
+    }
+
+    func updatePlaylist(insertMode: PlaylistInsertMode) {
+        guard playlist.insertMode != insertMode else { return }
+        playlist.insertMode = insertMode
+        dataManager.save(playlist: playlist)
+        reloadEpisodeList()
+    }
+
+    /// Fork: the marker was dragged to a new spot in the lineup. Dragging is a gesture, not a
+    /// mode: it switches the playlist to a floating insert mode anchored at the drop position
+    /// ("after last added" when coming from top/bottom; an existing "before" mode keeps its
+    /// direction).
+    func updateInsertMarker(toLineupIndex index: Int, lineupUuids: [String]) {
+        if playlist.insertMode == .beforeLastInserted {
+            playlist.customOrderLastInsertedUuid = index < lineupUuids.count ? lineupUuids[index] : ""
+        } else {
+            playlist.insertMode = .afterLastInserted
+            playlist.customOrderLastInsertedUuid = index > 0 ? lineupUuids[index - 1] : ""
+        }
+        dataManager.save(playlist: playlist)
+        reloadEpisodeList()
+    }
+
+    func updatePlaylist(newEpisodesAutoAdd: Bool) {
+        guard playlist.newEpisodesAutoAdd != newEpisodesAutoAdd else { return }
+        playlist.newEpisodesAutoAdd = newEpisodesAutoAdd
+        dataManager.save(playlist: playlist)
+        // Switching to auto absorbs the current inbox on the next reload.
+        reloadEpisodeList()
     }
 
     private func buildChangeSet(
@@ -248,6 +374,18 @@ class PlaylistDetailViewModel: ObservableObject {
             )
         }
 
+        // Fork: the custom-order overlay splits episodes into New (inbox) and Lineup.
+        // The insert marker exists only as state (it steers swipe-triage and auto-add);
+        // it isn't rendered — dragging gives explicit placement.
+        if usesCustomOrderOverlay, !isSearching, !episodes.isEmpty {
+            let (inbox, lineup) = partitionForOverlay(episodes: episodes)
+            if !inbox.isEmpty {
+                sections.append(ArraySection(model: .inbox, elements: inbox))
+            }
+            sections.append(ArraySection(model: .episodes, elements: lineup))
+            return sections
+        }
+
         let episodeElements: [ListItem]
         if episodes.isEmpty {
             if isSearching {
@@ -270,6 +408,33 @@ class PlaylistDetailViewModel: ObservableObject {
 
         sections.append(ArraySection(model: .episodes, elements: episodeElements))
         return sections
+    }
+
+    /// Fork: splits the fetched episodes into unpositioned (inbox) and positioned (lineup)
+    /// groups. Prunes position rows for episodes that left the playlist, and absorbs the
+    /// inbox at the marker when the playlist auto-adds new episodes.
+    private func partitionForOverlay(episodes: [ListEpisode]) -> (inbox: [ListEpisode], lineup: [ListEpisode]) {
+        var positioned = dataManager.positionedEpisodeUuids(for: playlist)
+        let memberUuids = Set(episodes.map { $0.episode.uuid })
+
+        if positioned.contains(where: { !memberUuids.contains($0) }) {
+            dataManager.pruneCustomOrder(keepingEpisodeUuids: Array(memberUuids), for: playlist)
+            positioned = dataManager.positionedEpisodeUuids(for: playlist)
+        }
+
+        let positionedSet = Set(positioned)
+        var inbox = episodes.filter { !positionedSet.contains($0.episode.uuid) }
+
+        if playlist.newEpisodesAutoAdd, !inbox.isEmpty {
+            // Auto mode: the batch lands at the marker as a block, in on-screen order.
+            dataManager.insertIntoCustomOrder(episodeUuids: inbox.map { $0.episode.uuid }, for: playlist)
+            positioned = dataManager.positionedEpisodeUuids(for: playlist)
+            inbox = []
+        }
+
+        let byUuid = Dictionary(episodes.map { ($0.episode.uuid, $0) }, uniquingKeysWith: { first, _ in first })
+        let lineup = positioned.compactMap { byUuid[$0] }
+        return (inbox, lineup)
     }
 
     private func loadImagesURLs(episodes: [ListEpisode], includingEpisodeArtwork: Bool = false) async throws -> [PlaylistArtworkView.ImageItem] {
@@ -317,6 +482,22 @@ class PlaylistDetailViewModel: ObservableObject {
             return Array(list.prefix(1))
         }
         return list
+    }
+}
+
+/// Fork: the insert-marker row rendered inside the Lineup section — the visible line where
+/// "Add to lineup" places episodes. Its position in the section expresses the marker state.
+class PlaylistInsertMarkerPlaceholder: ListItem {
+    override var differenceIdentifier: String {
+        "playlistInsertMarker"
+    }
+
+    static func == (lhs: PlaylistInsertMarkerPlaceholder, rhs: PlaylistInsertMarkerPlaceholder) -> Bool {
+        lhs.handleIsEqual(rhs)
+    }
+
+    override func handleIsEqual(_ otherItem: ListItem) -> Bool {
+        otherItem is PlaylistInsertMarkerPlaceholder
     }
 }
 

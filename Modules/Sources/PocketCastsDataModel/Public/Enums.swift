@@ -67,6 +67,14 @@ public enum PlaylistSort: Int32 {
     case newestToOldest = 0, oldestToNewest = 1, shortestToLongest = 2, longestToShortest = 3, dragAndDrop = 4
 }
 
+/// Fork-only: where "Add to lineup" places episodes in a custom-ordered smart playlist.
+/// Top and bottom are pinned anchors; the afterLastInserted/beforeLastInserted modes float
+/// with the insert marker (after = marker moves below each insert, preserving triage order;
+/// before = marker stays above, so the block grows upward).
+public enum PlaylistInsertMode: Int32, CaseIterable {
+    case top = 0, bottom = 1, afterLastInserted = 2, beforeLastInserted = 3
+}
+
 public struct EpisodeBasicData {
     public init() {}
 

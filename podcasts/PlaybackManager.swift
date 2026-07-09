@@ -685,6 +685,27 @@ class PlaybackManager: ServerPlaybackDelegate {
         }
     }
 
+    /// Deliberately ends the playback session (the ✕ in Up Next). If the playing episode
+    /// belongs to the session it stops where it is, and playback hands over to the queue:
+    /// Now Playing becomes the first (filter-matching) queued episode, playing if the
+    /// session was. A paused session just clears — the queue is already playing.
+    func endPlaybackSession() {
+        guard FeatureFlag.playbackSessions.enabled, Settings.playbackSession() != nil else { return }
+        let handOverToQueue = currentEpisodeIsFromSession && !Settings.playbackSessionPaused()
+        Settings.setPlaybackSession(nil)
+        guard handOverToQueue else { return }
+
+        let wasPlaying = playing()
+        currentEpisodeIsFromSession = false
+        if queue.upNextCount() > 0 {
+            FileLog.shared.addMessage("Playback session ended by user — handing playback to the Up Next queue")
+            playNextEpisode(autoPlay: wasPlaying)
+        } else {
+            FileLog.shared.addMessage("Playback session ended by user with an empty queue — stopping playback")
+            stopPlaybackKeepingQueue()
+        }
+    }
+
     /// Plays a specific episode from the session without ending it, resuming the session
     /// when it was paused. Resuming interrupts queue playback, so that episode returns to
     /// the top of Up Next; jumping within an active session just swaps session episodes

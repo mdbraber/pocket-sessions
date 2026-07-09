@@ -1,3 +1,4 @@
+import PocketCastsDataModel
 import PocketCastsUtils
 
 extension PlaylistDetailViewController: UISheetPresentationControllerDelegate, PlaylistPlayAllSheetHostDelegate {
@@ -14,7 +15,15 @@ extension PlaylistDetailViewController: UISheetPresentationControllerDelegate, P
         // queue flow below stays intact but unused while the flag is on.
         if FeatureFlag.playbackSessions.enabled {
             let playlist = viewModel.playlist
-            PlaybackManager.shared.startPlaybackSession(PlaybackSession(type: playlist.manual ? .playlist : .smartPlaylist, uuid: playlist.uuid))
+
+            // Sessions play the Lineup; with an empty Lineup and everything still in New,
+            // silently playing untriaged episodes would contradict the inbox model — ask.
+            if playlist.usesCustomOrderOverlay, viewModel.lineupEpisodes.isEmpty, !viewModel.inboxEpisodes.isEmpty {
+                presentEmptyLineupPlayPicker()
+                return
+            }
+
+            startSession()
             return
         }
 
@@ -23,6 +32,29 @@ extension PlaylistDetailViewController: UISheetPresentationControllerDelegate, P
             let sheet = PlaylistPlayAllSheetHost(delegate: self)
             present(sheet, animated: true)
         }
+    }
+
+    private func startSession() {
+        let playlist = viewModel.playlist
+        PlaybackManager.shared.startPlaybackSession(PlaybackSession(type: playlist.manual ? .playlist : .smartPlaylist, uuid: playlist.uuid))
+    }
+
+    /// The Lineup is empty and every episode sits in New: offer to triage the lot into the
+    /// Lineup before playing, or play the on-screen order as-is (the session's fallback).
+    private func presentEmptyLineupPlayPicker() {
+        let optionsPicker = OptionsPicker(title: L10n.playlistEmptyLineupTitle(viewModel.inboxEpisodes.count.localized()).localizedUppercase)
+
+        optionsPicker.addAction(action: OptionAction(label: L10n.playlistEmptyLineupAddAllAndPlay, icon: "filter_play") { [weak self] in
+            guard let self else { return }
+            self.viewModel.addToLineup(episodeUuids: self.viewModel.inboxEpisodes.map { $0.episode.uuid })
+            self.startSession()
+        })
+
+        optionsPicker.addAction(action: OptionAction(label: L10n.playlistEmptyLineupPlayAsIs, icon: "filter_play") { [weak self] in
+            self?.startSession()
+        })
+
+        optionsPicker.present(from: self)
     }
 
     func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {

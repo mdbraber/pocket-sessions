@@ -143,6 +143,12 @@ class MainTabBarController: UITabBarController, NavigationProtocol {
         NotificationCenter.default.addObserver(self, selector: #selector(refreshUpNextTabBadge), name: Constants.Notifications.upNextEpisodeRemoved, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(refreshUpNextTabBadge), name: Constants.Notifications.playbackTrackChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(refreshUpNextTabBadge), name: Constants.Notifications.upNextFilterChanged, object: nil)
+        if FeatureFlag.playbackSessions.enabled {
+            // The tab mirrors the active session (title + count), so session and playlist
+            // changes both redraw it.
+            NotificationCenter.default.addObserver(self, selector: #selector(refreshUpNextTabBadge), name: Constants.Notifications.playbackSessionChanged, object: nil)
+            NotificationCenter.default.addObserver(self, selector: #selector(refreshUpNextTabBadge), name: Constants.Notifications.playlistChanged, object: nil)
+        }
         // `upNextEpisodeAdded` refreshes the badge via the genie animation's tail, not here.
         NotificationCenter.default.addObserver(self, selector: #selector(animateEpisodeAddedToUpNext(_:)), name: Constants.Notifications.upNextEpisodeAdded, object: nil)
         refreshUpNextTabBadge()
@@ -1235,12 +1241,19 @@ private extension MainTabBarController {
 
 extension MainTabBarController {
     @objc func refreshUpNextTabBadge() {
+        // While a session plays, the tab represents it: "Session" with the session's
+        // episode count instead of the queue's.
+        let activeSession = FeatureFlag.playbackSessions.enabled ? Settings.playbackSession() : nil
+        upNextTabBarItem.title = activeSession != nil ? L10n.playbackSessionTabSession : L10n.upNext
+
         guard #available(iOS 26.0, *) else { return }
 
         // Clamping lives in `composeUpNextTabImage`; track the true count here.
         // With an Up Next filter active, count only the episodes that will play.
         let count: Int
-        if FeatureFlag.upNextFilter.enabled, let filter = Settings.upNextFilter() {
+        if let activeSession {
+            count = activeSession.remainingEpisodes(excluding: nil).count
+        } else if FeatureFlag.upNextFilter.enabled, let filter = Settings.upNextFilter() {
             count = filter.matchingEpisodeUuids(in: PlaybackManager.shared.queue.allEpisodes(includeNowPlaying: false)).count
         } else {
             count = PlaybackManager.shared.queue.upNextCount()

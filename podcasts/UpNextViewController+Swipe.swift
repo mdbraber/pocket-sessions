@@ -3,13 +3,25 @@ import PocketCastsDataModel
 import PocketCastsUtils
 import SwipeCellKit
 
-extension UpNextViewController: SwipeTableViewCellDelegate {
+extension UpNextViewController: SwipeTableViewCellDelegate, SwipeHandler {
     func swipeCurrentlyAllowed() -> Bool {
         return isReorderInProgress == false
     }
 
     func tableView(_ tableView: UITableView, editActionsForRowAt indexPath: IndexPath, for orientation: SwipeActionsOrientation) -> [SwipeAction]? {
-        // Session rows aren't queue rows — no move/remove swipe actions apply to them.
+        // Session rows aren't queue rows — the queue's move/remove actions don't apply.
+        // They get the app-wide episode swipes instead: Play Next / Play Last on the left,
+        // archive / share / add-to-playlist on the right (the inbox notice row gets none).
+        if tableData[indexPath.section] == .sessionSection {
+            guard let episode = sessionEpisodes?[safe: indexPath.row] else { return nil }
+            switch orientation {
+            case .left:
+                return SwipeActionsHelper.createLeftActionsForEpisode(episode, tableView: tableView, indexPath: indexPath, swipeHandler: self).swipeKitActions()
+            case .right:
+                return SwipeActionsHelper.createRightActionsForEpisode(episode, tableView: tableView, indexPath: indexPath, swipeHandler: self).swipeKitActions()
+            }
+        }
+
         guard tableData[indexPath.section] == .upNextSection else { return nil }
 
         switch orientation {
@@ -131,6 +143,66 @@ extension UpNextViewController: SwipeTableViewCellDelegate {
         }
 
         return options
+    }
+
+    // MARK: - SwipeHandler (session rows)
+
+    var swipeSource: String {
+        "up_next"
+    }
+
+    /// Session rows carry the playlist they play from, so the shared swipe actions behave
+    /// like that playlist's detail screen (e.g. manual playlist sessions offer remove).
+    var swipeSourceType: SwipeSourceType {
+        switch Settings.playbackSession()?.type {
+        case .playlist:
+            return .manualPlaylistDetail
+        case .podcast:
+            return .podcast
+        case .smartPlaylist, nil:
+            return .smartPlaylistDetail
+        }
+    }
+
+    func archivingRemovesFromList() -> Bool {
+        true
+    }
+
+    func actionPerformed(willBeRemoved: Bool) {
+        refreshUpNextFilterMatches()
+        reloadTable()
+    }
+
+    func deleteRequested(uuid: String) {} // user episodes can't appear in session lists
+
+    func share(episode: Episode, at indexPath: IndexPath) {
+        SharingHelper.shared.shareLinkTo(episode: episode, fromController: self, fromTableView: upNextTable, at: indexPath)
+    }
+
+    func addToManualPlaylist(episode: Episode, at: IndexPath) {
+        let presentModal: () -> Void = { [weak self] in
+            NavigationManager.sharedManager.navigateTo(
+                NavigationManager.manualPlaylistsChooserKey,
+                data: [
+                    NavigationManager.manualPlaylistsChooserEpisodeKey: episode,
+                    NavigationManager.manualPlaylistsChooserRootKey: self as Any
+                ]
+            )
+        }
+        if presentingViewController is PlayerContainerViewController {
+            dismiss(animated: true, completion: presentModal)
+        } else {
+            presentModal()
+        }
+    }
+
+    func removeFromManualPlaylist(episode: Episode, at: IndexPath) {
+        guard let session = Settings.playbackSession(), session.type == .playlist,
+              let playlist = DataManager.sharedManager.findPlaylist(uuid: session.uuid) else { return }
+        DataManager.sharedManager.deleteEpisodes([episode.uuid], from: playlist)
+        NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged, object: playlist)
+        refreshUpNextFilterMatches()
+        reloadTable()
     }
 
     private func moveRow(at: IndexPath, to: IndexPath, in tableView: UITableView) {

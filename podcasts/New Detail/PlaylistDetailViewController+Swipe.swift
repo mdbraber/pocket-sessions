@@ -5,13 +5,20 @@ extension PlaylistDetailViewController: SwipeTableViewCellDelegate, SwipeHandler
     // MARK: - SwipeTableViewCellDelegate
 
     func tableView(_ tableView: UITableView, editActionsForRowAt indexPath: IndexPath, for orientation: SwipeActionsOrientation) -> [SwipeAction]? {
-        guard !isMultiSelectEnabled, let episode = viewModel.episodes[safe: indexPath.row]?.episode else { return nil }
+        guard !isMultiSelectEnabled, let episode = viewModel.listEpisode(at: indexPath)?.episode else { return nil }
 
         switch orientation {
         case .left:
             let actions = SwipeActionsHelper.createLeftActionsForEpisode(episode, tableView: tableView, indexPath: indexPath, swipeHandler: self)
             return actions.swipeKitActions()
         case .right:
+            // Fork: New (inbox) rows get triage actions — Add to Lineup + Archive.
+            if viewModel.section(at: indexPath.section) == .inbox {
+                let actions = SwipeActionsHelper.createInboxRightActionsForEpisode(episode, tableView: tableView, indexPath: indexPath, swipeHandler: self) { [weak self] uuid in
+                    self?.viewModel.addToLineup(episodeUuids: [uuid])
+                }
+                return actions.swipeKitActions()
+            }
             let actions = SwipeActionsHelper.createRightActionsForEpisode(episode, tableView: tableView, indexPath: indexPath, swipeHandler: self)
             return actions.swipeKitActions()
         }

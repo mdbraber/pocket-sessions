@@ -31,6 +31,11 @@ class OptionsPicker {
         optionsController?.addSegmentedAction(name: name, icon: icon, actions: actions)
     }
 
+    /// A small section label between rows, with a divider above it.
+    func addSectionTitle(_ title: String) {
+        optionsController?.addSectionTitle(title)
+    }
+
     func addDescriptiveActions(title: String, message: String?, icon: String, actions: [OptionAction]) {
         optionsController?.addDescriptiveActions(title: title, message: message, icon: icon, actions: actions)
     }

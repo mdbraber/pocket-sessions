@@ -23,9 +23,9 @@ extension PlaylistDetailViewController {
         let sortAction = sortAction()
         optionsPicker.addAction(action: sortAction)
 
-        if viewModel.isManualPlaylist {
-            let reorderEpisodesAction = reorderEpisodesAction()
-            optionsPicker.addAction(action: reorderEpisodesAction)
+        if viewModel.usesCustomOrderOverlay {
+            optionsPicker.addAction(action: newEpisodesAction())
+            optionsPicker.addAction(action: insertModeAction())
         }
 
         let downloadAllAction = downloadAllOption()
@@ -79,9 +79,8 @@ extension PlaylistDetailViewController {
         addSortAction(to: optionsPicker, sortOrder: .shortestToLongest)
         addSortAction(to: optionsPicker, sortOrder: .longestToShortest)
 
-        if viewModel.isManualPlaylist {
-            addSortAction(to: optionsPicker, sortOrder: .dragAndDrop)
-        }
+        // Fork: custom order is available on smart playlists too (Lineup + New inbox overlay)
+        addSortAction(to: optionsPicker, sortOrder: .dragAndDrop)
 
         return optionsPicker
     }
@@ -90,12 +89,55 @@ extension PlaylistDetailViewController {
         let action = OptionAction(label: sortOrder.description, selected: viewModel.playlist.sortType == sortOrder.rawValue) { [weak self] in
             guard let self else { return }
             self.track(.filterSortByChanged, properties: ["sort_order": sortOrder])
-            let playlist = self.viewModel.playlist
-            playlist.sortType = sortOrder.rawValue
-            self.viewModel.update(playlist: playlist)
-            self.savePlaylist()
+            // Routed through the view model so a smart playlist switching to custom order
+            // seeds its lineup from the currently displayed order.
+            self.viewModel.updatePlaylist(sortType: sortOrder)
+            NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged, object: self.viewModel.playlist)
         }
         optionPicker.addAction(action: action)
+    }
+
+    // MARK: - Fork: custom-order overlay settings
+
+    private func newEpisodesAction() -> OptionAction {
+        let current = viewModel.playlist.newEpisodesAutoAdd ? L10n.playlistNewEpisodesAuto : L10n.playlistNewEpisodesInbox
+        let action = OptionAction(label: L10n.playlistNewEpisodesSetting, secondaryLabel: current, icon: "option-group") { }
+        action.submenu = { [weak self] in self?.makeNewEpisodesPicker() }
+        return action
+    }
+
+    private func makeNewEpisodesPicker() -> OptionsPicker {
+        let optionsPicker = OptionsPicker(title: L10n.playlistNewEpisodesSetting.localizedUppercase)
+        let autoAdd = viewModel.playlist.newEpisodesAutoAdd
+
+        let inboxAction = OptionAction(label: L10n.playlistNewEpisodesInbox, selected: !autoAdd) { [weak self] in
+            self?.viewModel.updatePlaylist(newEpisodesAutoAdd: false)
+        }
+        optionsPicker.addAction(action: inboxAction)
+
+        let autoAction = OptionAction(label: L10n.playlistNewEpisodesAuto, selected: autoAdd) { [weak self] in
+            self?.viewModel.updatePlaylist(newEpisodesAutoAdd: true)
+        }
+        optionsPicker.addAction(action: autoAction)
+
+        return optionsPicker
+    }
+
+    private func insertModeAction() -> OptionAction {
+        let action = OptionAction(label: L10n.playlistInsertModeSetting, secondaryLabel: viewModel.playlist.insertMode.description, icon: "filter_manual_episode_order") { }
+        action.submenu = { [weak self] in self?.makeInsertModePicker() }
+        return action
+    }
+
+    private func makeInsertModePicker() -> OptionsPicker {
+        let optionsPicker = OptionsPicker(title: L10n.playlistInsertModeSetting.localizedUppercase)
+        for mode in PlaylistInsertMode.allCases {
+            let action = OptionAction(label: mode.description, selected: viewModel.playlist.insertMode == mode) { [weak self] in
+                self?.viewModel.updatePlaylist(insertMode: mode)
+            }
+            optionsPicker.addAction(action: action)
+        }
+        return optionsPicker
     }
 
     private func savePlaylist() {
@@ -104,21 +146,6 @@ extension PlaylistDetailViewController {
         viewModel.update(playlist: playlist)
         DataManager.sharedManager.save(playlist: viewModel.playlist)
         NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged, object: viewModel.playlist)
-    }
-
-    // MARK: - Edit Episodes order
-
-    private func reorderEpisodesAction() -> OptionAction {
-        OptionAction(label: L10n.playlistManualEpisodesOrderOption, icon: "filter_manual_episode_order") { [weak self] in
-            guard let self else { return }
-            self.track(.filterRearrangeEpisodesTapped)
-            self.showCustomOrderList()
-        }
-    }
-
-    private func showCustomOrderList() {
-        let customOrderViewController = PlaylistDetailCustomOrderViewController(viewModel: viewModel)
-        navigationController?.pushViewController(customOrderViewController, animated: true)
     }
 
     // MARK: - Download

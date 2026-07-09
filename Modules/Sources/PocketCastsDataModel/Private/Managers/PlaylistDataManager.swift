@@ -35,7 +35,10 @@ class PlaylistDataManager {
         "manualPlaylistUuids",
         "podcastsExcluded",
         "foldersExcluded",
-        "manualPlaylistsExcluded"
+        "manualPlaylistsExcluded",
+        "newEpisodesAutoAdd",
+        "customOrderInsertMode",
+        "customOrderLastInsertedUuid"
     ]
 
     func count(includeDeleted: Bool, dbQueue: PCDBQueue) -> Int {
@@ -516,6 +519,147 @@ class PlaylistDataManager {
         return true
     }
 
+    // MARK: - Fork: smart playlist custom-order overlay
+
+    /// Episode uuids that have a position row for this playlist — the "Lineup" — in order.
+    func positionedEpisodeUuids(for playlist: EpisodeFilter, dbQueue: PCDBQueue) -> [String] {
+        var uuids = [String]()
+        dbQueue.read { db in
+            do {
+                let rs = try db.executeQuery("SELECT episodeUuid FROM \(DataManager.playlistEpisodeTableName) WHERE playlist_uuid = ? ORDER BY episodePosition ASC", values: [playlist.uuid])
+                defer { rs.close() }
+                while rs.next() {
+                    uuids.append(DBUtils.nonNilStringFromColumn(resultSet: rs, columnName: "episodeUuid"))
+                }
+            } catch {
+                FileLog.shared.addMessage("PlaylistDataManager.positionedEpisodeUuids error: \(error)")
+            }
+        }
+        return uuids
+    }
+
+    /// Replaces the playlist's custom order with the given uuid list (used to seed the
+    /// overlay when a smart playlist switches to drag-and-drop sort).
+    func setCustomOrder(episodeUuids: [String], for playlist: EpisodeFilter, dbQueue: PCDBQueue) {
+        dbQueue.write { db in
+            do {
+                try db.executeUpdate("DELETE FROM \(DataManager.playlistEpisodeTableName) WHERE playlist_uuid = ?", values: [playlist.uuid])
+                try self.insertPositionRows(episodeUuids: episodeUuids, startingAt: 0, for: playlist, db: db)
+                try db.executeUpdate("UPDATE \(DataManager.playlistsTableName) SET playlistUpdateDate = ? WHERE uuid = ?", values: [Date.now, playlist.uuid])
+            } catch {
+                FileLog.shared.addMessage("PlaylistDataManager.setCustomOrder error: \(error)")
+            }
+        }
+    }
+
+    /// Inserts episodes into the playlist's custom order as a block at the insert marker,
+    /// honoring the playlist's insert mode and advancing the marker (customOrderLastInsertedUuid).
+    /// Episodes already positioned are moved rather than duplicated. Positions are not synced,
+    /// so this deliberately leaves syncStatus untouched.
+    func insertIntoCustomOrder(episodeUuids: [String], for playlist: EpisodeFilter, dbQueue: PCDBQueue) {
+        guard !episodeUuids.isEmpty else { return }
+
+        dbQueue.write { db in
+            do {
+                let rs = try db.executeQuery("SELECT id, episodeUuid FROM \(DataManager.playlistEpisodeTableName) WHERE playlist_uuid = ? ORDER BY episodePosition ASC", values: [playlist.uuid])
+                var existing = [(id: Int64, uuid: String)]()
+                while rs.next() {
+                    existing.append((id: rs.longLongInt(forColumn: "id"), uuid: DBUtils.nonNilStringFromColumn(resultSet: rs, columnName: "episodeUuid")))
+                }
+                rs.close()
+
+                // Re-placing an already-positioned episode moves it: drop the old rows first.
+                let incoming = Set(episodeUuids)
+                let moved = existing.filter { incoming.contains($0.uuid) }
+                if !moved.isEmpty {
+                    let inClause = DataHelper.convertArrayToInString(moved.map { $0.uuid })
+                    try db.executeUpdate("DELETE FROM \(DataManager.playlistEpisodeTableName) WHERE playlist_uuid = ? AND episodeUuid IN (\(inClause))", values: [playlist.uuid])
+                    existing.removeAll { incoming.contains($0.uuid) }
+                }
+
+                let insertIndex = playlist.insertMarkerIndex(inLineup: existing.map { $0.uuid })
+
+                // Shift rows at/after the insertion point to make room, keeping order stable.
+                for (index, item) in existing.enumerated() {
+                    let newPosition = index < insertIndex ? index : index + episodeUuids.count
+                    try db.executeUpdate("UPDATE \(DataManager.playlistEpisodeTableName) SET episodePosition = ? WHERE id = ?", values: [newPosition, item.id])
+                }
+
+                try self.insertPositionRows(episodeUuids: episodeUuids, startingAt: insertIndex, for: playlist, db: db)
+
+                // Advance the marker: after-mode chains below the block, before-mode stays
+                // above it (the block grows upward). Pinned modes keep the anchor fresh so
+                // switching to a floating mode later continues from the last insert.
+                switch playlist.insertMode {
+                case .beforeLastInserted:
+                    playlist.customOrderLastInsertedUuid = episodeUuids.first ?? ""
+                case .top, .bottom, .afterLastInserted:
+                    playlist.customOrderLastInsertedUuid = episodeUuids.last ?? ""
+                }
+                try db.executeUpdate("UPDATE \(DataManager.playlistsTableName) SET customOrderLastInsertedUuid = ?, playlistUpdateDate = ? WHERE uuid = ?", values: [playlist.customOrderLastInsertedUuid, Date.now, playlist.uuid])
+            } catch {
+                FileLog.shared.addMessage("PlaylistDataManager.insertIntoCustomOrder error: \(error)")
+            }
+        }
+    }
+
+    /// Drops position rows for episodes that are no longer members of the playlist
+    /// (its smart rules stopped matching them). Keeps rows for current members so a
+    /// hand-made order survives switching sort away and back.
+    func pruneCustomOrder(keepingEpisodeUuids: [String], for playlist: EpisodeFilter, dbQueue: PCDBQueue) {
+        dbQueue.write { db in
+            do {
+                let inClause = DataHelper.convertArrayToInString(keepingEpisodeUuids)
+                try db.executeUpdate("DELETE FROM \(DataManager.playlistEpisodeTableName) WHERE playlist_uuid = ? AND episodeUuid NOT IN (\(inClause))", values: [playlist.uuid])
+                guard db.changes > 0 else { return }
+
+                // Reindex to keep positions contiguous.
+                let rs = try db.executeQuery("SELECT id FROM \(DataManager.playlistEpisodeTableName) WHERE playlist_uuid = ? ORDER BY episodePosition ASC", values: [playlist.uuid])
+                defer { rs.close() }
+                var ids = [Int64]()
+                while rs.next() { ids.append(rs.longLongInt(forColumn: "id")) }
+                for (index, id) in ids.enumerated() {
+                    try db.executeUpdate("UPDATE \(DataManager.playlistEpisodeTableName) SET episodePosition = ? WHERE id = ?", values: [index, id])
+                }
+            } catch {
+                FileLog.shared.addMessage("PlaylistDataManager.pruneCustomOrder error: \(error)")
+            }
+        }
+    }
+
+    /// Inserts fresh position rows for the given uuids starting at the given position,
+    /// filling title/podcastUuid from the episode table where available.
+    private func insertPositionRows(episodeUuids: [String], startingAt startPosition: Int, for playlist: EpisodeFilter, db: PCDatabase) throws {
+        guard !episodeUuids.isEmpty else { return }
+
+        var episodeInfo = [String: (title: String, podcastUuid: String)]()
+        let inClause = DataHelper.convertArrayToInString(episodeUuids)
+        let rs = try db.executeQuery("SELECT uuid, title, podcastUuid FROM \(DataManager.episodeTableName) WHERE uuid IN (\(inClause))", values: nil)
+        while rs.next() {
+            let uuid = DBUtils.nonNilStringFromColumn(resultSet: rs, columnName: "uuid")
+            episodeInfo[uuid] = (
+                title: DBUtils.nonNilStringFromColumn(resultSet: rs, columnName: "title"),
+                podcastUuid: DBUtils.nonNilStringFromColumn(resultSet: rs, columnName: "podcastUuid")
+            )
+        }
+        rs.close()
+
+        let insertColumns = ["id", "episodePosition", "episodeUuid", "playlist_id", "title", "podcastUuid", "playlist_uuid"].joined(separator: ",")
+        for (offset, episodeUuid) in episodeUuids.enumerated() {
+            let info = episodeInfo[episodeUuid]
+            let values: [Any] = [
+                DBUtils.generateUniqueId(),
+                startPosition + offset,
+                episodeUuid,
+                playlist.id,
+                info?.title ?? "",
+                info?.podcastUuid ?? "",
+                playlist.uuid
+            ]
+            try db.executeUpdate("INSERT INTO \(DataManager.playlistEpisodeTableName) (\(insertColumns)) VALUES (?,?,?,?,?,?,?)", values: values)
+        }
+    }
+
     // MARK: - Conversion
 
     private func createPlaylistFrom(resultSet rs: PCDBResultSet) -> EpisodeFilter {
@@ -551,6 +695,9 @@ class PlaylistDataManager {
         playlist.podcastsExcluded = rs.bool(forColumn: "podcastsExcluded")
         playlist.foldersExcluded = rs.bool(forColumn: "foldersExcluded")
         playlist.manualPlaylistsExcluded = rs.bool(forColumn: "manualPlaylistsExcluded")
+        playlist.newEpisodesAutoAdd = rs.bool(forColumn: "newEpisodesAutoAdd")
+        playlist.customOrderInsertMode = rs.int(forColumn: "customOrderInsertMode")
+        playlist.customOrderLastInsertedUuid = DBUtils.nonNilStringFromColumn(resultSet: rs, columnName: "customOrderLastInsertedUuid")
 
         return playlist
     }
@@ -588,6 +735,9 @@ class PlaylistDataManager {
         values.append(playlist.podcastsExcluded)
         values.append(playlist.foldersExcluded)
         values.append(playlist.manualPlaylistsExcluded)
+        values.append(playlist.newEpisodesAutoAdd)
+        values.append(playlist.customOrderInsertMode)
+        values.append(playlist.customOrderLastInsertedUuid)
 
         if includeUuidForWhere {
             values.append(playlist.uuid)

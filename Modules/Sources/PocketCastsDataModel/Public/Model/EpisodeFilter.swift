@@ -43,6 +43,14 @@ public class EpisodeFilter: NSObject {
     @objc public var foldersExcluded = false
     @objc public var manualPlaylistsExcluded = false
 
+    // Fork-only custom-order fields for smart playlists: when sortType is dragAndDrop,
+    // positioned episodes form the "Lineup" and unpositioned matches sit in the "New" inbox
+    // (unless newEpisodesAutoAdd absorbs them automatically). The insert marker state
+    // (mode + last-inserted uuid) decides where "Add to lineup" places episodes.
+    @objc public var newEpisodesAutoAdd = false
+    @objc public var customOrderInsertMode = 2 as Int32 // PlaylistInsertMode.afterLastInserted
+    @objc public var customOrderLastInsertedUuid = ""
+
     // Internal tracking
     @GRDBIgnore
     public var isNew: Bool = false
@@ -134,6 +142,39 @@ public class EpisodeFilter: NSObject {
         podcastsExcluded = other.podcastsExcluded
         foldersExcluded = other.foldersExcluded
         manualPlaylistsExcluded = other.manualPlaylistsExcluded
+        newEpisodesAutoAdd = other.newEpisodesAutoAdd
+        customOrderInsertMode = other.customOrderInsertMode
+        customOrderLastInsertedUuid = other.customOrderLastInsertedUuid
+    }
+
+    /// Convenience accessor for the fork-only insert-marker mode.
+    public var insertMode: PlaylistInsertMode {
+        get { PlaylistInsertMode(rawValue: customOrderInsertMode) ?? .afterLastInserted }
+        set { customOrderInsertMode = newValue.rawValue }
+    }
+
+    /// Fork-only: true when this smart playlist uses the custom-order overlay (Lineup + New inbox).
+    public var usesCustomOrderOverlay: Bool {
+        !manual && sortType == PlaylistSort.dragAndDrop.rawValue
+    }
+
+    /// Fork-only: where the insert marker currently sits in the given lineup (ordered episode
+    /// uuids). Inserts land at this index; it's also where the marker row is rendered.
+    /// Floating modes fall back to top (after) / bottom (before) when the anchor episode
+    /// has left the playlist.
+    public func insertMarkerIndex(inLineup lineupUuids: [String]) -> Int {
+        switch insertMode {
+        case .top:
+            return 0
+        case .bottom:
+            return lineupUuids.count
+        case .afterLastInserted:
+            guard let anchor = lineupUuids.firstIndex(of: customOrderLastInsertedUuid) else { return 0 }
+            return anchor + 1
+        case .beforeLastInserted:
+            guard let anchor = lineupUuids.firstIndex(of: customOrderLastInsertedUuid) else { return lineupUuids.count }
+            return anchor
+        }
     }
 
     override public func isEqual(_ object: Any?) -> Bool {

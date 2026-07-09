@@ -235,9 +235,14 @@ public class PlaylistQueryBuilder {
             var stringifiedValues = queryValues.map({$0.value}).joined(separator: " ")
             PlaylistQueryBuilder.removeEmptyFilterGroups(from: &stringifiedValues)
 
+            // Fork: a smart playlist with drag-and-drop sort uses the custom-order overlay —
+            // membership still comes from the smart rules, order from SJPlaylistEpisode rows.
+            let usesCustomOrderOverlay = sortType == PlaylistSort.dragAndDrop.rawValue
+
             if clause == .firstDistinctEpisodes {
+                // The distinct-episodes CTE can't reference the overlay join; degrade to newest-first.
                 return smartPlaylistFirstDistinctEpisodes(
-                    sortFor: sortType,
+                    sortFor: usesCustomOrderOverlay ? PlaylistSort.newestToOldest.rawValue : sortType,
                     limit: limit,
                     values: stringifiedValues,
                     addedUuid: addedUuid.boolValue
@@ -252,7 +257,8 @@ public class PlaylistQueryBuilder {
             }
 
             let select = select(clause: clause)
-            queryString = "\(select) WHERE episode.archived = 0 \(stringifiedValues)"
+            let overlayJoin = usesCustomOrderOverlay ? " \(customOrderOverlayJoin(playlistUuid: playlist.uuid))" : ""
+            queryString = "\(select)\(overlayJoin) WHERE episode.archived = 0 \(stringifiedValues)"
             queryString += ")"
             if addedUuid.boolValue {
                 queryString += ")"
@@ -266,8 +272,12 @@ public class PlaylistQueryBuilder {
             queryString += " \(searchClause) (UPPER(episode.title) LIKE '%\(safeSearchTerm)%' ESCAPE '\\'"
             queryString += " OR UPPER(podcast.title) LIKE '%\(safeSearchTerm)%'  ESCAPE '\\')"
         }
-        if let sort = add(sortFor: sortType), clause != .episodeCount, clause != .allEpisodeCount {
-            queryString += " \(sort) "
+        if clause != .episodeCount, clause != .allEpisodeCount {
+            if !playlist.manual, sortType == PlaylistSort.dragAndDrop.rawValue {
+                queryString += " \(customOrderOverlaySort()) "
+            } else if let sort = add(sortFor: sortType) {
+                queryString += " \(sort) "
+            }
         }
         if limit > 0 { queryString += " LIMIT \(limit)" }
         return queryString
@@ -612,6 +622,26 @@ public class PlaylistQueryBuilder {
         \(playlistPositionOrderBy)
         LIMIT \(limit)
         """
+    }
+
+    /// Fork: joins the per-playlist position rows onto a smart query so the custom order
+    /// can be applied as an overlay. Episodes without a row are the "New" inbox.
+    private static func customOrderOverlayJoin(playlistUuid: String) -> String {
+        """
+        LEFT JOIN (
+          SELECT episodeUuid, MIN(episodePosition) AS pos
+          FROM \(DataManager.playlistEpisodeTableName)
+          WHERE playlist_uuid = '\(playlistUuid)'
+          GROUP BY episodeUuid
+        ) p ON p.episodeUuid = episode.uuid
+        """
+    }
+
+    /// Fork: unpositioned (inbox) episodes first, newest first among themselves, then the
+    /// lineup by its positions. Inbox-aware screens partition the two groups; everything
+    /// else degrades to this order.
+    private static func customOrderOverlaySort() -> String {
+        "ORDER BY CASE WHEN p.pos IS NULL THEN 0 ELSE 1 END ASC, CASE WHEN p.pos IS NULL THEN episode.publishedDate END DESC, p.pos ASC, episode.addedDate DESC"
     }
 
     private static func select(clause: SelectClause) -> String {
@@ -1040,6 +1070,9 @@ public class PlaylistQueryBuilder {
             queryString += " ORDER BY duration ASC, addedDate ASC"
         } else if filter.sortType == PlaylistSort.longestToShortest.rawValue {
             queryString += " ORDER BY duration DESC, addedDate DESC"
+        } else if filter.sortType == PlaylistSort.dragAndDrop.rawValue {
+            // Fork: legacy path (widget/Siri) doesn't know the custom-order overlay; newest-first fallback.
+            queryString += " ORDER BY publishedDate DESC, addedDate DESC"
         }
 
         if limit > 0 {

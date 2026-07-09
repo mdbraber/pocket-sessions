@@ -379,12 +379,34 @@ class Settings: NSObject {
         if let filter {
             UserDefaults.standard.set(filter.type.rawValue, forKey: Settings.upNextFilterTypeKey)
             UserDefaults.standard.set(filter.uuid, forKey: Settings.upNextFilterUuidKey)
+            rememberRecentUpNextFilter(filter)
         } else {
             UserDefaults.standard.removeObject(forKey: Settings.upNextFilterTypeKey)
             UserDefaults.standard.removeObject(forKey: Settings.upNextFilterUuidKey)
         }
 
         NotificationCenter.postOnMainThread(notification: Constants.Notifications.upNextFilterChanged)
+    }
+
+    static let upNextRecentFiltersKey = "SJUpNextRecentFilters"
+    static let upNextRecentFiltersLimit = 5
+
+    /// The most recently applied Up Next filters, most recent first — shown as shortcuts
+    /// in the filter picker. Device-local, like the filter itself.
+    class func upNextRecentFilters() -> [UpNextFilter] {
+        guard FeatureFlag.upNextFilter.enabled,
+              let raw = UserDefaults.standard.array(forKey: upNextRecentFiltersKey) as? [[String: String]] else { return [] }
+        return raw.compactMap { entry in
+            guard let typeValue = entry["type"], let type = UpNextFilterType(rawValue: typeValue), let uuid = entry["uuid"] else { return nil }
+            return UpNextFilter(type: type, uuid: uuid)
+        }
+    }
+
+    private class func rememberRecentUpNextFilter(_ filter: UpNextFilter) {
+        var recents = upNextRecentFilters().filter { $0 != filter }
+        recents.insert(filter, at: 0)
+        let raw = recents.prefix(upNextRecentFiltersLimit).map { ["type": $0.type.rawValue, "uuid": $0.uuid] }
+        UserDefaults.standard.set(Array(raw), forKey: upNextRecentFiltersKey)
     }
 
     static let upNextFilterHideSkippedKey = "SJUpNextFilterHideSkipped"
@@ -431,6 +453,20 @@ class Settings: NSObject {
         UserDefaults.standard.removeObject(forKey: Settings.playbackSessionLastEpisodeKey)
 
         NotificationCenter.postOnMainThread(notification: Constants.Notifications.playbackSessionChanged)
+    }
+
+    static let upNextHideSessionEpisodesKey = "SJUpNextHideSessionEpisodes"
+
+    /// When true and a session is active, queue episodes that belong to the session's
+    /// source are hidden from the Up Next list (visual only — they keep their queue
+    /// positions and still play from the queue as normal).
+    class func upNextHideSessionEpisodes() -> Bool {
+        FeatureFlag.playbackSessions.enabled && UserDefaults.standard.bool(forKey: Settings.upNextHideSessionEpisodesKey)
+    }
+
+    class func setUpNextHideSessionEpisodes(_ hide: Bool) {
+        UserDefaults.standard.set(hide, forKey: Settings.upNextHideSessionEpisodesKey)
+        NotificationCenter.postOnMainThread(notification: Constants.Notifications.upNextFilterChanged)
     }
 
     static let playbackSessionLastEpisodeKey = "SJPlaybackSessionLastEpisode"
@@ -2018,6 +2054,18 @@ struct PlaybackSession: Equatable {
     /// The session's full episode list in display order (empty without an injected source).
     func orderedEpisodes() -> [BaseEpisode] {
         Self.episodeSource?.orderedEpisodes(for: self) ?? []
+    }
+
+    /// Which of the given (queue) episodes belong to this session's source, by uuid —
+    /// drives the "hide episodes from current session" queue view.
+    func matchingEpisodeUuids(in episodes: [BaseEpisode]) -> Set<String> {
+        let underlyingType: UpNextFilterType
+        switch type {
+        case .podcast: underlyingType = .podcast
+        case .playlist: underlyingType = .playlist
+        case .smartPlaylist: underlyingType = .smartPlaylist
+        }
+        return UpNextFilter(type: underlyingType, uuid: uuid).matchingEpisodeUuids(in: episodes)
     }
 
     /// The session's unfinished episodes in order, excluding the given (currently playing)

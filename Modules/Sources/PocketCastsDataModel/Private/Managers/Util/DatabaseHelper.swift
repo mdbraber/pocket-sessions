@@ -40,7 +40,10 @@ class DatabaseHelper {
             ("manualPlaylistUuids", "TEXT NOT NULL DEFAULT ''"),
             ("podcastsExcluded", "BOOLEAN DEFAULT FALSE"),
             ("foldersExcluded", "BOOLEAN DEFAULT FALSE"),
-            ("manualPlaylistsExcluded", "BOOLEAN DEFAULT FALSE")
+            ("manualPlaylistsExcluded", "BOOLEAN DEFAULT FALSE"),
+            ("newEpisodesAutoAdd", "BOOLEAN DEFAULT FALSE"),
+            ("customOrderInsertMode", "INTEGER NOT NULL DEFAULT 2"),
+            ("customOrderLastInsertedUuid", "TEXT NOT NULL DEFAULT ''")
         ]
 
         do {

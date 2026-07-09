@@ -3,8 +3,20 @@ import SwiftUI
 import PocketCastsDataModel
 
 class PlaylistDetailCustomOrderViewController: PCViewController {
+    /// Fork: rows are episodes plus, for custom-ordered smart playlists, the draggable
+    /// insert-marker row.
+    private enum Row {
+        case marker
+        case episode(ListEpisode)
+
+        var listEpisode: ListEpisode? {
+            if case .episode(let episode) = self { return episode }
+            return nil
+        }
+    }
+
     private weak var viewModel: PlaylistDetailViewModel?
-    private var episodes: [ListEpisode] = []
+    private var rows: [Row] = []
 
     private(set) var tableView: ThemeableTable! {
         didSet {
@@ -67,7 +79,16 @@ class PlaylistDetailCustomOrderViewController: PCViewController {
     }
 
     private func setupContent() {
-        episodes = viewModel?.episodes ?? []
+        if let viewModel, viewModel.usesCustomOrderOverlay {
+            // Smart playlist overlay: the editor rearranges the Lineup (inbox episodes are
+            // triaged from the detail screen), with the insert marker as a draggable row.
+            let lineup = viewModel.lineupEpisodes
+            rows = lineup.map { .episode($0) }
+            let markerIndex = viewModel.playlist.insertMarkerIndex(inLineup: lineup.map { $0.episode.uuid })
+            rows.insert(.marker, at: min(markerIndex, rows.count))
+        } else {
+            rows = (viewModel?.episodes ?? []).map { .episode($0) }
+        }
 
         tableView = ThemeableTable()
         view.addSubview(tableView)
@@ -86,19 +107,31 @@ class PlaylistDetailCustomOrderViewController: PCViewController {
 
     private func registerCells() {
         tableView.register(PlaylistEpisodePreviewCell.self, forCellReuseIdentifier: PlaylistEpisodePreviewCell.reuseIdentifier)
+        tableView.register(PlaylistInsertMarkerCell.self, forCellReuseIdentifier: PlaylistInsertMarkerCell.reuseIdentifier)
     }
 }
 
 extension PlaylistDetailCustomOrderViewController: UITableViewDataSource, UITableViewDelegate {
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        return episodes.count
+        return rows.count
     }
 
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let cell = tableView.dequeueReusableCell(withIdentifier: PlaylistEpisodePreviewCell.reuseIdentifier, for: indexPath) as! PlaylistEpisodePreviewCell
-        let listEpisode = episodes[indexPath.row]
-        cell.set(episode: listEpisode.episode)
-        return cell
+        switch rows[indexPath.row] {
+        case .marker:
+            return tableView.dequeueReusableCell(withIdentifier: PlaylistInsertMarkerCell.reuseIdentifier, for: indexPath) as! PlaylistInsertMarkerCell
+        case .episode(let listEpisode):
+            let cell = tableView.dequeueReusableCell(withIdentifier: PlaylistEpisodePreviewCell.reuseIdentifier, for: indexPath) as! PlaylistEpisodePreviewCell
+            cell.set(episode: listEpisode.episode)
+            return cell
+        }
+    }
+
+    func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
+        if case .marker = rows[indexPath.row] {
+            return PlaylistInsertMarkerCell.height
+        }
+        return UITableView.automaticDimension
     }
 
     // MARK: - Editing
@@ -108,7 +141,10 @@ extension PlaylistDetailCustomOrderViewController: UITableViewDataSource, UITabl
     }
 
     func tableView(_ tableView: UITableView, editingStyleForRowAt indexPath: IndexPath) -> UITableViewCell.EditingStyle {
-        .delete
+        if case .marker = rows[indexPath.row] {
+            return .none
+        }
+        return .delete
     }
 
     func tableView(_ tableView: UITableView, shouldIndentWhileEditingRowAt indexPath: IndexPath) -> Bool {
@@ -116,10 +152,12 @@ extension PlaylistDetailCustomOrderViewController: UITableViewDataSource, UITabl
     }
 
     func tableView(_ tableView: UITableView, commit editingStyle: UITableViewCell.EditingStyle, forRowAt indexPath: IndexPath) {
-        if editingStyle == .delete, let episode = episodes[safe: indexPath.row] {
+        if editingStyle == .delete, let episode = rows[safe: indexPath.row]?.listEpisode {
+            // For a smart playlist this removes the position row only — the episode goes
+            // back to the New (inbox) section, not out of the playlist.
             viewModel?.delete(episodes: [episode.episode.uuid])
 
-            episodes.remove(at: indexPath.row)
+            rows.remove(at: indexPath.row)
             tableView.beginUpdates()
             tableView.deleteRows(at: [indexPath], with: .top)
             tableView.endUpdates()
@@ -135,15 +173,23 @@ extension PlaylistDetailCustomOrderViewController: UITableViewDataSource, UITabl
     func tableView(_ tableView: UITableView, moveRowAt sourceIndexPath: IndexPath, to destinationIndexPath: IndexPath) {
         if sourceIndexPath == destinationIndexPath { return }
 
-        viewModel?.updatePlaylist(sortType: .dragAndDrop)
+        let movedRow = rows[sourceIndexPath.row]
+        rows.remove(at: sourceIndexPath.row)
+        rows.insert(movedRow, at: destinationIndexPath.row)
 
-        let movedObject = episodes[sourceIndexPath.row]
-        episodes.remove(at: sourceIndexPath.row)
-        episodes.insert(movedObject, at: destinationIndexPath.row)
+        let lineupUuids = rows.compactMap { $0.listEpisode?.episode.uuid }
 
-        viewModel?.move(episode: movedObject, toIndex: destinationIndexPath.row)
-
-        track(.filterManualEpisodesRearranged)
+        switch movedRow {
+        case .marker:
+            // Episode rows before the marker's new spot = its lineup index.
+            let markerLineupIndex = rows.prefix(destinationIndexPath.row).compactMap { $0.listEpisode }.count
+            viewModel?.updateInsertMarker(toLineupIndex: markerLineupIndex, lineupUuids: lineupUuids)
+        case .episode(let movedObject):
+            viewModel?.updatePlaylist(sortType: .dragAndDrop)
+            let lineupIndex = rows.prefix(destinationIndexPath.row).compactMap { $0.listEpisode }.count
+            viewModel?.move(episode: movedObject, toIndex: lineupIndex)
+            track(.filterManualEpisodesRearranged)
+        }
     }
 }
 

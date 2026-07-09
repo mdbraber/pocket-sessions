@@ -5084,11 +5084,8 @@
 /* Type tag shown next to a smart playlist in the Up Next playback filter picker */
 "up_next_filter_type_smart_playlist" = "Smart Playlist";
 
-/* Header label of the session section in Up Next. %1$@ is the session's name, %2$@ the number of episodes remaining */
-"playback_session_header" = "Session: %1$@ · %2$@ to go";
-
-/* Header label of a collapsed session in Up Next. %1$@ is the session's name, %2$@ the number of episodes remaining, %3$@ the time remaining (e.g. '3h 12m') */
-"playback_session_header_collapsed" = "Session: %1$@ · %2$@ episodes · %3$@ left";
+/* Header label of the session section in Up Next. %1$@ is the number of episodes remaining, %2$@ the time remaining (e.g. '3h 12m') */
+"playback_session_header" = "Session: %1$@ episodes · %2$@ left";
 
 /* Prefix wrapped around the Up Next queue header label to name the section while a session or filter shares the screen. %1$@ is the stock header text (e.g. '5 episodes · 5h 5m left') */
 "up_next_header_prefix" = "Up Next: %1$@";
@@ -5143,6 +5140,84 @@
 
 /* Footer under a collapsed paused session's resume row. %1$@ is the number of additional episodes */
 "playback_session_more_episodes_plural" = "%1$@ more episodes";
+
+/* Section header for untriaged new episodes in a custom-ordered smart playlist. %1$@ is the episode count */
+"playlist_inbox_section_header" = "New · %1$@";
+
+/* Section header for the ordered episodes of a custom-ordered smart playlist */
+"playlist_lineup_section_header" = "Lineup";
+
+/* Label on the insert-marker row showing where added episodes are placed in the lineup */
+"playlist_insert_marker_title" = "Added episodes land below this marker";
+
+/* Swipe action that inserts a new (inbox) episode into the playlist lineup at the insert marker */
+"playlist_add_to_lineup" = "Add to Lineup";
+
+/* Setting title: what happens to new episodes in a custom-ordered smart playlist */
+"playlist_new_episodes_setting" = "New Episodes";
+
+/* New-episodes option: hold new episodes in the inbox for manual triage */
+"playlist_new_episodes_inbox" = "Hold in Inbox";
+
+/* New-episodes option: automatically add new episodes to the lineup at the insert marker */
+"playlist_new_episodes_auto" = "Add to Lineup Automatically";
+
+/* Setting title: where 'Add to Lineup' inserts episodes */
+"playlist_insert_mode_setting" = "Add to Lineup At";
+
+/* Insert position option: pinned to the top of the lineup */
+"playlist_insert_mode_top" = "Top";
+
+/* Insert position option: appended to the bottom of the lineup */
+"playlist_insert_mode_bottom" = "Bottom";
+
+/* Insert position option: after the episode added most recently (preserves triage order) */
+"playlist_insert_mode_after_last" = "After Last Added";
+
+/* Insert position option: before the episode added most recently (block grows upward) */
+"playlist_insert_mode_before_last" = "Before Last Added";
+
+/* Suffix appended to the session header when the playlist has untriaged inbox episodes. %1$@ is the count */
+"playback_session_header_new_suffix" = "%1$@ new";
+
+/* Tappable notice row at the end of the session section when exactly one untriaged episode is in the playlist inbox */
+"playback_session_inbox_notice_singular" = "1 new episode in Inbox";
+
+/* Tappable notice row at the end of the session section. %1$@ is the number of untriaged inbox episodes */
+"playback_session_inbox_notice_plural" = "%1$@ new episodes in Inbox";
+
+/* Section label above the recently used filters in the Up Next filter picker */
+"up_next_filter_recent_header" = "Recent";
+
+/* Playlist header button that starts a playback session from the playlist (replaces 'Play All' while sessions are enabled) */
+"playlist_play_as_session" = "Play as Session";
+
+/* Second line of the session header in Up Next. %1$@ is the episode count, %2$@ the remaining time */
+"playback_session_meta" = "%1$@ episodes · %2$@ left";
+
+/* Action in the New section header that moves every inbox episode into the lineup at once */
+"playlist_add_all_to_lineup" = "Add all new episodes to Lineup";
+
+/* Title of the picker shown when playing a playlist whose lineup is empty. %1$@ is the number of episodes in the New section */
+"playlist_empty_lineup_title" = "Your Lineup is empty · %1$@ in New";
+
+/* Picker option: move all New episodes into the lineup, then start the session */
+"playlist_empty_lineup_add_all_and_play" = "Add all to Lineup & Play";
+
+/* Picker option: start the session over the episodes as currently shown, without triaging */
+"playlist_empty_lineup_play_as_is" = "Play as-is";
+
+/* Accessibility label of the eye toggle that hides queue episodes belonging to the active session */
+"up_next_hide_session_episodes" = "Hide episodes from current session";
+
+/* Empty-state title when the session eye has hidden every queued episode */
+"up_next_session_hidden_empty_title" = "All queued episodes are in the session";
+
+/* Empty-state description when the session eye has hidden every queued episode */
+"up_next_session_hidden_empty_description" = "Episodes that belong to the current session are hidden from the queue.";
+
+/* Empty-state action that turns the session eye off again */
+"up_next_session_hidden_show" = "Show them";
 
 /* Title shown at the top of the Up Next sort options picker */
 "up_next_sort_title" = "Sort Up Next";

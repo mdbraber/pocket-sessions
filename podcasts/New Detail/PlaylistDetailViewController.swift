@@ -35,6 +35,11 @@ class PlaylistDetailViewController: PCViewController, UIScrollViewDelegate {
             tableView.sectionHeaderTopPadding = 0
             tableView.delegate = self
             tableView.dataSource = self
+            // Inline reorder (long-press drag) for custom-ordered playlists — no separate
+            // rearrange screen, same as Up Next.
+            tableView.dragDelegate = self
+            tableView.dropDelegate = self
+            tableView.dragInteractionEnabled = true
             tableView.separatorStyle = .none
             tableView.isHidden = true
             tableView.allowsMultipleSelection = true

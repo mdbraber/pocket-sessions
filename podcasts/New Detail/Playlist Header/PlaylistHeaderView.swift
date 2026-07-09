@@ -1,4 +1,5 @@
 import SwiftUI
+import PocketCastsUtils
 
 struct PlaylistHeaderView: View {
     @EnvironmentObject var theme: Theme
@@ -67,7 +68,7 @@ struct PlaylistHeaderView: View {
                         type: .playAll,
                         color: viewModel.isSearching ? theme.primaryText01 : theme.primaryUi02,
                         image: Image("filter_play"),
-                        title: L10n.playlistsPlayAll,
+                        title: FeatureFlag.playbackSessions.enabled ? L10n.playlistPlayAsSession : L10n.playlistsPlayAll,
                         background: viewModel.isSearching ? .clear : theme.primaryText01,
                         stroke: viewModel.isSearching ? theme.primaryUi05 : nil) { type in
                             viewModel.onButtonTapped(type)

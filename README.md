@@ -19,6 +19,35 @@
     Pocket Casts is the world's most powerful podcast platform, an app by listeners, for listeners.
 </p>
 
+# 🍴 About this fork
+
+A personal fork by [@mdbraber](https://github.com/mdbraber) adding a set of playback-workflow features on the `feature/upnext-filter` branch. All additions are device-local — fork-only database columns are kept outside the upstream schema chain and never sync to the official servers.
+
+### Playback Sessions
+
+- **Play as Session**: a playlist (manual or smart) plays *instead of* the Up Next queue. The queue is never modified; when the session runs out of unfinished episodes, playback returns to it. Ending a session (✕) hands playback straight to the first (filter-matching) queued episode.
+- The session is a **live mirror** of its playlist: reorder in the session or on the playlist screen and both change; the session re-reads the playlist on every advance.
+- Up Next shows the **playing world on top** (its header above the Now Playing card, with a ticking "N episodes · X left" line under the card) and the **parked world below** (dimmed title, own counts, collapsible via chevron). The Up Next tab and screen title read "Session" with the session's count while one is active.
+- Session rows behave like queue rows: standard episode swipes, drag-to-reorder, tap per the "Play Up Next On Tap" setting; the session's sort picker mirrors the playlist's sort options (including custom order) and restarts playback from the new top.
+
+### Smart Playlist Custom Order (Lineup + New)
+
+- Smart playlists support **drag-and-drop custom order** as an overlay: the smart rules keep deciding *membership*, stored positions decide *order*.
+- New arrivals land in a **"New" (inbox) section** until triaged — drag them into the Lineup at an exact spot, swipe → *Add to Lineup*, or tap *Add all new episodes to Lineup*. A per-playlist setting auto-adds arrivals instead, at **Top / Bottom / After Last Added / Before Last Added**.
+- Sessions play the **Lineup only**; untriaged episodes wait, surfaced via a tappable "N new episodes in Inbox" line in the session header. Playing a playlist whose Lineup is empty asks: *Add all to Lineup & Play* or *Play as-is*.
+- Reordering is always inline (long-press drag, like Up Next) — including on the playlist screen; positions survive switching to another sort and back.
+
+### Up Next Queue Lens
+
+- Filter the queue by **podcast, folder, smart playlist, or manual playlist**: non-matching episodes dim and auto-advance skips them — the queue itself is never trimmed or reordered.
+- A compact view (eye) hides skipped episodes; a second eye hides queue episodes that belong to the active session; the filter picker offers the five most recently used filters.
+
+### Extended Smart Rules
+
+- Smart playlists can additionally filter by **folders** and **manual playlists**, with include/exclude semantics for podcasts, folders, and playlists.
+
+Everything is gated behind the `upNextFilter` and `playbackSessions` feature flags and built for personal use. The upstream README follows.
+
 ## Setup
 
 If you don't already have it, you need to install Bundler:

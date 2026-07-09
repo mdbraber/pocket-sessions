@@ -71,6 +71,21 @@ public extension PlaylistSort {
     }
 }
 
+public extension PlaylistInsertMode {
+    var description: String {
+        switch self {
+        case .top:
+            return L10n.playlistInsertModeTop
+        case .bottom:
+            return L10n.playlistInsertModeBottom
+        case .afterLastInserted:
+            return L10n.playlistInsertModeAfterLast
+        case .beforeLastInserted:
+            return L10n.playlistInsertModeBeforeLast
+        }
+    }
+}
+
 public extension AutoAddToUpNextSetting {
     var description: String {
         switch self {

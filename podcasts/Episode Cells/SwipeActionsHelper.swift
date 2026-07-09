@@ -105,6 +105,33 @@ enum SwipeActionsHelper {
         return tableSwipeActions
     }
 
+    /// Fork: right-swipe actions for New (inbox) rows on custom-ordered smart playlists.
+    /// Triage verbs only: Add to Lineup (inserts at the playlist's marker) and Archive as
+    /// discard. The left swipe keeps the app-wide Play Next / Play Last meaning.
+    static func createInboxRightActionsForEpisode(_ episode: Episode, tableView: UITableView, indexPath: IndexPath, swipeHandler: SwipeHandler, addToLineup: @escaping (String) -> Void) -> TableSwipeActions {
+        let tableSwipeActions = TableSwipeActions()
+        let storedUuid = episode.uuid
+
+        let addAction = TableSwipeAction(indexPath: indexPath, title: L10n.playlistAddToLineup, removesFromList: true, backgroundColor: addToPlaylistSwipeBackground, icon: UIImage(named: "playlist-add-episode"), tableView: tableView, hidesWhenSelected: true, handler: { _ -> Bool in
+            addToLineup(storedUuid)
+            Self.performAction(.addToLineup, handler: swipeHandler, willBeRemoved: true)
+            return true
+        })
+        tableSwipeActions.addAction(addAction)
+
+        let archiveAction = TableSwipeAction(indexPath: indexPath, title: L10n.archive, removesFromList: true, backgroundColor: ThemeColor.support06(), icon: UIImage(named: "list_archive"), tableView: tableView, handler: { _ -> Bool in
+            if let loadedEpisode = DataManager.sharedManager.findEpisode(uuid: storedUuid) {
+                EpisodeManager.archiveEpisode(episode: loadedEpisode, fireNotification: true)
+                Self.performAction(.archive, handler: swipeHandler, willBeRemoved: true)
+            }
+
+            return true
+        })
+        tableSwipeActions.addAction(archiveAction)
+
+        return tableSwipeActions
+    }
+
     static func createRightActionsForEpisode(_ episode: BaseEpisode, tableView: UITableView, indexPath: IndexPath, swipeHandler: SwipeHandler) -> TableSwipeActions {
         let tableSwipeActions = TableSwipeActions()
         let storedUuid = episode.uuid
@@ -201,6 +228,7 @@ enum SwipeActionsHelper {
         case share
         case addToManualPlaylist
         case removeFromManualPlaylist
+        case addToLineup
 
         var analyticsDescription: String {
             switch self {
@@ -222,6 +250,8 @@ enum SwipeActionsHelper {
                 return "add_to_playlist"
             case .removeFromManualPlaylist:
                 return "remove_from_playlist"
+            case .addToLineup:
+                return "add_to_lineup"
             }
         }
     }

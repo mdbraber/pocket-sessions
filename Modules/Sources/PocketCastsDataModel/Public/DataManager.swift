@@ -1062,6 +1062,23 @@ public class DataManager {
         playlistManager.deleteAllEpisodes(in: playlist, dbQueue: dbQueue)
     }
 
+    // Fork: smart playlist custom-order overlay (Lineup + New inbox)
+    public func positionedEpisodeUuids(for playlist: EpisodeFilter) -> [String] {
+        playlistManager.positionedEpisodeUuids(for: playlist, dbQueue: dbQueue)
+    }
+
+    public func setCustomOrder(episodeUuids: [String], for playlist: EpisodeFilter) {
+        playlistManager.setCustomOrder(episodeUuids: episodeUuids, for: playlist, dbQueue: dbQueue)
+    }
+
+    public func insertIntoCustomOrder(episodeUuids: [String], for playlist: EpisodeFilter) {
+        playlistManager.insertIntoCustomOrder(episodeUuids: episodeUuids, for: playlist, dbQueue: dbQueue)
+    }
+
+    public func pruneCustomOrder(keepingEpisodeUuids: [String], for playlist: EpisodeFilter) {
+        playlistManager.pruneCustomOrder(keepingEpisodeUuids: keepingEpisodeUuids, for: playlist, dbQueue: dbQueue)
+    }
+
     // MARK: - Folders
 
     public func save(folder: Folder) {
