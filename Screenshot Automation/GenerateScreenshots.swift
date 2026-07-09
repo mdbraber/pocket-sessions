@@ -109,3 +109,110 @@ extension GenerateScreenshots {
         element.tap()
     }
 }
+
+// MARK: - Fork screenshots
+
+/// Fork: captures the README screenshots (docs/fork/) on the simulator so they all
+/// share the same device frame and data. Run against the booted simulator with:
+///   xcodebuild test -project podcasts.xcodeproj -scheme "Screenshot Automation" \
+///     -configuration StagingDebug -destination "platform=iOS Simulator,id=booted" \
+///     -only-testing:"Screenshot Automation/ForkScreenshots"
+/// PNGs land in ~/Library/Caches/tools.fastlane/screenshots.
+final class ForkScreenshots: XCTestCase {
+    let app = XCUIApplication()
+
+    override func setUpWithError() throws {
+        continueAfterFailure = false
+        setupSnapshot(app)
+        app.launch()
+        XCTAssert(app.wait(for: .runningForeground, timeout: 10))
+    }
+
+    private func element(labeled label: String) -> XCUIElement {
+        app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH[c] %@", label)).firstMatch
+    }
+
+    private func dismissAnySheet() {
+        for label in ["Close", "Not Now", "Maybe Later", "Done"] {
+            let button = app.buttons[label]
+            if button.exists, button.isHittable {
+                button.tap()
+                sleep(1)
+            }
+        }
+    }
+
+    /// TipKit bubbles (e.g. "Reorder your playlists") block hit-testing; a tap on the
+    /// navigation bar area dismisses them without activating anything.
+    private func dismissTips() {
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)).tap()
+        sleep(1)
+    }
+
+    /// Coordinate-based tap — works on elements XCUITest reports as not hittable
+    /// (SwiftUI list rows, tip-covered content).
+    private func tap(_ label: String) {
+        let el = element(labeled: label)
+        XCTAssert(el.waitForExistence(timeout: 10), "Missing element: \(label)")
+        el.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+    }
+
+    func testForkScreenshots() throws {
+        let tabBar = app.tabBars.firstMatch
+        sleep(5) // give the cold launch time to open the database and warm caches
+        dismissAnySheet()
+
+        // Starred playlist page with the Play as Session pill.
+        tabBar.buttons.element(boundBy: 1).waitForThenTap() // Playlists
+        sleep(2)
+        dismissTips()
+        tap("Starred")
+        // The episode list loads asynchronously — wait for a non-zero count before
+        // trusting the page (Play as Session no-ops on an empty list).
+        let loadedCount = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS ' episodes' AND NOT label CONTAINS '0 episodes'")).firstMatch
+        _ = loadedCount.waitForExistence(timeout: 30)
+        sleep(2)
+        snapshot("playlist-play-as-session")
+
+        // Start the session on Starred.
+        tap("Play as Session")
+        // Custom-order playlists with an empty Lineup ask before playing.
+        let playAsIs = app.buttons["Play as-is"]
+        if playAsIs.waitForExistence(timeout: 2) {
+            playAsIs.tap()
+        }
+        sleep(3)
+
+        // Session view on the Up Next screen.
+        tabBar.buttons.element(boundBy: 3).waitForThenTap() // Session / Up Next
+        sleep(2)
+        snapshot("session-in-up-next")
+
+        // Peek at the queue and open the filter picker. The pill switcher is not
+        // exposed as a segmented control, so find the segment by its label.
+        tap("Up Next ·")
+        sleep(1)
+        tap("Filter Up Next By")
+        sleep(2)
+        snapshot("up-next-filter")
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.1)).tap() // dismiss picker
+        sleep(1)
+
+        // Smart rules editor, then the folder rule picker — last, since the sheet
+        // has no swipe-to-dismiss and the test can end with it open.
+        tabBar.buttons.element(boundBy: 1).waitForThenTap()
+        sleep(1)
+        tap("Starred")
+        _ = loadedCount.waitForExistence(timeout: 30)
+        sleep(2)
+        tap("Smart rules")
+        sleep(2)
+        snapshot("smart-rules")
+        let foldersRow = element(labeled: "Folders")
+        if foldersRow.waitForExistence(timeout: 3) {
+            foldersRow.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            sleep(2)
+            snapshot("smart-rule-folders")
+        }
+    }
+}
