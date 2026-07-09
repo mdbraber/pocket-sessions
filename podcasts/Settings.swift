@@ -445,6 +445,7 @@ class Settings: NSObject {
         if let session {
             UserDefaults.standard.set(session.type.rawValue, forKey: Settings.playbackSessionTypeKey)
             UserDefaults.standard.set(session.uuid, forKey: Settings.playbackSessionUuidKey)
+            rememberRecentPlaybackSession(session)
         } else {
             UserDefaults.standard.removeObject(forKey: Settings.playbackSessionTypeKey)
             UserDefaults.standard.removeObject(forKey: Settings.playbackSessionUuidKey)
@@ -467,6 +468,42 @@ class Settings: NSObject {
     class func setUpNextHideSessionEpisodes(_ hide: Bool) {
         UserDefaults.standard.set(hide, forKey: Settings.upNextHideSessionEpisodesKey)
         NotificationCenter.postOnMainThread(notification: Constants.Notifications.upNextFilterChanged)
+    }
+
+    static let recentPlaybackSessionsKey = "SJRecentPlaybackSessions"
+    static let recentSessionsLimitKey = "SJRecentSessionsLimit"
+    private static let recentPlaybackSessionsStorageCap = 20
+
+    /// How many recent sessions the "Switch Session" picker offers (configurable in
+    /// Settings › General). Storage keeps more, so raising the limit reveals older ones.
+    class func recentSessionsLimit() -> Int {
+        let stored = UserDefaults.standard.integer(forKey: Settings.recentSessionsLimitKey)
+        return stored > 0 ? stored : 5
+    }
+
+    class func setRecentSessionsLimit(_ limit: Int) {
+        UserDefaults.standard.set(limit, forKey: Settings.recentSessionsLimitKey)
+    }
+
+    /// The most recently played sessions, most recent first, capped at the picker limit.
+    /// Sessions whose source no longer exists are skipped on read.
+    class func recentPlaybackSessions() -> [PlaybackSession] {
+        guard FeatureFlag.playbackSessions.enabled,
+              let raw = UserDefaults.standard.array(forKey: recentPlaybackSessionsKey) as? [[String: String]] else { return [] }
+        let sessions: [PlaybackSession] = raw.compactMap { entry in
+            guard let typeValue = entry["type"], let type = PlaybackSessionType(rawValue: typeValue), let uuid = entry["uuid"] else { return nil }
+            return PlaybackSession(type: type, uuid: uuid)
+        }
+        return Array(sessions.filter { $0.title != nil }.prefix(recentSessionsLimit()))
+    }
+
+    /// Also called from Up Next's refresh to self-heal: a session persisted from before
+    /// the recents feature existed still registers itself.
+    class func rememberRecentPlaybackSession(_ session: PlaybackSession) {
+        var raw = (UserDefaults.standard.array(forKey: recentPlaybackSessionsKey) as? [[String: String]]) ?? []
+        raw.removeAll { $0["type"] == session.type.rawValue && $0["uuid"] == session.uuid }
+        raw.insert(["type": session.type.rawValue, "uuid": session.uuid], at: 0)
+        UserDefaults.standard.set(Array(raw.prefix(recentPlaybackSessionsStorageCap)), forKey: recentPlaybackSessionsKey)
     }
 
     static let playbackSessionLastEpisodeKey = "SJPlaybackSessionLastEpisode"

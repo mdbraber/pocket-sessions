@@ -669,19 +669,25 @@ class PlaybackManager: ServerPlaybackDelegate {
         guard FeatureFlag.playbackSessions.enabled, let first = session.nextEpisode(after: nil) else { return }
 
         FileLog.shared.addMessage("Starting playback session from \(session.type.rawValue) \(session.uuid)")
-        Settings.setPlaybackSession(session)
         let interruptedEpisode = currentEpisode()
         isLoadingSessionEpisode = true
         defer { isLoadingSessionEpisode = false }
         load(episode: first, autoPlay: true, overrideUpNext: false)
         currentEpisodeIsFromSession = true
+
+        // Announce the session only after its first episode is loaded — announcing first
+        // makes the UI briefly resolve "current episode" as the queue's top episode.
+        Settings.setPlaybackSession(session)
         Settings.setPlaybackSessionLastEpisodeUuid(first.uuid)
 
         // With an empty queue, load() replaces the whole Up Next table with the new episode,
         // which would silently drop what was playing — put it back at the top of the queue.
+        // No add notification: this is session bookkeeping, not a user "Play Next" (the
+        // genie animation would fly the wrong episode).
         if let interruptedEpisode, interruptedEpisode.uuid != first.uuid, !queue.contains(episode: interruptedEpisode) {
             FileLog.shared.addMessage("Playback session: returning interrupted episode \(interruptedEpisode.displayableTitle()) to Up Next")
-            queue.add(episode: interruptedEpisode, fireNotification: true, partOfBulkAdd: false, toTop: true)
+            queue.add(episode: interruptedEpisode, fireNotification: false, partOfBulkAdd: false, toTop: true)
+            NotificationCenter.postOnMainThread(notification: Constants.Notifications.upNextQueueChanged)
         }
     }
 

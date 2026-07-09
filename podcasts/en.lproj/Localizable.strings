@@ -5219,6 +5219,24 @@
 /* Empty-state action that turns the session eye off again */
 "up_next_session_hidden_show" = "Show them";
 
+/* Session header title suffix when no session is active ("Session: None") */
+"playback_session_none" = "None";
+
+/* Title of the picker that offers the most recently played sessions */
+"playback_session_switch_title" = "Switch Session";
+
+/* Button that navigates to the source the session mirrors (podcast, playlist, or smart playlist) */
+"playback_session_go_to" = "Go to session source";
+
+/* Title of the empty state shown on the Session view when no session is active */
+"playback_session_empty_title" = "Choose a session to listen";
+
+/* Button on the empty Session view that opens the recent sessions picker */
+"playback_session_choose" = "Choose session";
+
+/* Settings row: how many recent sessions the Switch Session picker offers */
+"settings_recent_sessions" = "Recent Sessions";
+
 /* Title shown at the top of the Up Next sort options picker */
 "up_next_sort_title" = "Sort Up Next";
 

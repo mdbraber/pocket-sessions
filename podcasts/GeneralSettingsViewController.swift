@@ -12,11 +12,14 @@ class GeneralSettingsViewController: PCViewController, UITableViewDelegate, UITa
 
     let debounce = Debounce(delay: Constants.defaultDebounceTime)
 
-    enum TableRow { case skipForward, skipBack, keepScreenAwake, openPlayer, intelligentPlaybackResumption, defaultRowAction, extraMediaActions, defaultAddToUpNextSwipe, defaultGrouping, defaultArchive, playUpNextOnTap, legacyBluetooth, multiSelectGesture, openLinksInBrowser, publishChapterTitles, autoplay, autoRestartSleepTimer, shakeToRestartSleepTimer, isLockScreenScrubberDisabled, voiceBoostN }
+    enum TableRow { case skipForward, skipBack, keepScreenAwake, openPlayer, intelligentPlaybackResumption, defaultRowAction, extraMediaActions, defaultAddToUpNextSwipe, defaultGrouping, defaultArchive, playUpNextOnTap, legacyBluetooth, multiSelectGesture, openLinksInBrowser, publishChapterTitles, autoplay, autoRestartSleepTimer, shakeToRestartSleepTimer, isLockScreenScrubberDisabled, voiceBoostN, recentSessionsLimit }
     private var tableData: [[TableRow]] {
         var data: [[TableRow]] = [[.defaultRowAction, .defaultGrouping, .defaultArchive, .defaultAddToUpNextSwipe, .openLinksInBrowser], [.skipForward, .skipBack, .keepScreenAwake, .openPlayer, .isLockScreenScrubberDisabled, .intelligentPlaybackResumption], [.autoRestartSleepTimer], [.shakeToRestartSleepTimer], [.playUpNextOnTap], [.extraMediaActions], [.legacyBluetooth], [.multiSelectGesture], [.publishChapterTitles], [.autoplay]]
         if FeatureFlag.voiceBoostN.enabled {
             data.append([.voiceBoostN])
+        }
+        if FeatureFlag.playbackSessions.enabled {
+            data.append([.recentSessionsLimit])
         }
         return data
     }
@@ -210,6 +213,12 @@ class GeneralSettingsViewController: PCViewController, UITableViewDelegate, UITa
             let cell = tableView.dequeueReusableCell(withIdentifier: disclosureCellId, for: indexPath) as! DisclosureCell
             cell.cellLabel.text = L10n.settingsGeneralUpNextSwipe
             cell.cellSecondaryLabel.text = Settings.primaryUpNextSwipeAction() == .playNext ? L10n.playNext : L10n.playLast
+
+            return cell
+        case .recentSessionsLimit:
+            let cell = tableView.dequeueReusableCell(withIdentifier: disclosureCellId, for: indexPath) as! DisclosureCell
+            cell.cellLabel.text = L10n.settingsRecentSessions
+            cell.cellSecondaryLabel.text = "\(Settings.recentSessionsLimit())"
 
             return cell
         case .defaultGrouping:
@@ -412,6 +421,16 @@ class GeneralSettingsViewController: PCViewController, UITableViewDelegate, UITa
             }
             options.addAction(action: showAction)
 
+            options.present(from: self)
+        } else if row == .recentSessionsLimit {
+            let options = OptionsPicker(title: L10n.settingsRecentSessions)
+            for limit in [3, 5, 10, 20] {
+                let action = OptionAction(label: "\(limit)", selected: Settings.recentSessionsLimit() == limit) {
+                    Settings.setRecentSessionsLimit(limit)
+                    tableView.reloadData()
+                }
+                options.addAction(action: action)
+            }
             options.present(from: self)
         } else if row == .defaultAddToUpNextSwipe {
             let currentAction = Settings.primaryUpNextSwipeAction()

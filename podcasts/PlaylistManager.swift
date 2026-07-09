@@ -92,6 +92,25 @@ class PlaylistManager {
         return playlist
     }
 
+    /// Fork: the smart playlist that mirrors just this podcast, created on first use.
+    /// Podcast sessions run through it so they get custom order, the New inbox, and
+    /// session reorder/sort like any other smart playlist.
+    class func findOrCreateSmartPlaylist(for podcast: Podcast) -> EpisodeFilter {
+        let playlists = DataManager.sharedManager.allPlaylists(includeDeleted: false)
+        if let existing = playlists.first(where: { !$0.manual && !$0.filterAllPodcasts && $0.podcastUuids == podcast.uuid }) {
+            return existing
+        }
+
+        let playlist = createNewPlaylist()
+        playlist.playlistName = podcast.title ?? L10n.filtersDefaultNewFilter
+        playlist.filterAllPodcasts = false
+        playlist.podcastUuids = podcast.uuid
+        playlist.isNew = false
+        DataManager.sharedManager.save(playlist: playlist)
+        NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged)
+        return playlist
+    }
+
     class func checkForAutoDownloads() {
         let playlists = DataManager.sharedManager.allPlaylists(includeDeleted: false)
 

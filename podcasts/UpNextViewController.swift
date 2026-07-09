@@ -65,60 +65,82 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
     let sessionHeaderLabel = ThemeableLabel()
     let sessionSortButton = HitTargetButton(frame: CGRect(x: 0, y: 0, width: 24, height: 24))
     let endSessionButton = HitTargetButton(frame: CGRect(x: 0, y: 0, width: 20, height: 20))
-    let sessionChevronButton = HitTargetButton(frame: CGRect(x: 0, y: 0, width: 20, height: 20))
+    /// Which world the screen is showing. The pill switcher changes only the view —
+    /// never what plays — and auto-follows playback ownership on transitions (session
+    /// starts → session view; session pauses → queue view; ending a session stays on
+    /// the Session view's empty state). A manual pick holds until the next transition.
+    enum DisplayedWorld: Int {
+        case upNext = 0
+        case session = 1
+    }
 
-    /// Whether the queue's episode list is expanded. While a session is playing the queue
-    /// folds down to its header (it isn't what's playing), and expands again when the
-    /// session pauses or ends. Manually togglable via the chevron whenever a session
-    /// shares the screen.
-    var queueExpanded = true
+    var displayedWorld: DisplayedWorld = .upNext
 
-    /// The session's mirror image: expanded while it plays, folded to its header while
-    /// the queue plays (paused session). Manually togglable via its chevron.
-    var sessionExpanded = true
-
-    /// Tracks session-playing transitions for the expansion defaults.
+    /// Tracks session-playing transitions for the view's auto-follow.
     private var lastKnownSessionActive: Bool?
 
-    let queueChevronButton = HitTargetButton(frame: CGRect(x: 0, y: 0, width: 20, height: 20))
-    let queueTitleLabel = ThemeableLabel()
     let hideSessionButton = HitTargetButton(frame: CGRect(x: 0, y: 0, width: 24, height: 24))
-    private var queueLabelCenterInControls: NSLayoutConstraint?
-    private var queueLabelBelowControls: NSLayoutConstraint?
 
-    var isQueueCollapsed: Bool {
-        FeatureFlag.playbackSessions.enabled && Settings.playbackSession() != nil && !queueExpanded
-    }
+    let worldSwitcher = UISegmentedControl(items: [L10n.upNext, L10n.playbackSessionTabSession])
 
-    /// Shows the queue's "▾ Up Next" title line while a session shares the screen (matching
-    /// the session header's anatomy), the chevron pointing down when expanded and right when
-    /// collapsed; the counts line then lives under the Now Playing card instead. Without a
-    /// session the counts label is the header line, as stock.
-    func updateQueueChevron() {
-        let sessionOnScreen = FeatureFlag.playbackSessions.enabled && Settings.playbackSession() != nil
-        let queueIsPlayingWorld = sessionOnScreen && Settings.playbackSessionPaused()
-        queueChevronButton.isHidden = !sessionOnScreen
-        queueTitleLabel.isHidden = !sessionOnScreen
-        // Parked (session playing): dimmed title with the counts line beneath it;
-        // when the queue is the playing world its counts live under the card instead.
-        queueTitleLabel.style = queueIsPlayingWorld ? .primaryText01 : .primaryText02
-        remainingLabel.isHidden = queueIsPlayingWorld
-        // As a counts sub-line it matches the session's meta font; standalone (no
-        // session) it keeps the stock header weight.
-        remainingLabel.font = sessionOnScreen
-            ? UIFont.font(ofSize: 13, scalingWith: .footnote)
-            : UIFont.font(ofSize: 14, weight: .medium, scalingWith: .footnote)
-        queueLabelCenterInControls?.isActive = false
-        queueLabelBelowControls?.isActive = false
-        (sessionOnScreen ? queueLabelBelowControls : queueLabelCenterInControls)?.isActive = true
-        let chevronImage = UIImage(systemName: queueExpanded ? "chevron.down" : "chevron.right", withConfiguration: UIImage.SymbolConfiguration(pointSize: 11, weight: .bold))?
-            .withTintColor(AppTheme.colorForStyle(.primaryIcon01, themeOverride: themeOverride), renderingMode: .alwaysOriginal)
-        queueChevronButton.setImage(chevronImage, for: .normal)
-    }
+    private static let worldSwitcherFont = UIFont.systemFont(ofSize: 13, weight: .medium)
 
-    @objc private func queueChevronTapped() {
-        queueExpanded.toggle()
+    @objc private func worldSwitcherChanged() {
+        displayedWorld = DisplayedWorld(rawValue: worldSwitcher.selectedSegmentIndex) ?? .upNext
         reloadTable()
+    }
+
+    /// Pill titles carry each world's episode count (including the playing episode)
+    /// so the parked world stays visible in the periphery while peeking.
+    func updateWorldSwitcher() {
+        guard FeatureFlag.playbackSessions.enabled else { return }
+        let textColor = AppTheme.colorForStyle(.primaryText01, themeOverride: themeOverride)
+        worldSwitcher.setTitleTextAttributes([.font: Self.worldSwitcherFont, .foregroundColor: textColor], for: .normal)
+        worldSwitcher.setTitleTextAttributes([.font: Self.worldSwitcherFont, .foregroundColor: textColor], for: .selected)
+
+        let queueCount = PlaybackManager.shared.queue.upNextCount() + (queueOwnsCard ? 1 : 0)
+        setWorldSegment(title: "\(L10n.upNext) · \(queueCount)", playing: queueOwnsCard, at: DisplayedWorld.upNext.rawValue)
+
+        let sessionCount = (sessionEpisodes?.count ?? 0) + (sessionOwnsCard ? 1 : 0)
+        let sessionTitle = Settings.playbackSession() != nil
+            ? "\(L10n.playbackSessionTabSession) · \(sessionCount)"
+            : L10n.playbackSessionTabSession
+        setWorldSegment(title: sessionTitle, playing: sessionOwnsCard, at: DisplayedWorld.session.rawValue)
+
+        worldSwitcher.selectedSegmentIndex = displayedWorld.rawValue
+    }
+
+    /// The world that owns playback carries the now-playing speaker glyph in its pill —
+    /// the same visual language Music/Podcasts use to mark the playing item.
+    private func setWorldSegment(title: String, playing: Bool, at index: Int) {
+        guard playing else {
+            worldSwitcher.setTitle(title, forSegmentAt: index)
+            return
+        }
+        worldSwitcher.setImage(nowPlayingSegmentImage(title: title), forSegmentAt: index)
+    }
+
+    /// A segment can hold a title or an image, not both, so the glyph+title combination
+    /// is rendered into an image matching the plain segments' font and color.
+    private func nowPlayingSegmentImage(title: String) -> UIImage {
+        let font = Self.worldSwitcherFont
+        let textColor = AppTheme.colorForStyle(.primaryText01, themeOverride: themeOverride)
+        let accent = AppTheme.colorForStyle(.primaryInteractive01, themeOverride: themeOverride)
+
+        let attachment = NSTextAttachment()
+        if let symbol = UIImage(systemName: "speaker.wave.2.fill", withConfiguration: UIImage.SymbolConfiguration(pointSize: 10, weight: .semibold))?
+            .withTintColor(accent, renderingMode: .alwaysOriginal) {
+            attachment.image = symbol
+            attachment.bounds = CGRect(x: 0, y: (font.capHeight - symbol.size.height) / 2, width: symbol.size.width, height: symbol.size.height)
+        }
+
+        let content = NSMutableAttributedString(attachment: attachment)
+        content.append(NSAttributedString(string: " " + title, attributes: [.font: font, .foregroundColor: textColor]))
+
+        let size = CGSize(width: ceil(content.size().width), height: ceil(content.size().height))
+        return UIGraphicsImageRenderer(size: size).image { _ in
+            content.draw(at: .zero)
+        }.withRenderingMode(.alwaysOriginal)
     }
     private var filterTrailingToHideSkipped: NSLayoutConstraint?
     private var filterTrailingToShuffle: NSLayoutConstraint?
@@ -144,23 +166,22 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
         view.addSubview(sessionInboxLabel)
         sessionInboxLabel.translatesAutoresizingMaskIntoConstraints = false
 
-        view.addSubview(endSessionButton)
-        endSessionButton.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(sessionSortButton)
-        sessionSortButton.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(sessionChevronButton)
-        sessionChevronButton.translatesAutoresizingMaskIntoConstraints = false
-        sessionChevronButton.addTarget(self, action: #selector(sessionChevronTapped), for: .touchUpInside)
+        // Trailing controls in a stack so hidden buttons collapse — whatever is visible
+        // (e.g. only the switcher in the "Session: None" state) hugs the right edge.
+        switchSessionButton.addTarget(self, action: #selector(switchSessionTapped), for: .touchUpInside)
+        goToSessionButton.addTarget(self, action: #selector(openSessionSource), for: .touchUpInside)
+        let buttonsStack = UIStackView(arrangedSubviews: [goToSessionButton, sessionSortButton, switchSessionButton, endSessionButton])
+        buttonsStack.axis = .horizontal
+        buttonsStack.alignment = .center
+        buttonsStack.spacing = 16
+        view.addSubview(buttonsStack)
+        buttonsStack.translatesAutoresizingMaskIntoConstraints = false
+
 
         NSLayoutConstraint.activate([
-            sessionChevronButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
-            sessionChevronButton.centerYAnchor.constraint(equalTo: sessionHeaderLabel.centerYAnchor),
-            sessionChevronButton.widthAnchor.constraint(equalToConstant: 20),
-            sessionChevronButton.heightAnchor.constraint(equalToConstant: 20),
-
             sessionHeaderLabel.topAnchor.constraint(equalTo: view.topAnchor, constant: 8),
-            sessionHeaderLabel.leadingAnchor.constraint(equalTo: sessionChevronButton.trailingAnchor, constant: 6),
-            sessionHeaderLabel.trailingAnchor.constraint(lessThanOrEqualTo: sessionSortButton.leadingAnchor, constant: -10),
+            sessionHeaderLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            sessionHeaderLabel.trailingAnchor.constraint(lessThanOrEqualTo: buttonsStack.leadingAnchor, constant: -10),
 
             sessionMetaLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             sessionMetaLabel.topAnchor.constraint(equalTo: sessionHeaderLabel.bottomAnchor, constant: 1),
@@ -170,18 +191,20 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
             sessionInboxLabel.topAnchor.constraint(equalTo: sessionMetaLabel.bottomAnchor, constant: 3),
             sessionInboxLabel.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -20),
 
-            endSessionButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
-            endSessionButton.centerYAnchor.constraint(equalTo: sessionHeaderLabel.centerYAnchor),
+            buttonsStack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+            buttonsStack.centerYAnchor.constraint(equalTo: sessionHeaderLabel.centerYAnchor),
+            goToSessionButton.widthAnchor.constraint(equalToConstant: 24),
+            goToSessionButton.heightAnchor.constraint(equalToConstant: 24),
             endSessionButton.widthAnchor.constraint(equalToConstant: 20),
             endSessionButton.heightAnchor.constraint(equalToConstant: 20),
-            sessionSortButton.trailingAnchor.constraint(equalTo: endSessionButton.leadingAnchor, constant: -16),
-            sessionSortButton.centerYAnchor.constraint(equalTo: sessionHeaderLabel.centerYAnchor),
+            switchSessionButton.widthAnchor.constraint(equalToConstant: 24),
+            switchSessionButton.heightAnchor.constraint(equalToConstant: 24),
             sessionSortButton.widthAnchor.constraint(equalToConstant: 24),
             sessionSortButton.heightAnchor.constraint(equalToConstant: 24)
         ])
 
-        // The chevron toggles collapse; the title opens the session's source (the session
-        // is a live mirror of it); the inbox line opens the same place to triage.
+        // The title opens the session's source (the session is a live mirror of it);
+        // the inbox line opens the same place to triage.
         sessionHeaderLabel.isUserInteractionEnabled = true
         sessionHeaderLabel.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(openSessionSource)))
         sessionInboxLabel.isUserInteractionEnabled = true
@@ -191,30 +214,31 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
 
     let sessionInboxLabel = UILabel()
     let sessionMetaLabel = ThemeableLabel()
+    let switchSessionButton = HitTargetButton(frame: CGRect(x: 0, y: 0, width: 24, height: 24))
+    let goToSessionButton = HitTargetButton(frame: CGRect(x: 0, y: 0, width: 24, height: 24))
 
-    /// Counts/time line under the Now Playing card, owned by whichever world is playing
-    /// (session or queue). Ticks with playback progress.
-    lazy var nowPlayingMetaFooterView: UIView = {
-        let view = UIView()
-        nowPlayingMetaLabel.style = .primaryText02
-        nowPlayingMetaLabel.font = UIFont.font(ofSize: 13, scalingWith: .footnote)
-        view.addSubview(nowPlayingMetaLabel)
-        nowPlayingMetaLabel.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            nowPlayingMetaLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
-            nowPlayingMetaLabel.topAnchor.constraint(equalTo: view.topAnchor, constant: 4),
-            nowPlayingMetaLabel.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -20)
-        ])
-        return view
-    }()
+    /// Offers the most recently played sessions (limit configurable in Settings › General);
+    /// picking one starts a session on that source.
+    @objc func switchSessionTapped() {
+        let recents = Settings.recentPlaybackSessions()
+        guard !recents.isEmpty else { return }
 
-    let nowPlayingMetaLabel = ThemeableLabel()
-
-    /// Refreshes the under-card counts line: the session's meta while the session plays,
-    /// the queue's counts while the queue plays (paused session).
-    func updateNowPlayingMetaLabel() {
-        guard sessionEpisodes != nil else { return }
-        nowPlayingMetaLabel.text = Settings.playbackSessionPaused() ? queueCountsText(includeNowPlaying: true) : sessionMetaText()
+        let optionsPicker = OptionsPicker(title: L10n.playbackSessionSwitchTitle.localizedUppercase, themeOverride: themeOverride)
+        let current = Settings.playbackSession()
+        for recent in recents {
+            let typeLabel: String
+            switch recent.type {
+            case .podcast: typeLabel = L10n.playbackSessionTypePodcast
+            case .playlist: typeLabel = L10n.playbackSessionTypePlaylist
+            case .smartPlaylist: typeLabel = L10n.upNextFilterTypeSmartPlaylist
+            }
+            optionsPicker.addAction(action: OptionAction(label: recent.title ?? "", secondaryLabel: typeLabel, selected: recent == current) {
+                guard recent != current else { return }
+                AnalyticsPlaybackHelper.shared.currentSource = .upNext
+                PlaybackManager.shared.startPlaybackSession(recent)
+            })
+        }
+        optionsPicker.present(from: self)
     }
 
     /// "N episodes · X left" for the whole session. DB progress lags playback, so the
@@ -229,15 +253,48 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
             totalDuration -= max(0, sessionCurrent.duration - sessionCurrent.playedUpTo)
             totalDuration += max(0, PlaybackManager.shared.duration() - PlaybackManager.shared.currentTime())
         }
+        // Same strings as the stock Up Next counts line, so the two worlds read alike.
         let time = TimeFormatter.shared.multipleUnitFormattedShortTime(time: totalDuration)
-        return L10n.playbackSessionMeta(remainingEpisodes.count.localized(), time)
+        let count = remainingEpisodes.count
+        if count == 0 {
+            return L10n.queueUpNextHeaderTimeLeft(time)
+        } else if count == 1 {
+            return L10n.queueUpNextHeaderOneEpisode(time)
+        }
+        return L10n.queueUpNextHeaderPlural(count.localized(), time)
     }
 
     func updateSessionHeader() {
-        guard let session = Settings.playbackSession() else { return }
+        let session = Settings.playbackSession()
 
-        // The source's name (trailing disclosure — tapping opens it); counts/time live
-        // under the Now Playing card, and the inbox line carries "N new".
+        let switchImage = UIImage(systemName: "arrow.left.arrow.right", withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .semibold))?
+            .withTintColor(AppTheme.colorForStyle(.primaryIcon02, themeOverride: themeOverride), renderingMode: .alwaysOriginal)
+        switchSessionButton.setImage(switchImage, for: .normal)
+        switchSessionButton.accessibilityLabel = L10n.playbackSessionSwitchTitle
+        switchSessionButton.isHidden = Settings.recentPlaybackSessions().isEmpty && session == nil
+
+        // Go to the source this session mirrors (podcast, playlist, or smart playlist).
+        let goToImage = UIImage(systemName: "arrow.up.right", withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .semibold))?
+            .withTintColor(AppTheme.colorForStyle(.primaryIcon02, themeOverride: themeOverride), renderingMode: .alwaysOriginal)
+        goToSessionButton.setImage(goToImage, for: .normal)
+        goToSessionButton.accessibilityLabel = L10n.playbackSessionGoTo
+        goToSessionButton.isHidden = session == nil
+
+        // With no session the view shows a dimmed "Session" bar with the switcher
+        // (and the Switch Session row) as the way back in.
+        guard let session else {
+            sessionHeaderLabel.text = L10n.playbackSessionTabSession
+            sessionHeaderLabel.style = .primaryText02
+            sessionMetaLabel.text = nil
+            sessionInboxLabel.isHidden = true
+            sessionSortButton.isHidden = true
+            endSessionButton.isHidden = true
+            return
+        }
+        endSessionButton.isHidden = false
+
+        // The source's name (tapping opens it); the counts line always sits beneath it
+        // and covers the full session including the playing episode.
         let sourceName: String
         switch session.type {
         case .podcast:
@@ -245,19 +302,11 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
         case .playlist, .smartPlaylist:
             sourceName = DataManager.sharedManager.findPlaylist(uuid: session.uuid)?.playlistName ?? L10n.playbackSessionTabSession
         }
-        sessionHeaderLabel.text = "\(L10n.playbackSessionTabSession): \(sourceName)"
+        sessionHeaderLabel.text = sourceName
+        sessionHeaderLabel.style = Settings.playbackSessionPaused() ? .primaryText02 : .primaryText01
+        sessionMetaLabel.text = sessionMetaText()
 
-        // Parked (queue playing): dimmed title with its counts line always visible.
-        // Playing: primary title; the counts live under the Now Playing card instead.
-        let parked = Settings.playbackSessionPaused()
-        sessionHeaderLabel.style = parked ? .primaryText02 : .primaryText01
-        sessionMetaLabel.text = parked ? sessionMetaText() : nil
-
-        let chevronImage = UIImage(systemName: sessionExpanded ? "chevron.down" : "chevron.right", withConfiguration: UIImage.SymbolConfiguration(pointSize: 11, weight: .bold))?
-            .withTintColor(AppTheme.colorForStyle(.primaryIcon01, themeOverride: themeOverride), renderingMode: .alwaysOriginal)
-        sessionChevronButton.setImage(chevronImage, for: .normal)
-
-        // Inbox line (above the Now Playing card): tap to go triage the playlist's inbox.
+        // Inbox line: tap to go triage the playlist's inbox.
         if sessionInboxCount > 0 {
             let noticeText = sessionInboxCount == 1
                 ? L10n.playbackSessionInboxNoticeSingular
@@ -268,8 +317,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
             sessionInboxLabel.isHidden = true
         }
         sessionInboxLabel.textColor = AppTheme.colorForStyle(.primaryInteractive01, themeOverride: themeOverride)
-        // Sort hides while the session is collapsed; the ✕ (end session) always shows.
-        sessionSortButton.isHidden = !(session.type == .smartPlaylist || session.type == .playlist) || !sessionExpanded
+        sessionSortButton.isHidden = !(session.type == .smartPlaylist || session.type == .playlist)
         let sortImage = UIImage(named: "podcast-sort")?
             .withTintColor(AppTheme.colorForStyle(.primaryIcon02, themeOverride: themeOverride), renderingMode: .alwaysOriginal)
         sessionSortButton.setImage(sortImage, for: .normal)
@@ -283,7 +331,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
     /// Ticks the under-card "… left" line while a session episode plays.
     @objc func sessionPlaybackProgressed() {
         guard FeatureFlag.playbackSessions.enabled, Settings.playbackSession() != nil, !Settings.playbackSessionPaused() else { return }
-        updateNowPlayingMetaLabel()
+        sessionMetaLabel.text = sessionMetaText()
     }
 
     /// Uuids of queued episodes matching the active Up Next filter, or nil when no filter is set.
@@ -311,9 +359,13 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
     }
 
     /// Fork: navigates to the session's source — the playlist (manual or smart) or podcast
-    /// it plays from. Reached from the session title and the inbox notice row.
+    /// it plays from. Reached from the session title and the inbox notice row. With no
+    /// session, the title tap opens the switcher instead.
     @objc func openSessionSource() {
-        guard let session = Settings.playbackSession() else { return }
+        guard let session = Settings.playbackSession() else {
+            switchSessionTapped()
+            return
+        }
 
         let navigate: () -> Void
         switch session.type {
@@ -393,20 +445,11 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
         let headerView = UIView(frame: CGRect(x: 0, y: 0, width: 0, height: 48))
 
         // Queue controls live on the header's top row; the filter indicator line appears
-        // below them when a filter is active (see heightForHeaderInSection). While a
-        // session shares the screen, a title-sized "Up Next" leads the controls row and
-        // the counts label drops to a secondary line beneath it.
+        // below them when a filter is active (see heightForHeaderInSection).
         let controlsRow = UILayoutGuide()
         headerView.addLayoutGuide(controlsRow)
 
-        queueTitleLabel.style = .primaryText01
-        queueTitleLabel.font = UIFont.font(ofSize: 15, weight: .semibold, scalingWith: .subheadline)
-        queueTitleLabel.text = L10n.upNext
-        headerView.addSubview(queueTitleLabel)
-        queueTitleLabel.translatesAutoresizingMaskIntoConstraints = false
-
         NSLayoutConstraint.activate([
-            queueTitleLabel.centerYAnchor.constraint(equalTo: controlsRow.centerYAnchor),
             controlsRow.leadingAnchor.constraint(equalTo: headerView.leadingAnchor),
             controlsRow.trailingAnchor.constraint(equalTo: headerView.trailingAnchor),
             controlsRow.topAnchor.constraint(equalTo: headerView.topAnchor),
@@ -415,27 +458,11 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
 
         updateTimeRemainingLabel()
 
-        // Chevron sits beside the "Up Next" title while a session shares the screen,
-        // collapsing the queue to its header bar — same affordance as the session section.
-        headerView.addSubview(queueChevronButton)
-        queueChevronButton.translatesAutoresizingMaskIntoConstraints = false
-        queueChevronButton.addTarget(self, action: #selector(queueChevronTapped), for: .touchUpInside)
-
         headerView.addSubview(remainingLabel)
         NSLayoutConstraint.activate([
-            queueChevronButton.leadingAnchor.constraint(equalTo: headerView.leadingAnchor, constant: 20),
-            queueChevronButton.centerYAnchor.constraint(equalTo: controlsRow.centerYAnchor),
-            queueChevronButton.widthAnchor.constraint(equalToConstant: 20),
-            queueChevronButton.heightAnchor.constraint(equalToConstant: 20),
-            queueTitleLabel.leadingAnchor.constraint(equalTo: queueChevronButton.trailingAnchor, constant: 6),
-            remainingLabel.leadingAnchor.constraint(equalTo: headerView.leadingAnchor, constant: 20)
+            remainingLabel.leadingAnchor.constraint(equalTo: headerView.leadingAnchor, constant: 20),
+            remainingLabel.centerYAnchor.constraint(equalTo: controlsRow.centerYAnchor)
         ])
-        // No session: the counts label is the header line, centered with the controls.
-        // Session active (queue parked): "Up Next" takes that spot and the counts sit
-        // beneath it. Queue playing (paused session): counts move under the card instead.
-        queueLabelCenterInControls = remainingLabel.centerYAnchor.constraint(equalTo: controlsRow.centerYAnchor)
-        queueLabelBelowControls = remainingLabel.topAnchor.constraint(equalTo: controlsRow.bottomAnchor, constant: -8)
-        queueLabelCenterInControls?.isActive = true
 
         if FeatureFlag.upNextSort.enabled {
             headerView.addSubview(sortButton)
@@ -630,6 +657,22 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
         setupActionButtonsIfNecessary()
 
         contentInseter.setupInsetAdjustmentsForMiniPlayer(scrollView: upNextTable)
+
+        if FeatureFlag.playbackSessions.enabled {
+            // The pill switcher floats above the list as the table's header; each pill
+            // shows its world's episode count and switching is view-only peeking.
+            let pillContainer = UIView(frame: CGRect(x: 0, y: 0, width: upNextTable.bounds.width, height: 52))
+            pillContainer.autoresizingMask = [.flexibleWidth]
+            worldSwitcher.translatesAutoresizingMaskIntoConstraints = false
+            worldSwitcher.addTarget(self, action: #selector(worldSwitcherChanged), for: .valueChanged)
+            pillContainer.addSubview(worldSwitcher)
+            NSLayoutConstraint.activate([
+                worldSwitcher.leadingAnchor.constraint(equalTo: pillContainer.leadingAnchor, constant: 20),
+                worldSwitcher.trailingAnchor.constraint(equalTo: pillContainer.trailingAnchor, constant: -20),
+                worldSwitcher.centerYAnchor.constraint(equalTo: pillContainer.centerYAnchor)
+            ])
+            upNextTable.tableHeaderView = pillContainer
+        }
 
         refreshSections()
     }
@@ -897,10 +940,6 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
         Settings.setUpNextHideSessionEpisodes(!Settings.upNextHideSessionEpisodes())
     }
 
-    @objc private func sessionChevronTapped() {
-        sessionExpanded.toggle()
-        reloadTable()
-    }
 
     @objc private func clearFilterButtonTapped() {
         Settings.setUpNextFilter(nil)
@@ -928,10 +967,10 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
         hideSkippedButton.accessibilityLabel = hideSkipped ? L10n.upNextFilterShowSkipped : L10n.upNextFilterHideSkipped
 
         let hideSession = Settings.upNextHideSessionEpisodes()
-        let sessionEyeStyle: ThemeStyle = hideSession ? .primaryIcon01 : .primaryIcon02
-        let sessionEyeImage = UIImage(systemName: hideSession ? "eye.slash.fill" : "eye", withConfiguration: symbolConfiguration)?
-            .withTintColor(AppTheme.colorForStyle(sessionEyeStyle, themeOverride: themeOverride), renderingMode: .alwaysOriginal)
-        hideSessionButton.setImage(sessionEyeImage, for: .normal)
+        let sessionToggleStyle: ThemeStyle = hideSession ? .primaryIcon01 : .primaryIcon02
+        let sessionToggleImage = UIImage(systemName: hideSession ? "play.square.stack.fill" : "play.square.stack", withConfiguration: symbolConfiguration)?
+            .withTintColor(AppTheme.colorForStyle(sessionToggleStyle, themeOverride: themeOverride), renderingMode: .alwaysOriginal)
+        hideSessionButton.setImage(sessionToggleImage, for: .normal)
         hideSessionButton.imageView?.adjustsImageSizeForAccessibilityContentSizeCategory = true
         hideSessionButton.imageView?.contentMode = .scaleAspectFit
         hideSessionButton.accessibilityLabel = L10n.upNextHideSessionEpisodes
@@ -976,16 +1015,19 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
         if FeatureFlag.playbackSessions.enabled, let session = Settings.playbackSession() {
             let paused = Settings.playbackSessionPaused()
 
-            // Whichever world is playing expands; the other folds to its header. Both
-            // stay manually togglable via their chevrons until the state flips again.
+            // The pill auto-follows playback ownership: it snaps to whichever world is
+            // playing when that changes, but the user can freely peek at the other one.
             let sessionActive = !paused
             if lastKnownSessionActive != sessionActive {
-                queueExpanded = !sessionActive
-                sessionExpanded = sessionActive
+                displayedWorld = sessionActive ? .session : .upNext
                 lastKnownSessionActive = sessionActive
             }
 
             sessionInboxCount = Self.inboxCount(for: session)
+
+            // Self-heal the recents list: sessions persisted from before the switcher
+            // existed register themselves (idempotent — MRU front insert).
+            Settings.rememberRecentPlaybackSession(session)
 
             // The playing episode is on the Now Playing card, so the list shows what's
             // still to come (while paused the queue is playing — nothing to exclude).
@@ -994,11 +1036,9 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
         } else {
             sessionEpisodes = nil
             sessionInboxCount = 0
-            if lastKnownSessionActive != nil {
-                queueExpanded = true
-                sessionExpanded = true
-                lastKnownSessionActive = nil
-            }
+            // Ending a session keeps the Session view up (showing its empty state) —
+            // only a pause transition hands the view to the queue.
+            lastKnownSessionActive = nil
         }
 
         let episodes = PlaybackManager.shared.queue.allEpisodes(includeNowPlaying: false)
@@ -1200,17 +1240,6 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
     /// The playing episode's live remaining time is folded in only when it belongs to the
     /// queue (a parked queue under an active session doesn't own the playing episode).
     func queueCountsText(includeNowPlaying: Bool) -> String {
-        if FeatureFlag.upNextFilter.enabled, Settings.upNextFilter() != nil, let matchingUuids = upNextFilterMatchingUuids {
-            let episodes = PlaybackManager.shared.queue.allEpisodes(includeNowPlaying: false)
-            let matchingEpisodes = episodes.filter { matchingUuids.contains($0.uuid) }
-            var totalDuration = matchingEpisodes.reduce(0.0) { $0 + max(0, $1.duration - $1.playedUpTo) }
-            if includeNowPlaying, let episode = PlaybackManager.shared.currentEpisode() {
-                totalDuration += episode.duration.seconds - PlaybackManager.shared.currentTime()
-            }
-            let time = TimeFormatter.shared.multipleUnitFormattedShortTime(time: totalDuration)
-            return L10n.upNextFilterHeader(matchingEpisodes.count.localized(), episodes.count.localized(), time)
-        }
-
         var totalDuration = PlaybackManager.shared.queue.upNextTotalDuration(includePlayingEpisode: false)
         if includeNowPlaying, let episode = PlaybackManager.shared.currentEpisode() {
             totalDuration += episode.duration.seconds - PlaybackManager.shared.currentTime()
@@ -1230,7 +1259,6 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
         // owns it (session active → the parked queue's numbers are queue-only).
         let sessionActive = FeatureFlag.playbackSessions.enabled && Settings.playbackSession() != nil && !Settings.playbackSessionPaused()
         remainingLabel.text = queueCountsText(includeNowPlaying: !sessionActive)
-        updateNowPlayingMetaLabel()
     }
 
     // MARK: - UIGestureRecongizerDelegate

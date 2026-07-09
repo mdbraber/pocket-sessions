@@ -75,9 +75,39 @@ struct PodcastHeaderView: View {
                 .frame(maxHeight: viewModel.isExpanded ? .infinity : 0)
                 .opacity(viewModel.isExpanded ? 1 : 0)
                 .clipped()
+            if FeatureFlag.playbackSessions.enabled {
+                playAsSessionButton
+                Spacer().frame(height: itemMargin)
+            }
             PodcastDetailsTabView(delegate: viewModel.delegate)
         }
         .padding(.horizontal, 16)
+    }
+
+    /// Fork: starts a playback session for this podcast. The session runs through a
+    /// one-podcast smart playlist (created on first use) so it gets custom order, the
+    /// New inbox, and reorder/sort — same machinery as any smart playlist session.
+    private var playAsSessionButton: some View {
+        Button {
+            AnalyticsPlaybackHelper.shared.currentSource = .podcastScreen
+            let playlist = PlaylistManager.findOrCreateSmartPlaylist(for: viewModel.podcast)
+            PlaybackManager.shared.startPlaybackSession(PlaybackSession(type: .smartPlaylist, uuid: playlist.uuid))
+        } label: {
+            HStack(spacing: 6) {
+                Image("filter_play")
+                    .renderingMode(.template)
+                    .resizable()
+                    .frame(width: 18, height: 18)
+                Text(L10n.playlistPlayAsSession)
+                    .font(size: 15.0, style: .body, weight: .medium, maxSizeCategory: .extraExtraLarge)
+            }
+            .foregroundStyle(theme.primaryUi01)
+            .padding(.vertical, 8)
+            .padding(.horizontal, 20)
+            .background(theme.primaryInteractive01)
+            .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
     }
 
     func makeText() -> Text {
