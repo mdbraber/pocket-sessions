@@ -23,6 +23,16 @@
 
 A personal fork by [@mdbraber](https://github.com/mdbraber) adding a set of playback-workflow features on the `feature/upnext-filter` branch. All additions are device-local — fork-only database columns are kept outside the upstream schema chain and never sync to the official servers.
 
+<table>
+  <tr>
+    <td align="center"><img src="docs/fork/playlist-play-as-session.png" width="160" /><br /><sub>Play as Session</sub></td>
+    <td align="center"><img src="docs/fork/session-in-up-next.png" width="160" /><br /><sub>Session + Up Next</sub></td>
+    <td align="center"><img src="docs/fork/up-next-filter.png" width="160" /><br /><sub>Queue lens + recents</sub></td>
+    <td align="center"><img src="docs/fork/smart-rules.png" width="160" /><br /><sub>Extended smart rules</sub></td>
+    <td align="center"><img src="docs/fork/smart-rule-folders.png" width="160" /><br /><sub>Folder rule + exclude</sub></td>
+  </tr>
+</table>
+
 ### Playback Sessions
 
 - **Play as Session**: a playlist (manual or smart) plays *instead of* the Up Next queue. The queue is never modified; when the session runs out of unfinished episodes, playback returns to it. Ending a session (✕) hands playback straight to the first (filter-matching) queued episode.
