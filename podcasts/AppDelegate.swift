@@ -337,6 +337,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
             PlaylistManager.createDefaultPlaylists()
             UserDefaults.standard.set(true, forKey: "CreatedDefPlaylistsV2")
         }
+        FolderLinkRefresher.shared.setup()
         Task {
             await DownloadManager.shared.clearStuckDownloads()
         }

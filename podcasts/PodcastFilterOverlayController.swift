@@ -20,11 +20,20 @@ class PodcastFilterOverlayController: PodcastChooserViewController, PodcastSelec
     private var searchController: PCSearchBarController?
     private var cancellables = Set<AnyCancellable>()
     private var viewModel: SmartRuleToggleViewModel!
-    private var excludeViewModel: SmartRuleToggleViewModel!
     // Nil-safe: the superclass's viewDidLoad reloads the table before the view models are
     // assigned, so this getter can run while viewModel is still nil.
     private var switchIsOn: Bool {
         viewModel?.toggleIsOn ?? filterToEdit?.filterAllPodcasts ?? true
+    }
+
+    // Fork folder links: folders the playlist tracks. Picking folders materializes their
+    // podcasts into the stock podcastUuids rule on save (and on later folder changes via
+    // FolderLinkRefresher), so the saved playlist stays an ordinary synced podcast filter.
+    private var allFolders: [Folder] = []
+    private var selectedFolderUuids: [String] = []
+    private var folderCoveredPodcastUuids: Set<String> {
+        guard !selectedFolderUuids.isEmpty else { return [] }
+        return Set(allPodcasts.filter { $0.folderUuid.map(selectedFolderUuids.contains) ?? false }.map(\.uuid))
     }
     private lazy var searchBar: UIView? = {
         let view = UIView()
@@ -91,19 +100,17 @@ class PodcastFilterOverlayController: PodcastChooserViewController, PodcastSelec
                 self?.selectAllSwitchValueChanged()
             }
             .store(in: &cancellables)
-        excludeViewModel = SmartRuleToggleViewModel(
-            toggleIsOn: filterToEdit.podcastsExcluded,
-            title: L10n.smartRuleExcludeTitle,
-            enabledString: L10n.smartRuleExcludeSubtitleOn,
-            disabledString: L10n.smartRuleExcludeSubtitleOff
-        )
         setupSaveButton()
+
+        allFolders = DataManager.sharedManager.allFolders()
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        selectedFolderUuids = filterToEdit.folderUuids.components(separatedBy: ",").filter { !$0.isEmpty }
 
         if filterToEdit.filterAllPodcasts {
             for podcast in allPodcasts {
                 selectedUuids.append(podcast.uuid)
             }
-        } else {
+        } else if selectedFolderUuids.isEmpty {
             let allPodcastUuids = allPodcasts.map(\.uuid)
             selectedUuids = filterToEdit.podcastUuids.components(separatedBy: ",").compactMap { allPodcastUuids.contains($0) ? $0 : nil }
         }
@@ -180,22 +187,31 @@ class PodcastFilterOverlayController: PodcastChooserViewController, PodcastSelec
     }
 
     private func updateSaveButtonEnabledState() {
-        saveButton.alpha = selectedUuids.isEmpty ? 0.4 : 1.0
-        saveButton.isEnabled = !selectedUuids.isEmpty
+        let hasSelection = !selectedUuids.isEmpty || !selectedFolderUuids.isEmpty
+        saveButton.alpha = hasSelection ? 1.0 : 0.4
+        saveButton.isEnabled = hasSelection
     }
 
     // MARK: - Actions
 
     @objc private func saveTapped(sender: Any) {
         let podcasts = currentPodcastsSource()
-        if selectedUuids.count == podcasts.count || selectedUuids.isEmpty {
+        if !switchIsOn, !selectedFolderUuids.isEmpty {
+            // Folder-linked: store the link, materialize the folders' podcasts into the
+            // stock rule. An empty folder must match nothing, and an empty podcastUuids
+            // would mean "all podcasts" — hence the placeholder.
+            filterToEdit.folderUuids = selectedFolderUuids.joined(separator: ",")
+            let covered = folderCoveredPodcastUuids.sorted()
+            filterToEdit.podcastUuids = covered.isEmpty ? "none" : covered.joined(separator: ",")
+            filterToEdit.filterAllPodcasts = false
+        } else if selectedUuids.count == podcasts.count || selectedUuids.isEmpty {
             filterToEdit.podcastUuids = ""
             filterToEdit.filterAllPodcasts = true
-            filterToEdit.podcastsExcluded = false
+            filterToEdit.folderUuids = ""
         } else {
             filterToEdit.podcastUuids = selectedUuids.joined(separator: ",")
             filterToEdit.filterAllPodcasts = false
-            filterToEdit.podcastsExcluded = excludeViewModel.toggleIsOn
+            filterToEdit.folderUuids = ""
         }
 
         filterToEdit.podcastSmartRuleApplied = true
@@ -222,6 +238,9 @@ class PodcastFilterOverlayController: PodcastChooserViewController, PodcastSelec
 
     @objc func selectAllSwitchValueChanged() {
         selectedUuids.removeAll()
+        if switchIsOn {
+            selectedFolderUuids.removeAll()
+        }
         if switchIsOn {
             if isSearching {
                 for podcast in tempPodcasts {
@@ -264,16 +283,20 @@ class PodcastFilterOverlayController: PodcastChooserViewController, PodcastSelec
 
     // MARK: - TableView data source and delegate
 
+    private let foldersSection = 1
+    private let podcastsSection = 2
+
     func numberOfSections(in tableView: UITableView) -> Int {
-        return 2
+        return 3
     }
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         switch section {
         case 0:
-            // Row 0: the All-podcasts toggle; row 1: include/exclude semantics for the
-            // selection (only takes effect when a particular selection is saved)
-            return 2
+            return 1
+        case foldersSection:
+            // Fork: pick folder(s) instead of individual podcasts (hidden while searching)
+            return isSearching ? 0 : allFolders.count
         default:
             return allPodcasts.isEmpty ? 1 : allPodcasts.count
         }
@@ -284,13 +307,45 @@ class PodcastFilterOverlayController: PodcastChooserViewController, PodcastSelec
             let cell = podcastTable.dequeueReusableCell(withIdentifier: podcastsSmartRuleHeaderCellId)!
             cell.backgroundColor = AppTheme.colorForStyle(.primaryUi01)
             cell.contentView.backgroundColor = AppTheme.colorForStyle(.primaryUi01)
-            let toggleModel: SmartRuleToggleViewModel = indexPath.row == 0 ? viewModel : excludeViewModel
             cell.contentConfiguration = UIHostingConfiguration {
-                SmartRuleToggleHeaderView(viewModel: toggleModel)
+                SmartRuleToggleHeaderView(viewModel: viewModel)
                     .environmentObject(Theme.sharedTheme)
                     .frame(maxWidth: .infinity, minHeight: 70.0, alignment: .leading)
             }
             .margins(.horizontal, 0)
+            .margins(.vertical, 0)
+            return cell
+        } else if indexPath.section == foldersSection {
+            let cell = podcastTable.dequeueReusableCell(withIdentifier: podcastsSmartRuleHeaderCellId)!
+            cell.backgroundColor = .clear
+            cell.contentView.backgroundColor = .clear
+            let folder = allFolders[indexPath.row]
+            let isSelected = selectedFolderUuids.contains(folder.uuid)
+            let dimmed = switchIsOn
+            cell.contentConfiguration = UIHostingConfiguration {
+                HStack(spacing: 12) {
+                    Image("folder-empty")
+                        .renderingMode(.template)
+                        .foregroundColor(AppTheme.color(for: .primaryIcon02, theme: Theme.sharedTheme))
+                    Text(folder.name)
+                        .font(.callout.weight(.medium))
+                        .foregroundColor(AppTheme.color(for: .primaryText01, theme: Theme.sharedTheme))
+                    Spacer()
+                    ZStack {
+                        Image(isSelected ? "checkbox-selected" : "checkbox-unselected")
+                            .renderingMode(.template)
+                            .foregroundColor(AppTheme.color(for: .primaryInteractive01, theme: Theme.sharedTheme))
+                        if isSelected {
+                            Image("tick")
+                                .renderingMode(.template)
+                                .foregroundColor(AppTheme.color(for: .primaryInteractive02, theme: Theme.sharedTheme))
+                        }
+                    }
+                    .frame(width: 24, height: 24)
+                }
+                .opacity(dimmed ? 0.3 : 1)
+                .frame(maxWidth: .infinity, minHeight: 52.0, alignment: .leading)
+            }
             .margins(.vertical, 0)
             return cell
         } else if allPodcasts.isEmpty {
@@ -311,22 +366,42 @@ class PodcastFilterOverlayController: PodcastChooserViewController, PodcastSelec
         podcastCell.setTintColor(color: AppTheme.colorForStyle(.primaryInteractive01))
         let podcast = allPodcasts[indexPath.row]
         podcastCell.populateFrom(podcast)
-        podcastCell.contentView.alpha = switchIsOn ? 0.3 : 1
-        podcastCell.setSelected(selectedUuids.contains(podcast.uuid), animated: true)
+        let folderCovered = folderCoveredPodcastUuids.contains(podcast.uuid)
+        podcastCell.contentView.alpha = (switchIsOn || !selectedFolderUuids.isEmpty) ? 0.3 : 1
+        podcastCell.setSelected(selectedUuids.contains(podcast.uuid) || folderCovered, animated: true)
         return podcastCell
     }
 
     override func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
-        guard let podcastCell = cell as? PodcastFilterSelectionCell else {
+        guard indexPath.section == podcastsSection, let podcastCell = cell as? PodcastFilterSelectionCell else {
             return
         }
         let podcast = allPodcasts[indexPath.row]
-        podcastCell.setSelected(selectedUuids.contains(podcast.uuid), animated: true)
+        podcastCell.setSelected(selectedUuids.contains(podcast.uuid) || folderCoveredPodcastUuids.contains(podcast.uuid), animated: true)
     }
 
      override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-        if indexPath.section == 0 || (indexPath.section == 1 && allPodcasts.isEmpty) {
+        if indexPath.section == 0 || (indexPath.section == podcastsSection && allPodcasts.isEmpty) {
             return
+        }
+        if indexPath.section == foldersSection {
+            let folder = allFolders[indexPath.row]
+            if let index = selectedFolderUuids.firstIndex(of: folder.uuid) {
+                selectedFolderUuids.remove(at: index)
+            } else {
+                selectedFolderUuids.append(folder.uuid)
+                // Folder link replaces manual podcast picks — one owner for the rule.
+                selectedUuids.removeAll()
+            }
+            updateSaveButtonEnabledState()
+            podcastTable.reloadData()
+            return
+        }
+        // Picking a podcast manually breaks the folder link.
+        if !selectedFolderUuids.isEmpty {
+            selectedFolderUuids.removeAll()
+            selectedUuids.removeAll()
+            podcastTable.reloadData()
         }
         super.tableView(tableView, didSelectRowAt: indexPath)
     }
@@ -336,7 +411,7 @@ class PodcastFilterOverlayController: PodcastChooserViewController, PodcastSelec
     }
 
     func tableView(_ tableView: UITableView, shouldHighlightRowAt indexPath: IndexPath) -> Bool {
-        if indexPath.section == 0 || (indexPath.section == 1 && allPodcasts.isEmpty) {
+        if indexPath.section == 0 || (indexPath.section == podcastsSection && allPodcasts.isEmpty) {
             return false
         }
         if switchIsOn {
@@ -346,7 +421,7 @@ class PodcastFilterOverlayController: PodcastChooserViewController, PodcastSelec
     }
 
     func tableView(_ tableView: UITableView, willSelectRowAt indexPath: IndexPath) -> IndexPath? {
-        if indexPath.section == 0 || (indexPath.section == 1 && allPodcasts.isEmpty) {
+        if indexPath.section == 0 || (indexPath.section == podcastsSection && allPodcasts.isEmpty) {
             return nil
         }
         if switchIsOn {
@@ -404,14 +479,14 @@ class PodcastFilterOverlayController: PodcastChooserViewController, PodcastSelec
 
 extension PodcastFilterOverlayController: PCSearchBarDelegate {
     func tableView(_ tableView: UITableView, viewForHeaderInSection section: Int) -> UIView? {
-        if section == 1 {
+        if section == podcastsSection {
             return searchBar
         }
         return nil
     }
 
     func tableView(_ tableView: UITableView, heightForHeaderInSection section: Int) -> CGFloat {
-        if section == 1 {
+        if section == podcastsSection {
             return PCSearchBarController.defaultHeight
         }
         return .leastNormalMagnitude

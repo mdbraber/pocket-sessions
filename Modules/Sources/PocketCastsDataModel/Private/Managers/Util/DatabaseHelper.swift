@@ -35,12 +35,10 @@ class DatabaseHelper {
     /// upstream migrations rebase cleanly: idempotent column-existence checks instead of
     /// version numbers. These columns never sync (the server's protocol doesn't know them).
     private class func applyForkSchemaAdditions(db: PCDatabase) {
+        // Older fork builds also added rule columns (manualPlaylistUuids, *Excluded) that
+        // are no longer used; existing databases keep them harmlessly.
         let forkColumns: [(name: String, definition: String)] = [
             ("folderUuids", "TEXT NOT NULL DEFAULT ''"),
-            ("manualPlaylistUuids", "TEXT NOT NULL DEFAULT ''"),
-            ("podcastsExcluded", "BOOLEAN DEFAULT FALSE"),
-            ("foldersExcluded", "BOOLEAN DEFAULT FALSE"),
-            ("manualPlaylistsExcluded", "BOOLEAN DEFAULT FALSE"),
             ("newEpisodesAutoAdd", "BOOLEAN DEFAULT FALSE"),
             ("customOrderInsertMode", "INTEGER NOT NULL DEFAULT 2"),
             ("customOrderLastInsertedUuid", "TEXT NOT NULL DEFAULT ''")

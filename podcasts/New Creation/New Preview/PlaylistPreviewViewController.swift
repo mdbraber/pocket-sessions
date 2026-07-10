@@ -273,10 +273,6 @@ class PlaylistPreviewViewController: PCViewController {
             filterSettingsVC.analyticsSource = .filters
             filterSettingsVC.filterToEdit = viewModel.newPlaylist
             viewController = filterSettingsVC
-        case .folder:
-            viewController = SmartRuleSourcePicker.makeController(kind: .folders, filter: viewModel.newPlaylist)
-        case .manualPlaylist:
-            viewController = SmartRuleSourcePicker.makeController(kind: .manualPlaylists, filter: viewModel.newPlaylist)
         case .downloadStatus:
             let filterSettingsVC = DownloadFilterOverlayController(nibName: "FilterSettingsOverlayController", bundle: nil)
             filterSettingsVC.filterToEdit = viewModel.newPlaylist

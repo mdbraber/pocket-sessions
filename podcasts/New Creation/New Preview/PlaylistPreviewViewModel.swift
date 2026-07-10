@@ -57,10 +57,6 @@ class PlaylistPreviewViewModel: ObservableObject {
         switch rule {
         case .podcast:
             return newPlaylist.podcastSmartRuleApplied
-        case .folder:
-            return newPlaylist.folderSmartRuleApplied
-        case .manualPlaylist:
-            return newPlaylist.manualPlaylistSmartRuleApplied
         case .episode:
             return newPlaylist.episodesSmartRuleApplied
         case .downloadStatus:
@@ -80,16 +76,12 @@ class PlaylistPreviewViewModel: ObservableObject {
         switch rule {
         case .podcast:
             guard !newPlaylist.filterAllPodcasts else { return L10n.filterValueAll }
-            let count = "\(newPlaylist.podcastUuids.components(separatedBy: ",").count)"
-            return newPlaylist.podcastsExcluded ? L10n.smartRuleCountExcluded(count) : L10n.smartRuleCountIncluded(count)
-        case .folder:
-            guard !newPlaylist.folderUuids.isEmpty else { return L10n.off }
-            let count = "\(newPlaylist.folderUuids.components(separatedBy: ",").count)"
-            return newPlaylist.foldersExcluded ? L10n.smartRuleCountExcluded(count) : L10n.smartRuleCountIncluded(count)
-        case .manualPlaylist:
-            guard !newPlaylist.manualPlaylistUuids.isEmpty else { return L10n.off }
-            let count = "\(newPlaylist.manualPlaylistUuids.components(separatedBy: ",").count)"
-            return newPlaylist.manualPlaylistsExcluded ? L10n.smartRuleCountExcluded(count) : L10n.smartRuleCountIncluded(count)
+            // Fork: a folder-linked playlist's podcast rule is managed by its folders.
+            let folderCount = newPlaylist.folderUuids.components(separatedBy: ",").filter { !$0.isEmpty }.count
+            if folderCount > 0 {
+                return folderCount == 1 ? L10n.smartRuleFolderCountSingular : L10n.smartRuleFolderCountPlural("\(folderCount)")
+            }
+            return "\(newPlaylist.podcastUuids.components(separatedBy: ",").count)"
         case .episode:
             var episodeTypes: [String] = []
             if newPlaylist.filterUnplayed {

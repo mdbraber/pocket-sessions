@@ -67,10 +67,6 @@ class PlaylistManager {
     class func delete(playlist: EpisodeFilter?, fireEvent: Bool) {
         guard let playlist else { return }
 
-        if playlist.manual {
-            handleManualPlaylistDeleted(playlistUuid: playlist.uuid)
-        }
-
         if SyncManager.isUserLoggedIn() {
             playlist.wasDeleted = true
             playlist.syncStatus = SyncStatus.notSynced.rawValue
@@ -153,8 +149,9 @@ class PlaylistManager {
         }
     }
 
-    /// Fork rules: when a folder is deleted, drop it from every smart playlist's folder
-    /// rule — mirroring what handlePodcastUnsubscribed does for the podcast rule.
+    /// Fork: when a folder is deleted, drop the link from every playlist tracking it.
+    /// The materialized podcastUuids stay as they were — the playlist freezes as an
+    /// ordinary podcast-filtered playlist.
     class func handleFolderDeleted(folderUuid: String) {
         for playlist in DataManager.sharedManager.allSmartPlaylists(includeDeleted: false) where !playlist.folderUuids.isEmpty {
             var uuids = playlist.folderUuids.components(separatedBy: ",")
@@ -162,22 +159,41 @@ class PlaylistManager {
 
             uuids.remove(at: index)
             playlist.folderUuids = uuids.joined(separator: ",")
-            if uuids.isEmpty { playlist.foldersExcluded = false }
             DataManager.sharedManager.save(playlist: playlist)
         }
+        refreshFolderLinkedPlaylists()
     }
 
-    /// Fork rules: when a manual playlist is deleted, drop it from every smart playlist's
-    /// playlist rule.
-    class func handleManualPlaylistDeleted(playlistUuid: String) {
-        for playlist in DataManager.sharedManager.allSmartPlaylists(includeDeleted: false) where !playlist.manualPlaylistUuids.isEmpty {
-            var uuids = playlist.manualPlaylistUuids.components(separatedBy: ",")
-            guard let index = uuids.firstIndex(of: playlistUuid) else { continue }
+    /// Fork folder links: re-materializes every folder-linked smart playlist's podcast
+    /// rule from its folders' current membership. The podcast list lands in the stock,
+    /// synced podcastUuids field, so other devices see an ordinary podcast-filtered
+    /// playlist; only this device maintains the link. Cheap enough to run after every
+    /// sync and folder change.
+    class func refreshFolderLinkedPlaylists() {
+        let linked = DataManager.sharedManager.allSmartPlaylists(includeDeleted: false).filter { !$0.folderUuids.isEmpty }
+        guard !linked.isEmpty else { return }
 
-            uuids.remove(at: index)
-            playlist.manualPlaylistUuids = uuids.joined(separator: ",")
-            if uuids.isEmpty { playlist.manualPlaylistsExcluded = false }
+        let podcasts = DataManager.sharedManager.allPodcasts(includeUnsubscribed: false)
+        var changed = false
+        for playlist in linked {
+            let folderUuids = Set(playlist.folderUuids.components(separatedBy: ",").filter { !$0.isEmpty })
+            let podcastUuids = podcasts
+                .filter { $0.folderUuid.map(folderUuids.contains) ?? false }
+                .map(\.uuid)
+                .sorted()
+            // An empty folder should match nothing; an empty podcastUuids would mean
+            // "all podcasts" to the stock query, so a placeholder keeps it empty.
+            let materialized = podcastUuids.isEmpty ? "none" : podcastUuids.joined(separator: ",")
+            guard materialized != playlist.podcastUuids || playlist.filterAllPodcasts else { continue }
+
+            playlist.podcastUuids = materialized
+            playlist.filterAllPodcasts = false
+            if SyncManager.isUserLoggedIn() { playlist.syncStatus = SyncStatus.notSynced.rawValue }
             DataManager.sharedManager.save(playlist: playlist)
+            changed = true
+        }
+        if changed {
+            NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged)
         }
     }
 
@@ -191,5 +207,24 @@ class PlaylistManager {
 
     private class func nextSortPosition() -> Int32 {
         Int32(DataManager.sharedManager.nextSortPositionForPlaylist())
+    }
+}
+
+/// Fork: keeps folder-linked smart playlists in step with folder membership. Folder
+/// edits on this device and changes arriving via sync both re-materialize the linked
+/// playlists' podcast rules (a no-op when nothing moved).
+class FolderLinkRefresher: NSObject {
+    static let shared = FolderLinkRefresher()
+
+    func setup() {
+        NotificationCenter.default.addObserver(self, selector: #selector(refresh), name: Constants.Notifications.folderChanged, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(refresh), name: ServerNotifications.syncCompleted, object: nil)
+        refresh()
+    }
+
+    @objc private func refresh() {
+        DispatchQueue.global(qos: .utility).async {
+            PlaylistManager.refreshFolderLinkedPlaylists()
+        }
     }
 }

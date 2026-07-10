@@ -32,10 +32,6 @@ class PlaylistDataManager {
         "showArchivedEpisodes",
         "playlistUpdateDate",
         "folderUuids",
-        "manualPlaylistUuids",
-        "podcastsExcluded",
-        "foldersExcluded",
-        "manualPlaylistsExcluded",
         "newEpisodesAutoAdd",
         "customOrderInsertMode",
         "customOrderLastInsertedUuid"
@@ -348,11 +344,16 @@ class PlaylistDataManager {
         }
     }
 
-    func delete(playlist: EpisodeFilter, dbQueue: PCDBQueue) {
+    // Fork: preserveEpisodeRows keeps the per-playlist episode rows (the smart
+    // playlists' custom-order positions) — used when a sync rebuild deletes and
+    // recreates the same playlist uuid.
+    func delete(playlist: EpisodeFilter, preserveEpisodeRows: Bool = false, dbQueue: PCDBQueue) {
         dbQueue.write { db in
             do {
                 try db.executeUpdate("DELETE FROM \(DataManager.playlistsTableName) WHERE uuid = ?", values: [playlist.uuid])
-                try db.executeUpdate("DELETE FROM \(DataManager.playlistEpisodeTableName) WHERE playlist_uuid = ? OR playlist_id = ?", values: [playlist.uuid, playlist.id])
+                if !preserveEpisodeRows {
+                    try db.executeUpdate("DELETE FROM \(DataManager.playlistEpisodeTableName) WHERE playlist_uuid = ? OR playlist_id = ?", values: [playlist.uuid, playlist.id])
+                }
             } catch {
                 FileLog.shared.addMessage("PlaylistDataManager.delete error: \(error)")
             }
@@ -691,10 +692,6 @@ class PlaylistDataManager {
         playlist.showArchivedEpisodes = rs.bool(forColumn: "showArchivedEpisodes")
         playlist.playlistUpdateDate = DBUtils.convertDate(value: rs.double(forColumn: "playlistUpdateDate"))
         playlist.folderUuids = DBUtils.nonNilStringFromColumn(resultSet: rs, columnName: "folderUuids")
-        playlist.manualPlaylistUuids = DBUtils.nonNilStringFromColumn(resultSet: rs, columnName: "manualPlaylistUuids")
-        playlist.podcastsExcluded = rs.bool(forColumn: "podcastsExcluded")
-        playlist.foldersExcluded = rs.bool(forColumn: "foldersExcluded")
-        playlist.manualPlaylistsExcluded = rs.bool(forColumn: "manualPlaylistsExcluded")
         playlist.newEpisodesAutoAdd = rs.bool(forColumn: "newEpisodesAutoAdd")
         playlist.customOrderInsertMode = rs.int(forColumn: "customOrderInsertMode")
         playlist.customOrderLastInsertedUuid = DBUtils.nonNilStringFromColumn(resultSet: rs, columnName: "customOrderLastInsertedUuid")
@@ -731,10 +728,6 @@ class PlaylistDataManager {
         values.append(playlist.showArchivedEpisodes)
         values.append(DBUtils.nullIfNil(value: updateDate ?? playlist.playlistUpdateDate))
         values.append(playlist.folderUuids)
-        values.append(playlist.manualPlaylistUuids)
-        values.append(playlist.podcastsExcluded)
-        values.append(playlist.foldersExcluded)
-        values.append(playlist.manualPlaylistsExcluded)
         values.append(playlist.newEpisodesAutoAdd)
         values.append(playlist.customOrderInsertMode)
         values.append(playlist.customOrderLastInsertedUuid)

@@ -720,18 +720,6 @@ public class PlaylistQueryBuilder {
             haveStartedWhere: &haveStartedWhere
         )
 
-        buildFoldersQuery(
-            playlist: playlist,
-            queryString: &queryString,
-            haveStartedWhere: &haveStartedWhere
-        )
-
-        buildManualPlaylistsQuery(
-            playlist: playlist,
-            queryString: &queryString,
-            haveStartedWhere: &haveStartedWhere
-        )
-
         filterUnsubscribedPodcastsQuery(
             playlist: playlist,
             queryString: &queryString,
@@ -858,45 +846,11 @@ public class PlaylistQueryBuilder {
             if haveStartedWhere { queryString += "AND " }
 
             let podcastUuidArr = playlist.podcastUuids.components(separatedBy: ",")
-            queryString += " episode.podcastUuid \(playlist.podcastsExcluded ? "NOT IN" : "in") ("
+            queryString += " episode.podcastUuid in ("
             for (index, uuid) in podcastUuidArr.enumerated() {
                 queryString += "\(index > 0 ? "," : "")'\(uuid)'"
             }
             queryString += ") "
-            haveStartedWhere = true
-        }
-    }
-
-    /// Fork rule: episodes whose podcast is in (or, excluded, not in) any of the chosen
-    /// folders. Folder membership lives on the podcast, so this resolves via a subquery.
-    private static func buildFoldersQuery(
-        playlist: EpisodeFilter,
-        queryString: inout String,
-        haveStartedWhere: inout Bool
-    ) {
-        if !playlist.folderUuids.isEmpty, playlist.folderUuids != "null" {
-            if haveStartedWhere { queryString += "AND " }
-
-            let folderUuidArr = playlist.folderUuids.components(separatedBy: ",")
-            let uuidList = folderUuidArr.map { "'\($0)'" }.joined(separator: ",")
-            queryString += " episode.podcastUuid \(playlist.foldersExcluded ? "NOT IN" : "IN") (SELECT uuid FROM \(DataManager.podcastTableName) WHERE folderUuid IN (\(uuidList))) "
-            haveStartedWhere = true
-        }
-    }
-
-    /// Fork rule: episodes that are (or, excluded, aren't) in any of the chosen manual
-    /// playlists, via the playlist-episode join table.
-    private static func buildManualPlaylistsQuery(
-        playlist: EpisodeFilter,
-        queryString: inout String,
-        haveStartedWhere: inout Bool
-    ) {
-        if !playlist.manualPlaylistUuids.isEmpty, playlist.manualPlaylistUuids != "null" {
-            if haveStartedWhere { queryString += "AND " }
-
-            let playlistUuidArr = playlist.manualPlaylistUuids.components(separatedBy: ",")
-            let uuidList = playlistUuidArr.map { "'\($0)'" }.joined(separator: ",")
-            queryString += " episode.uuid \(playlist.manualPlaylistsExcluded ? "NOT IN" : "IN") (SELECT episodeUuid FROM \(DataManager.playlistEpisodeTableName) WHERE playlist_uuid IN (\(uuidList)) AND wasDeleted = 0) "
             haveStartedWhere = true
         }
     }

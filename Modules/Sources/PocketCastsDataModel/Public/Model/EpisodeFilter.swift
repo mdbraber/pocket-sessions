@@ -33,15 +33,12 @@ public class EpisodeFilter: NSObject {
     @objc public var showArchivedEpisodes: Bool = false
     @objc public var playlistUpdateDate: Date?
 
-    // Fork-only smart rule fields: folder and manual-playlist sources with include/exclude
-    // semantics (podcastsExcluded applies to the stock podcastUuids rule). The official sync
-    // protocol doesn't know these — they're preserved across full sync via
-    // copyForkOnlyFields(from:), and never uploaded.
+    // Fork-only folder link: the folders this smart playlist tracks. The link is never
+    // part of any query — the folders' podcasts are materialized into the stock (synced)
+    // podcastUuids field whenever folder membership changes, so every device sees an
+    // ordinary podcast-filtered playlist. Preserved across full sync via
+    // copyForkOnlyFields(from:), never uploaded.
     @objc public var folderUuids = ""
-    @objc public var manualPlaylistUuids = ""
-    @objc public var podcastsExcluded = false
-    @objc public var foldersExcluded = false
-    @objc public var manualPlaylistsExcluded = false
 
     // Fork-only custom-order fields for smart playlists: when sortType is dragAndDrop,
     // positioned episodes form the "Lineup" and unpositioned matches sit in the "New" inbox
@@ -64,10 +61,6 @@ public class EpisodeFilter: NSObject {
     public var mediaTypeSmartRuleApplied: Bool = false
     @GRDBIgnore
     public var downloadStatusSmartRuleApplied: Bool = false
-    @GRDBIgnore
-    public var folderSmartRuleApplied: Bool = false
-    @GRDBIgnore
-    public var manualPlaylistSmartRuleApplied: Bool = false
 
     override public init() {}
 
@@ -138,10 +131,6 @@ public class EpisodeFilter: NSObject {
     /// which rebuilds playlists from the server proto (which can't carry these fields).
     public func copyForkOnlyFields(from other: EpisodeFilter) {
         folderUuids = other.folderUuids
-        manualPlaylistUuids = other.manualPlaylistUuids
-        podcastsExcluded = other.podcastsExcluded
-        foldersExcluded = other.foldersExcluded
-        manualPlaylistsExcluded = other.manualPlaylistsExcluded
         newEpisodesAutoAdd = other.newEpisodesAutoAdd
         customOrderInsertMode = other.customOrderInsertMode
         customOrderLastInsertedUuid = other.customOrderLastInsertedUuid
