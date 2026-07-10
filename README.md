@@ -28,34 +28,33 @@ A personal fork by [@mdbraber](https://github.com/mdbraber) adding a set of play
     <td align="center"><img src="docs/fork/playlist-play-as-session.png" width="160" /><br /><sub>Play as Session</sub></td>
     <td align="center"><img src="docs/fork/session-in-up-next.png" width="160" /><br /><sub>Session / Up Next pills</sub></td>
     <td align="center"><img src="docs/fork/up-next-filter.png" width="160" /><br /><sub>Queue lens + recents</sub></td>
-    <td align="center"><img src="docs/fork/smart-rules.png" width="160" /><br /><sub>Extended smart rules</sub></td>
-    <td align="center"><img src="docs/fork/smart-rule-folders.png" width="160" /><br /><sub>Folder rule + exclude</sub></td>
+    <td align="center"><img src="docs/fork/smart-rules.png" width="160" /><br /><sub>Smart rules</sub></td>
   </tr>
 </table>
 
 ### Playback Sessions
 
-- **Play as Session**: a playlist (manual or smart) or a podcast plays *instead of* the Up Next queue. The queue is never modified; when the session runs out of unfinished episodes, playback returns to it. Ending a session (✕) hands playback straight to the first (filter-matching) queued episode.
-- The session is a **live mirror** of its playlist: reorder in the session or on the playlist screen and both change; the session re-reads the playlist on every advance. A podcast's *Play as Session* runs through a one-podcast smart playlist (created on first use), so podcast sessions get custom order, the New inbox, and reorder/sort like any other smart playlist session.
-- The Up Next screen has a **pill switcher** (Up Next left, Session right): each pill carries its world's episode count, and the world that owns playback is marked with a speaker glyph. One world shows at a time in the stock layout — Now Playing card on top only where playback lives. The pill **auto-follows** playback ownership; tapping the other pill is a view-only *peek* that never changes what plays. The tab and screen title follow whichever world is playing.
-- The session header shows the source's name (tap to open it) over a ticking "N episodes · X left" line, plus **switch session** (⇄, picks from the most recent sessions — count configurable in Settings → General), **go to source** (↗), and ✕ to end. Ending a session stays on the Session view, which offers a *Choose a session to listen* empty state.
-- Session rows behave like queue rows: standard episode swipes, drag-to-reorder, tap per the "Play Up Next On Tap" setting; the session's sort picker mirrors the playlist's sort options (including custom order) and restarts playback from the new top.
+- **Play as Session**: a playlist (manual or smart) or a podcast plays *instead of* the Up Next queue. The queue is never modified; when the session runs out of unfinished episodes, playback returns to it. A podcast's *Play as Session* runs through a one-podcast smart playlist (created on first use), so podcast sessions get the Inbox, custom order, and reorder/sort like any other session. The session is a **live mirror** of its playlist: reorder in either place and both change.
+- The Up Next screen has a sticky **pill switcher** (Up Next left, Session right): each pill carries its world's episode count, and the playing world is marked with a speaker glyph. Each world shows a centered title, the Now Playing card (only where playback lives), a counts line covering what's still to come (filtered counts when a queue lens is active), and the list. The pill **auto-follows** playback ownership; tapping the other pill is a view-only *peek* that never changes what plays. The tab bar button and screen title name the playing world, and activating the tab lands on it.
+- The **Switch sheet** (nav-bar *Switch*, a long-press on the Session pill or the tab bar button, or the empty state's *Choose session*) lists Up Next, the three most recent queue filters, and every playlist — styled like the Playlists screen. Every choice starts playback; picking *Up Next* ends the session and returns to the queue.
+- Session rows behave like queue rows: tap per the "Play Up Next On Tap" setting, drag-to-reorder (mirroring the playlist), move to top/bottom and add-to-queue swipes, mark played, and multi-select with session-appropriate actions (*Select* applies to the shown world). Switching episodes moves the interrupted one to the top in both worlds. The sort picker mirrors the playlist's options without restarting playback.
 
-### Smart Playlist Custom Order (Lineup + New)
+### Smart Playlist Custom Order (Inbox + Lineup)
 
-- Smart playlists support **drag-and-drop custom order** as an overlay: the smart rules keep deciding *membership*, stored positions decide *order*.
-- New arrivals land in a **"New" (inbox) section** until triaged — drag them into the Lineup at an exact spot, swipe → *Add to Lineup*, or tap *Add all new episodes to Lineup*. A per-playlist setting auto-adds arrivals instead, at **Top / Bottom / After Last Added / Before Last Added**.
-- Sessions play the **Lineup only**; untriaged episodes wait, surfaced via a tappable "N new episodes in Inbox" line in the session header. Playing a playlist whose Lineup is empty asks: *Add all to Lineup & Play* or *Play as-is*.
-- Reordering is always inline (long-press drag, like Up Next) — including on the playlist screen; positions survive switching to another sort and back.
+- Smart playlists support **drag-and-drop custom order** as an overlay: the smart rules keep deciding *membership*, stored positions decide *order*. Positions survive sort switches, sync rebuilds, and full syncs.
+- The playlist page shows **Inbox | Lineup tabs** (styled like the podcast page's tabs, each with its own counts line) — new arrivals wait in the Inbox until triaged via swipe, drag, or *Add all new episodes to Lineup*. Opening lands on the Inbox when it has episodes. A per-playlist setting auto-adds arrivals instead (at **Top / Bottom / After Last Added / Before Last Added**) and hides the tabs entirely.
+- Sessions play the **Lineup only**; untriaged episodes are surfaced via a tappable inbox line under the session title. Playing a playlist whose Lineup is empty asks: *Add all to Lineup & Play* or *Play as-is*.
+- Single-podcast smart playlists get a **Show/Hide Archived** toggle, on any sort order.
 
 ### Up Next Queue Lens
 
-- Filter the queue by **podcast, folder, smart playlist, or manual playlist**: non-matching episodes dim and auto-advance skips them — the queue itself is never trimmed or reordered.
-- A compact view (eye) hides skipped episodes; a second eye hides queue episodes that belong to the active session; the filter picker offers the five most recently used filters.
+- Filter the queue by **podcast, folder, smart playlist, or manual playlist**: non-matching episodes dim and auto-advance skips them — the queue itself is never trimmed or reordered. The counts line reflects what will actually play.
+- A compact view (eye) hides skipped episodes; the filter picker offers the five most recently used filters, and the Switch sheet surfaces the last three as one-tap shortcuts.
 
-### Extended Smart Rules
+### Folder-Linked Playlists
 
-- Smart playlists can additionally filter by **folders** and **manual playlists**, with include/exclude semantics for podcasts, folders, and playlists.
+- A smart playlist can **track folders**: pick folders inside the Choose Podcasts rule (All / folders / individual podcasts) and the folders' podcasts are materialized into the standard, synced podcast rule — kept up to date as folder membership changes on any device.
+- Other devices (web, Android, stock iOS) simply see an ordinary podcast-filtered playlist via normal Pocket Casts sync; only this fork maintains the link.
 
 Everything is gated behind the `upNextFilter` and `playbackSessions` feature flags and built for personal use. The upstream README follows.
 
