@@ -433,10 +433,20 @@ private extension PlaylistDetailViewController {
         let container = UIView()
         container.backgroundColor = AppTheme.colorForStyle(.primaryUi02)
 
-        // The selected tab's counts line, with bulk triage on the New tab.
-        let isNew = viewModel.selectedTriageTab == .new
-        let count = isNew ? viewModel.triageNewCount : viewModel.triageLineupCount
-        let time = TimeFormatter.shared.multipleUnitFormattedShortTime(time: isNew ? viewModel.triageNewDuration : viewModel.triageLineupDuration)
+        // The selected tab's counts line, with bulk triage on the Inbox tab. Outside
+        // the overlay (any other sort) the line covers the whole list.
+        let isNew = viewModel.usesCustomOrderOverlay && viewModel.selectedTriageTab == .new && !viewModel.playlist.newEpisodesAutoAdd
+        let count: Int
+        let duration: TimeInterval
+        if viewModel.usesCustomOrderOverlay {
+            count = isNew ? viewModel.triageNewCount : viewModel.triageLineupCount
+            duration = isNew ? viewModel.triageNewDuration : viewModel.triageLineupDuration
+        } else {
+            let episodes = viewModel.episodes
+            count = episodes.count
+            duration = episodes.reduce(0.0) { $0 + max(0, $1.episode.duration - $1.episode.playedUpTo) }
+        }
+        let time = TimeFormatter.shared.multipleUnitFormattedShortTime(time: duration)
         let countsLabel = UILabel()
         countsLabel.text = count == 1 ? L10n.playlistDetailDescriptionOneEpisode(time) : L10n.playlistDetailDescription(count, time)
         countsLabel.font = .systemFont(ofSize: 13, weight: .medium)
@@ -450,6 +460,31 @@ private extension PlaylistDetailViewController {
             countsLabel.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -16)
         ]
 
+        var trailingAnchorForNext = container.trailingAnchor
+
+        // Fork: single-podcast smart playlists offer the podcast page's archived toggle.
+        if viewModel.isSinglePodcastSmartPlaylist {
+            let archiveToggle = UIButton(type: .system)
+            archiveToggle.setTitle(viewModel.shouldShowArchived ? L10n.podcastHideArchived : L10n.podcastShowArchived, for: .normal)
+            archiveToggle.titleLabel?.font = .systemFont(ofSize: 13, weight: .semibold)
+            archiveToggle.setTitleColor(AppTheme.colorForStyle(.primaryInteractive01), for: .normal)
+            archiveToggle.addAction(UIAction { [weak self] _ in
+                guard let self else { return }
+                let show = !self.viewModel.shouldShowArchived
+                self.track(show ? .filterShowArchivedTapped : .filterHideArchivedTapped)
+                self.viewModel.updateShowArchivedEpisodes(show: show)
+                self.viewModel.reloadEpisodeList(animated: true)
+            }, for: .touchUpInside)
+            archiveToggle.translatesAutoresizingMaskIntoConstraints = false
+            container.addSubview(archiveToggle)
+            constraints.append(contentsOf: [
+                archiveToggle.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
+                archiveToggle.centerYAnchor.constraint(equalTo: countsLabel.centerYAnchor),
+                countsLabel.trailingAnchor.constraint(lessThanOrEqualTo: archiveToggle.leadingAnchor, constant: -10)
+            ])
+            trailingAnchorForNext = archiveToggle.leadingAnchor
+        }
+
         if isNew, viewModel.triageNewCount > 0 {
             let addAll = UIButton(type: .system)
             addAll.setTitle(L10n.playlistAddAllToLineup, for: .normal)
@@ -461,8 +496,9 @@ private extension PlaylistDetailViewController {
             }, for: .touchUpInside)
             addAll.translatesAutoresizingMaskIntoConstraints = false
             container.addSubview(addAll)
+            let gap: CGFloat = trailingAnchorForNext === container.trailingAnchor ? -16 : -12
             constraints.append(contentsOf: [
-                addAll.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
+                addAll.trailingAnchor.constraint(equalTo: trailingAnchorForNext, constant: gap),
                 addAll.centerYAnchor.constraint(equalTo: countsLabel.centerYAnchor),
                 countsLabel.trailingAnchor.constraint(lessThanOrEqualTo: addAll.leadingAnchor, constant: -10)
             ])

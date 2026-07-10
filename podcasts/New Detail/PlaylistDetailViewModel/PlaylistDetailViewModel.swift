@@ -28,6 +28,8 @@ class PlaylistDetailViewModel: ObservableObject {
     }
 
     @Published var selectedTriageTab: TriageTab = .new
+    /// The opening tab is picked once per visit: Inbox when it has episodes, else Lineup.
+    private var triageTabAutoSelected = false
     @Published private(set) var triageNewCount = 0
     @Published private(set) var triageLineupCount = 0
     private(set) var triageNewDuration: TimeInterval = 0
@@ -72,6 +74,14 @@ class PlaylistDetailViewModel: ObservableObject {
 
     var hasInboxSection: Bool {
         dataSource.contains { $0.model == .inbox }
+    }
+
+    /// Fork: a smart playlist tracking exactly one podcast (e.g. a podcast session's
+    /// bridge playlist) — it behaves enough like a podcast page to offer the
+    /// Show/Hide Archived toggle.
+    var isSinglePodcastSmartPlaylist: Bool {
+        !playlist.manual && !playlist.filterAllPodcasts && !playlist.podcastUuids.isEmpty
+            && playlist.podcastUuids != "none" && !playlist.podcastUuids.contains(",")
     }
 
     var usesCustomOrderOverlay: Bool {
@@ -214,8 +224,14 @@ class PlaylistDetailViewModel: ObservableObject {
                     guard !Task.isCancelled else { return }
 
                     await MainActor.run {
-                        self.images = images
-                        self.playlistEpisodesCount = count
+                        // Re-publishing identical images makes the blurred header
+                        // backdrop reload and flash (e.g. on triage tab switches).
+                        if images != self.images {
+                            self.images = images
+                        }
+                        if count != self.playlistEpisodesCount {
+                            self.playlistEpisodesCount = count
+                        }
                         block?()
                     }
                 }
@@ -402,12 +418,17 @@ class PlaylistDetailViewModel: ObservableObject {
         if usesCustomOrderOverlay, !isSearching {
             let (inbox, lineup) = partitionForOverlay(episodes: episodes)
             allOverlayEpisodes = episodes
+            if !triageTabAutoSelected, !episodes.isEmpty {
+                triageTabAutoSelected = true
+                selectedTriageTab = inbox.isEmpty ? .lineup : .new
+            }
             triageNewCount = inbox.count
             triageLineupCount = lineup.count
             triageNewDuration = inbox.reduce(0.0) { $0 + max(0, $1.episode.duration - $1.episode.playedUpTo) }
             triageLineupDuration = lineup.reduce(0.0) { $0 + max(0, $1.episode.duration - $1.episode.playedUpTo) }
-            // Tabs show one group at a time; the tab selector renders as the section's header.
-            if selectedTriageTab == .new {
+            // Tabs show one group at a time; auto-add playlists absorb the inbox, so
+            // they show no tabs and always the lineup.
+            if selectedTriageTab == .new, !playlist.newEpisodesAutoAdd {
                 sections.append(ArraySection(model: .inbox, elements: inbox))
             } else {
                 sections.append(ArraySection(model: .episodes, elements: lineup))

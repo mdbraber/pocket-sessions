@@ -366,7 +366,11 @@ class PlaylistDetailViewController: PCViewController, UIScrollViewDelegate {
             }
             tableView.reloadData()
         }
-        blurHeaderView.isHidden = viewModel.episodes.isEmpty
+        // The backdrop reflects the whole playlist — an empty triage tab must not
+        // toggle it off.
+        blurHeaderView.isHidden = viewModel.usesCustomOrderOverlay
+            ? viewModel.allOverlayEpisodes.isEmpty
+            : viewModel.episodes.isEmpty
         reloadEmptyState()
         refreshMultiSelectEpisodes()
 

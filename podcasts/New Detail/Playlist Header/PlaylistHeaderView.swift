@@ -30,10 +30,8 @@ struct PlaylistHeaderView: View {
             VStack(spacing: 0) {
                 HStack(spacing: 0) {
                     Spacer()
-                    PlaylistArtworkView(items: viewModel.images, cornerRadius: 8)
-                        .frame(width: 192.0, height: 192.0)
-                        .padding(.top, LiquidGlass.isEnabled ? 0 : 15.0)
-                        .shadow(color: .black.opacity(0.2), radius: 30, x: 0, y: 2)
+                    HeaderArtwork(items: viewModel.images)
+                        .equatable()
                     Spacer()
                 }
 
@@ -78,7 +76,7 @@ struct PlaylistHeaderView: View {
                 .padding(.bottom, 10.0)
                 .animation(.easeInOut(duration: 0.2), value: viewModel.isSearching)
 
-                if viewModel.usesCustomOrderOverlay, !viewModel.isSearching {
+                if viewModel.usesCustomOrderOverlay, !viewModel.isSearching, !viewModel.playlist.newEpisodesAutoAdd {
                     // Same button-to-tabs gap as the podcast page (itemMargin 24;
                     // the buttons row already pads 10).
                     triageTabs
@@ -90,6 +88,19 @@ struct PlaylistHeaderView: View {
             }
         }
         .background(.clear)
+    }
+
+    /// The artwork as equatable content: tab switches and count updates re-render the
+    /// header, but must not rebuild (and flash) the artwork images.
+    private struct HeaderArtwork: View, Equatable {
+        let items: [PlaylistArtworkView.ImageItem]
+
+        var body: some View {
+            PlaylistArtworkView(items: items, cornerRadius: 8)
+                .frame(width: 192.0, height: 192.0)
+                .padding(.top, LiquidGlass.isEnabled ? 0 : 15.0)
+                .shadow(color: .black.opacity(0.2), radius: 30, x: 0, y: 2)
+        }
     }
 
     /// Fork: the New | Lineup selector, styled and placed like the podcast page's tabs.
