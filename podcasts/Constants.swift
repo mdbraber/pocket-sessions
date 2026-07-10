@@ -96,6 +96,8 @@ struct Constants {
         /// This is triggered many times whenever a folder is changed
         static let folderChanged = NSNotification.Name(rawValue: "SJFolderChanged")
         static let folderDeleted = NSNotification.Name(rawValue: "SJFolderDeleted")
+        /// Fork: the Up Next tab was activated from another tab — the screen snaps to the playing world.
+        static let upNextTabActivated = NSNotification.Name(rawValue: "SJUpNextTabActivated")
         /// This is triggered just once after a folder finishes editing
         static let folderEdited = NSNotification.Name(rawValue: "SJFolderEdited")
 

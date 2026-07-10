@@ -717,11 +717,12 @@ class PlaybackManager: ServerPlaybackDelegate {
     /// the top of Up Next; jumping within an active session just swaps session episodes
     /// and the queue stays untouched.
     func play(sessionEpisode episode: BaseEpisode) {
-        guard FeatureFlag.playbackSessions.enabled, Settings.playbackSession() != nil else { return }
+        guard FeatureFlag.playbackSessions.enabled, let session = Settings.playbackSession() else { return }
         let resumingFromQueue = Settings.playbackSessionPaused()
         if resumingFromQueue {
             Settings.setPlaybackSessionPaused(false)
         }
+        let interrupted = currentEpisodeIsFromSession && !resumingFromQueue ? currentEpisode() : nil
         isLoadingSessionEpisode = true
         defer { isLoadingSessionEpisode = false }
         // Resuming from queue playback returns that queue episode to the top of Up Next;
@@ -729,6 +730,30 @@ class PlaybackManager: ServerPlaybackDelegate {
         switchTo(episodeToPlay: episode, moveExistingToUpNext: resumingFromQueue && !currentEpisodeIsFromSession, autoPlay: true)
         currentEpisodeIsFromSession = true
         Settings.setPlaybackSessionLastEpisodeUuid(episode.uuid)
+
+        // Symmetry with the queue: jumping within the session moves the interrupted
+        // episode to the top of the session's custom order (a live mirror, so the
+        // playlist reorders too). Computed sorts have no manual order to edit.
+        if let interrupted, interrupted.uuid != episode.uuid {
+            moveInterruptedSessionEpisodeToTop(interrupted, session: session)
+        }
+    }
+
+    private func moveInterruptedSessionEpisodeToTop(_ episode: BaseEpisode, session: PlaybackSession) {
+        guard session.type == .playlist || session.type == .smartPlaylist,
+              let playlist = DataManager.sharedManager.findPlaylist(uuid: session.uuid),
+              playlist.sortType == PlaylistSort.dragAndDrop.rawValue else { return }
+
+        if playlist.manual {
+            DataManager.sharedManager.moveEpisode(episode.uuid, in: playlist, to: 0)
+        } else {
+            var order = DataManager.sharedManager.positionedEpisodeUuids(for: playlist)
+            guard !order.isEmpty else { return }
+            order.removeAll { $0 == episode.uuid }
+            order.insert(episode.uuid, at: 0)
+            DataManager.sharedManager.setCustomOrder(episodeUuids: order, for: playlist)
+        }
+        NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged, object: playlist)
     }
 
     /// Advances within the active session instead of the queue. Returns false when there's

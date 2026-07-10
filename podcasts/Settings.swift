@@ -445,7 +445,6 @@ class Settings: NSObject {
         if let session {
             UserDefaults.standard.set(session.type.rawValue, forKey: Settings.playbackSessionTypeKey)
             UserDefaults.standard.set(session.uuid, forKey: Settings.playbackSessionUuidKey)
-            rememberRecentPlaybackSession(session)
         } else {
             UserDefaults.standard.removeObject(forKey: Settings.playbackSessionTypeKey)
             UserDefaults.standard.removeObject(forKey: Settings.playbackSessionUuidKey)
@@ -456,55 +455,6 @@ class Settings: NSObject {
         NotificationCenter.postOnMainThread(notification: Constants.Notifications.playbackSessionChanged)
     }
 
-    static let upNextHideSessionEpisodesKey = "SJUpNextHideSessionEpisodes"
-
-    /// When true and a session is active, queue episodes that belong to the session's
-    /// source are hidden from the Up Next list (visual only — they keep their queue
-    /// positions and still play from the queue as normal).
-    class func upNextHideSessionEpisodes() -> Bool {
-        FeatureFlag.playbackSessions.enabled && UserDefaults.standard.bool(forKey: Settings.upNextHideSessionEpisodesKey)
-    }
-
-    class func setUpNextHideSessionEpisodes(_ hide: Bool) {
-        UserDefaults.standard.set(hide, forKey: Settings.upNextHideSessionEpisodesKey)
-        NotificationCenter.postOnMainThread(notification: Constants.Notifications.upNextFilterChanged)
-    }
-
-    static let recentPlaybackSessionsKey = "SJRecentPlaybackSessions"
-    static let recentSessionsLimitKey = "SJRecentSessionsLimit"
-    private static let recentPlaybackSessionsStorageCap = 20
-
-    /// How many recent sessions the "Switch Session" picker offers (configurable in
-    /// Settings › General). Storage keeps more, so raising the limit reveals older ones.
-    class func recentSessionsLimit() -> Int {
-        let stored = UserDefaults.standard.integer(forKey: Settings.recentSessionsLimitKey)
-        return stored > 0 ? stored : 5
-    }
-
-    class func setRecentSessionsLimit(_ limit: Int) {
-        UserDefaults.standard.set(limit, forKey: Settings.recentSessionsLimitKey)
-    }
-
-    /// The most recently played sessions, most recent first, capped at the picker limit.
-    /// Sessions whose source no longer exists are skipped on read.
-    class func recentPlaybackSessions() -> [PlaybackSession] {
-        guard FeatureFlag.playbackSessions.enabled,
-              let raw = UserDefaults.standard.array(forKey: recentPlaybackSessionsKey) as? [[String: String]] else { return [] }
-        let sessions: [PlaybackSession] = raw.compactMap { entry in
-            guard let typeValue = entry["type"], let type = PlaybackSessionType(rawValue: typeValue), let uuid = entry["uuid"] else { return nil }
-            return PlaybackSession(type: type, uuid: uuid)
-        }
-        return Array(sessions.filter { $0.title != nil }.prefix(recentSessionsLimit()))
-    }
-
-    /// Also called from Up Next's refresh to self-heal: a session persisted from before
-    /// the recents feature existed still registers itself.
-    class func rememberRecentPlaybackSession(_ session: PlaybackSession) {
-        var raw = (UserDefaults.standard.array(forKey: recentPlaybackSessionsKey) as? [[String: String]]) ?? []
-        raw.removeAll { $0["type"] == session.type.rawValue && $0["uuid"] == session.uuid }
-        raw.insert(["type": session.type.rawValue, "uuid": session.uuid], at: 0)
-        UserDefaults.standard.set(Array(raw.prefix(recentPlaybackSessionsStorageCap)), forKey: recentPlaybackSessionsKey)
-    }
 
     static let playbackSessionLastEpisodeKey = "SJPlaybackSessionLastEpisode"
 
@@ -1089,6 +1039,26 @@ class Settings: NSObject {
     class func updateFilesMultiSelectActions(_ actions: [MultiSelectAction]) {
         let actionInts = actions.map(\.rawValue)
         UserDefaults.standard.set(actionInts, forKey: Settings.filesMultiSelectActionsKey)
+    }
+
+    // Fork: multi-select actions for session rows — aligned with the session swipe
+    // actions (no queue moves/removal; sessions aren't queue rows).
+    private static let sessionMultiSelectActionsKey = "SessionMultiSelectActions"
+    class func sessionMultiSelectActions() -> [MultiSelectAction] {
+        let defaultActions: [MultiSelectAction] = [.playNext, .playLast, .download, .markAsPlayed, .archive, .addToPlaylist, .star]
+        guard let savedInts = UserDefaults.standard.object(forKey: Settings.sessionMultiSelectActionsKey) as? [Int32] else {
+            return defaultActions
+        }
+
+        let actions = savedInts.compactMap { MultiSelectAction(rawValue: $0) }
+
+        // Make sure new items are shown
+        return actions + defaultActions.filter { !actions.contains($0) }
+    }
+
+    class func updateSessionMultiSelectActions(_ actions: [MultiSelectAction]) {
+        let actionInts = actions.map(\.rawValue)
+        UserDefaults.standard.set(actionInts, forKey: Settings.sessionMultiSelectActionsKey)
     }
 
     private static let upNextMultiSelectActionsKey = "UpNextMultiSelectActions"

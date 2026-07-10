@@ -2,7 +2,7 @@ import PocketCastsDataModel
 import PocketCastsUtils
 import UIKit
 
-class UpNextNowPlayingCell: ThemeableCell {
+class UpNextNowPlayingCell: ThemeableSwipeCell {
     override var themeOverride: Theme.ThemeType? {
         didSet {
             super.updateColor()

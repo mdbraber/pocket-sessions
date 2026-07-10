@@ -22,11 +22,23 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         FeatureFlag.playbackSessions.enabled && PlaybackManager.shared.currentEpisode() != nil && !sessionOwnsCard
     }
 
+    /// Flag-on: the top section holds the optional Now Playing card plus the world's
+    /// counts/controls line as rows, so the whole block scrolls with the list.
+    var topBlockHasCard: Bool {
+        displayedWorld == .session ? sessionOwnsCard : queueOwnsCard
+    }
+
+    var topBlockHasControls: Bool {
+        if displayedWorld == .session { return Settings.playbackSession() != nil }
+        return PlaybackManager.shared.queue.upNextCount() > 0 || PlaybackManager.shared.currentEpisode() != nil
+    }
+
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         let section = tableData[section]
         switch section {
         case .nowPlayingSection:
-            return 1
+            if !FeatureFlag.playbackSessions.enabled { return 1 }
+            return (topBlockHasCard ? 1 : 0) + (topBlockHasControls ? 1 : 0)
         case .sessionSection:
             if Settings.playbackSession() == nil { return 1 } // empty state cell
             return sessionEpisodes?.count ?? 0
@@ -40,21 +52,17 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
     // MARK: - Section Headers
 
     func tableView(_ tableView: UITableView, viewForHeaderInSection section: Int) -> UIView? {
-        if tableData[section] == .sessionSection {
-            // With no session the pill and the "Switch Session" row are the whole story.
-            guard Settings.playbackSession() != nil else { return nil }
-            updateSessionHeader()
-            return sessionHeaderView
-        }
+        // Flag-on: nothing pins — the title is the table's header view and the top
+        // block is made of rows.
+        if FeatureFlag.playbackSessions.enabled { return nil }
         if tableData[section] == .upNextSection {
-            if FeatureFlag.playbackSessions.enabled { return preparedQueueHeader() }
             guard tableData.count > 1 else { return nil }
             return preparedQueueHeader()
         }
         return nil
     }
 
-    private func preparedQueueHeader() -> UIView {
+    func preparedQueueHeader() -> UIView {
         let headerView = self.headerView
 
         updateTimeRemainingLabel()
@@ -83,31 +91,36 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         .leastNormalMagnitude
     }
 
+
     /// Session header: the "Session: <name>" line with its counts line, plus the inbox
     /// notice line when the playlist has untriaged episodes. No session → no header.
-    private var sessionHeaderHeight: CGFloat {
+    var sessionHeaderHeight: CGFloat {
         guard Settings.playbackSession() != nil else { return .leastNormalMagnitude }
-        var height: CGFloat = 62
+        // Title-only chrome block: 8 + 28 title (title2 bold) + 6 — the counts/controls
+        // line lives below the card as the list's section header.
+        var height: CGFloat = 42
         if showsSessionInboxNotice { height += 21 }
         return height
     }
 
     /// Queue header: the counts/controls row, plus the filter indicator line when a
     /// filter is active.
-    private var queueHeaderHeight: CGFloat {
+    var queueHeaderHeight: CGFloat {
         let metrics = UIFontMetrics(forTextStyle: .footnote)
         let filterRowVisible = FeatureFlag.upNextFilter.enabled && Settings.upNextFilter() != nil && PlaybackManager.shared.queue.upNextCount() > 0
         return metrics.scaledValue(for: 48) + (filterRowVisible ? 26 : 0)
     }
 
     func tableView(_ tableView: UITableView, heightForHeaderInSection section: Int) -> CGFloat {
+        if FeatureFlag.playbackSessions.enabled {
+            return tableData[section] == .nowPlayingSection ? 8 : 4
+        }
         let section = tableData[section]
-        let metrics = UIFontMetrics(forTextStyle: .footnote)
         switch section {
         case .nowPlayingSection:
             return 16
         case .sessionSection:
-            return metrics.scaledValue(for: sessionHeaderHeight)
+            return .leastNormalMagnitude
         case .upNextSection:
             return queueHeaderHeight
         }
@@ -118,8 +131,27 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let section = tableData[indexPath.section]
         if section == .nowPlayingSection {
+            if FeatureFlag.playbackSessions.enabled, !(topBlockHasCard && indexPath.row == 0) {
+                // The counts/controls line as a scrolling row.
+                let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+                cell.selectionStyle = .none
+                cell.backgroundColor = .clear
+                cell.contentView.backgroundColor = .clear
+                let controls = displayedWorld == .session ? sessionControlsView : preparedQueueHeader()
+                controls.removeFromSuperview()
+                controls.translatesAutoresizingMaskIntoConstraints = false
+                cell.contentView.addSubview(controls)
+                NSLayoutConstraint.activate([
+                    controls.topAnchor.constraint(equalTo: cell.contentView.topAnchor),
+                    controls.bottomAnchor.constraint(equalTo: cell.contentView.bottomAnchor),
+                    controls.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor),
+                    controls.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor)
+                ])
+                return cell
+            }
             let nowPlayingCell = tableView.dequeueReusableCell(withIdentifier: UpNextViewController.nowPlayingCell, for: indexPath) as! UpNextNowPlayingCell
             nowPlayingCell.themeOverride = themeOverride
+            nowPlayingCell.delegate = self
             if let episode = PlaybackManager.shared.currentEpisode() {
                 nowPlayingCell.populateFrom(episode: episode)
             }
@@ -133,19 +165,21 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
                                     icon: { Image(systemName: "play.square.stack") },
                     actions: [
                         .init(title: L10n.playbackSessionChoose) { [weak self] in
-                            self?.switchSessionTapped()
+                            self?.presentSessionPicker(includeUpNext: false)
                         }
                     ])
                 return emptyCell
             }
             let playerCell = tableView.dequeueReusableCell(withIdentifier: UpNextViewController.playerCell, for: indexPath) as! PlayerCell
             playerCell.themeOverride = themeOverride
-            playerCell.shouldShowSelect(show: false, animate: false)
+            playerCell.shouldShowSelect(show: isMultiSelectEnabled, animate: false)
             playerCell.delegate = self
             if let episode = sessionEpisodes?[safe: indexPath.row] {
                 playerCell.populateFrom(episode: episode)
+                playerCell.showTick = selectedEpisodesContains(uuid: episode.uuid)
+            } else {
+                playerCell.showTick = false
             }
-            playerCell.showTick = false
             playerCell.contentView.alpha = 1
             return playerCell
         }
@@ -166,19 +200,6 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
 
         if isShowingFilterEmptyNotice {
             let emptyCell = tableView.dequeueReusableCell(withIdentifier: UpNextViewController.emptyStateCell, for: indexPath) as! EmptyStateCell
-            if Settings.upNextFilter() == nil, Settings.upNextHideSessionEpisodes() {
-                // Emptied by the session eye alone — every queued episode belongs to
-                // the session playing above.
-                emptyCell.configure(title: L10n.upNextSessionHiddenEmptyTitle,
-                                    message: L10n.upNextSessionHiddenEmptyDescription,
-                                    icon: { Image(systemName: "eye.slash") },
-                    actions: [
-                        .init(title: L10n.upNextSessionHiddenShow) {
-                            Settings.setUpNextHideSessionEpisodes(false)
-                        }
-                    ])
-                return emptyCell
-            }
             emptyCell.configure(title: L10n.upNextFilterEmptyTitle,
                                 message: L10n.upNextFilterEmptyDescription(Settings.upNextFilter()?.title ?? ""),
                                 icon: { Image(systemName: "funnel") },
@@ -215,10 +236,19 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
     // MARK: - Selection
 
     func tableView(_ tableView: UITableView, willSelectRowAt indexPath: IndexPath) -> IndexPath? {
+        if tableData[indexPath.section] == .nowPlayingSection {
+            if FeatureFlag.playbackSessions.enabled, !(topBlockHasCard && indexPath.row == 0) { return nil }
+            return indexPath
+        }
         if tableData[indexPath.section] == .sessionSection {
             // The empty state's button is the only action when no session is active.
             if Settings.playbackSession() == nil { return nil }
-            return isMultiSelectEnabled ? nil : indexPath
+            if isMultiSelectEnabled, !multiSelectGestureInProgress,
+               let episode = sessionEpisodes?[safe: indexPath.row], selectedEpisodesContains(uuid: episode.uuid) {
+                tableView.delegate?.tableView?(tableView, didDeselectRowAt: indexPath)
+                return nil
+            }
+            return indexPath
         }
 
         guard !multiSelectGestureInProgress, tableData[indexPath.section] == .upNextSection else {
@@ -238,6 +268,20 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
     }
 
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        if isMultiSelectEnabled, tableData[indexPath.section] == .sessionSection {
+            guard let episode = sessionEpisodes?[safe: indexPath.row] else { return }
+            if !multiSelectGestureInProgress {
+                selectedEpisodesRemove(uuid: episode.uuid)
+            }
+            if !multiSelectGestureInProgress || !selectedEpisodesContains(uuid: episode.uuid) {
+                selectedSessionEpisodes.append(episode)
+                if let cell = upNextTable.cellForRow(at: indexPath) as? PlayerCell {
+                    cell.showTick = true
+                }
+            }
+            return
+        }
+
         if isMultiSelectEnabled, tableData[indexPath.section] == .upNextSection {
             // the cell below is optional because cellForRow only returns a cell if it's visible, and we don't need to tick cells that don't exist
             if let episode = DataManager.sharedManager.playlistEpisodeAt(index: queueIndex(forVisibleRow: indexPath.row) + 1) {
@@ -260,6 +304,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
 
             // Tapping the Now Playing card opens the full-screen player.
             if section == .nowPlayingSection {
+                guard !FeatureFlag.playbackSessions.enabled || (topBlockHasCard && indexPath.row == 0) else { return }
                 track(.upNextNowPlayingTapped)
 
                 dismiss(animated: true, completion: {
@@ -273,8 +318,15 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
 
             if section == .sessionSection {
                 if let episode = sessionEpisodes?[safe: indexPath.row] {
-                    // Don't restart an episode that's already playing.
-                    if episode.uuid == PlaybackManager.shared.currentEpisode()?.uuid { return }
+                    // The current episode shouldn't restart from scratch — but if it's
+                    // sitting idle (loaded, not playing), tapping it starts playback.
+                    if episode.uuid == PlaybackManager.shared.currentEpisode()?.uuid {
+                        if Settings.playUpNextOnTap(), !PlaybackManager.shared.playing() {
+                            AnalyticsPlaybackHelper.shared.currentSource = .upNext
+                            PlaybackManager.shared.play(sessionEpisode: episode)
+                        }
+                        return
+                    }
                     // Same tap behavior as queue rows: play directly or show the episode
                     // card, per the "Play Up Next On Tap" setting.
                     if Settings.playUpNextOnTap() {
@@ -305,6 +357,14 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
     }
 
     func tableView(_ tableView: UITableView, didDeselectRowAt indexPath: IndexPath) {
+        if tableData[indexPath.section] == .sessionSection {
+            guard let episode = sessionEpisodes?[safe: indexPath.row] else { return }
+            selectedEpisodesRemove(uuid: episode.uuid)
+            if let cell = upNextTable.cellForRow(at: indexPath) as? PlayerCell {
+                cell.showTick = false
+            }
+            return
+        }
         guard tableData[indexPath.section] == .upNextSection else { return }
         if let episode = DataManager.sharedManager.playlistEpisodeAt(index: queueIndex(forVisibleRow: indexPath.row) + 1), let index = selectedPlayListEpisodes.firstIndex(of: episode) {
             selectedPlayListEpisodes.remove(at: index)
@@ -401,7 +461,13 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
 
     private func rowHeight(at indexPath: IndexPath) -> CGFloat {
         let section = tableData[indexPath.section]
-        if section == .nowPlayingSection { return UpNextViewController.nowPlayingRowHeight }
+        if section == .nowPlayingSection {
+            if FeatureFlag.playbackSessions.enabled, !(topBlockHasCard && indexPath.row == 0) {
+                let metrics = UIFontMetrics(forTextStyle: .footnote)
+                return displayedWorld == .session ? metrics.scaledValue(for: 48) : queueHeaderHeight
+            }
+            return UpNextViewController.nowPlayingRowHeight
+        }
         if section == .sessionSection {
             if Settings.playbackSession() == nil { return UpNextViewController.emptyStateRowHeight }
             return UpNextViewController.upNextRowHeight
@@ -421,7 +487,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
     // MARK: - Multiselect
 
     func tableView(_ tableView: UITableView, shouldBeginMultipleSelectionInteractionAt indexPath: IndexPath) -> Bool {
-        tableData[indexPath.section] == .upNextSection && Settings.multiSelectGestureEnabled()
+        (tableData[indexPath.section] == .upNextSection || tableData[indexPath.section] == .sessionSection) && Settings.multiSelectGestureEnabled()
     }
 
     func tableView(_ tableView: UITableView, didBeginMultipleSelectionInteractionAt indexPath: IndexPath) {
@@ -443,12 +509,8 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         if FeatureFlag.playbackSessions.enabled {
             // One world at a time, chosen by the pill switcher. Each world gets the stock
             // layout: the Now Playing card floats on top only when that world owns it.
-            switch displayedWorld {
-            case .session:
-                sections = sessionOwnsCard ? [.nowPlayingSection, .sessionSection] : [.sessionSection]
-            case .upNext:
-                sections = queueOwnsCard ? [.nowPlayingSection, .upNextSection] : [.upNextSection]
-            }
+            // Top block (card + controls line) scrolls with the list.
+            sections = [.nowPlayingSection, displayedWorld == .session ? .sessionSection : .upNextSection]
         } else {
             sections = [.upNextSection]
             if PlaybackManager.shared.currentEpisode() != nil {
@@ -470,8 +532,12 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         refreshSections()
         // The title (and tab bar item) follows who owns playback: "Session" while the
         // session is playing, "Up Next" while the queue is (or nothing is).
-        title = sessionOwnsCard ? L10n.playbackSessionTabSession : L10n.upNext
+        let sessionIsActiveWorld = FeatureFlag.playbackSessions.enabled && Settings.playbackSession() != nil && !Settings.playbackSessionPaused()
+        title = sessionIsActiveWorld ? L10n.playbackSessionTabSession : L10n.upNext
+        // The bottom tab bar button names the playing world too.
+        navigationController?.tabBarItem.title = title
         updateWorldSwitcher()
+        updateStickyChrome()
         upNextTable.reloadData()
     }
 

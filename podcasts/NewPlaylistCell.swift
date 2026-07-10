@@ -100,6 +100,7 @@ class NewPlaylistCell: ThemeableCell {
         viewModel.isSmartPlaylist = false
         viewModel.episodesCount = 0
         viewModel.images = []
+        viewModel.displayType = .count
         playlistCountLoadTask?.cancel()
         playlistCountLoadTask = nil
         playlistImageLoadTask?.cancel()
@@ -111,6 +112,15 @@ class NewPlaylistCell: ThemeableCell {
             await playlistMetadataLoader.cancelLoadCount(for: playlistID)
             await playlistMetadataLoader.cancelLoadImages(for: playlistID)
         }
+    }
+
+    /// Fork: the Switch Session sheet's "Up Next" row — identical layout to a playlist
+    /// row, with the up-next glyph on the artwork tile and the queue count trailing.
+    func configureUpNext(title: String = L10n.upNext, episodeCount: Int) {
+        reset()
+        viewModel.playlistName = title
+        viewModel.displayType = .upNext
+        viewModel.episodesCount = episodeCount
     }
 
     func set(playlistName: String, isManualPlaylist: Bool) {

@@ -9,16 +9,23 @@ extension UpNextViewController: SwipeTableViewCellDelegate, SwipeHandler {
     }
 
     func tableView(_ tableView: UITableView, editActionsForRowAt indexPath: IndexPath, for orientation: SwipeActionsOrientation) -> [SwipeAction]? {
-        // Session rows aren't queue rows — the queue's move/remove actions don't apply.
-        // They get the app-wide episode swipes instead: Play Next / Play Last on the left,
-        // archive / share / add-to-playlist on the right (the inbox notice row gets none).
+        // The Now Playing card: archive / add to playlist / mark played — acting on
+        // the playing episode hands playback to whatever comes next.
+        if tableData[indexPath.section] == .nowPlayingSection {
+            guard topBlockHasCard, indexPath.row == 0, orientation == .right,
+                  let episode = PlaybackManager.shared.currentEpisode() else { return nil }
+            return episodeSwipeActions(for: episode)
+        }
+
+        // Session rows aren't queue rows — moves reorder the mirrored playlist on the
+        // left; archive / mark played on the right.
         if tableData[indexPath.section] == .sessionSection {
             guard let episode = sessionEpisodes?[safe: indexPath.row] else { return nil }
             switch orientation {
             case .left:
-                return SwipeActionsHelper.createLeftActionsForEpisode(episode, tableView: tableView, indexPath: indexPath, swipeHandler: self).swipeKitActions()
+                return sessionMoveSwipeActions(at: indexPath)
             case .right:
-                return SwipeActionsHelper.createRightActionsForEpisode(episode, tableView: tableView, indexPath: indexPath, swipeHandler: self).swipeKitActions()
+                return episodeSwipeActions(for: episode, includeQueueAdds: true)
             }
         }
 
@@ -96,39 +103,16 @@ extension UpNextViewController: SwipeTableViewCellDelegate, SwipeHandler {
             deleteAction.backgroundColor = ThemeColor.support05(for: themeOverride)
             deleteAction.accessibilityLabel = L10n.removeFromUpNext
 
-            if let episode = DataManager.sharedManager.episodeInUpNextAt(index: queueIndex(forVisibleRow: indexPath.row) + 1) as? Episode {
-                let shareAction = SwipeAction(style: .default, title: nil) { [weak self] _, _ in
-                    guard let self else { return }
-                    Analytics.track(
-                        .episodeSwipeActionPerformed,
-                        properties: [
-                            "action": "add_to_playlist",
-                            "source": "up_next"
-                        ]
-                    )
-                    let presentModal: () -> Void = { [weak self] in
-                        NavigationManager.sharedManager.navigateTo(
-                            NavigationManager.manualPlaylistsChooserKey,
-                            data: [
-                                NavigationManager.manualPlaylistsChooserEpisodeKey: episode,
-                                NavigationManager.manualPlaylistsChooserRootKey: self as Any
-                            ]
-                        )
-                    }
-                    if self.presentingViewController is PlayerContainerViewController {
-                        self.dismiss(animated: true, completion: presentModal)
-                    } else {
-                        presentModal()
-                    }
-                }
-                shareAction.hidesWhenSelected = true
-                shareAction.backgroundColor = SwipeActionsHelper.addToPlaylistSwipeBackground
-                shareAction.image = UIImage(named: "playlist-add-episode")
-                shareAction.accessibilityLabel = L10n.playlistManualAddEpisodes
-                return [deleteAction, shareAction]
+            let markPlayedAction = SwipeAction(style: .default, title: nil) { [weak self] _, indexPath in
+                guard let self, let episode = PlaybackManager.shared.queue.episodeAt(index: self.queueIndex(forVisibleRow: indexPath.row)) else { return }
+                EpisodeManager.markAsPlayed(episode: episode, fireNotification: true)
             }
+            markPlayedAction.hidesWhenSelected = true
+            markPlayedAction.backgroundColor = ThemeColor.support02()
+            markPlayedAction.image = UIImage(named: "episode-markasplayed")
+            markPlayedAction.accessibilityLabel = L10n.markPlayedShort
 
-            return [deleteAction]
+            return [deleteAction, markPlayedAction]
         }
     }
 
@@ -143,6 +127,82 @@ extension UpNextViewController: SwipeTableViewCellDelegate, SwipeHandler {
         }
 
         return options
+    }
+
+    /// Move to top / move to bottom for session rows — same affordance as the queue,
+    /// but reordering the session's mirrored playlist.
+    private func sessionMoveSwipeActions(at indexPath: IndexPath) -> [SwipeAction]? {
+        let sessionType = Settings.playbackSession()?.type
+        guard sessionType == .playlist || sessionType == .smartPlaylist else { return nil }
+
+        let moveToTop = SwipeAction(style: .default, title: nil) { [weak self] _, indexPath in
+            self?.moveSessionEpisode(fromRow: indexPath.row, toRow: 0)
+        }
+        moveToTop.image = UIImage(named: "upnext-movetotop")
+        moveToTop.backgroundColor = ThemeColor.support04()
+        moveToTop.accessibilityLabel = L10n.moveToTop
+        moveToTop.hidesWhenSelected = true
+
+        let moveToBottom = SwipeAction(style: .default, title: nil) { [weak self] _, indexPath in
+            guard let self else { return }
+            self.moveSessionEpisode(fromRow: indexPath.row, toRow: max((self.sessionEpisodes?.count ?? 1) - 1, 0))
+        }
+        moveToBottom.image = UIImage(named: "upnext-movetobottom")
+        moveToBottom.backgroundColor = ThemeColor.support03()
+        moveToBottom.accessibilityLabel = L10n.moveToBottom
+        moveToBottom.hidesWhenSelected = true
+
+        return [moveToTop, moveToBottom]
+    }
+
+    /// Right-swipe actions for the Now Playing card and session rows: archive and
+    /// mark played — session rows also offer adding to the top/bottom of Up Next.
+    private func episodeSwipeActions(for episode: BaseEpisode, includeQueueAdds: Bool = false) -> [SwipeAction] {
+        var actions = [SwipeAction]()
+
+        if let episode = episode as? Episode {
+            let archive = SwipeAction(style: .default, title: nil) { [weak self] _, _ in
+                EpisodeManager.archiveEpisode(episode: episode, fireNotification: true)
+                self?.reloadTable()
+            }
+            archive.image = UIImage(named: "list_archive")
+            archive.backgroundColor = ThemeColor.support06()
+            archive.accessibilityLabel = L10n.archive
+            archive.hidesWhenSelected = true
+            actions.append(archive)
+        }
+
+        if includeQueueAdds {
+            let addTop = SwipeAction(style: .default, title: nil) { _, _ in
+                PlaybackManager.shared.addToUpNext(episode: episode, ignoringQueueLimit: true, toTop: true, userInitiated: true)
+            }
+            addTop.image = UIImage(named: "list_playnext")
+            addTop.backgroundColor = ThemeColor.support02()
+            addTop.accessibilityLabel = L10n.playNext
+            addTop.hidesWhenSelected = true
+            actions.append(addTop)
+
+            let addBottom = SwipeAction(style: .default, title: nil) { _, _ in
+                PlaybackManager.shared.addToUpNext(episode: episode, ignoringQueueLimit: true, toTop: false, userInitiated: true)
+            }
+            addBottom.image = UIImage(named: "list_playlast")
+            addBottom.backgroundColor = ThemeColor.support02()
+            addBottom.accessibilityLabel = L10n.playLast
+            addBottom.hidesWhenSelected = true
+            actions.append(addBottom)
+        }
+
+        let markPlayed = SwipeAction(style: .default, title: nil) { [weak self] _, _ in
+            EpisodeManager.markAsPlayed(episode: episode, fireNotification: true)
+            self?.reloadTable()
+        }
+        markPlayed.image = UIImage(named: "episode-markasplayed")
+        markPlayed.backgroundColor = ThemeColor.support02()
+        markPlayed.accessibilityLabel = L10n.markPlayedShort
+        markPlayed.hidesWhenSelected = true
+        actions.append(markPlayed)
+
+        return actions
     }
 
     // MARK: - SwipeHandler (session rows)

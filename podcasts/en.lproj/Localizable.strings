@@ -5105,32 +5105,11 @@
 /* Fallback name for a playback session whose playlist title can't be resolved */
 "playback_session_tab_session" = "Session";
 
-/* Title of the Folders smart playlist rule */
-"smart_rule_folders" = "Folders";
+/* Podcasts smart rule summary when the playlist tracks a single folder */
+"smart_rule_folder_count_singular" = "1 folder";
 
-/* Title of the Playlists smart playlist rule */
-"smart_rule_playlists" = "Playlists";
-
-/* Title of the folder picker for the Folders smart playlist rule */
-"smart_rule_choose_folders" = "Choose Folders";
-
-/* Title of the playlist picker for the Playlists smart playlist rule */
-"smart_rule_choose_playlists" = "Choose Playlists";
-
-/* Smart rule summary when the selection is included. %1$@ is the number of selected items */
-"smart_rule_count_included" = "%1$@ (included)";
-
-/* Smart rule summary when the selection is excluded. %1$@ is the number of selected items */
-"smart_rule_count_excluded" = "%1$@ (excluded)";
-
-/* Title of the include/exclude toggle in smart rule pickers */
-"smart_rule_exclude_title" = "Exclude Selected";
-
-/* Subtitle of the include/exclude toggle when exclusion is on */
-"smart_rule_exclude_subtitle_on" = "Episodes from the selection are left out";
-
-/* Subtitle of the include/exclude toggle when exclusion is off */
-"smart_rule_exclude_subtitle_off" = "Only episodes from the selection are included";
+/* Podcasts smart rule summary when the playlist tracks multiple folders. %1$@ is the number of folders */
+"smart_rule_folder_count_plural" = "%1$@ folders";
 
 /* Title of the sort picker shown when sorting a smart playlist during a playback session */
 "playback_session_sort_title" = "Sort Playlist";
@@ -5224,6 +5203,9 @@
 
 /* Title of the picker that offers the most recently played sessions */
 "playback_session_switch_title" = "Switch Session";
+
+/* Short nav bar button that opens the Switch Session sheet */
+"playback_session_switch_short" = "Switch";
 
 /* Button that navigates to the source the session mirrors (podcast, playlist, or smart playlist) */
 "playback_session_go_to" = "Go to session source";

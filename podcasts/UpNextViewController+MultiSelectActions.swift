@@ -8,11 +8,18 @@ extension UpNextViewController: MultiSelectActionDelegate {
     }
 
     func multiSelectedBaseEpisodes() -> [BaseEpisode] {
-        selectedPlayListEpisodes.compactMap { DataManager.sharedManager.findBaseEpisode(uuid: $0.episodeUuid) }
+        if FeatureFlag.playbackSessions.enabled, displayedWorld == .session {
+            return selectedSessionEpisodes
+        }
+        return selectedPlayListEpisodes.compactMap { DataManager.sharedManager.findBaseEpisode(uuid: $0.episodeUuid) }
     }
 
     func multiSelectedPlayListEpisodes() -> [PlaylistEpisode]? {
-        selectedPlayListEpisodes
+        // Session rows aren't queue rows — queue-specific actions get nothing to act on.
+        if FeatureFlag.playbackSessions.enabled, displayedWorld == .session {
+            return nil
+        }
+        return selectedPlayListEpisodes
     }
 
     func multiSelectActionBegan(status: String) {
@@ -40,6 +47,9 @@ extension UpNextViewController: MultiSelectActionDelegate {
     // MARK: - Selected Episode
 
     func selectedEpisodesContains(uuid: String) -> Bool {
+        if FeatureFlag.playbackSessions.enabled, displayedWorld == .session {
+            return selectedSessionEpisodes.contains { $0.uuid == uuid }
+        }
         let selectedUuids = selectedPlayListEpisodes.map(\.episodeUuid)
         return selectedUuids.contains(uuid)
     }
@@ -54,6 +64,9 @@ extension UpNextViewController: MultiSelectActionDelegate {
     }
 
     func selectedEpisodesRemove(uuid: String) {
+        if let index = selectedSessionEpisodes.firstIndex(where: { $0.uuid == uuid }) {
+            selectedSessionEpisodes.remove(at: index)
+        }
         let selectedUuids = selectedPlayListEpisodes.map(\.episodeUuid)
         if let currentEpisodeIndex = selectedUuids.firstIndex(of: uuid) {
             selectedPlayListEpisodes.remove(at: currentEpisodeIndex)

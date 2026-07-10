@@ -12,6 +12,7 @@ class NewPlaylistCellViewModel: ObservableObject {
         case check
         case addNew
         case plain
+        case upNext // Fork: the Switch Session sheet's "Up Next" row
     }
 
     @Published var episodesCount: Int = 0

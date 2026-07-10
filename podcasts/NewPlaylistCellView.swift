@@ -52,6 +52,21 @@ struct NewPlaylistCellView: View {
                 .clipped()
                 .frame(width: imageSize, height: imageSize)
                 .padding(.leading, 16.0)
+            } else if viewModel.displayType == .upNext {
+                // Fork: the up-next glyph on the same tile the playlist artwork uses
+                ZStack {
+                    Rectangle()
+                        .foregroundColor(theme.primaryUi05)
+                    Image("upnext")
+                        .resizable()
+                        .renderingMode(.template)
+                        .foregroundColor(theme.primaryInteractive01)
+                        .frame(width: imageSize * 0.6, height: imageSize * 0.6)
+                }
+                .cornerRadius(4)
+                .clipped()
+                .frame(width: imageSize, height: imageSize)
+                .accessibilityHidden(true)
             } else {
                 PlaylistArtworkView(items: viewModel.images)
                     .frame(width: imageSize, height: imageSize)
@@ -84,7 +99,7 @@ struct NewPlaylistCellView: View {
 
     @ViewBuilder private func accesoryView() -> some View {
         switch viewModel.displayType {
-        case .count:
+        case .count, .upNext:
             HStack(spacing: 5.0) {
                 subtitleView(text: "\(viewModel.episodesCount)")
                     .lineLimit(1)

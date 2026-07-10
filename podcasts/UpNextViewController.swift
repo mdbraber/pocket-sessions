@@ -39,8 +39,18 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
             if !isMultiSelectEnabled {
                 multiSelectActionBar.isHidden = true
                 selectedPlayListEpisodes.removeAll()
+                selectedSessionEpisodes.removeAll()
                 track(.upNextMultiSelectExited)
             } else {
+                // The action bar offers the active world's actions: session rows aren't
+                // queue rows, so they get the episode actions the session swipes offer.
+                if FeatureFlag.playbackSessions.enabled, displayedWorld == .session {
+                    multiSelectActionBar.getActionsFunc = Settings.sessionMultiSelectActions
+                    multiSelectActionBar.setActionsFunc = Settings.updateSessionMultiSelectActions
+                } else {
+                    multiSelectActionBar.getActionsFunc = Settings.upNextMultiSelectActions
+                    multiSelectActionBar.setActionsFunc = Settings.updateUpNextMultiSelectActions
+                }
                 track(.upNextMultiSelectEntered)
             }
             updateNavBarButtons(animated: true)
@@ -53,6 +63,18 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
 
     var changedViaSwipeToRemove = false
 
+    /// Fork: multi-select on the Session world tracks episodes directly (session rows
+    /// aren't queue join rows).
+    var selectedSessionEpisodes = [BaseEpisode]() {
+        didSet {
+            multiSelectActionBar.setSelectedCount(count: selectedSessionEpisodes.count)
+            contentInseter.isMultiSelectEnabled = !selectedSessionEpisodes.isEmpty
+            if isMultiSelectEnabled {
+                updateNavBarButtons()
+            }
+        }
+    }
+
     let remainingLabel = ThemeableLabel()
     // Use HitTargetButton so these small header controls meet Apple's recommended 44x44pt minimum tap target without changing their visible size.
     let shuffleButton = HitTargetButton(frame: CGRect(x: 0, y: 0, width: 24, height: 24))
@@ -64,7 +86,6 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
     let clearQueueButton = HitTargetButton(frame: CGRect(x: 0, y: 0, width: 93, height: 16))
     let sessionHeaderLabel = ThemeableLabel()
     let sessionSortButton = HitTargetButton(frame: CGRect(x: 0, y: 0, width: 24, height: 24))
-    let endSessionButton = HitTargetButton(frame: CGRect(x: 0, y: 0, width: 20, height: 20))
     /// Which world the screen is showing. The pill switcher changes only the view —
     /// never what plays — and auto-follows playback ownership on transitions (session
     /// starts → session view; session pauses → queue view; ending a session stays on
@@ -79,15 +100,63 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
     /// Tracks session-playing transitions for the view's auto-follow.
     private var lastKnownSessionActive: Bool?
 
-    let hideSessionButton = HitTargetButton(frame: CGRect(x: 0, y: 0, width: 24, height: 24))
-
     let worldSwitcher = UISegmentedControl(items: [L10n.upNext, L10n.playbackSessionTabSession])
+
+    // Sticky chrome above the table: the pill switcher plus the active world's header
+    // (session title block or queue controls line). The list scrolls underneath it.
+    private let stickyChrome = UIStackView()
+    private let stickyChromeBackground = UIView()
 
     private static let worldSwitcherFont = UIFont.systemFont(ofSize: 13, weight: .medium)
 
     @objc private func worldSwitcherChanged() {
         displayedWorld = DisplayedWorld(rawValue: worldSwitcher.selectedSegmentIndex) ?? .upNext
         reloadTable()
+        upNextTable.setContentOffset(CGPoint(x: 0, y: -upNextTable.adjustedContentInset.top), animated: false)
+    }
+
+    /// Activating the tab lands on whichever world owns playback — the tab bar item's
+    /// title promised as much.
+    @objc private func upNextTabActivated() {
+        displayedWorld = sessionOwnsCard ? .session : .upNext
+        reloadTable()
+    }
+
+    /// Only the pill switcher is sticky; everything below it — session title, card,
+    /// counts line, and rows — scrolls as one. The title rides along as the table's
+    /// header view (which, unlike section headers, never pins).
+    func updateStickyChrome() {
+        guard FeatureFlag.playbackSessions.enabled else { return }
+        stickyChrome.backgroundColor = AppTheme.colorForStyle(.primaryUi04, themeOverride: themeOverride)
+        stickyChromeBackground.backgroundColor = stickyChrome.backgroundColor
+
+        let metrics = UIFontMetrics(forTextStyle: .footnote)
+        let showTitle = displayedWorld == .session && Settings.playbackSession() != nil
+        if showTitle {
+            updateSessionHeader()
+            sessionHeaderView.frame = CGRect(x: 0, y: 0, width: upNextTable.bounds.width, height: metrics.scaledValue(for: sessionHeaderHeight))
+            upNextTable.tableHeaderView = sessionHeaderView
+        } else {
+            upNextTable.tableHeaderView = nil
+        }
+
+        let chromeHeight: CGFloat = 52
+        guard upNextTable.contentInset.top != chromeHeight else { return }
+        // The system adds the safe-area (nav bar) inset on top of contentInset, so all
+        // offset math uses adjustedContentInset.
+        let wasAtTop = upNextTable.contentOffset.y <= -upNextTable.adjustedContentInset.top + 1
+        upNextTable.contentInset.top = chromeHeight
+        upNextTable.verticalScrollIndicatorInsets.top = chromeHeight
+        if wasAtTop {
+            upNextTable.contentOffset.y = -upNextTable.adjustedContentInset.top
+        }
+    }
+
+    @objc private func pillLongPressed(_ recognizer: UILongPressGestureRecognizer) {
+        guard recognizer.state == .began else { return }
+        // Only the Session segment (right half) offers the switcher.
+        guard recognizer.location(in: worldSwitcher).x > worldSwitcher.bounds.width / 2 else { return }
+        switchSessionTapped()
     }
 
     /// Pill titles carry each world's episode count (including the playing episode)
@@ -153,54 +222,24 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
         let view = UIView(frame: CGRect(x: 0, y: 0, width: 0, height: 52))
 
         sessionHeaderLabel.style = .primaryText01
-        sessionHeaderLabel.font = UIFont.font(ofSize: 15, weight: .semibold, scalingWith: .subheadline)
+        sessionHeaderLabel.font = UIFont.font(ofSize: 22, weight: .bold, scalingWith: .title2)
+        sessionHeaderLabel.textAlignment = .center
         view.addSubview(sessionHeaderLabel)
         sessionHeaderLabel.translatesAutoresizingMaskIntoConstraints = false
-
-        sessionMetaLabel.style = .primaryText02
-        sessionMetaLabel.font = UIFont.font(ofSize: 13, scalingWith: .footnote)
-        view.addSubview(sessionMetaLabel)
-        sessionMetaLabel.translatesAutoresizingMaskIntoConstraints = false
 
         sessionInboxLabel.font = UIFont.font(ofSize: 13, weight: .medium, scalingWith: .footnote)
         view.addSubview(sessionInboxLabel)
         sessionInboxLabel.translatesAutoresizingMaskIntoConstraints = false
 
-        // Trailing controls in a stack so hidden buttons collapse — whatever is visible
-        // (e.g. only the switcher in the "Session: None" state) hugs the right edge.
-        switchSessionButton.addTarget(self, action: #selector(switchSessionTapped), for: .touchUpInside)
-        goToSessionButton.addTarget(self, action: #selector(openSessionSource), for: .touchUpInside)
-        let buttonsStack = UIStackView(arrangedSubviews: [goToSessionButton, sessionSortButton, switchSessionButton, endSessionButton])
-        buttonsStack.axis = .horizontal
-        buttonsStack.alignment = .center
-        buttonsStack.spacing = 16
-        view.addSubview(buttonsStack)
-        buttonsStack.translatesAutoresizingMaskIntoConstraints = false
-
-
         NSLayoutConstraint.activate([
+            // Centered like the playlist page's title block.
             sessionHeaderLabel.topAnchor.constraint(equalTo: view.topAnchor, constant: 8),
-            sessionHeaderLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
-            sessionHeaderLabel.trailingAnchor.constraint(lessThanOrEqualTo: buttonsStack.leadingAnchor, constant: -10),
+            sessionHeaderLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            sessionHeaderLabel.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 20),
+            sessionHeaderLabel.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -20),
 
-            sessionMetaLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
-            sessionMetaLabel.topAnchor.constraint(equalTo: sessionHeaderLabel.bottomAnchor, constant: 1),
-            sessionMetaLabel.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -20),
-
-            sessionInboxLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
-            sessionInboxLabel.topAnchor.constraint(equalTo: sessionMetaLabel.bottomAnchor, constant: 3),
-            sessionInboxLabel.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -20),
-
-            buttonsStack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
-            buttonsStack.centerYAnchor.constraint(equalTo: sessionHeaderLabel.centerYAnchor),
-            goToSessionButton.widthAnchor.constraint(equalToConstant: 24),
-            goToSessionButton.heightAnchor.constraint(equalToConstant: 24),
-            endSessionButton.widthAnchor.constraint(equalToConstant: 20),
-            endSessionButton.heightAnchor.constraint(equalToConstant: 20),
-            switchSessionButton.widthAnchor.constraint(equalToConstant: 24),
-            switchSessionButton.heightAnchor.constraint(equalToConstant: 24),
-            sessionSortButton.widthAnchor.constraint(equalToConstant: 24),
-            sessionSortButton.heightAnchor.constraint(equalToConstant: 24)
+            sessionInboxLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            sessionInboxLabel.topAnchor.constraint(equalTo: sessionHeaderLabel.bottomAnchor, constant: 3)
         ])
 
         // The title opens the session's source (the session is a live mirror of it);
@@ -212,47 +251,64 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
         return view
     }()
 
+    /// The session's counts/controls line — the session list's section header, sitting
+    /// below the Now Playing card exactly like the stock Up Next header, and pinning
+    /// under the chrome while scrolling.
+    lazy var sessionControlsView: UIView = {
+        let view = UIView()
+
+        sessionMetaLabel.style = .primaryText02
+        sessionMetaLabel.font = UIFont.font(ofSize: 14, weight: .medium, scalingWith: .footnote)
+        view.addSubview(sessionMetaLabel)
+        sessionMetaLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        view.addSubview(sessionSortButton)
+        sessionSortButton.translatesAutoresizingMaskIntoConstraints = false
+
+        NSLayoutConstraint.activate([
+            sessionMetaLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            sessionMetaLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            sessionMetaLabel.trailingAnchor.constraint(lessThanOrEqualTo: sessionSortButton.leadingAnchor, constant: -10),
+
+            sessionSortButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+            sessionSortButton.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            sessionSortButton.widthAnchor.constraint(equalToConstant: 24),
+            sessionSortButton.heightAnchor.constraint(equalToConstant: 24)
+        ])
+        return view
+    }()
+
     let sessionInboxLabel = UILabel()
     let sessionMetaLabel = ThemeableLabel()
-    let switchSessionButton = HitTargetButton(frame: CGRect(x: 0, y: 0, width: 24, height: 24))
-    let goToSessionButton = HitTargetButton(frame: CGRect(x: 0, y: 0, width: 24, height: 24))
 
-    /// Offers the most recently played sessions (limit configurable in Settings › General);
-    /// picking one starts a session on that source.
+    /// The Switch Session sheet: looks like the Playlists screen (artwork, name, count),
+    /// with "Up Next" as the first row to hand playback back to the queue.
     @objc func switchSessionTapped() {
-        let recents = Settings.recentPlaybackSessions()
-        guard !recents.isEmpty else { return }
-
-        let optionsPicker = OptionsPicker(title: L10n.playbackSessionSwitchTitle.localizedUppercase, themeOverride: themeOverride)
-        let current = Settings.playbackSession()
-        for recent in recents {
-            let typeLabel: String
-            switch recent.type {
-            case .podcast: typeLabel = L10n.playbackSessionTypePodcast
-            case .playlist: typeLabel = L10n.playbackSessionTypePlaylist
-            case .smartPlaylist: typeLabel = L10n.upNextFilterTypeSmartPlaylist
-            }
-            optionsPicker.addAction(action: OptionAction(label: recent.title ?? "", secondaryLabel: typeLabel, selected: recent == current) {
-                guard recent != current else { return }
-                AnalyticsPlaybackHelper.shared.currentSource = .upNext
-                PlaybackManager.shared.startPlaybackSession(recent)
-            })
-        }
-        optionsPicker.present(from: self)
+        presentSessionPicker(includeUpNext: true)
     }
 
-    /// "N episodes · X left" for the whole session. DB progress lags playback, so the
-    /// playing episode's remaining time comes from the player — that's what keeps the
-    /// line ticking down.
+    /// The empty state's "Choose session" variant omits the Up Next row — with no
+    /// session active there is no queue mode to switch back to.
+    func presentSessionPicker(includeUpNext: Bool) {
+        let controller = SwitchSessionViewController(themeOverride: themeOverride, includeUpNext: includeUpNext) { [weak self] pickedUpNext in
+            if pickedUpNext {
+                self?.displayedWorld = .upNext
+                self?.reloadTable()
+            }
+        }
+        let nav = UINavigationController(rootViewController: controller)
+        nav.modalPresentationStyle = .pageSheet
+        nav.sheetPresentationController?.detents = [.medium(), .large()]
+        present(nav, animated: true)
+    }
+
+    /// "N episodes · X left" for what's still to come in the session — the playing
+    /// episode isn't counted, so the line stays put during playback.
     func sessionMetaText() -> String? {
         guard let session = Settings.playbackSession() else { return nil }
-        let remainingEpisodes = session.remainingEpisodes(excluding: nil)
-        var totalDuration = remainingEpisodes.reduce(0.0) { $0 + max(0, $1.duration - $1.playedUpTo) }
-        if !Settings.playbackSessionPaused(), let current = PlaybackManager.shared.currentEpisode(),
-           let sessionCurrent = remainingEpisodes.first(where: { $0.uuid == current.uuid }) {
-            totalDuration -= max(0, sessionCurrent.duration - sessionCurrent.playedUpTo)
-            totalDuration += max(0, PlaybackManager.shared.duration() - PlaybackManager.shared.currentTime())
-        }
+        let excludedUuid = Settings.playbackSessionPaused() ? nil : PlaybackManager.shared.currentEpisode()?.uuid
+        let remainingEpisodes = session.remainingEpisodes(excluding: excludedUuid)
+        let totalDuration = remainingEpisodes.reduce(0.0) { $0 + max(0, $1.duration - $1.playedUpTo) }
         // Same strings as the stock Up Next counts line, so the two worlds read alike.
         let time = TimeFormatter.shared.multipleUnitFormattedShortTime(time: totalDuration)
         let count = remainingEpisodes.count
@@ -267,18 +323,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
     func updateSessionHeader() {
         let session = Settings.playbackSession()
 
-        let switchImage = UIImage(systemName: "arrow.left.arrow.right", withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .semibold))?
-            .withTintColor(AppTheme.colorForStyle(.primaryIcon02, themeOverride: themeOverride), renderingMode: .alwaysOriginal)
-        switchSessionButton.setImage(switchImage, for: .normal)
-        switchSessionButton.accessibilityLabel = L10n.playbackSessionSwitchTitle
-        switchSessionButton.isHidden = Settings.recentPlaybackSessions().isEmpty && session == nil
 
-        // Go to the source this session mirrors (podcast, playlist, or smart playlist).
-        let goToImage = UIImage(systemName: "arrow.up.right", withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .semibold))?
-            .withTintColor(AppTheme.colorForStyle(.primaryIcon02, themeOverride: themeOverride), renderingMode: .alwaysOriginal)
-        goToSessionButton.setImage(goToImage, for: .normal)
-        goToSessionButton.accessibilityLabel = L10n.playbackSessionGoTo
-        goToSessionButton.isHidden = session == nil
 
         // With no session the view shows a dimmed "Session" bar with the switcher
         // (and the Switch Session row) as the way back in.
@@ -288,10 +333,8 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
             sessionMetaLabel.text = nil
             sessionInboxLabel.isHidden = true
             sessionSortButton.isHidden = true
-            endSessionButton.isHidden = true
             return
         }
-        endSessionButton.isHidden = false
 
         // The source's name (tapping opens it); the counts line always sits beneath it
         // and covers the full session including the playing episode.
@@ -303,7 +346,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
             sourceName = DataManager.sharedManager.findPlaylist(uuid: session.uuid)?.playlistName ?? L10n.playbackSessionTabSession
         }
         sessionHeaderLabel.text = sourceName
-        sessionHeaderLabel.style = Settings.playbackSessionPaused() ? .primaryText02 : .primaryText01
+        sessionHeaderLabel.style = .primaryText01
         sessionMetaLabel.text = sessionMetaText()
 
         // Inbox line: tap to go triage the playlist's inbox.
@@ -322,10 +365,6 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
             .withTintColor(AppTheme.colorForStyle(.primaryIcon02, themeOverride: themeOverride), renderingMode: .alwaysOriginal)
         sessionSortButton.setImage(sortImage, for: .normal)
         sessionSortButton.accessibilityLabel = L10n.playbackSessionSortTitle
-        let endImage = UIImage(systemName: "xmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .bold))?
-            .withTintColor(AppTheme.colorForStyle(.primaryIcon02, themeOverride: themeOverride), renderingMode: .alwaysOriginal)
-        endSessionButton.setImage(endImage, for: .normal)
-        endSessionButton.accessibilityLabel = L10n.playbackSessionEnd
     }
 
     /// Ticks the under-card "… left" line while a session episode plays.
@@ -516,21 +555,6 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
                 filterButton.heightAnchor.constraint(equalToConstant: 24)
             ])
 
-            // The session's eye: hides queue episodes that belong to the active session's
-            // source. Only visible while a session shares the screen.
-            if FeatureFlag.playbackSessions.enabled {
-                headerView.addSubview(hideSessionButton)
-                hideSessionButton.translatesAutoresizingMaskIntoConstraints = false
-                hideSessionButton.setContentCompressionResistancePriority(.required, for: .horizontal)
-                NSLayoutConstraint.activate([
-                    hideSessionButton.trailingAnchor.constraint(equalTo: filterButton.leadingAnchor, constant: -16),
-                    hideSessionButton.centerYAnchor.constraint(equalTo: controlsRow.centerYAnchor),
-                    hideSessionButton.widthAnchor.constraint(equalToConstant: 24),
-                    hideSessionButton.heightAnchor.constraint(equalToConstant: 24)
-                ])
-                hideSessionButton.addTarget(self, action: #selector(hideSessionButtonTapped), for: .touchUpInside)
-            }
-
             // Indicator line under "Playing x of x": blue "Filter: Name (Type)" text that
             // opens the picker, and a cross that clears the filter.
             headerView.addSubview(filterIndicatorButton)
@@ -640,6 +664,9 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
         NotificationCenter.default.addObserver(self, selector: #selector(appDidBecomeActive), name: UIApplication.didBecomeActiveNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(reorderingDidBegin), name: .tableViewReorderWillBegin, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(reorderingDidEnd), name: .tableViewReorderDidEnd, object: nil)
+        if FeatureFlag.playbackSessions.enabled, showingInTab {
+            NotificationCenter.default.addObserver(self, selector: #selector(upNextTabActivated), name: Constants.Notifications.upNextTabActivated, object: nil)
+        }
 
         if FeatureFlag.upNextShuffle.enabled, showingInTab {
             NotificationCenter.default.addObserver(self, selector: #selector(updateShuffleButtonState), name: Constants.Notifications.upNextShuffleToggle, object: nil)
@@ -659,19 +686,41 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
         contentInseter.setupInsetAdjustmentsForMiniPlayer(scrollView: upNextTable)
 
         if FeatureFlag.playbackSessions.enabled {
-            // The pill switcher floats above the list as the table's header; each pill
-            // shows its world's episode count and switching is view-only peeking.
-            let pillContainer = UIView(frame: CGRect(x: 0, y: 0, width: upNextTable.bounds.width, height: 52))
-            pillContainer.autoresizingMask = [.flexibleWidth]
+            // Sticky chrome pinned above the table: pill switcher on top, then the
+            // active world's header. Content scrolls beneath it (via contentInset).
+            let pillContainer = UIView()
             worldSwitcher.translatesAutoresizingMaskIntoConstraints = false
             worldSwitcher.addTarget(self, action: #selector(worldSwitcherChanged), for: .valueChanged)
+            // Long-pressing the Session pill opens the Switch Session sheet.
+            worldSwitcher.addGestureRecognizer(UILongPressGestureRecognizer(target: self, action: #selector(pillLongPressed(_:))))
             pillContainer.addSubview(worldSwitcher)
             NSLayoutConstraint.activate([
+                pillContainer.heightAnchor.constraint(equalToConstant: 52),
                 worldSwitcher.leadingAnchor.constraint(equalTo: pillContainer.leadingAnchor, constant: 20),
                 worldSwitcher.trailingAnchor.constraint(equalTo: pillContainer.trailingAnchor, constant: -20),
                 worldSwitcher.centerYAnchor.constraint(equalTo: pillContainer.centerYAnchor)
             ])
-            upNextTable.tableHeaderView = pillContainer
+
+            stickyChrome.axis = .vertical
+            stickyChrome.addArrangedSubview(pillContainer)
+
+            stickyChrome.translatesAutoresizingMaskIntoConstraints = false
+            // Opaque backing that also covers the status/nav area above the pill, so
+            // scrolling rows never show through above the chrome.
+            stickyChromeBackground.translatesAutoresizingMaskIntoConstraints = false
+            view.addSubview(stickyChromeBackground)
+            view.addSubview(stickyChrome)
+            NSLayoutConstraint.activate([
+                // Below the navigation bar — the table's safe-area inset starts there too.
+                stickyChrome.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+                stickyChrome.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+                stickyChrome.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+
+                stickyChromeBackground.topAnchor.constraint(equalTo: view.topAnchor),
+                stickyChromeBackground.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+                stickyChromeBackground.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+                stickyChromeBackground.bottomAnchor.constraint(equalTo: stickyChrome.bottomAnchor)
+            ])
         }
 
         refreshSections()
@@ -822,7 +871,6 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
         clearFilterButton.addTarget(self, action: #selector(clearFilterButtonTapped), for: .touchUpInside)
 
         if FeatureFlag.playbackSessions.enabled {
-            endSessionButton.addTarget(self, action: #selector(endSessionTapped), for: .touchUpInside)
             sessionSortButton.addTarget(self, action: #selector(sessionSortTapped), for: .touchUpInside)
             // The session mirrors its playlist live — reflect order/content changes made
             // on the playlist's own screens.
@@ -846,16 +894,11 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
         let filterActive = Settings.upNextFilter() != nil
         filterButton.isHidden = queueEmpty
         hideSkippedButton.isHidden = queueEmpty || !filterActive
-        hideSessionButton.isHidden = queueEmpty || !FeatureFlag.playbackSessions.enabled || Settings.playbackSession() == nil
         filterIndicatorButton.isHidden = queueEmpty || !filterActive
         clearFilterButton.isHidden = filterIndicatorButton.isHidden
         filterTrailingToHideSkipped?.isActive = false
         filterTrailingToShuffle?.isActive = false
         (hideSkippedButton.isHidden ? filterTrailingToShuffle : filterTrailingToHideSkipped)?.isActive = true
-    }
-
-    @objc private func endSessionTapped() {
-        PlaybackManager.shared.endPlaybackSession()
     }
 
     /// Dragging a session row reorders the source playlist itself — the session is a live
@@ -921,11 +964,8 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
                 DataManager.sharedManager.save(playlist: playlist)
                 NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged, object: playlist)
 
-                // Start playing whatever the new order puts on top (unless it already is).
-                if let top = session.nextEpisode(after: nil), top.uuid != PlaybackManager.shared.currentEpisode()?.uuid {
-                    AnalyticsPlaybackHelper.shared.currentSource = .upNext
-                    PlaybackManager.shared.play(sessionEpisode: top)
-                }
+                // Sorting only re-orders the list — what's playing keeps playing; the new
+                // order takes effect from the next advance.
                 self.reloadTable()
             })
         }
@@ -936,10 +976,6 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
         Settings.setUpNextFilterHideSkipped(!Settings.upNextFilterHideSkipped())
     }
 
-    @objc private func hideSessionButtonTapped() {
-        Settings.setUpNextHideSessionEpisodes(!Settings.upNextHideSessionEpisodes())
-    }
-
 
     @objc private func clearFilterButtonTapped() {
         Settings.setUpNextFilter(nil)
@@ -947,7 +983,8 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
 
     @objc private func updateFilterButtonImage() {
         let filterActive = Settings.upNextFilter() != nil
-        let symbolConfiguration = UIImage.SymbolConfiguration(pointSize: 18, weight: .medium)
+        // 18pt renders taller than the 24pt buttons and clips the funnel's tip — 16pt fits.
+        let symbolConfiguration = UIImage.SymbolConfiguration(pointSize: 16, weight: .medium)
         let funnelStyle: ThemeStyle = filterActive ? .primaryIcon01 : .primaryIcon02
         let funnel = (UIImage(systemName: filterActive ? "funnel.fill" : "funnel", withConfiguration: symbolConfiguration)
             ?? UIImage(systemName: "line.3.horizontal.decrease", withConfiguration: symbolConfiguration))?
@@ -965,15 +1002,6 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
         hideSkippedButton.imageView?.adjustsImageSizeForAccessibilityContentSizeCategory = true
         hideSkippedButton.imageView?.contentMode = .scaleAspectFit
         hideSkippedButton.accessibilityLabel = hideSkipped ? L10n.upNextFilterShowSkipped : L10n.upNextFilterHideSkipped
-
-        let hideSession = Settings.upNextHideSessionEpisodes()
-        let sessionToggleStyle: ThemeStyle = hideSession ? .primaryIcon01 : .primaryIcon02
-        let sessionToggleImage = UIImage(systemName: hideSession ? "play.square.stack.fill" : "play.square.stack", withConfiguration: symbolConfiguration)?
-            .withTintColor(AppTheme.colorForStyle(sessionToggleStyle, themeOverride: themeOverride), renderingMode: .alwaysOriginal)
-        hideSessionButton.setImage(sessionToggleImage, for: .normal)
-        hideSessionButton.imageView?.adjustsImageSizeForAccessibilityContentSizeCategory = true
-        hideSessionButton.imageView?.contentMode = .scaleAspectFit
-        hideSessionButton.accessibilityLabel = L10n.upNextHideSessionEpisodes
 
         // Indicator line: "Filter: Name (Type)" in the enabled blue; opens the picker.
         // (Sessions announce themselves through the pill switcher, not this line.)
@@ -1025,10 +1053,6 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
 
             sessionInboxCount = Self.inboxCount(for: session)
 
-            // Self-heal the recents list: sessions persisted from before the switcher
-            // existed register themselves (idempotent — MRU front insert).
-            Settings.rememberRecentPlaybackSession(session)
-
             // The playing episode is on the Now Playing card, so the list shows what's
             // still to come (while paused the queue is playing — nothing to exclude).
             // The header's counts and time still cover the whole session.
@@ -1052,14 +1076,6 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
             }
         } else {
             upNextFilterMatchingUuids = nil
-        }
-
-        // The session's eye: hide queue episodes that belong to the session's source —
-        // they're already on stage above. Visual only; positions and playback untouched.
-        if Settings.upNextHideSessionEpisodes(), let session = Settings.playbackSession() {
-            let sessionUuids = session.matchingEpisodeUuids(in: episodes)
-            let base = visible ?? Array(episodes.indices)
-            visible = base.filter { !sessionUuids.contains(episodes[$0].uuid) }
         }
 
         visibleQueueIndices = visible
@@ -1255,10 +1271,9 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
     }
 
     @objc func updateTimeRemainingLabel() {
-        // In the header, the playing episode counts toward the queue unless a session
-        // owns it (session active → the parked queue's numbers are queue-only).
-        let sessionActive = FeatureFlag.playbackSessions.enabled && Settings.playbackSession() != nil && !Settings.playbackSessionPaused()
-        remainingLabel.text = queueCountsText(includeNowPlaying: !sessionActive)
+        // Counts cover what's still to come — the playing episode isn't included,
+        // so the line doesn't need to tick with playback.
+        remainingLabel.text = queueCountsText(includeNowPlaying: false)
     }
 
     // MARK: - UIGestureRecongizerDelegate
@@ -1281,8 +1296,13 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
     }
 
     @objc func selectAllTapped() {
-        guard DataManager.sharedManager.allUpNextEpisodes().count > 1 else { return }
-        upNextTable.selectAllBelow(fromIndexPath: IndexPath(row: 0, section: tableData.firstIndex(of: .upNextSection) ?? 0))
+        if FeatureFlag.playbackSessions.enabled, displayedWorld == .session {
+            guard let sectionIndex = tableData.firstIndex(of: .sessionSection), (sessionEpisodes?.count ?? 0) > 0 else { return }
+            upNextTable.selectAllBelow(fromIndexPath: IndexPath(row: 0, section: sectionIndex))
+        } else {
+            guard DataManager.sharedManager.allUpNextEpisodes().count > 1 else { return }
+            upNextTable.selectAllBelow(fromIndexPath: IndexPath(row: 0, section: tableData.firstIndex(of: .upNextSection) ?? 0))
+        }
 
         track(.upNextSelectAllButtonTapped, properties: ["select_all": true])
         updateNavBarButtons()
@@ -1303,17 +1323,23 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
         let leftButton: UIBarButtonItem?
         let rightButton: UIBarButtonItem?
 
+        let inSession = FeatureFlag.playbackSessions.enabled && displayedWorld == .session
+        let selectedCount = inSession ? selectedSessionEpisodes.count : selectedPlayListEpisodes.count
+        let worldCount = inSession ? (sessionEpisodes?.count ?? 0) : PlaybackManager.shared.queue.upNextCount()
+
         if isMultiSelectEnabled {
-            if MultiSelectHelper.shouldSelectAll(onCount: selectedPlayListEpisodes.count, totalCount: PlaybackManager.shared.queue.upNextCount()) {
+            if MultiSelectHelper.shouldSelectAll(onCount: selectedCount, totalCount: worldCount) {
                 rightButton = UIBarButtonItem(title: L10n.selectAll, style: .plain, target: self, action: #selector(selectAllTapped))
             } else {
                 rightButton = UIBarButtonItem(title: L10n.deselectAll, style: .plain, target: self, action: #selector(deselectAllTapped))
             }
             leftButton = UIBarButtonItem(title: L10n.cancel, style: .plain, target: self, action: #selector(cancelTapped))
-        } else if !isMultiSelectEnabled, PlaybackManager.shared.queue.upNextCount() > 0 {
+        } else if !isMultiSelectEnabled, worldCount > 0 {
             rightButton = UIBarButtonItem(title: L10n.select, style: .plain, target: self, action: #selector(selectTapped))
             if showingInTab {
-                if FeatureFlag.upNextShuffle.enabled, PlaybackManager.shared.queue.upNextCount() > 0 {
+                if inSession {
+                    leftButton = UIBarButtonItem(title: L10n.playbackSessionSwitchShort, style: .plain, target: self, action: #selector(switchSessionTapped))
+                } else if FeatureFlag.upNextShuffle.enabled, PlaybackManager.shared.queue.upNextCount() > 0 {
                     leftButton = UIBarButtonItem(title: L10n.clear, style: .plain, target: self, action: #selector(clearQueueTapped))
                 } else {
                     leftButton = nil
@@ -1321,6 +1347,9 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
             } else {
                 leftButton = UIBarButtonItem(title: L10n.done, style: .plain, target: self, action: #selector(doneTapped))
             }
+        } else if inSession, showingInTab {
+            rightButton = nil
+            leftButton = UIBarButtonItem(title: L10n.playbackSessionSwitchShort, style: .plain, target: self, action: #selector(switchSessionTapped))
         } else {
             rightButton = nil
             if showingInTab {
@@ -1540,5 +1569,176 @@ extension UpNextViewController {
         upNextSortDurationTip?.dismiss(animated: true) { [weak self] in
             self?.upNextSortDurationTip = nil
         }
+    }
+}
+
+/// Fork: the Switch Session sheet — mirrors the Playlists screen's rows (artwork grid,
+/// name, episode count) so picking a session feels like picking a playlist. The first
+/// row is "Up Next": it ends the session and hands playback back to the queue. With
+/// `includeUpNext: false` it becomes the "Choose session" sheet (no session active yet,
+/// so there is no queue mode to switch back to).
+class SwitchSessionViewController: UIViewController, UITableViewDataSource, UITableViewDelegate {
+    private let themeOverride: Theme.ThemeType?
+    private let includeUpNext: Bool
+    private let onSwitched: (Bool) -> Void
+    private let playlists = DataManager.sharedManager.allPlaylists(includeDeleted: false)
+    /// Shortcuts: the queue filtered by a recently used lens (switch sheet only).
+    private let recentFilters: [UpNextFilter]
+    private let table = UITableView(frame: .zero, style: .plain)
+
+    init(themeOverride: Theme.ThemeType?, includeUpNext: Bool = true, onSwitched: @escaping (Bool) -> Void) {
+        self.themeOverride = themeOverride
+        self.includeUpNext = includeUpNext
+        self.recentFilters = includeUpNext ? Array(Settings.upNextRecentFilters().filter { $0.title != nil }.prefix(3)) : []
+        self.onSwitched = onSwitched
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    private var queueRowCount: Int { includeUpNext ? 1 + recentFilters.count : 0 }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+
+        view.backgroundColor = AppTheme.colorForStyle(.primaryUi04, themeOverride: themeOverride)
+
+        // Title with the same left-right arrows glyph as the header's switch button —
+        // or the session glyph when choosing a first session.
+        let titleIcon = UIImageView(image: UIImage(systemName: includeUpNext ? "arrow.left.arrow.right" : "play.square.stack", withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold))?
+            .withTintColor(AppTheme.colorForStyle(.primaryText01, themeOverride: themeOverride), renderingMode: .alwaysOriginal))
+        let titleLabel = UILabel()
+        titleLabel.text = includeUpNext ? L10n.playbackSessionSwitchShort : L10n.playbackSessionChoose
+        titleLabel.font = UIFont.font(ofSize: 17, weight: .semibold, scalingWith: .headline)
+        titleLabel.textColor = AppTheme.colorForStyle(.primaryText01, themeOverride: themeOverride)
+        let titleStack = UIStackView(arrangedSubviews: [titleIcon, titleLabel])
+        titleStack.axis = .horizontal
+        titleStack.alignment = .center
+        titleStack.spacing = 6
+        navigationItem.titleView = titleStack
+
+        table.backgroundColor = .clear
+        table.separatorStyle = .none
+        table.register(NewPlaylistCell.self, forCellReuseIdentifier: NewPlaylistCell.reuseIdentifier)
+        table.dataSource = self
+        table.delegate = self
+        table.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(table)
+        NSLayoutConstraint.activate([
+            table.topAnchor.constraint(equalTo: view.topAnchor),
+            table.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            table.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            table.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        ])
+    }
+
+    func numberOfSections(in tableView: UITableView) -> Int {
+        includeUpNext ? 2 : 1
+    }
+
+    private func isQueueSection(_ section: Int) -> Bool {
+        includeUpNext && section == 0
+    }
+
+    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+        isQueueSection(section) ? queueRowCount : playlists.count
+    }
+
+    func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
+        NewPlaylistCell.cellHeight
+    }
+
+    func tableView(_ tableView: UITableView, viewForHeaderInSection section: Int) -> UIView? {
+        guard includeUpNext else { return nil }
+        let container = UIView()
+        let label = UILabel()
+        label.text = (isQueueSection(section) ? L10n.upNext : L10n.playbackSessionTabSession).localizedUppercase
+        label.font = .systemFont(ofSize: 13, weight: .semibold)
+        label.textColor = AppTheme.colorForStyle(.primaryText02, themeOverride: themeOverride)
+        label.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(label)
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
+            label.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -6)
+        ])
+        return container
+    }
+
+    func tableView(_ tableView: UITableView, heightForHeaderInSection section: Int) -> CGFloat {
+        includeUpNext ? 32 : .leastNormalMagnitude
+    }
+
+    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        let cell = (tableView.dequeueReusableCell(withIdentifier: NewPlaylistCell.reuseIdentifier) as? NewPlaylistCell)
+            ?? NewPlaylistCell(style: .default, reuseIdentifier: NewPlaylistCell.reuseIdentifier)
+        cell.reset()
+
+        if isQueueSection(indexPath.section) {
+            if indexPath.row == 0 {
+                cell.configureUpNext(episodeCount: PlaybackManager.shared.queue.upNextCount())
+            } else {
+                // A recent lens over the queue, in the same clothes as the Up Next row.
+                let filter = recentFilters[indexPath.row - 1]
+                let queueEpisodes = PlaybackManager.shared.queue.allEpisodes(includeNowPlaying: false)
+                cell.configureUpNext(title: "\(L10n.upNext) · \(filter.title ?? "")",
+                                     episodeCount: filter.matchingEpisodeUuids(in: queueEpisodes).count)
+            }
+            cell.hideSeparator(indexPath.row == queueRowCount - 1)
+            return cell
+        }
+
+        let playlist = playlists[indexPath.row]
+        // The section header already says "Session" — no per-row type subtitle needed.
+        cell.set(playlistName: playlist.playlistName, isManualPlaylist: true)
+        cell.loadMetadata(for: playlist)
+        cell.hideSeparator(indexPath.row == playlists.count - 1)
+        return cell
+    }
+
+    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        tableView.deselectRow(at: indexPath, animated: true)
+        AnalyticsPlaybackHelper.shared.currentSource = .upNext
+
+        if isQueueSection(indexPath.section) {
+            if indexPath.row > 0 {
+                // A recent lens: switch to the queue with that filter applied.
+                Settings.setUpNextFilter(recentFilters[indexPath.row - 1])
+            }
+            if Settings.playbackSession() != nil {
+                PlaybackManager.shared.endPlaybackSession()
+            }
+            // Switching to Up Next means the queue takes over — start it if it isn't
+            // already playing (ending a paused session doesn't autoplay).
+            if !PlaybackManager.shared.playing() {
+                if PlaybackManager.shared.currentEpisode() != nil {
+                    PlaybackManager.shared.play()
+                } else if let first = PlaybackManager.shared.queue.allEpisodes(includeNowPlaying: false).first {
+                    PlaybackManager.shared.load(episode: first, autoPlay: true, overrideUpNext: false)
+                }
+            }
+            dismiss(animated: true) { [onSwitched] in
+                onSwitched(true)
+                // Choosing Up Next means going there — land on the Up Next tab.
+                NavigationManager.sharedManager.navigateTo(NavigationManager.upNextPageKey)
+            }
+            return
+        }
+
+        let playlist = playlists[indexPath.row]
+        let session = PlaybackSession(type: playlist.manual ? .playlist : .smartPlaylist, uuid: playlist.uuid)
+        if session != Settings.playbackSession() {
+            PlaybackManager.shared.startPlaybackSession(session)
+        } else if Settings.playbackSessionPaused() {
+            // Re-picking the active-but-paused session resumes it.
+            if let episode = session.nextEpisode(after: nil) {
+                PlaybackManager.shared.play(sessionEpisode: episode)
+            }
+        } else if !PlaybackManager.shared.playing() {
+            PlaybackManager.shared.play()
+        }
+        dismiss(animated: true) { [onSwitched] in onSwitched(false) }
     }
 }
