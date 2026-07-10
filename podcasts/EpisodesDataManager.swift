@@ -171,9 +171,11 @@ class EpisodesDataManager: PlaybackSessionEpisodeSource {
     func playlistEpisodes(
         for playlist: EpisodeFilter,
         limit: Int = Constants.Limits.maxFilterItems,
-        shouldShowArchived: Bool = false,
+        shouldShowArchived: Bool? = nil,
         search: String? = nil
     ) -> [ListEpisode] {
+        // Default to the playlist's own preference (the fork's archived toggle).
+        let shouldShowArchived = shouldShowArchived ?? playlist.showArchivedEpisodes
         let query = PlaylistQueryBuilder.query(clause: .episode, for: playlist, episodeUuidToAdd: playlist.episodeUuidToAddToQueries(), searchTerm: search, limit: limit, shouldShowArchived: shouldShowArchived)
         return EpisodeTableHelper.loadPlaylistEpisodes(query: query)
     }

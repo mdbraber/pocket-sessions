@@ -258,7 +258,8 @@ public class PlaylistQueryBuilder {
 
             let select = select(clause: clause)
             let overlayJoin = usesCustomOrderOverlay ? " \(customOrderOverlayJoin(playlistUuid: playlist.uuid))" : ""
-            queryString = "\(select)\(overlayJoin) WHERE episode.archived = 0 \(stringifiedValues)"
+            // Fork: the Show Archived toggle applies to smart playlists too.
+            queryString = "\(select)\(overlayJoin) WHERE episode.archived \(shouldShowArchived ? "IN (0, 1)" : "= 0") \(stringifiedValues)"
             queryString += ")"
             if addedUuid.boolValue {
                 queryString += ")"
