@@ -131,9 +131,16 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
         stickyChromeBackground.backgroundColor = stickyChrome.backgroundColor
 
         let metrics = UIFontMetrics(forTextStyle: .footnote)
-        let showTitle = displayedWorld == .session && Settings.playbackSession() != nil
-        if showTitle {
+        let inSession = displayedWorld == .session
+        if inSession, Settings.playbackSession() != nil {
             updateSessionHeader()
+            sessionHeaderView.frame = CGRect(x: 0, y: 0, width: upNextTable.bounds.width, height: metrics.scaledValue(for: sessionHeaderHeight))
+            upNextTable.tableHeaderView = sessionHeaderView
+        } else if !inSession {
+            // The queue gets the same title block as the session — "Up Next".
+            sessionHeaderLabel.text = L10n.upNext
+            sessionHeaderLabel.style = .primaryText01
+            sessionInboxLabel.isHidden = true
             sessionHeaderView.frame = CGRect(x: 0, y: 0, width: upNextTable.bounds.width, height: metrics.scaledValue(for: sessionHeaderHeight))
             upNextTable.tableHeaderView = sessionHeaderView
         } else {
@@ -401,6 +408,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
     /// it plays from. Reached from the session title and the inbox notice row. With no
     /// session, the title tap opens the switcher instead.
     @objc func openSessionSource() {
+        guard displayedWorld == .session else { return }
         guard let session = Settings.playbackSession() else {
             switchSessionTapped()
             return
@@ -1256,6 +1264,18 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
     /// The playing episode's live remaining time is folded in only when it belongs to the
     /// queue (a parked queue under an active session doesn't own the playing episode).
     func queueCountsText(includeNowPlaying: Bool) -> String {
+        // With a filter active the counts describe what will actually play.
+        if FeatureFlag.upNextFilter.enabled, Settings.upNextFilter() != nil, let matchingUuids = upNextFilterMatchingUuids {
+            let matching = PlaybackManager.shared.queue.allEpisodes(includeNowPlaying: false).filter { matchingUuids.contains($0.uuid) }
+            let time = TimeFormatter.shared.multipleUnitFormattedShortTime(time: matching.reduce(0.0) { $0 + max(0, $1.duration - $1.playedUpTo) })
+            if matching.isEmpty {
+                return L10n.queueUpNextHeaderTimeLeft(time)
+            } else if matching.count == 1 {
+                return L10n.queueUpNextHeaderOneEpisode(time)
+            }
+            return L10n.queueUpNextHeaderPlural(matching.count.localized(), time)
+        }
+
         var totalDuration = PlaybackManager.shared.queue.upNextTotalDuration(includePlayingEpisode: false)
         if includeNowPlaying, let episode = PlaybackManager.shared.currentEpisode() {
             totalDuration += episode.duration.seconds - PlaybackManager.shared.currentTime()

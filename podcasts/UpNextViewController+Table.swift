@@ -95,9 +95,11 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
     /// Session header: the "Session: <name>" line with its counts line, plus the inbox
     /// notice line when the playlist has untriaged episodes. No session → no header.
     var sessionHeaderHeight: CGFloat {
+        // Title-only block: 8 + 28 title (title2 bold) + 6 — the counts/controls line
+        // lives below the card as the list's section header. The queue world shows the
+        // same block titled "Up Next".
+        if displayedWorld == .upNext { return 42 }
         guard Settings.playbackSession() != nil else { return .leastNormalMagnitude }
-        // Title-only chrome block: 8 + 28 title (title2 bold) + 6 — the counts/controls
-        // line lives below the card as the list's section header.
         var height: CGFloat = 42
         if showsSessionInboxNotice { height += 21 }
         return height

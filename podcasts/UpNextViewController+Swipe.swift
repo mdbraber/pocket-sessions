@@ -14,7 +14,8 @@ extension UpNextViewController: SwipeTableViewCellDelegate, SwipeHandler {
         if tableData[indexPath.section] == .nowPlayingSection {
             guard topBlockHasCard, indexPath.row == 0, orientation == .right,
                   let episode = PlaybackManager.shared.currentEpisode() else { return nil }
-            return episodeSwipeActions(for: episode)
+            // In the session world the card offers the same set as the session rows.
+            return episodeSwipeActions(for: episode, includeQueueAdds: displayedWorld == .session)
         }
 
         // Session rows aren't queue rows — moves reorder the mirrored playlist on the
@@ -172,26 +173,6 @@ extension UpNextViewController: SwipeTableViewCellDelegate, SwipeHandler {
             actions.append(archive)
         }
 
-        if includeQueueAdds {
-            let addTop = SwipeAction(style: .default, title: nil) { _, _ in
-                PlaybackManager.shared.addToUpNext(episode: episode, ignoringQueueLimit: true, toTop: true, userInitiated: true)
-            }
-            addTop.image = UIImage(named: "list_playnext")
-            addTop.backgroundColor = ThemeColor.support02()
-            addTop.accessibilityLabel = L10n.playNext
-            addTop.hidesWhenSelected = true
-            actions.append(addTop)
-
-            let addBottom = SwipeAction(style: .default, title: nil) { _, _ in
-                PlaybackManager.shared.addToUpNext(episode: episode, ignoringQueueLimit: true, toTop: false, userInitiated: true)
-            }
-            addBottom.image = UIImage(named: "list_playlast")
-            addBottom.backgroundColor = ThemeColor.support02()
-            addBottom.accessibilityLabel = L10n.playLast
-            addBottom.hidesWhenSelected = true
-            actions.append(addBottom)
-        }
-
         let markPlayed = SwipeAction(style: .default, title: nil) { [weak self] _, _ in
             EpisodeManager.markAsPlayed(episode: episode, fireNotification: true)
             self?.reloadTable()
@@ -201,6 +182,26 @@ extension UpNextViewController: SwipeTableViewCellDelegate, SwipeHandler {
         markPlayed.accessibilityLabel = L10n.markPlayedShort
         markPlayed.hidesWhenSelected = true
         actions.append(markPlayed)
+
+        if includeQueueAdds {
+            let addTop = SwipeAction(style: .default, title: nil) { _, _ in
+                PlaybackManager.shared.addToUpNext(episode: episode, ignoringQueueLimit: true, toTop: true, userInitiated: true)
+            }
+            addTop.image = UIImage(named: "list_playnext")
+            addTop.backgroundColor = ThemeColor.support04()
+            addTop.accessibilityLabel = L10n.playNext
+            addTop.hidesWhenSelected = true
+            actions.append(addTop)
+
+            let addBottom = SwipeAction(style: .default, title: nil) { _, _ in
+                PlaybackManager.shared.addToUpNext(episode: episode, ignoringQueueLimit: true, toTop: false, userInitiated: true)
+            }
+            addBottom.image = UIImage(named: "list_playlast")
+            addBottom.backgroundColor = ThemeColor.support03()
+            addBottom.accessibilityLabel = L10n.playLast
+            addBottom.hidesWhenSelected = true
+            actions.append(addBottom)
+        }
 
         return actions
     }
