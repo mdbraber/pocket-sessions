@@ -10,9 +10,10 @@ extension SyncTask {
         playlists.forEach { playlist, serverEpisodes in
             // if we have this playlist locally, assume the server version is more up to date, so blow ours away
             if let localPlaylist = DataManager.sharedManager.findPlaylist(uuid: playlist.uuid) {
-                // fork-only rule fields aren't in the sync proto — carry them across the rebuild
+                // fork-only rule fields aren't in the sync proto — carry them across the
+                // rebuild, and keep smart playlists' custom-order rows (same uuid returns)
                 playlist.copyForkOnlyFields(from: localPlaylist)
-                DataManager.sharedManager.delete(playlist: localPlaylist)
+                DataManager.sharedManager.delete(playlist: localPlaylist, preserveEpisodeRows: !localPlaylist.manual)
             }
 
             // save the server version of the filter, as long as it's not deleted

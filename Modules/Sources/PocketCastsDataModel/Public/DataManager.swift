@@ -1013,8 +1013,8 @@ public class DataManager {
         playlistManager.add(episodes: episodes, to: playlist, dbQueue: dbQueue)
     }
 
-    public func delete(playlist: EpisodeFilter) {
-        playlistManager.delete(playlist: playlist, dbQueue: dbQueue)
+    public func delete(playlist: EpisodeFilter, preserveEpisodeRows: Bool = false) {
+        playlistManager.delete(playlist: playlist, preserveEpisodeRows: preserveEpisodeRows, dbQueue: dbQueue)
     }
 
     public func markAllPlaylistsSynced() {
