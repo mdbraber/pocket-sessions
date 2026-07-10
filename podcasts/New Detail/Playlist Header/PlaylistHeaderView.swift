@@ -44,7 +44,7 @@ struct PlaylistHeaderView: View {
                         .foregroundStyle(theme.primaryText01)
                         .multilineTextAlignment(.center)
                         .padding(.bottom, 10.0)
-                    Text(description)
+                    Text(viewModel.usesCustomOrderOverlay ? " " : description)
                         .font(style: .footnote, weight: .regular)
                         .fixedSize(horizontal: false, vertical: true)
                         .foregroundStyle(theme.primaryText02)
@@ -66,10 +66,10 @@ struct PlaylistHeaderView: View {
                     }
                     actionButton(
                         type: .playAll,
-                        color: viewModel.isSearching ? theme.primaryText01 : theme.primaryUi02,
+                        color: viewModel.isSearching ? theme.primaryText01 : theme.primaryUi01,
                         image: Image("filter_play"),
                         title: FeatureFlag.playbackSessions.enabled ? L10n.playlistPlayAsSession : L10n.playlistsPlayAll,
-                        background: viewModel.isSearching ? .clear : theme.primaryText01,
+                        background: viewModel.isSearching ? .clear : theme.primaryInteractive01,
                         stroke: viewModel.isSearching ? theme.primaryUi05 : nil) { type in
                             viewModel.onButtonTapped(type)
                     }
@@ -78,10 +78,44 @@ struct PlaylistHeaderView: View {
                 .padding(.bottom, 10.0)
                 .animation(.easeInOut(duration: 0.2), value: viewModel.isSearching)
 
+                if viewModel.usesCustomOrderOverlay, !viewModel.isSearching {
+                    // Same button-to-tabs gap as the podcast page (itemMargin 24;
+                    // the buttons row already pads 10).
+                    triageTabs
+                        .padding(.top, 14.0)
+                        .padding(.horizontal, 16.0)
+                }
+
                 Spacer()
             }
         }
         .background(.clear)
+    }
+
+    /// Fork: the New | Lineup selector, styled and placed like the podcast page's tabs.
+    @ViewBuilder private var triageTabs: some View {
+        HStack(spacing: 12) {
+            Text(L10n.playlistInboxSectionHeader(viewModel.triageNewCount.localized()))
+                .buttonize {
+                    viewModel.selectTriageTab(.new)
+                } customize: { config in
+                    config.label
+                        .applyTriageTabStyle(theme: theme, highlighted: viewModel.selectedTriageTab == .new)
+                        .applyButtonEffect(isPressed: config.isPressed)
+                }
+
+            Text("\(L10n.playlistLineupSectionHeader) · \(viewModel.triageLineupCount.localized())")
+                .buttonize {
+                    viewModel.selectTriageTab(.lineup)
+                } customize: { config in
+                    config.label
+                        .applyTriageTabStyle(theme: theme, highlighted: viewModel.selectedTriageTab == .lineup)
+                        .applyButtonEffect(isPressed: config.isPressed)
+                }
+
+            Spacer()
+        }
+        .font(.subheadline.weight(.medium))
     }
 
     private func actionButton(
@@ -121,6 +155,31 @@ struct PlaylistHeaderView: View {
                 RoundedRectangle(cornerRadius: 8)
                     .stroke(stroke ?? background, lineWidth: 2)
             )
+        }
+    }
+}
+
+
+// MARK: - Fork: triage tab styling (mirrors the podcast page's tab style)
+
+private extension View {
+    func applyTriageTabStyle(theme: Theme, highlighted: Bool = false) -> some View {
+        self
+            .contentShape(Rectangle())
+            .padding(.vertical, 8)
+            .padding(.horizontal, 12)
+            .foregroundColor(highlighted ? theme.primaryUi01 : theme.primaryText02)
+            .background(triageTabBackground(theme: theme, highlighted: highlighted))
+    }
+
+    @ViewBuilder
+    func triageTabBackground(theme: Theme, highlighted: Bool) -> some View {
+        if highlighted {
+            if LiquidGlass.isEnabled {
+                Capsule().fill(theme.primaryText01)
+            } else {
+                RoundedRectangle(cornerRadius: 8).fill(theme.primaryText01)
+            }
         }
     }
 }

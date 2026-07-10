@@ -175,16 +175,8 @@ extension PlaylistDetailViewController: UITableViewDelegate {
         let title = overlayHeaderTitle(for: model)
         let showsSearch = model == searchHeaderSection
 
-        if let title {
-            // The New section header carries a one-tap bulk triage on its trailing edge.
-            var trailingAction: (title: String, handler: () -> Void)?
-            if model == .inbox {
-                trailingAction = (L10n.playlistAddAllToLineup, { [weak self] in
-                    guard let self else { return }
-                    self.viewModel.addToLineup(episodeUuids: self.viewModel.inboxEpisodes.map { $0.episode.uuid })
-                })
-            }
-            return overlaySectionHeader(title: title, includingSearch: showsSearch, trailingAction: trailingAction)
+        if title != nil {
+            return triageTabsHeader(includingSearch: showsSearch)
         }
         if showsSearch {
             // The composite overlay header pins the search bar with autolayout; restore
@@ -198,7 +190,7 @@ extension PlaylistDetailViewController: UITableViewDelegate {
 
     func tableView(_ tableView: UITableView, heightForHeaderInSection section: Int) -> CGFloat {
         let model = sectionModel(at: section)
-        let titleHeight: CGFloat = overlayHeaderTitle(for: model) != nil ? Self.overlayHeaderTitleHeight : 0
+        let titleHeight: CGFloat = overlayHeaderTitle(for: model) != nil ? Self.triageTabsHeaderHeight : 0
         let searchHeight: CGFloat = model == searchHeaderSection ? PCSearchBarController.defaultHeight : 0
         let total = titleHeight + searchHeight
         return total > 0 ? total : 0
@@ -403,6 +395,8 @@ extension PlaylistDetailViewController: UITableViewDragDelegate, UITableViewDrop
 
 private extension PlaylistDetailViewController {
     static let overlayHeaderTitleHeight: CGFloat = 30
+    /// The selected tab's counts line (the tab selector lives in the header cell).
+    static let triageTabsHeaderHeight: CGFloat = 30
 
     func sectionModel(at index: Int) -> PlaylistDetailViewModel.Section? {
         viewModel.dataSource[safe: index]?.model
@@ -430,6 +424,63 @@ private extension PlaylistDetailViewController {
         default:
             return nil
         }
+    }
+
+    /// Fork: the Lineup | New tab selector (styled like the podcast page's tabs) with
+    /// the selected tab's "x episodes · time" line beneath, optionally stacking the
+    /// search bar above.
+    func triageTabsHeader(includingSearch: Bool) -> UIView {
+        let container = UIView()
+        container.backgroundColor = AppTheme.colorForStyle(.primaryUi02)
+
+        // The selected tab's counts line, with bulk triage on the New tab.
+        let isNew = viewModel.selectedTriageTab == .new
+        let count = isNew ? viewModel.triageNewCount : viewModel.triageLineupCount
+        let time = TimeFormatter.shared.multipleUnitFormattedShortTime(time: isNew ? viewModel.triageNewDuration : viewModel.triageLineupDuration)
+        let countsLabel = UILabel()
+        countsLabel.text = count == 1 ? L10n.playlistDetailDescriptionOneEpisode(time) : L10n.playlistDetailDescription(count, time)
+        countsLabel.font = .systemFont(ofSize: 13, weight: .medium)
+        countsLabel.textColor = AppTheme.colorForStyle(.primaryText02)
+        countsLabel.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(countsLabel)
+
+        var constraints = [
+            countsLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
+            countsLabel.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -6),
+            countsLabel.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -16)
+        ]
+
+        if isNew, viewModel.triageNewCount > 0 {
+            let addAll = UIButton(type: .system)
+            addAll.setTitle(L10n.playlistAddAllToLineup, for: .normal)
+            addAll.titleLabel?.font = .systemFont(ofSize: 13, weight: .semibold)
+            addAll.setTitleColor(AppTheme.colorForStyle(.primaryInteractive01), for: .normal)
+            addAll.addAction(UIAction { [weak self] _ in
+                guard let self else { return }
+                self.viewModel.addToLineup(episodeUuids: self.viewModel.inboxEpisodes.map { $0.episode.uuid })
+            }, for: .touchUpInside)
+            addAll.translatesAutoresizingMaskIntoConstraints = false
+            container.addSubview(addAll)
+            constraints.append(contentsOf: [
+                addAll.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
+                addAll.centerYAnchor.constraint(equalTo: countsLabel.centerYAnchor),
+                countsLabel.trailingAnchor.constraint(lessThanOrEqualTo: addAll.leadingAnchor, constant: -10)
+            ])
+        }
+
+        if includingSearch {
+            searchHeaderView.translatesAutoresizingMaskIntoConstraints = false
+            container.addSubview(searchHeaderView)
+            constraints.append(contentsOf: [
+                searchHeaderView.topAnchor.constraint(equalTo: container.topAnchor),
+                searchHeaderView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+                searchHeaderView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+                searchHeaderView.heightAnchor.constraint(equalToConstant: PCSearchBarController.defaultHeight)
+            ])
+        }
+
+        NSLayoutConstraint.activate(constraints)
+        return container
     }
 
     /// Builds a section header with a themed title, optionally stacking the search bar

@@ -93,19 +93,28 @@ struct PodcastHeaderView: View {
             let playlist = PlaylistManager.findOrCreateSmartPlaylist(for: viewModel.podcast)
             PlaybackManager.shared.startPlaybackSession(PlaybackSession(type: .smartPlaylist, uuid: playlist.uuid))
         } label: {
-            HStack(spacing: 6) {
+            // Mirrors the smart playlist header's Play as Session button.
+            HStack(alignment: .center, spacing: 8.0) {
                 Image("filter_play")
                     .renderingMode(.template)
                     .resizable()
-                    .frame(width: 18, height: 18)
+                    .foregroundStyle(theme.primaryUi01)
+                    .scaledToFit()
+                    .frame(width: 20, height: 20)
                 Text(L10n.playlistPlayAsSession)
-                    .font(size: 15.0, style: .body, weight: .medium, maxSizeCategory: .extraExtraLarge)
+                    .font(style: .subheadline, weight: .medium)
+                    .foregroundStyle(theme.primaryUi01)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .foregroundStyle(theme.primaryUi01)
-            .padding(.vertical, 8)
-            .padding(.horizontal, 20)
-            .background(theme.primaryInteractive01)
-            .clipShape(Capsule())
+            .padding(.horizontal, 16.0)
+            .padding(.vertical, 10.0)
+            .frame(minWidth: 152, minHeight: 40.0)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(theme.primaryInteractive01)
+            )
         }
         .buttonStyle(.plain)
     }

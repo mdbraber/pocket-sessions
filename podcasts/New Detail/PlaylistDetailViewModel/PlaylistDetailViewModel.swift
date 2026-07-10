@@ -20,6 +20,28 @@ class PlaylistDetailViewModel: ObservableObject {
         }
     }
 
+    /// Fork: which triage tab of a custom-ordered playlist is shown — Lineup (the
+    /// hand-ordered plays-next list) or New (untriaged arrivals).
+    enum TriageTab {
+        case lineup
+        case new
+    }
+
+    @Published var selectedTriageTab: TriageTab = .new
+    @Published private(set) var triageNewCount = 0
+    @Published private(set) var triageLineupCount = 0
+    private(set) var triageNewDuration: TimeInterval = 0
+    private(set) var triageLineupDuration: TimeInterval = 0
+    /// The full fetched list, regardless of the selected tab - the header artwork
+    /// always reflects the whole playlist.
+    private(set) var allOverlayEpisodes: [ListEpisode] = []
+
+    func selectTriageTab(_ tab: TriageTab) {
+        guard selectedTriageTab != tab else { return }
+        selectedTriageTab = tab
+        reloadEpisodeList(animated: false)
+    }
+
     enum ButtonTag {
         case smartRules
         case addEpisodes
@@ -175,7 +197,7 @@ class PlaylistDetailViewModel: ObservableObject {
         artworkLoadingTask?.cancel()
 
         // Capture the newly updated episodes on the main thread before entering the async task
-        let currentEpisodes = self.episodes
+        let currentEpisodes = allOverlayEpisodes.isEmpty ? self.episodes : allOverlayEpisodes
 
         artworkLoadingTask = Task { [weak self] in
             guard let self else { return }
@@ -377,12 +399,19 @@ class PlaylistDetailViewModel: ObservableObject {
         // Fork: the custom-order overlay splits episodes into New (inbox) and Lineup.
         // The insert marker exists only as state (it steers swipe-triage and auto-add);
         // it isn't rendered — dragging gives explicit placement.
-        if usesCustomOrderOverlay, !isSearching, !episodes.isEmpty {
+        if usesCustomOrderOverlay, !isSearching {
             let (inbox, lineup) = partitionForOverlay(episodes: episodes)
-            if !inbox.isEmpty {
+            allOverlayEpisodes = episodes
+            triageNewCount = inbox.count
+            triageLineupCount = lineup.count
+            triageNewDuration = inbox.reduce(0.0) { $0 + max(0, $1.episode.duration - $1.episode.playedUpTo) }
+            triageLineupDuration = lineup.reduce(0.0) { $0 + max(0, $1.episode.duration - $1.episode.playedUpTo) }
+            // Tabs show one group at a time; the tab selector renders as the section's header.
+            if selectedTriageTab == .new {
                 sections.append(ArraySection(model: .inbox, elements: inbox))
+            } else {
+                sections.append(ArraySection(model: .episodes, elements: lineup))
             }
-            sections.append(ArraySection(model: .episodes, elements: lineup))
             return sections
         }
 
@@ -417,7 +446,7 @@ class PlaylistDetailViewModel: ObservableObject {
         var positioned = dataManager.positionedEpisodeUuids(for: playlist)
         let memberUuids = Set(episodes.map { $0.episode.uuid })
 
-        if positioned.contains(where: { !memberUuids.contains($0) }) {
+        if !episodes.isEmpty, positioned.contains(where: { !memberUuids.contains($0) }) {
             dataManager.pruneCustomOrder(keepingEpisodeUuids: Array(memberUuids), for: playlist)
             positioned = dataManager.positionedEpisodeUuids(for: playlist)
         }
