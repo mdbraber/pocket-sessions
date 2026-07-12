@@ -236,7 +236,10 @@ class OptionsPickerRootController: UIViewController, UISheetPresentationControll
     /// A small secondary section label between rows (e.g. "Recent" in the Up Next
     /// filter picker). Suppresses the hairline that would otherwise sit right under it.
     func addSectionTitle(_ title: String) {
-        addDivider()
+        // No divider above a title that opens the sheet — there's nothing to divide.
+        if !stackView.arrangedSubviews.isEmpty {
+            addDivider()
+        }
 
         let containerView = UIView()
         containerView.translatesAutoresizingMaskIntoConstraints = false

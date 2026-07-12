@@ -41,7 +41,8 @@ class SimpleActionView: UIView {
         label.setContentCompressionResistancePriority(.required, for: .vertical)
         let iconTintColor = action.destructive ? AppTheme.destructiveTextColor(for: themeOverride) : AppTheme.colorForStyle(iconTintStyle, themeOverride: themeOverride)
 
-        var image = action.icon.flatMap { UIImage(named: $0) }
+        // Fork: icon names fall back to SF Symbols so pickers can use them too.
+        var image = action.icon.flatMap { UIImage(named: $0) ?? UIImage(systemName: $0) }
 
         if action.tintIcon {
             image = image?.tintedImage(iconTintColor)
