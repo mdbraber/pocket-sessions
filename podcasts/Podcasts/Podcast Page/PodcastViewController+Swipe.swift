@@ -10,11 +10,30 @@ extension PodcastViewController: SwipeTableViewCellDelegate, SwipeHandler {
 
         switch orientation {
         case .left:
-            let actions = SwipeActionsHelper.createLeftActionsForEpisode(episode, tableView: tableView, indexPath: indexPath, swipeHandler: self)
-            return actions.swipeKitActions()
+            // Session (lineup) rows keep the queue actions; Episodes rows speak the
+            // shared triage vocabulary (Add to Session · Play Next · Play Last).
+            if showingSession {
+                let actions = SwipeActionsHelper.createLeftActionsForEpisode(episode, tableView: tableView, indexPath: indexPath, swipeHandler: self)
+                return actions.swipeKitActions()
+            }
+            return TriageSwipes.leftActions(for: episode) { [weak self] in
+                guard let self, let podcast = self.podcast else { return }
+
+                let session = SessionManager.shared.findOrCreateSession(forPodcast: podcast)
+                SessionManager.shared.addToSessions(episodeUuids: [episode.uuid], preferred: session, presenting: self)
+            }
         case .right:
-            let actions = SwipeActionsHelper.createRightActionsForEpisode(episode, tableView: tableView, indexPath: indexPath, swipeHandler: self)
-            return actions.swipeKitActions()
+            // Session rows: remove-at-edge like any lineup. Episodes rows: triage
+            // (Archive/Unarchive · Mark as (Un)Seen).
+            if showingSession {
+                let actions = SwipeActionsHelper.createRightActionsForEpisode(episode, tableView: tableView, indexPath: indexPath, swipeHandler: self)
+                return actions.swipeKitActions()
+            }
+            return TriageSwipes.rightActions(for: episode) { [weak self] in
+                guard let self, let podcast = self.podcast else { return }
+
+                self.loadLocalEpisodes(podcast: podcast, animated: true)
+            }
         }
     }
 
@@ -38,11 +57,15 @@ extension PodcastViewController: SwipeTableViewCellDelegate, SwipeHandler {
     }
 
     var swipeSourceType: SwipeSourceType {
-        .podcast
+        // Fork: the inline Session tab shows lineup rows, which swipe like a manual
+        // playlist (remove-from-session on the edge, no add-to-playlist).
+        showingSession ? .manualPlaylistDetail : .podcast
     }
 
     func archivingRemovesFromList() -> Bool {
-        !(podcast?.shouldShowArchived ?? false)
+        if showingSession { return true }
+
+        return !(podcast?.shouldShowArchived ?? false)
     }
 
     func actionPerformed(willBeRemoved: Bool) {
@@ -66,5 +89,10 @@ extension PodcastViewController: SwipeTableViewCellDelegate, SwipeHandler {
         )
     }
 
-    func removeFromManualPlaylist(episode: PocketCastsDataModel.Episode, at: IndexPath) { }
+    func removeFromManualPlaylist(episode: PocketCastsDataModel.Episode, at: IndexPath) {
+        guard showingSession, let podcast, let session = SessionStore.shared.session(forPodcast: podcast.uuid) else { return }
+
+        SessionManager.shared.removeFromLineup(episodeUuids: [episode.uuid], session: session)
+        loadLocalEpisodes(podcast: podcast, animated: true)
+    }
 }

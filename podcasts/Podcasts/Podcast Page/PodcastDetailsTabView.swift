@@ -10,7 +10,9 @@ struct PodcastDetailsTabView: View {
     weak var delegate: PodcastActionsDelegate?
 
     enum Tab {
+        case inbox
         case episodes
+        case session
         case bookmarks
         case youMightLike
 
@@ -26,6 +28,39 @@ struct PodcastDetailsTabView: View {
         }
     }
 
+    @State private var sessionCount: Int = 0
+    @State private var inboxCount: Int = 0
+
+    private var sessionTabTitle: String {
+        sessionCount > 0 ? "\(L10n.playbackSessionTabSession) · \(sessionCount.localized())" : L10n.playbackSessionTabSession
+    }
+
+    private var inboxTabTitle: String {
+        inboxCount > 0 ? "\(L10n.inboxTitle) · \(inboxCount.localized())" : L10n.inboxTitle
+    }
+
+    private func refreshSessionCount() {
+        guard let podcast = delegate?.displayedPodcast() else {
+            sessionCount = 0
+            inboxCount = 0
+            return
+        }
+        let session = SessionStore.shared.session(forPodcast: podcast.uuid)
+        sessionCount = session.map { SessionFeederEngine.storeMemberUuids(for: $0).count } ?? 0
+        let feeder = session ?? ForkSession(uuid: "podcast-inbox-preview", storePlaylistUuid: nil, feeder: .podcast(uuid: podcast.uuid))
+        inboxCount = SessionFeederEngine.displayEpisodes(for: feeder, showArchived: false, showPlayed: false, showSeen: false).count
+    }
+
+    private func openSession() {
+        selectedTab = .session
+        delegate?.showSession()
+    }
+
+    private func openInbox() {
+        selectedTab = .inbox
+        delegate?.showInbox()
+    }
+
     var body: some View {
         Group {
             if FeatureFlag.recommendations.enabled {
@@ -35,12 +70,48 @@ struct PodcastDetailsTabView: View {
             }
         }
         .onReceive(delegate?.currentViewModePublisher ?? Just(.episodes).eraseToAnyPublisher()) { viewMode in
-            selectedTab = Tab(from: viewMode)
+            // Fork: the Inbox and Session tabs ride the episodes view mode,
+            // distinguished by the list-mode flags.
+            if viewMode == .episodes, delegate?.isShowingInbox() == true {
+                selectedTab = .inbox
+            } else if viewMode == .episodes, delegate?.isShowingSession() == true {
+                selectedTab = .session
+            } else {
+                selectedTab = Tab(from: viewMode)
+            }
         }
+        .onReceive(NotificationCenter.default.publisher(for: SessionStore.changed)) { _ in
+            refreshSessionCount()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Constants.Notifications.episodePlayStatusChanged)) { _ in
+            refreshSessionCount()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Constants.Notifications.episodeArchiveStatusChanged)) { _ in
+            refreshSessionCount()
+        }
+        .onAppear(perform: refreshSessionCount)
     }
 
     @ViewBuilder var tabs: some View {
         HStack(spacing: 12) {
+            Text(inboxTabTitle)
+                .buttonize {
+                    openInbox()
+                } customize: { config in
+                    config.label
+                        .applyStyle(theme: theme, highlighted: selectedTab == .inbox)
+                        .applyButtonEffect(isPressed: config.isPressed)
+                }
+
+            Text(sessionTabTitle)
+                .buttonize {
+                    openSession()
+                } customize: { config in
+                    config.label
+                        .applyStyle(theme: theme, highlighted: selectedTab == .session)
+                        .applyButtonEffect(isPressed: config.isPressed)
+                }
+
             Text(L10n.episodes)
                 .buttonize {
                     selectedTab = .episodes

@@ -47,6 +47,7 @@ protocol PodcastActionsDelegate: AnyObject {
     func searchEpisodes(query: String)
     func clearSearch()
     func toggleShowArchived()
+    func episodesDidChange()
     func showingArchived() -> Bool
     func archiveAllTapped(playedOnly: Bool)
     func unarchiveAllTapped()
@@ -63,6 +64,10 @@ protocol PodcastActionsDelegate: AnyObject {
 
     func showBookmarks()
     func showEpisodes()
+    func showSession()
+    func showInbox()
+    func isShowingSession() -> Bool
+    func isShowingInbox() -> Bool
     func showYouMightLike()
     func showLogin(message: String?)
 
@@ -81,6 +86,28 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
     var summaryExpanded = false
     var descriptionExpanded = false
     var currentViewMode: ViewMode = .episodes
+
+    /// Fork: which list the episodes surface renders — the podcast's episode list,
+    /// the session's store (inline Session tab), or the feeder's offers (Inbox tab).
+    enum EpisodesListMode {
+        case episodes
+        case session
+        case inbox
+    }
+
+    var episodesListMode: EpisodesListMode = .episodes
+    var showingSession: Bool { episodesListMode == .session }
+    var showingInbox: Bool { episodesListMode == .inbox }
+    /// Fork: the podcast session's store members, cached per reload — drives the
+    /// little green in-this-session indicator on Episodes rows.
+    var cachedSessionMemberUuids: Set<String> = []
+    /// Fork: the Episodes tab's last sections — switching back restores them
+    /// instantly while the async refresh runs, instead of showing the old tab's rows.
+    private var cachedEpisodesTabData: [ArraySection<String, ListItem>]?
+    /// Fork: the Inbox tab's Add All / Mark All as Seen footer.
+    static let inboxActionsFooterHeight: CGFloat = InboxActionsFooterView.height
+    var inboxActionsFooterHost: UIHostingController<AnyView>?
+
     var hasSimilarShows = CurrentValueSubject<Bool, Never>(false)
     var isLoadingRecommendations = CurrentValueSubject<Bool, Never>(false)
     var currentViewModeSubject = CurrentValueSubject<ViewMode, Never>(.episodes)
@@ -491,6 +518,12 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
         addCustomObserver(Constants.Notifications.episodeDownloadStatusChanged, selector: #selector(refreshEpisodes))
         addCustomObserver(Constants.Notifications.episodeDownloaded, selector: #selector(refreshEpisodes))
         addCustomObserver(Constants.Notifications.episodePlayStatusChanged, selector: #selector(refreshEpisodes))
+        addCustomObserver(SessionStore.changed, selector: #selector(refreshEpisodes))
+
+        if let pending = SessionManager.pendingSessionLanding, pending == podcast?.uuid {
+            SessionManager.pendingSessionLanding = nil
+            showSession()
+        }
 
         if featuredPodcast, !hasAppearedAlready {
             Analytics.track(.discoverFeaturedPodcastTapped, properties: ["uuid": podcastUUID])
@@ -661,6 +694,20 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
     }
 
     func loadLocalEpisodes(podcast: Podcast, animated: Bool) {
+        cachedSessionMemberUuids = SessionStore.shared.session(forPodcast: podcast.uuid)
+            .map { Set(SessionFeederEngine.storeMemberUuids(for: $0)) } ?? []
+
+        switch episodesListMode {
+        case .session:
+            loadSessionEpisodes(podcast: podcast, animated: animated)
+            return
+        case .inbox:
+            loadInboxEpisodes(podcast: podcast, animated: animated)
+            return
+        case .episodes:
+            break
+        }
+
         let uuidsToFilter = (searchController?.searchInProgress() ?? false) ? uuidsThatMatchSearch : nil
         let refreshOperation = PodcastEpisodesRefreshOperation(podcast: podcast, uuidsToFilter: uuidsToFilter) { [weak self] newData in
             guard let self else { return }
@@ -738,6 +785,8 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
                 self.episodeInfo = finalData
                 reloadData()
             }
+            // Instant restore when switching back to this tab later.
+            self.cachedEpisodesTabData = finalData
             self.searchController?.episodesDidReload()
             if self.isMultiSelectEnabled {
                 self.updateSelectAllBtn()
@@ -745,6 +794,178 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
         }
 
         operationQueue.addOperation(refreshOperation)
+    }
+
+    /// Fork: builds episodeInfo from the session store's lineup so the inline Session
+    /// tab reuses the entire standard episodes pipeline (cells, taps, multi-select).
+    private func loadSessionEpisodes(podcast: Podcast, animated: Bool) {
+        let searchHeader = ListHeader(headerTitle: L10n.search, isSectionHeader: true, sectionNumber: -1)
+        var finalData = [ArraySection<String, ListItem>(model: searchHeader.headerTitle, elements: [searchHeader])]
+
+        // Search applies here too: server matches by uuid, plus a local title match so
+        // store members from other podcasts don't silently vanish while searching.
+        let uuidsToFilter = (searchController?.searchInProgress() ?? false) ? uuidsThatMatchSearch : nil
+        let searchTerm = searchController?.searchTextField?.text ?? ""
+
+        var episodes = [ListItem]()
+        if let session = SessionStore.shared.session(forPodcast: podcast.uuid),
+           let storeUuid = session.storePlaylistUuid,
+           let store = DataManager.sharedManager.findPlaylist(uuid: storeUuid) {
+            let tintColor = AppTheme.appTintColor()
+            episodes = DataManager.sharedManager.positionedEpisodeUuids(for: store)
+                .compactMap { DataManager.sharedManager.findEpisode(uuid: $0) }
+                .filter { episode in
+                    guard let uuidsToFilter else { return true }
+                    return uuidsToFilter.contains(episode.uuid) || (!searchTerm.isEmpty && episode.displayableTitle().localizedCaseInsensitiveContains(searchTerm))
+                }
+                .map { ListEpisode(episode: $0, tintColor: tintColor) }
+        }
+        if episodes.isEmpty, !searchTerm.isEmpty {
+            episodes = [NoSearchResultsPlaceholder()]
+        }
+        finalData.append(ArraySection(model: "episodes", elements: episodes))
+
+        let apply = { [weak self] in
+            guard let self else { return }
+
+            self.navTitleLabel.text = podcast.title
+            if animated {
+                let changeSet = StagedChangeset(source: self.episodeInfo, target: finalData)
+                do {
+                    try SJCommonUtils.catchException {
+                        self.episodesTable.reload(using: changeSet, with: .none, setData: { data in
+                            self.episodeInfo = data
+                        })
+                    }
+                } catch {
+                    self.episodeInfo = finalData
+                    self.reloadData()
+                }
+            } else {
+                self.episodeInfo = finalData
+                self.reloadData()
+            }
+            self.searchController?.episodesDidReload()
+            if self.isMultiSelectEnabled {
+                self.updateSelectAllBtn()
+            }
+        }
+
+        if Thread.isMainThread {
+            apply()
+        } else {
+            DispatchQueue.main.async(execute: apply)
+        }
+    }
+
+    /// Fork: the inline Inbox tab — the feeder's fresh offers through the standard
+    /// episodes pipeline, closed off by the Add All / Clear All footer.
+    private func loadInboxEpisodes(podcast: Podcast, animated: Bool) {
+        let searchHeader = ListHeader(headerTitle: L10n.search, isSectionHeader: true, sectionNumber: -1)
+        var finalData = [ArraySection<String, ListItem>(model: searchHeader.headerTitle, elements: [searchHeader])]
+
+        let uuidsToFilter = (searchController?.searchInProgress() ?? false) ? uuidsThatMatchSearch : nil
+        let searchTerm = searchController?.searchTextField?.text ?? ""
+
+        let tintColor = AppTheme.appTintColor()
+        var episodes: [ListItem] = SessionFeederEngine.displayEpisodes(
+            for: inboxSession(for: podcast),
+            showArchived: false,
+            showPlayed: false,
+            showSeen: false
+        )
+        .filter { episode in
+            guard let uuidsToFilter else { return true }
+            return uuidsToFilter.contains(episode.uuid) || (!searchTerm.isEmpty && episode.displayableTitle().localizedCaseInsensitiveContains(searchTerm))
+        }
+        .map { ListEpisode(episode: $0, tintColor: tintColor) }
+        if episodes.isEmpty, !searchTerm.isEmpty {
+            episodes = [NoSearchResultsPlaceholder()]
+        }
+        finalData.append(ArraySection(model: "episodes", elements: episodes))
+
+        let hasOffers = finalData[1].elements.contains { $0 is ListEpisode }
+        let apply = { [weak self] in
+            guard let self else { return }
+
+            self.navTitleLabel.text = podcast.title
+            self.episodesTable.tableFooterView = hasOffers ? self.inboxActionsFooter() : nil
+            if animated {
+                let changeSet = StagedChangeset(source: self.episodeInfo, target: finalData)
+                do {
+                    try SJCommonUtils.catchException {
+                        self.episodesTable.reload(using: changeSet, with: .none, setData: { data in
+                            self.episodeInfo = data
+                        })
+                    }
+                } catch {
+                    self.episodeInfo = finalData
+                    self.reloadData()
+                }
+            } else {
+                self.episodeInfo = finalData
+                self.reloadData()
+            }
+            self.searchController?.episodesDidReload()
+            if self.isMultiSelectEnabled {
+                self.updateSelectAllBtn()
+            }
+        }
+
+        if Thread.isMainThread {
+            apply()
+        } else {
+            DispatchQueue.main.async(execute: apply)
+        }
+    }
+
+    /// The session whose feeder drives the Inbox tab — the real one when it exists,
+    /// otherwise a transient preview (no store, no dismissals) so the inbox works
+    /// before a session is ever created.
+    func inboxSession(for podcast: Podcast) -> ForkSession {
+        SessionStore.shared.session(forPodcast: podcast.uuid)
+            ?? ForkSession(uuid: "podcast-inbox-preview", storePlaylistUuid: nil, feeder: .podcast(uuid: podcast.uuid))
+    }
+
+    /// Fork: the Inbox tab's closing action buttons — pills matching the header's
+    /// Play-as-Session button.
+    private func inboxActionsFooter() -> UIView {
+        if inboxActionsFooterHost == nil {
+            let host = UIHostingController(rootView: AnyView(
+                InboxActionsFooterView(
+                    addAll: { [weak self] in self?.inboxAddAllTapped() },
+                    markAllSeen: { [weak self] in self?.inboxMarkAllSeenTapped() }
+                )
+                .environmentObject(Theme.sharedTheme)
+            ))
+            host.view.backgroundColor = .clear
+            addChild(host)
+            host.didMove(toParent: self)
+            inboxActionsFooterHost = host
+        }
+        let view = inboxActionsFooterHost!.view!
+        view.frame = CGRect(x: 0, y: 0, width: episodesTable.bounds.width, height: Self.inboxActionsFooterHeight)
+        return view
+    }
+
+    private var inboxDisplayedEpisodes: [Episode] {
+        episodeInfo.flatMap { $0.elements }.compactMap { ($0 as? ListEpisode)?.episode }
+    }
+
+    private func inboxAddAllTapped() {
+        guard let podcast else { return }
+
+        let session = SessionManager.shared.findOrCreateSession(forPodcast: podcast)
+        SessionManager.shared.addToSessions(episodeUuids: inboxDisplayedEpisodes.map(\.uuid), preferred: session, presenting: self) { [weak self] _ in
+            guard let self, let podcast = self.podcast else { return }
+            self.loadLocalEpisodes(podcast: podcast, animated: true)
+        }
+    }
+
+    private func inboxMarkAllSeenTapped() {
+        guard let podcast else { return }
+        EpisodeSeenManager.setSeen(true, episodes: inboxDisplayedEpisodes)
+        loadLocalEpisodes(podcast: podcast, animated: true)
     }
 
     @objc func hideSearchKeyboard() {
@@ -902,6 +1123,7 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
         return DataManager.sharedManager.count(query: "SELECT COUNT(*) FROM \(DataManager.episodeTableName) WHERE podcast_id == ?", values: [podcast.id])
     }
 
+    /// Fork: what the Episodes tab currently shows, after the display filters.
     func archivedEpisodeCount() -> Int {
         guard let podcast else { return 0 }
 
@@ -1001,15 +1223,28 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
     func toggleShowArchived() {
         guard let podcast else { return }
 
-        podcast.shouldShowArchived = !podcast.shouldShowArchived
-        DataManager.sharedManager.save(podcast: podcast)
+        // Fork: flips the (global) Episodes filter between Archived-only and default.
+        let current = EpisodeStateFilterSet.global
+        let showingArchivedOnly = current.enabled.contains(.archived) && !current.enabled.contains(.unarchived)
+        let newEnabled = showingArchivedOnly
+            ? EpisodeStateFilterSet.defaultEnabled
+            : EpisodeStateFilterSet.allOptions.subtracting([.unarchived])
+        EpisodeStateFilterSet(enabled: newEnabled).saveGlobal()
         loadLocalEpisodes(podcast: podcast, animated: true)
 
-        Analytics.track(.podcastScreenToggleArchived, properties: ["show_archived": podcast.shouldShowArchived])
+        Analytics.track(.podcastScreenToggleArchived, properties: ["show_archived": !showingArchivedOnly])
     }
 
     func showingArchived() -> Bool {
-        podcast?.shouldShowArchived ?? false
+        // Fork: any view other than the clean default can surface archived episodes,
+        // so only the default warrants the "all archived" placeholder.
+        EpisodeStateFilterSet.global.showsActiveCue
+    }
+
+    /// Fork: display filters (played/seen) changed — rebuild the episode list.
+    func episodesDidChange() {
+        guard let podcast else { return }
+        loadLocalEpisodes(podcast: podcast, animated: true)
     }
 
     func archiveAllTapped(playedOnly: Bool) {
@@ -1071,96 +1306,121 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
         }
     }
 
-    func showOptionsFor(season: Int) {
-        guard podcast != nil else {
-            return
-        }
+    /// Fork: the actions menu for ANY grouped header (seasons, played/unplayed,
+    /// downloaded, starred groups) — everything routes through the podcast's one
+    /// session. `season` is analytics-only.
+    func showOptionsFor(groupStartingAt headerIndexPath: IndexPath, season: Int?) {
+        guard podcast != nil else { return }
+        let group = episodes(forGroupStartingAt: headerIndexPath)
+        guard !group.isEmpty else { return }
 
-        Analytics.track(.podcastScreenSeasonOptionsTapped, properties: ["season": season])
+        if let season {
+            Analytics.track(.podcastScreenSeasonOptionsTapped, properties: ["season": season])
+        }
 
         let optionPicker = OptionsPicker(title: nil)
 
         optionPicker.addActions([
-            .init(label: L10n.selectAll, icon: "option-multiselect") { [weak self] in
-                self?.selectSeasonTapped(season: season)
-                Analytics.track(.podcastScreenSeasonOptionsSelectAllTapped, properties: ["season": season])
+            .init(label: L10n.playlistPlayAsSession, icon: "filter_play") { [weak self] in
+                self?.playGroupAsSession(group)
             },
-            downloadActionForSeason(season),
-            archiveActionForSeason(season)
+            .init(label: L10n.playlistAddToLineup, icon: "rectangle.stack.badge.plus") { [weak self] in
+                self?.addGroupToSession(group)
+            },
+            .init(label: L10n.sessionReplaceWith, icon: "rectangle.stack") { [weak self] in
+                self?.replaceSessionWithGroup(group)
+            },
+            .init(label: L10n.selectAll, icon: "option-multiselect") { [weak self] in
+                self?.selectGroup(group)
+                if let season { Analytics.track(.podcastScreenSeasonOptionsSelectAllTapped, properties: ["season": season]) }
+            },
+            downloadAction(for: group, season: season),
+            archiveAction(for: group, season: season)
         ].compactMap(\.self))
 
         optionPicker.present(from: self)
     }
 
-    private func downloadActionForSeason(_ season: Int) -> OptionAction? {
-        var allDownloaded = true
-        let episodes = episodesForSeason(season).map({ $0.episode })
-        for episode in episodes {
-            if !episode.downloaded(pathFinder: DownloadManager.shared) {
-                allDownloaded = false
-                break
+    /// The run of episode rows under a grouped header, up to the next header.
+    private func episodes(forGroupStartingAt headerIndexPath: IndexPath) -> [ListEpisode] {
+        guard let elements = episodeInfo[safe: headerIndexPath.section]?.elements else { return [] }
+        var result = [ListEpisode]()
+        var index = headerIndexPath.row + 1
+        while index < elements.count, !(elements[index] is ListHeader) {
+            if let listEpisode = elements[index] as? ListEpisode {
+                result.append(listEpisode)
             }
+            index += 1
         }
+        return result
+    }
+
+    /// Fork: the group joins the podcast's session at the marker and playback starts
+    /// at the group's first episode.
+    private func playGroupAsSession(_ group: [ListEpisode]) {
+        guard let podcast, let first = group.first?.episode else { return }
+        let session = SessionManager.shared.findOrCreateSession(forPodcast: podcast)
+        SessionManager.shared.addToLineup(episodeUuids: group.map { $0.episode.uuid }, session: session)
+        SessionManager.shared.play(episode: first, in: session)
+    }
+
+    /// Fork: standard Add to Session routing for the whole group.
+    private func addGroupToSession(_ group: [ListEpisode]) {
+        guard let podcast else { return }
+        let session = SessionManager.shared.findOrCreateSession(forPodcast: podcast)
+        SessionManager.shared.addToSessions(episodeUuids: group.map { $0.episode.uuid }, preferred: session, presenting: self)
+    }
+
+    /// Fork: the lineup becomes exactly this group, then it plays. Former members
+    /// return to triage.
+    private func replaceSessionWithGroup(_ group: [ListEpisode]) {
+        guard let podcast, let first = group.first?.episode else { return }
+        let session = SessionManager.shared.findOrCreateSession(forPodcast: podcast)
+        SessionManager.shared.replaceLineup(episodeUuids: group.map { $0.episode.uuid }, session: session)
+        SessionManager.shared.play(episode: first, in: session)
+    }
+
+    private func downloadAction(for group: [ListEpisode], season: Int?) -> OptionAction? {
+        let episodes = group.map(\.episode)
+        let allDownloaded = episodes.allSatisfy { $0.downloaded(pathFinder: DownloadManager.shared) }
         if allDownloaded {
             return .init(label: L10n.removeAll, icon: "episode-remove-download") {
                 EpisodeManager.removeDownloadForEpisodes(episodes)
-                Analytics.track(.podcastScreenSeasonOptionsRemoveAllTapped, properties: ["season": season])
+                if let season { Analytics.track(.podcastScreenSeasonOptionsRemoveAllTapped, properties: ["season": season]) }
             }
         } else {
             return .init(label: L10n.downloadAll, icon: "player-download") { [weak self] in
-                self?.downloadSeasonTapped(season: season)
-                Analytics.track(.podcastScreenSeasonOptionsDownloadAllTapped, properties: ["season": season])
+                self?.downloadGroup(group)
+                if let season { Analytics.track(.podcastScreenSeasonOptionsDownloadAllTapped, properties: ["season": season]) }
             }
         }
     }
 
-    private func archiveActionForSeason(_ season: Int) -> OptionAction? {
-        guard let podcast else { return nil }
-        let unarchivedQuery = "SELECT COUNT(*) FROM \(DataManager.episodeTableName) WHERE podcast_id = ? AND archived = 0 AND seasonNumber = ?"
-        let unarchivedCount = DataManager.sharedManager.count(query: unarchivedQuery, values: [podcast.id, season])
-        if unarchivedCount > 0 {
-            return OptionAction(label: L10n.podcastArchiveAll, icon: "options-archiveall") { [weak self] in
-                self?.archiveAllSeasonTapped(season: season)
-                Analytics.track(.podcastScreenSeasonOptionsArchiveAllTapped, properties: ["season": season])
+    private func archiveAction(for group: [ListEpisode], season: Int?) -> OptionAction? {
+        let episodes = group.map(\.episode)
+        if episodes.contains(where: { !$0.archived }) {
+            return OptionAction(label: L10n.podcastArchiveAll, icon: "options-archiveall") {
+                EpisodeManager.bulkArchive(episodes: episodes, updateSyncFlag: true)
+                if let season { Analytics.track(.podcastScreenSeasonOptionsArchiveAllTapped, properties: ["season": season]) }
             }
         } else {
-            return OptionAction(label: L10n.podcastUnarchiveAll, icon: "list_unarchive") { [weak self] in
-                self?.unarchiveAllSeasonTapped(season: season)
-                Analytics.track(.podcastScreenSeasonOptionsUnarchiveAllTapped, properties: ["season": season])
+            return OptionAction(label: L10n.podcastUnarchiveAll, icon: "list_unarchive") {
+                EpisodeManager.bulkUnarchive(episodes: episodes)
+                if let season { Analytics.track(.podcastScreenSeasonOptionsUnarchiveAllTapped, properties: ["season": season]) }
             }
         }
     }
 
-    private func episodesForSeason(_ season: Int) -> [ListEpisode] {
-        guard let allObjects = self.episodeInfo[safe: 1]?.elements,
-              !allObjects.isEmpty
-        else {
-            return []
-        }
-
-        let seasonObjects = allObjects.filter {
-            guard let listEpisode = $0 as? ListEpisode else {
-                return false
-            }
-            return listEpisode.episode.seasonNumber == season
-        }
-
-        let episodes = seasonObjects.compactMap { ($0 as? ListEpisode) }.filter { $0.episode.seasonNumber == season }
-        return episodes
-    }
-
-    private func selectSeasonTapped(season: Int) {
-        selectedEpisodes = episodesForSeason(season)
+    private func selectGroup(_ group: [ListEpisode]) {
+        selectedEpisodes = group
         enableMultiSelect()
         DispatchQueue.main.async { [weak self] in
             self?.reloadData()
         }
     }
 
-    func downloadSeasonTapped(season: Int) {
-        let listEpisodesForSeason = episodesForSeason(season)
-        let episodes = listEpisodesForSeason.map { $0.episode }
-
+    private func downloadGroup(_ group: [ListEpisode]) {
+        let episodes = group.map(\.episode)
         NetworkUtils.shared.downloadEpisodeRequested(autoDownloadStatus: .notSpecified, { [weak self] later in
             DispatchQueue.global().async {
                 guard let self else { return }
@@ -1169,24 +1429,12 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
                 AnalyticsEpisodeHelper.shared.bulkDownloadEpisodes(episodes: episodes)
 
                 if later {
-                    self.queueItems(allObjects: listEpisodesForSeason)
+                    self.queueItems(allObjects: group)
                 } else {
-                    self.downloadItems(allObjects: listEpisodesForSeason)
+                    self.downloadItems(allObjects: group)
                 }
             }
         }, disallowed: nil)
-    }
-
-    func archiveAllSeasonTapped(season: Int) {
-        let listEpisodesForSeason = episodesForSeason(season)
-        let episodes = listEpisodesForSeason.map { $0.episode }
-        EpisodeManager.bulkArchive(episodes: episodes, updateSyncFlag: true)
-    }
-
-    func unarchiveAllSeasonTapped(season: Int) {
-        let listEpisodesForSeason = episodesForSeason(season)
-        let episodes = listEpisodesForSeason.map { $0.episode }
-        EpisodeManager.bulkUnarchive(episodes: episodes)
     }
 
     func downloadItems(allObjects: [ListItem]) {
@@ -1390,7 +1638,50 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
     }
 
     func showEpisodes() {
+        episodesListMode = .episodes
+        episodesTable.tableFooterView = nil
+        // Instant: restore the tab's last rows; the refresh operation follows.
+        if let cached = cachedEpisodesTabData {
+            episodeInfo = cached
+            reloadData()
+        }
         switchViewMode(to: .episodes)
+    }
+
+    /// Fork: the inline Session tab — find or create the podcast's session, then
+    /// render its store through the standard episodes surface.
+    func showSession() {
+        guard let podcast else { return }
+
+        _ = SessionManager.shared.findOrCreateSession(forPodcast: podcast)
+        episodesListMode = .session
+        episodesTable.tableFooterView = nil
+        switchViewMode(to: .episodes)
+    }
+
+    /// Fork: the inline Inbox tab — the podcast feeder's fresh offers, no session
+    /// required (a preview feeder computes offers until one exists).
+    func showInbox() {
+        episodesListMode = .inbox
+        switchViewMode(to: .episodes)
+    }
+
+    func isShowingSession() -> Bool {
+        showingSession
+    }
+
+    func isShowingInbox() -> Bool {
+        showingInbox
+    }
+
+    func multiSelectPreferredSession() -> ForkSession? {
+        guard let podcast else { return nil }
+        return SessionManager.shared.findOrCreateSession(forPodcast: podcast)
+    }
+
+    func multiSelectCurrentSession() -> ForkSession? {
+        guard let podcast else { return nil }
+        return SessionStore.shared.session(forPodcast: podcast.uuid)
     }
 
     func showBookmarks() {
@@ -1698,7 +1989,9 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
         switch mode {
         case .episodes:
             if let podcast {
-                loadLocalEpisodes(podcast: podcast, animated: true)
+                // Tab switches hard-swap the list — diff-animating between two
+                // unrelated lists parades the old tab's rows/headers through the new.
+                loadLocalEpisodes(podcast: podcast, animated: false)
             }
         case .youMightLike:
             updateEmptyStateVisibility()

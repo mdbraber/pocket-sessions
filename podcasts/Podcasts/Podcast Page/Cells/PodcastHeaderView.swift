@@ -59,14 +59,18 @@ struct PodcastHeaderView: View {
             Spacer().frame(height: topMarginForTitle)
             podcastTitle
             Spacer().frame(height: titleBottomMargin - bottomMarginAdjustmentForTitle)
+            // Fork: ratings only in the expanded header — collapsed stays compact.
             StarRatingView(viewModel: viewModel.podcastRatingViewModel,
                            style: .short,
                            onRate: {
                 viewModel.podcastRatingViewModel.update(podcast: viewModel.podcast, ignoringCache: true)
             })
+            .frame(maxHeight: viewModel.isExpanded ? .infinity : 0)
+            .opacity(viewModel.isExpanded ? 1 : 0)
+            .clipped()
             Spacer().frame(height: titleBottomMargin)
             podcastActions
-            Spacer().frame(height: itemMargin)
+            Spacer().frame(height: 12)
             VStack(spacing: titleBottomMargin) {
                 podcastDescription
                 podcastDetails
@@ -90,8 +94,9 @@ struct PodcastHeaderView: View {
     private var playAsSessionButton: some View {
         Button {
             AnalyticsPlaybackHelper.shared.currentSource = .podcastScreen
-            let playlist = PlaylistManager.findOrCreateSmartPlaylist(for: viewModel.podcast)
-            PlaybackManager.shared.startPlaybackSession(PlaybackSession(type: .smartPlaylist, uuid: playlist.uuid))
+            // A fresh session seeds from the podcast page's current order; afterwards
+            // the store mirrors sort changes and keeps manual rearranging.
+            SessionManager.shared.playPodcastSession(for: viewModel.podcast)
         } label: {
             // Mirrors the smart playlist header's Play as Session button.
             HStack(alignment: .center, spacing: 8.0) {

@@ -11,24 +11,13 @@ class EpisodesDataManager: PlaybackSessionEpisodeSource {
         case .podcast:
             return episodes(for: .podcast(uuid: session.uuid))
         case .playlist, .smartPlaylist:
-            // Custom-order overlay: sessions play the Lineup only — inbox episodes are held
-            // out of playback until triaged (auto-add playlists absorb them first).
-            if let filter = DataManager.sharedManager.findPlaylist(uuid: session.uuid), filter.usesCustomOrderOverlay {
-                var episodes = playlistEpisodes(for: filter).map { $0.episode }
-                var positioned = Set(DataManager.sharedManager.positionedEpisodeUuids(for: filter))
-                if filter.newEpisodesAutoAdd {
-                    let inboxUuids = episodes.map(\.uuid).filter { !positioned.contains($0) }
-                    if !inboxUuids.isEmpty {
-                        DataManager.sharedManager.insertIntoCustomOrder(episodeUuids: inboxUuids, for: filter)
-                        episodes = playlistEpisodes(for: filter).map { $0.episode }
-                        positioned = Set(DataManager.sharedManager.positionedEpisodeUuids(for: filter))
-                    }
+            // Sessions play their store (a manual playlist) in its order. Auto-add
+            // sessions ingest pending offers first so nothing waits in the inbox.
+            if let filter = DataManager.sharedManager.findPlaylist(uuid: session.uuid), let forkSession = SessionStore.shared.session(forStore: filter.uuid) {
+                if forkSession.autoAdd {
+                    SessionManager.shared.ingestAutoAdd(session: forkSession)
                 }
-                let lineup = episodes.filter { positioned.contains($0.uuid) }
-                // An empty lineup (nothing triaged yet — e.g. the playlist gained custom
-                // order without being seeded) would make Play All dead; fall back to the
-                // on-screen order so the session always has something to play.
-                return lineup.isEmpty ? episodes : lineup
+                return playlistEpisodes(for: filter).map { $0.episode }
             }
             return episodes(for: .filter(uuid: session.uuid))
         }
@@ -62,6 +51,39 @@ class EpisodesDataManager: PlaybackSessionEpisodeSource {
 
     /// Returns a podcasts episodes that are grouped by `PodcastGrouping`
     /// Use `uuidsToFilter` to filter the episode UUIDs to only those in the array
+    /// Fork: the Episodes funnel — one mutually exclusive view of the full set the
+    /// query loads; Unarchived (default) hides archived, All shows it interleaved.
+    private func applyDisplayFilters(_ sections: [ArraySection<String, ListItem>], podcast: Podcast) -> [ArraySection<String, ListItem>] {
+        guard let headerSection = sections.first else { return sections }
+        let filter = EpisodeStateFilterSet.global
+
+        var members = Set<String>()
+        if filter.needsSessionContext, let session = SessionStore.shared.session(forPodcast: podcast.uuid) {
+            members = Set(SessionFeederEngine.storeMemberUuids(for: session))
+        }
+
+        // Fresh offers live in the Inbox tab only — Episodes never shows them,
+        // funnel or no funnel.
+        let inboxSession = SessionStore.shared.session(forPodcast: podcast.uuid)
+            ?? ForkSession(uuid: "podcast-inbox-preview", storePlaylistUuid: nil, feeder: .podcast(uuid: podcast.uuid))
+        let inboxUuids = Set(SessionFeederEngine.displayEpisodes(for: inboxSession, showArchived: false, showPlayed: false, showSeen: false).map(\.uuid))
+
+        // Groups whose rows all filter away disappear entirely — a grouping header
+        // with nothing under it is noise. One (possibly empty) episodes section
+        // always remains so the page's placeholder machinery keeps its shape.
+        var filtered = sections.dropFirst().map { section in
+            ArraySection(model: section.model, elements: section.elements.filter { item in
+                guard let listEpisode = item as? ListEpisode else { return true }
+                if inboxUuids.contains(listEpisode.episode.uuid) { return false }
+                return filter.isUnfiltered || filter.matches(listEpisode.episode, sessionMemberUuids: members)
+            })
+        }.filter { !$0.elements.isEmpty }
+        if filtered.isEmpty {
+            filtered = [ArraySection(model: "episodes", elements: [])]
+        }
+        return [headerSection] + filtered
+    }
+
     func episodes(for podcast: Podcast, uuidsToFilter: [String]? = nil) -> [ArraySection<String, ListItem>] {
         // the podcast page has a header, for simplicity in table animations, we add it here
         let searchHeader = ListHeader(headerTitle: L10n.search, isSectionHeader: true, sectionNumber: -1)
@@ -114,7 +136,7 @@ class EpisodesDataManager: PlaybackSessionEpisodeSource {
             newData.append(contentsOf: groupedEpisodes)
         }
 
-        return newData
+        return applyDisplayFilters(newData, podcast: podcast)
     }
 
     func createEpisodesQuery(_ podcast: Podcast, uuidsToFilter: [String]? = nil) -> String {
@@ -154,10 +176,9 @@ class EpisodesDataManager: PlaybackSessionEpisodeSource {
             sortStr = "ORDER BY CASE WHEN seasonNumber < 1 THEN 9999 ELSE seasonNumber END, CASE WHEN episodeNumber < 1 THEN 9999 ELSE episodeNumber END ASC, publishedDate ASC"
         }
 
+        // Fork: load the full set; the single Episodes filter (applyDisplayFilters)
+        // decides archived visibility — hidden under No Filter, interleaved under All.
         var whereClauses = ["podcast_id = \(podcast.id)", "wasDeleted = 0"]
-        if !podcast.shouldShowArchived {
-            whereClauses.append("archived = 0")
-        }
         if let uuids = uuidsToFilter { // ignore uuid filtering if uuid list is empty or nil
             whereClauses.append("uuid IN (\(uuids.map { "'\($0)'" }.joined(separator: ",")))")
         }

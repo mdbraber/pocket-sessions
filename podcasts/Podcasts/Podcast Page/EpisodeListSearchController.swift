@@ -95,6 +95,24 @@ class EpisodeListSearchController: SimpleNotificationsViewController, UISearchBa
     private func updateInfoView() {
         guard let delegate = podcastDelegate, let podcast = delegate.displayedPodcast() else { return }
 
+        // Fork: on the inline Session and Inbox tabs the counts line describes that
+        // list, and the funnel hides — its filters shape the Episodes list only.
+        if delegate.isShowingSession() || delegate.isShowingInbox() {
+            let count: Int
+            if delegate.isShowingSession() {
+                count = SessionStore.shared.session(forPodcast: podcast.uuid).map { SessionFeederEngine.storeMemberUuids(for: $0).count } ?? 0
+            } else {
+                let session = SessionStore.shared.session(forPodcast: podcast.uuid)
+                    ?? ForkSession(uuid: "podcast-inbox-preview", storePlaylistUuid: nil, feeder: .podcast(uuid: podcast.uuid))
+                count = SessionFeederEngine.displayEpisodes(for: session, showArchived: false, showPlayed: false, showSeen: false).count
+            }
+            let text = count == 1 ? L10n.podcastEpisodeCountSingular : L10n.podcastEpisodeCountPluralFormat(count.localized())
+            episodeInfoLabel?.attributedText = NSAttributedString(string: text, attributes: [.foregroundColor: AppTheme.colorForStyle(.primaryText02)])
+            showHideArchiveBtn?.isHidden = true
+            return
+        }
+        showHideArchiveBtn?.isHidden = false
+
         let episodeCount = delegate.episodeCount()
         let archivedCount = delegate.archivedEpisodeCount()
         let hasEpisodeLimit = (podcast.autoArchiveEpisodeLimitCount > 0 && podcast.isAutoArchiveOverridden)
@@ -110,10 +128,14 @@ class EpisodeListSearchController: SimpleNotificationsViewController, UISearchBa
         }
         episodeInfoLabel?.attributedText = attributedText
 
-        let archivedTitle = delegate.showingArchived() ? L10n.podcastHideArchived : L10n.podcastShowArchived
+        // Fork: the archived toggle became the episode filter funnel. Its tint is the
+        // cue — neutral when everything is default, accent when filtering.
         if let showHideBtn = showHideArchiveBtn {
+            let funnelActive = EpisodeStateFilterSet.global.showsActiveCue
             UIView.performWithoutAnimation {
-                showHideBtn.setTitle(archivedTitle, for: .normal)
+                showHideBtn.setTitle(nil, for: .normal)
+                showHideBtn.setImage(UIImage(named: "podcast-filter"), for: .normal)
+                showHideBtn.tintColor = funnelActive ? ThemeColor.primaryInteractive01() : ThemeColor.primaryIcon02()
                 showHideBtn.layoutIfNeeded()
             }
         }
@@ -123,8 +145,33 @@ class EpisodeListSearchController: SimpleNotificationsViewController, UISearchBa
         updateInfoView()
     }
 
+    /// Fork: the funnel — display filters as checkable rows, consistent with the
+    /// app's other sheets. Archived rides the stock per-podcast setting; played and
+    /// seen are fork-local per-podcast preferences.
     @IBAction func showHideArchiveTapped(_ sender: Any) {
-        podcastDelegate?.toggleShowArchived()
+        guard let delegate = podcastDelegate, let podcast = delegate.displayedPodcast() else { return }
+        let optionPicker = OptionsPicker(title: nil)
+
+        // Per-state switches (they keep the sheet open): all on = everything shows;
+        // switching one off hides that state. Grouped by axis, smart-rules style.
+        let current = EpisodeStateFilterSet.global
+        for section in EpisodeStateFilter.sheetSections {
+            if let title = section.title {
+                optionPicker.addSectionTitle(title.localizedUppercase)
+            }
+            for option in section.options {
+                let action = OptionAction(label: option.title, icon: nil, selected: current.enabled.contains(option)) { [weak self] in
+                    var filter = EpisodeStateFilterSet.global
+                    filter.toggle(option)
+                    filter.saveGlobal()
+                    self?.podcastDelegate?.episodesDidChange()
+                }
+                action.onOffAction = true
+                optionPicker.addAction(action: action)
+            }
+        }
+
+        optionPicker.present(from: self)
     }
 
     @IBAction func overflowTapped(_ sender: Any) {
@@ -329,6 +376,8 @@ class EpisodeListSearchController: SimpleNotificationsViewController, UISearchBa
         }
         podcast.episodeSortOrder = setting.old.rawValue
         DataManager.sharedManager.save(podcast: podcast)
+        // Fork: the podcast's session lineup mirrors the page order.
+        SessionManager.shared.reseedPodcastSession(for: podcast)
 
         NotificationCenter.postOnMainThread(notification: Constants.Notifications.podcastUpdated, object: podcast.uuid)
     }
@@ -341,6 +390,8 @@ class EpisodeListSearchController: SimpleNotificationsViewController, UISearchBa
         }
         podcast.episodeGrouping = setting.rawValue
         DataManager.sharedManager.save(podcast: podcast)
+        // Fork: the podcast's session lineup mirrors the page order.
+        SessionManager.shared.reseedPodcastSession(for: podcast)
 
         NotificationCenter.postOnMainThread(notification: Constants.Notifications.podcastUpdated, object: podcast.uuid)
     }

@@ -70,6 +70,17 @@ extension PodcastViewController: UITableViewDataSource, UITableViewDelegate {
                     statusBarStyle: preferredStatusBarStyle,
                     excludingCellTypes: [HeadingCell.self]
                 )
+            } else if showingSession, let podcast, let episode = episodeAtIndexPath(indexPath),
+                      let session = SessionStore.shared.session(forPodcast: podcast.uuid) {
+                // Fork: Session rows behave like Up Next — long-press is the inverse
+                // of the tap setting.
+                if !Settings.playUpNextOnTap() {
+                    SessionManager.shared.play(episode: episode, in: session)
+                } else {
+                    let episodeController = EpisodeDetailViewController(episode: episode, podcast: podcast, source: .podcastScreen, playlist: .podcast(uuid: podcast.uuid))
+                    episodeController.modalPresentationStyle = .formSheet
+                    present(episodeController, animated: true, completion: nil)
+                }
             } else {
                 longPressMultiSelectIndexPath = indexPath
                 isMultiSelectEnabled = true
@@ -145,6 +156,9 @@ extension PodcastViewController: UITableViewDataSource, UITableViewDelegate {
 
                 cell.delegate = self
                 cell.populateFrom(episode: listEpisode.episode, tintColor: podcast?.iconTintColor(), podcastUuid: podcast?.uuid, listUuid: listUuid)
+                // The green in-this-session mini icon — Episodes and Inbox lists only
+                // (Session rows are all members by definition).
+                cell.setSessionIndicator(visible: !showingSession && cachedSessionMemberUuids.contains(listEpisode.episode.uuid))
                 cell.shouldShowSelect = isMultiSelectEnabled
                 if isMultiSelectEnabled {
                     cell.showTick = selectedEpisodesContains(uuid: listEpisode.episode.uuid)
@@ -174,15 +188,13 @@ extension PodcastViewController: UITableViewDataSource, UITableViewDelegate {
             } else if let heading = itemAtRow as? ListHeader {
                 let cell = tableView.dequeueReusableCell(withIdentifier: PodcastViewController.groupHeadingCellId, for: indexPath) as! HeadingCell
                 cell.heading.text = heading.headerTitle
-                if podcast?.episodeGrouping == PodcastGrouping.season.rawValue {
-                    cell.button.isHidden = false
-                    cell.button.isEnabled = !isMultiSelectEnabled
-                    cell.action = { [weak self] in
-                        self?.showOptionsFor(season: heading.sectionNumber)
-                    }
-                } else {
-                    cell.button.isHidden = true
-                    cell.action = nil
+                // Fork: every grouped header carries the actions menu, not just seasons.
+                cell.button.isHidden = false
+                cell.button.isEnabled = !isMultiSelectEnabled
+                let headerIndexPath = indexPath
+                let season = podcast?.episodeGrouping == PodcastGrouping.season.rawValue ? heading.sectionNumber : nil
+                cell.action = { [weak self] in
+                    self?.showOptionsFor(groupStartingAt: headerIndexPath, season: season)
                 }
                 return cell
             } else {
@@ -321,6 +333,14 @@ extension PodcastViewController: UITableViewDataSource, UITableViewDelegate {
 
                     if searchController?.searchBarActive() == true {
                         hideSearchKeyboard()
+                    }
+
+                    // Fork: Session rows behave like Up Next — the tap setting decides
+                    // between playing the episode in this session and showing its card.
+                    if showingSession, Settings.playUpNextOnTap(),
+                       let session = SessionStore.shared.session(forPodcast: podcast.uuid) {
+                        SessionManager.shared.play(episode: episode, in: session)
+                        return
                     }
 
                     let episodeController = EpisodeDetailViewController(episode: episode, podcast: podcast, source: .podcastScreen, playlist: .podcast(uuid: podcast.uuid))

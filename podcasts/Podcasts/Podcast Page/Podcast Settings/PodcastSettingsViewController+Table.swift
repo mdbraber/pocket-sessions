@@ -63,6 +63,16 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
             cell.cellSwitch.addTarget(self, action: #selector(notificationChanged(_:)), for: UIControl.Event.valueChanged)
 
             return cell
+        case .globalInbox:
+            // Fork: whether new episodes of this podcast enter the global Inbox.
+            let cell = tableView.dequeueReusableCell(withIdentifier: PodcastSettingsViewController.switchCellId, for: indexPath) as! SwitchCell
+            cell.cellLabel.text = L10n.inboxPodcastToggle
+            cell.cellSwitch.onTintColor = podcast.switchTintColor()
+            cell.setImage(imageName: "upnext")
+            cell.cellSwitch.isOn = !SessionFeederEngine.optOutPodcastUuids().contains(podcast.uuid)
+            cell.cellSwitch.removeTarget(self, action: #selector(globalInboxChanged(_:)), for: UIControl.Event.valueChanged)
+            cell.cellSwitch.addTarget(self, action: #selector(globalInboxChanged(_:)), for: UIControl.Event.valueChanged)
+            return cell
         case .upNext:
             let cell = tableView.dequeueReusableCell(withIdentifier: PodcastSettingsViewController.switchCellId, for: indexPath) as! SwitchCell
             cell.cellLabel.text = L10n.addToUpNext
@@ -345,6 +355,10 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
 
     // MARK: - Settings changes
 
+    @objc private func globalInboxChanged(_ sender: UISwitch) {
+        SessionFeederEngine.setOptedOut(!sender.isOn, podcastUuid: podcast.uuid)
+    }
+
     @objc private func autoDownloadChanged(_ sender: UISwitch) {
         if sender.isOn {
             podcast.autoDownloadSetting = AutoDownloadSetting.latest.rawValue
@@ -387,7 +401,7 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
     }
 
     private func tableData() -> [[TableRow]] {
-        var data: [[TableRow]] = [[.autoDownload, .notifications], [.upNext], [.playbackEffects, .skipFirst, .skipLast], [.autoArchive]]
+        var data: [[TableRow]] = [[.autoDownload, .notifications, .globalInbox], [.upNext], [.playbackEffects, .skipFirst, .skipLast], [.autoArchive]]
 
         if podcast.refreshAvailable {
             data.insert([.feedError], at: 0)
@@ -408,13 +422,17 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
     }
 
     private func playlistUuidsPodcastAppearsIn() -> [String] {
-        DataManager.sharedManager.allSmartPlaylists(includeDeleted: false).compactMap { playlist -> String? in
+        DataManager.sharedManager.allSmartPlaylists(includeDeleted: false)
+            .filter { !SessionStore.shared.feederPlaylistUuids.contains($0.uuid) }
+            .compactMap { playlist -> String? in
             playlist.podcastUuids.contains(podcast.uuid) ? playlist.uuid : nil
         }
     }
 
     private func playlistsPodcastCanAppearIn() -> [EpisodeFilter] {
-        DataManager.sharedManager.allSmartPlaylists(includeDeleted: false).filter { playlist -> Bool in
+        DataManager.sharedManager.allSmartPlaylists(includeDeleted: false)
+            .filter { !SessionStore.shared.feederPlaylistUuids.contains($0.uuid) }
+            .filter { playlist -> Bool in
             playlist.filterAllPodcasts == false
         }
     }
