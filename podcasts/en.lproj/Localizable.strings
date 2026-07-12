@@ -2082,6 +2082,15 @@
 /* The badge feature is set to show the number of unplayed episodes. */
 "podcasts_badge_all_unplayed" = "Unfinished Episodes";
 
+/* Fork: podcast badge option — dot when the podcast has any undecided inbox episodes. */
+"podcasts_badge_any_inbox" = "Any in Inbox";
+
+/* Fork: podcast badge option — number of undecided inbox episodes. */
+"podcasts_badge_inbox_count" = "Inbox Count";
+
+/* Fork: podcast badge option — number of episodes in the podcast's session. */
+"podcasts_badge_session_count" = "Session Count";
+
 /* The badge feature is set to show an indicator if an unplayed episode exists. */
 "podcasts_badge_latest_episode" = "Only Latest Episode";
 
@@ -2427,6 +2436,9 @@
 
 /* Section header that displays all of the Podcasts that will automatically add new episodes to the Up Next Queue. */
 "settings_auto_add_podcasts" = "Auto-Add Podcasts";
+
+/* Fork: title of the global Auto Add to Session settings screen. */
+"settings_auto_add_session" = "Auto Add to Session";
 
 /* A common string used throughout the app. Refers to the Auto Archive settings menu */
 "settings_auto_archive" = "Auto Archive";
@@ -2790,6 +2802,12 @@
 
 /* Prompt to select smart playlists */
 "settings_select_smart_playlists_plural" = "Select Smart Playlists";
+
+/* Fork: footer explaining the auto-add-to-session behavior on a podcast's settings page. '%1$@' is a placeholder for the auto add limit. */
+"settings_session_limit" = "Automatically add new episodes to this podcast's Session. New episodes will stop being added when the Session reaches %1$@ episodes.";
+
+/* Fork: footer on the global Auto Add to Session screen explaining the limit. '%1$@' is a placeholder for the auto add limit. */
+"settings_session_auto_add_limit_subtitle" = "New episodes will stop being added when a Session reaches %1$@ episodes.";
 
 /* Option for the filter Siri Shortcut. This sets the app to open the filter when the shortcut is triggered. */
 "settings_shortcuts_filter_open_filter" = "Open Filter";
@@ -5119,9 +5137,6 @@
 
 /* Footer under a collapsed paused session's resume row. %1$@ is the number of additional episodes */
 "playback_session_more_episodes_plural" = "%1$@ more episodes";
-
-/* Label on the insert-marker row showing where added episodes are placed in the lineup */
-"playlist_insert_marker_title" = "Added episodes land below this marker";
 
 /* Swipe action that inserts a new (inbox) episode into the playlist lineup at the insert marker */
 "playlist_add_to_lineup" = "Add to Session";

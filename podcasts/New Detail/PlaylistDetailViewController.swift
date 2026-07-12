@@ -13,6 +13,10 @@ class PlaylistDetailViewController: PCViewController, UIScrollViewDelegate {
     static let inboxActionsFooterHeight: CGFloat = InboxActionsFooterView.height
     var inboxActionsFooterHost: UIHostingController<AnyView>?
 
+    /// Fork: the counts line inside the section header. Row diffs never rebuild
+    /// section headers, so data reloads refresh this label in place.
+    weak var triageCountsLabel: UILabel?
+
     private(set) var viewModel: PlaylistDetailViewModel!
 
     private(set) var searchController: PCSearchBarController! {
@@ -421,6 +425,7 @@ class PlaylistDetailViewController: PCViewController, UIScrollViewDelegate {
             ? viewModel.allOverlayEpisodes.isEmpty
             : viewModel.episodes.isEmpty
         reloadEmptyState()
+        refreshTriageCountsLine()
         refreshMultiSelectEpisodes()
 
         if !viewModel.isSearching, let offset = preSearchContentOffset {

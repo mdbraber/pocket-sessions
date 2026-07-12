@@ -106,8 +106,14 @@ class EpisodeListSearchController: SimpleNotificationsViewController, UISearchBa
                     ?? ForkSession(uuid: "podcast-inbox-preview", storePlaylistUuid: nil, feeder: .podcast(uuid: podcast.uuid))
                 count = SessionFeederEngine.displayEpisodes(for: session, showArchived: false, showPlayed: false, showSeen: false).count
             }
-            let text = count == 1 ? L10n.podcastEpisodeCountSingular : L10n.podcastEpisodeCountPluralFormat(count.localized())
-            episodeInfoLabel?.attributedText = NSAttributedString(string: text, attributes: [.foregroundColor: AppTheme.colorForStyle(.primaryText02)])
+            // An empty tab already says "No episodes" in the list — a "0 episodes"
+            // line on top is noise.
+            if count > 0 {
+                let text = count == 1 ? L10n.podcastEpisodeCountSingular : L10n.podcastEpisodeCountPluralFormat(count.localized())
+                episodeInfoLabel?.attributedText = NSAttributedString(string: text, attributes: [.foregroundColor: AppTheme.colorForStyle(.primaryText02)])
+            } else {
+                episodeInfoLabel?.attributedText = nil
+            }
             showHideArchiveBtn?.isHidden = true
             return
         }

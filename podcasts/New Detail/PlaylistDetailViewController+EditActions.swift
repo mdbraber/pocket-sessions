@@ -26,6 +26,10 @@ extension PlaylistDetailViewController {
         if viewModel.usesCustomOrderOverlay {
             optionsPicker.addAction(action: newEpisodesAction())
             optionsPicker.addAction(action: insertModeAction())
+        } else if viewModel.isLensPage {
+            // Fork: lens pages control the fed session's insert position too — it's
+            // the same value the store page and Podcast Settings edit.
+            optionsPicker.addAction(action: insertModeAction())
         }
 
         // Fork: the session's dismissed pile, restorable.
@@ -167,14 +171,19 @@ extension PlaylistDetailViewController {
     }
 
     private func insertModeAction() -> OptionAction {
-        let sessionInsertMode = PlaylistInsertMode(rawValue: viewModel.session?.insertMode ?? 0) ?? .afterLastInserted
+        let sessionInsertMode = currentInsertMode()
         let action = OptionAction(label: L10n.playlistInsertModeSetting, secondaryLabel: sessionInsertMode.description, icon: "filter_manual_episode_order") { }
         action.submenu = { [weak self] in self?.makeInsertModePicker() }
         return action
     }
 
+    private func currentInsertMode() -> PlaylistInsertMode {
+        guard let session = viewModel.insertModeSession else { return .afterLastInserted }
+        return PlaylistInsertMode(rawValue: session.insertMode) ?? .afterLastInserted
+    }
+
     private func makeInsertModePicker() -> OptionsPicker {
-        let currentInsertMode = PlaylistInsertMode(rawValue: viewModel.session?.insertMode ?? 0) ?? .afterLastInserted
+        let currentInsertMode = currentInsertMode()
         let optionsPicker = OptionsPicker(title: L10n.playlistInsertModeSetting.localizedUppercase)
         for mode in PlaylistInsertMode.allCases {
             let action = OptionAction(label: mode.description, selected: currentInsertMode == mode) { [weak self] in

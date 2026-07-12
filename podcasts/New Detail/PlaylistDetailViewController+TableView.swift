@@ -441,6 +441,40 @@ extension PlaylistDetailViewController: UITableViewDragDelegate, UITableViewDrop
     }
 }
 
+extension PlaylistDetailViewController {
+    /// The selected tab's "x episodes · time" line — nil when the tab is empty (the
+    /// empty state already says so). Section headers survive row diffs, so reloads
+    /// call this again to keep the line honest.
+    func triageCountsText() -> String? {
+        let count: Int
+        let duration: TimeInterval
+        if viewModel.usesTriageTabs {
+            switch viewModel.selectedTriageTab {
+            case .new:
+                count = viewModel.triageNewCount
+                duration = viewModel.triageNewDuration
+            case .lineup:
+                count = viewModel.triageLineupCount
+                duration = viewModel.triageLineupDuration
+            case .browse:
+                count = viewModel.triageBrowseCount
+                duration = viewModel.triageBrowseDuration
+            }
+        } else {
+            let episodes = viewModel.episodes
+            count = episodes.count
+            duration = episodes.reduce(0.0) { $0 + max(0, $1.episode.duration - $1.episode.playedUpTo) }
+        }
+        guard count > 0 else { return nil }
+        let time = TimeFormatter.shared.multipleUnitFormattedShortTime(time: duration)
+        return count == 1 ? L10n.playlistDetailDescriptionOneEpisode(time) : L10n.playlistDetailDescription(count, time)
+    }
+
+    func refreshTriageCountsLine() {
+        triageCountsLabel?.text = triageCountsText()
+    }
+}
+
 private extension PlaylistDetailViewController {
     static let overlayHeaderTitleHeight: CGFloat = 30
     /// The selected tab's counts line (the tab selector lives in the header cell).
@@ -508,32 +542,13 @@ private extension PlaylistDetailViewController {
 
         // The selected tab's counts line, with bulk triage on the Inbox tab. Outside
         // the overlay (any other sort) the line covers the whole list.
-        let count: Int
-        let duration: TimeInterval
-        if viewModel.usesTriageTabs {
-            switch viewModel.selectedTriageTab {
-            case .new:
-                count = viewModel.triageNewCount
-                duration = viewModel.triageNewDuration
-            case .lineup:
-                count = viewModel.triageLineupCount
-                duration = viewModel.triageLineupDuration
-            case .browse:
-                count = viewModel.triageBrowseCount
-                duration = viewModel.triageBrowseDuration
-            }
-        } else {
-            let episodes = viewModel.episodes
-            count = episodes.count
-            duration = episodes.reduce(0.0) { $0 + max(0, $1.episode.duration - $1.episode.playedUpTo) }
-        }
-        let time = TimeFormatter.shared.multipleUnitFormattedShortTime(time: duration)
         let countsLabel = UILabel()
-        countsLabel.text = count == 1 ? L10n.playlistDetailDescriptionOneEpisode(time) : L10n.playlistDetailDescription(count, time)
+        countsLabel.text = triageCountsText()
         countsLabel.font = UIFont.font(ofSize: 14, weight: .regular, scalingWith: .footnote)
         countsLabel.textColor = AppTheme.colorForStyle(.primaryText02)
         countsLabel.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(countsLabel)
+        triageCountsLabel = countsLabel
 
         var constraints = [
             countsLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
@@ -692,56 +707,6 @@ private extension PlaylistDetailViewController {
     }
 }
 
-/// Fork: the insert-marker row — a thin accent line with a label showing where
-/// "Add to lineup" places episodes.
-class PlaylistInsertMarkerCell: ThemeableCell {
-    static let reuseIdentifier = "PlaylistInsertMarkerCell"
-    static let height: CGFloat = 28
-
-    private let line = UIView()
-    private let label = UILabel()
-
-    override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
-        super.init(style: style, reuseIdentifier: reuseIdentifier)
-        selectionStyle = .none
-
-        line.translatesAutoresizingMaskIntoConstraints = false
-        label.translatesAutoresizingMaskIntoConstraints = false
-        label.font = .systemFont(ofSize: 11, weight: .semibold)
-        label.text = L10n.playlistInsertMarkerTitle.localizedUppercase
-
-        contentView.addSubview(line)
-        contentView.addSubview(label)
-
-        NSLayoutConstraint.activate([
-            line.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
-            line.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
-            line.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
-            line.heightAnchor.constraint(equalToConstant: 1.5),
-
-            label.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -24),
-            label.centerYAnchor.constraint(equalTo: contentView.centerYAnchor)
-        ])
-
-        updateMarkerColors()
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    override func handleThemeDidChange() {
-        updateMarkerColors()
-    }
-
-    private func updateMarkerColors() {
-        let accent = ThemeColor.primaryInteractive01()
-        line.backgroundColor = accent.withAlphaComponent(0.5)
-        label.textColor = accent
-        label.backgroundColor = ThemeColor.primaryUi02()
-    }
-}
 
 fileprivate class DummyEmptyCell: ThemeableCell {
     static let reuseIdentifier = "DummyEmptyCell"

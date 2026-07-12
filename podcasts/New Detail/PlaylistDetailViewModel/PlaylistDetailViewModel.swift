@@ -111,7 +111,7 @@ class PlaylistDetailViewModel: ObservableObject {
         dataSource.first(where: { $0.model == .inbox })?.elements.compactMap { $0 as? ListEpisode } ?? []
     }
 
-    /// Fork: the positioned episodes (the "Lineup"), excluding the insert-marker row.
+    /// Fork: the positioned episodes (the "Lineup").
     var lineupEpisodes: [ListEpisode] {
         dataSource.first(where: { $0.model == .episodes })?.elements.compactMap { $0 as? ListEpisode } ?? []
     }
@@ -157,23 +157,19 @@ class PlaylistDetailViewModel: ObservableObject {
     /// Fork: pages showing the Inbox | Session | Episodes strip.
     var usesTriageTabs: Bool { session != nil || isLensPage }
 
-    /// The episode backing a table row, resilient to placeholder rows (marker, empty states)
+    /// The episode backing a table row, resilient to placeholder rows (empty states)
     /// sharing a section with episodes.
     func listEpisode(at indexPath: IndexPath) -> ListEpisode? {
         dataSource[safe: indexPath.section]?.elements[safe: indexPath.row] as? ListEpisode
-    }
-
-    func isMarkerRow(at indexPath: IndexPath) -> Bool {
-        dataSource[safe: indexPath.section]?.elements[safe: indexPath.row] is PlaylistInsertMarkerPlaceholder
     }
 
     func section(at index: Int) -> Section? {
         dataSource[safe: index]?.model
     }
 
-    /// Fork: synchronously moves an element (episode or marker) within the episodes
-    /// section, keeping the table's data source consistent during an inline drag reorder.
-    /// Persistence happens separately after the drop.
+    /// Fork: synchronously moves an element within the episodes section, keeping the
+    /// table's data source consistent during an inline drag reorder. Persistence
+    /// happens separately after the drop.
     func moveLineupElement(from sourceRow: Int, to destinationRow: Int) {
         guard let index = dataSource.firstIndex(where: { $0.model == .episodes }) else { return }
         var elements = dataSource[index].elements
@@ -181,14 +177,6 @@ class PlaylistDetailViewModel: ObservableObject {
         elements.remove(at: sourceRow)
         elements.insert(element, at: min(destinationRow, elements.count))
         dataSource[index] = ArraySection(model: .episodes, elements: elements)
-    }
-
-    /// Fork: the marker's current position expressed as a lineup index (episode rows
-    /// above it), read from the live elements so it's correct mid-reorder.
-    func markerLineupIndex() -> Int? {
-        guard let elements = dataSource.first(where: { $0.model == .episodes })?.elements,
-              let markerIndex = elements.firstIndex(where: { $0 is PlaylistInsertMarkerPlaceholder }) else { return nil }
-        return elements.prefix(markerIndex).compactMap { $0 as? ListEpisode }.count
     }
 
     /// Fork: moves an inbox element into the episodes section at the given element index —
@@ -508,9 +496,21 @@ class PlaylistDetailViewModel: ObservableObject {
         reloadEpisodeList()
     }
 
+    /// The session whose insert mode this page controls — the store's own on a
+    /// session page, or the lens's fed session on a smart-playlist page.
+    var insertModeSession: ForkSession? {
+        session ?? lensSession
+    }
+
     func updatePlaylist(insertMode: PlaylistInsertMode) {
-        if var session {
+        if var session = insertModeSession {
             guard session.insertMode != insertMode.rawValue else { return }
+            session.insertMode = insertMode.rawValue
+            SessionStore.shared.upsert(session)
+        } else if isLensPage {
+            // No fed session yet — create it so the choice sticks (same lazy
+            // creation the Session tab does).
+            var session = SessionManager.shared.findOrCreateSession(forSmartPlaylist: playlist)
             session.insertMode = insertMode.rawValue
             SessionStore.shared.upsert(session)
         } else {
@@ -518,22 +518,6 @@ class PlaylistDetailViewModel: ObservableObject {
             playlist.insertMode = insertMode
             dataManager.save(playlist: playlist)
         }
-        reloadEpisodeList()
-    }
-
-    /// Fork: the marker was dragged to a new spot in the lineup. Dragging is a gesture, not a
-    /// mode: it switches the playlist to a floating insert mode anchored at the drop position
-    /// ("after last added" when coming from top/bottom; an existing "before" mode keeps its
-    /// direction).
-    func updateInsertMarker(toLineupIndex index: Int, lineupUuids: [String]) {
-        guard var session else { return }
-        if PlaylistInsertMode(rawValue: session.insertMode) == .beforeLastInserted {
-            session.lastInsertedUuid = index < lineupUuids.count ? lineupUuids[index] : ""
-        } else {
-            session.insertMode = PlaylistInsertMode.afterLastInserted.rawValue
-            session.lastInsertedUuid = index > 0 ? lineupUuids[index - 1] : ""
-        }
-        SessionStore.shared.upsert(session)
         reloadEpisodeList()
     }
 
@@ -800,20 +784,6 @@ class PlaylistDetailViewModel: ObservableObject {
 
 /// Fork: the insert-marker row rendered inside the Lineup section — the visible line where
 /// "Add to lineup" places episodes. Its position in the section expresses the marker state.
-class PlaylistInsertMarkerPlaceholder: ListItem {
-    override var differenceIdentifier: String {
-        "playlistInsertMarker"
-    }
-
-    static func == (lhs: PlaylistInsertMarkerPlaceholder, rhs: PlaylistInsertMarkerPlaceholder) -> Bool {
-        lhs.handleIsEqual(rhs)
-    }
-
-    override func handleIsEqual(_ otherItem: ListItem) -> Bool {
-        otherItem is PlaylistInsertMarkerPlaceholder
-    }
-}
-
 extension PlaylistDetailViewModel {
     func clearSearch() {
         searchTerm = ""
