@@ -123,6 +123,11 @@ class NewPlaylistCell: ThemeableCell {
         viewModel.episodesCount = episodeCount
     }
 
+    /// Fork: subtitle for session stores ("Session playlist · fed from ...").
+    func setSessionSubtitle(_ subtitle: String?) {
+        viewModel.sessionSubtitle = subtitle
+    }
+
     func set(playlistName: String, isManualPlaylist: Bool) {
         viewModel.playlistName = playlistName
         viewModel.isSmartPlaylist = !isManualPlaylist

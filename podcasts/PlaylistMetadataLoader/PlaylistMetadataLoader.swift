@@ -205,6 +205,30 @@ actor PlaylistMetadataLoader {
             defer {
                 imagesTasks[playlistID] = nil
             }
+            // Fork: session stores draw stable artwork from their feeder's podcasts.
+            if let session = SessionStore.shared.session(forStore: playlist.uuid) {
+                var tiles = Array(session.artworkPodcastUuids.prefix(4))
+                if tiles.count < 4 { tiles = Array(tiles.prefix(1)) }
+                if !tiles.isEmpty {
+                    let items = tiles.map { PlaylistArtworkView.ImageItem(id: $0, url: ImageManager.sharedManager.podcastUrl(imageSize: .grid, uuid: $0)) }
+                    cache.images[playlistID] = items
+                    return items
+                }
+            }
+
+            // Fork: smart playlists naming podcasts draw stable artwork straight from
+            // their rule — the same tiles the playlist header shows.
+            if !playlist.manual, !playlist.filterAllPodcasts {
+                let ruleUuids = playlist.podcastUuids.components(separatedBy: ",").filter { !$0.isEmpty && $0 != "none" }
+                var tiles = Array(ruleUuids.prefix(4))
+                if tiles.count < 4 { tiles = Array(tiles.prefix(1)) }
+                if !tiles.isEmpty {
+                    let items = tiles.map { PlaylistArtworkView.ImageItem(id: $0, url: ImageManager.sharedManager.podcastUrl(imageSize: .grid, uuid: $0)) }
+                    cache.images[playlistID] = items
+                    return items
+                }
+            }
+
             let episodes = await loadListEpisodes(for: playlist)
             let distinctEpisodes = firstDistinctPodcasts(from: episodes)
 

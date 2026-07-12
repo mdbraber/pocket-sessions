@@ -19,6 +19,8 @@ class NewPlaylistCellViewModel: ObservableObject {
     @Published var images: [PlaylistArtworkView.ImageItem] = []
     @Published var playlistName: String = ""
     @Published var isSmartPlaylist: Bool = false
+    /// Fork: names the row a Session Playlist, optionally with its feeder.
+    @Published var sessionSubtitle: String?
     @Published var displayType: DisplayType = .count
 
     var isBelowEpisodeLimit: Bool {

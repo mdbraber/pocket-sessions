@@ -127,6 +127,23 @@ class PlaylistCellViewModel: ObservableObject {
     private func loadImages() {
         if isLoadingImages { return }
         isLoadingImages = true
+
+        // Fork: session stores and podcast-rule smart playlists draw stable artwork
+        // from their podcasts — the same tiles the playlist header shows.
+        var ruleUuids = [String]()
+        if let session = SessionStore.shared.session(forStore: playlist.uuid) {
+            ruleUuids = session.artworkPodcastUuids
+        } else if !playlist.manual, !playlist.filterAllPodcasts {
+            ruleUuids = playlist.podcastUuids.components(separatedBy: ",").filter { !$0.isEmpty && $0 != "none" }
+        }
+        if !ruleUuids.isEmpty {
+            var tiles = Array(ruleUuids.prefix(4))
+            if tiles.count < 4 { tiles = Array(tiles.prefix(1)) }
+            images = tiles.map { PlaylistArtworkView.ImageItem(id: $0, url: ImageManager.sharedManager.podcastUrl(imageSize: .grid, uuid: $0)) }
+            isLoadingImages = false
+            return
+        }
+
         Task { [weak self] in
             guard let self else { return }
             do {

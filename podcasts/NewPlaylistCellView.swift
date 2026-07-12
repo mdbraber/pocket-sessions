@@ -23,6 +23,9 @@ struct NewPlaylistCellView: View {
         case .check:
             return L10n.playlistEpisodesCount(viewModel.episodesCount)
         case .toggle, .count, .plain:
+            if let sessionSubtitle = viewModel.sessionSubtitle {
+                return sessionSubtitle
+            }
             if viewModel.isSmartPlaylist {
                 return L10n.smartPlaylist
             }

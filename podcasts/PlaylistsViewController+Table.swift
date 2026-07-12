@@ -7,6 +7,7 @@ import SwiftUI
 extension PlaylistsViewController: UITableViewDelegate, UITableViewDataSource {
     func registerCells() {
         filtersTable.register(NewPlaylistCell.self, forCellReuseIdentifier: NewPlaylistCell.reuseIdentifier)
+        filtersTable.register(PlaylistFolderCell.self, forCellReuseIdentifier: PlaylistFolderCell.reuseIdentifier)
     }
 
     func numberOfSections(in tableView: UITableView) -> Int {
@@ -26,11 +27,21 @@ extension PlaylistsViewController: UITableViewDelegate, UITableViewDataSource {
     }
 
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        // Fork: Playlist Folder rows.
+        if let folderItem = listPlaylistItems[safe: indexPath.row] as? ListPlaylistFolder {
+            let cell = (tableView.dequeueReusableCell(withIdentifier: PlaylistFolderCell.reuseIdentifier) as? PlaylistFolderCell)
+                ?? PlaylistFolderCell(style: .default, reuseIdentifier: PlaylistFolderCell.reuseIdentifier)
+            cell.configure(folder: folderItem.folder, count: folderItem.count)
+            cell.hideSeparator(indexPath.row == listPlaylistItems.count - 1)
+            return cell
+        }
+
         let cell = cell(tableView, for: NewPlaylistCell.reuseIdentifier) as! NewPlaylistCell
         if cell.tag != indexPath.row { cell.reset() }
         cell.tag = indexPath.row
         if let playlist = listPlaylistItems[safe: indexPath.row]?.playlist {
             cell.set(playlistName: playlist.playlistName, isManualPlaylist: playlist.manual)
+            cell.setSessionSubtitle(SessionStore.shared.session(forStore: playlist.uuid)?.displaySubtitle)
             cell.loadMetadata(for: playlist)
             cell.hideSeparator(indexPath.row == listPlaylistItems.count - 1)
         }
@@ -74,6 +85,11 @@ extension PlaylistsViewController: UITableViewDelegate, UITableViewDataSource {
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
 
+        if let folderItem = listPlaylistItems[safe: indexPath.row] as? ListPlaylistFolder {
+            navigationController?.pushViewController(PlaylistFolderViewController(folderUuid: folderItem.folder.uuid), animated: true)
+            return
+        }
+
         if let filter = listPlaylistItems[safe: indexPath.row]?.playlist {
             showFilter(filter)
         }
@@ -82,7 +98,8 @@ extension PlaylistsViewController: UITableViewDelegate, UITableViewDataSource {
     // MARK: - Editing
 
     func tableView(_ tableView: UITableView, canEditRowAt indexPath: IndexPath) -> Bool {
-        true
+        // Folder rows are managed from the folder's own Edit screen.
+        !(listPlaylistItems[safe: indexPath.row] is ListPlaylistFolder)
     }
 
     func tableView(_ tableView: UITableView, editingStyleForRowAt indexPath: IndexPath) -> UITableViewCell.EditingStyle {
@@ -91,6 +108,10 @@ extension PlaylistsViewController: UITableViewDelegate, UITableViewDataSource {
 
     func tableView(_ tableView: UITableView, shouldIndentWhileEditingRowAt indexPath: IndexPath) -> Bool {
         false
+    }
+
+    func tableView(_ tableView: UITableView, canMoveRowAt indexPath: IndexPath) -> Bool {
+        true
     }
 
     func tableView(_ tableView: UITableView, commit editingStyle: UITableViewCell.EditingStyle, forRowAt indexPath: IndexPath) {
@@ -109,13 +130,28 @@ extension PlaylistsViewController: UITableViewDelegate, UITableViewDataSource {
         listPlaylistItems.insert(movedObject, at: destinationIndexPath.row)
 
         // ok, we've now sorted the list that needed sorting, update the sort positions in the DB and mark that list as not synced
-        for (index, filter) in listPlaylistItems.enumerated() {
-            DataManager.sharedManager.updatePosition(playlist: filter.playlist, newPosition: Int32(index))
-        }
+        persistListOrder()
 
         NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged)
 
         Analytics.track(.filterListReordered)
+    }
+
+    /// Fork: folders and playlists share the list — each kind persists its own order.
+    func persistListOrder() {
+        var playlistIndex: Int32 = 0
+        var folderIndex: Int32 = 0
+        for item in listPlaylistItems {
+            if let folderItem = item as? ListPlaylistFolder {
+                var folder = folderItem.folder
+                folder.sortPosition = folderIndex
+                PlaylistFolderManager.shared.save(folder: folder)
+                folderIndex += 1
+            } else {
+                DataManager.sharedManager.updatePosition(playlist: item.playlist, newPosition: playlistIndex)
+                playlistIndex += 1
+            }
+        }
     }
 }
 
@@ -306,9 +342,7 @@ extension PlaylistsViewController: UITableViewDragDelegate, UITableViewDropDeleg
             }
         }
 
-        for (index, playlist) in listPlaylistItems.enumerated() {
-            DataManager.sharedManager.updatePosition(playlist: playlist.playlist, newPosition: Int32(index))
-        }
+        persistListOrder()
 
         NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged)
 

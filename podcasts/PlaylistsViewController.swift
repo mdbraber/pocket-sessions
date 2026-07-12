@@ -61,6 +61,31 @@ class PlaylistsViewController: PCViewController, FilterCreatedDelegate {
 
     var newFilterTip: UIViewController? = nil
 
+    // Fork: podcast-page style sort and layout for the playlists overview.
+    private static let sortOrderKey = "SJPlaylistsSortOrder" // LibrarySort raw (custom or titleAtoZ)
+    private static let layoutKey = "SJPlaylistsLibraryType" // LibraryType raw
+
+    private var playlistsSortOrder: LibrarySort {
+        get { LibrarySort(rawValue: Int32(UserDefaults.standard.integer(forKey: Self.sortOrderKey))) ?? .custom }
+        set {
+            UserDefaults.standard.set(Int(newValue.rawValue), forKey: Self.sortOrderKey)
+            reloadFilters()
+        }
+    }
+
+    private var playlistsLayout: LibraryType {
+        get {
+            guard UserDefaults.standard.object(forKey: Self.layoutKey) != nil else { return .list }
+            return LibraryType(rawValue: Int32(UserDefaults.standard.integer(forKey: Self.layoutKey))) ?? .list
+        }
+        set {
+            UserDefaults.standard.set(Int(newValue.rawValue), forKey: Self.layoutKey)
+            applyLayout()
+        }
+    }
+
+    private var gridHost: UIHostingController<AnyView>?
+
     private var firstTimeLoading = true
 
     lazy var informationalBannerCoordinator: InformationalBannerViewCoordinator = {
@@ -73,12 +98,16 @@ class PlaylistsViewController: PCViewController, FilterCreatedDelegate {
     override func viewDidLoad() {
         super.viewDidLoad()
 
-        let barButton = UIBarButtonItem(image: UIImage(named: "playlist_add_icon"), style: .plain, target: self, action: #selector(addNewFilter))
+        // Fork: podcast-page arrangement — creation on the left, options on the right.
+        let addButton = UIBarButtonItem(image: UIImage(named: "playlist_add_icon"), style: .plain, target: self, action: #selector(addNewFilter))
+        addButton.accessibilityLabel = L10n.playlistsDefaultNewPlaylist
         if !LiquidGlass.isEnabled {
-            barButton.tintColor = ThemeColor.secondaryIcon01()
+            addButton.tintColor = ThemeColor.secondaryIcon01()
         }
-        customRightBtn = barButton
-        customRightBtn?.accessibilityLabel = L10n.playlistsDefaultNewPlaylist
+        navigationItem.leftBarButtonItem = addButton
+
+        customRightBtn = UIBarButtonItem(image: UIImage(named: "more"), style: .plain, target: self, action: #selector(playlistOptionsTapped))
+        customRightBtn?.accessibilityLabel = L10n.accessibilityMoreActions
 
         title = L10n.playlists
 
@@ -127,6 +156,7 @@ class PlaylistsViewController: PCViewController, FilterCreatedDelegate {
         super.viewDidAppear(animated)
         updateNavTintColors()
         addCustomObserver(Constants.Notifications.playlistChanged, selector: #selector(filtersUpdated))
+        addCustomObserver(PlaylistFolderManager.foldersChanged, selector: #selector(filtersUpdated))
         addCustomObserver(Constants.Notifications.tappedOnSelectedTab, selector: #selector(checkForScrollTap(_:)))
 
         Analytics.track(.filterListShown, properties: ["filter_count": listPlaylistItems.count])
@@ -163,6 +193,131 @@ class PlaylistsViewController: PCViewController, FilterCreatedDelegate {
     @IBAction func addNewFilter() {
         Analytics.track(.filterCreateButtonTapped)
         presentFilterPreview()
+    }
+
+    /// Fork: the podcast page's ⋯ options, where they apply to playlists.
+    @objc private func playlistOptionsTapped() {
+        let optionsPicker = OptionsPicker(title: nil)
+
+        // Fork: every manual playlist is a session — one switch hides them all.
+        let hideSessions = UserDefaults.standard.bool(forKey: "SJPlaylistsHideSessions")
+        optionsPicker.addAction(action: OptionAction(label: L10n.playlistsHideSessions, icon: "option-multiselect", selected: hideSessions) { [weak self] in
+            UserDefaults.standard.set(!hideSessions, forKey: "SJPlaylistsHideSessions")
+            self?.reloadFilters()
+        })
+
+        let sortAction = OptionAction(label: L10n.sortBy, secondaryLabel: playlistsSortOrder.description, icon: "podcast-sort") {}
+        sortAction.submenu = { [weak self] in self?.makeSortOptionsPicker() }
+        optionsPicker.addAction(action: sortAction)
+
+        let largeGridAction = OptionAction(label: L10n.podcastsLargeGrid, icon: "podcastlist_largegrid", selected: playlistsLayout == .threeByThree) { [weak self] in
+            self?.playlistsLayout = .threeByThree
+        }
+        let smallGridAction = OptionAction(label: L10n.podcastsSmallGrid, icon: "podcastlist_smallgrid", selected: playlistsLayout == .fourByFour) { [weak self] in
+            self?.playlistsLayout = .fourByFour
+        }
+        let listAction = OptionAction(label: L10n.podcastsList, icon: "podcastlist_listview", selected: playlistsLayout == .list) { [weak self] in
+            self?.playlistsLayout = .list
+        }
+        optionsPicker.addSegmentedAction(name: L10n.podcastsLayout, icon: "podcastlist_largegrid", actions: [largeGridAction, smallGridAction, listAction])
+
+        optionsPicker.addAction(action: OptionAction(label: L10n.folderCreateNew, icon: "folder-create") { [weak self] in
+            self?.presentNewPlaylistFolder()
+        })
+
+        // Reordering needs the list layout and the custom order to mean anything.
+        if playlistsLayout == .list, playlistsSortOrder == .custom {
+            let editAction = OptionAction(label: L10n.playlistsEditPlaylists, icon: "filter_manual_episode_order") { [weak self] in
+                self?.setReorderMode(true)
+            }
+            optionsPicker.addAction(action: editAction)
+        }
+
+        optionsPicker.present(from: self)
+    }
+
+    private func makeSortOptionsPicker() -> OptionsPicker {
+        let options = OptionsPicker(title: L10n.sortBy.localizedUppercase)
+        for order in [LibrarySort.custom, .titleAtoZ] {
+            options.addAction(action: OptionAction(label: order.description, selected: playlistsSortOrder == order) { [weak self] in
+                self?.playlistsSortOrder = order
+            })
+        }
+        return options
+    }
+
+    /// Fork: grid layouts render in a hosted SwiftUI grid over the table.
+    private func applyLayout() {
+        refreshGrid()
+        filtersTable.isHidden = playlistsLayout != .list && !listPlaylistItems.isEmpty
+        gridHost?.view.isHidden = playlistsLayout == .list || listPlaylistItems.isEmpty
+    }
+
+    private func refreshGrid() {
+        if gridHost == nil {
+            let host = UIHostingController(rootView: AnyView(EmptyView()))
+            host.view.backgroundColor = .clear
+            host.view.translatesAutoresizingMaskIntoConstraints = false
+            addChild(host)
+            view.addSubview(host.view)
+            host.didMove(toParent: self)
+            NSLayoutConstraint.activate([
+                host.view.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+                host.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+                host.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+                host.view.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+            ])
+            gridHost = host
+        }
+
+        var folders = PlaylistFolderManager.shared.allFolders()
+        let feederUuids = SessionStore.shared.feederPlaylistUuids
+        let hideSessions = UserDefaults.standard.bool(forKey: "SJPlaylistsHideSessions")
+        var playlists = DataManager.sharedManager.allPlaylists(includeDeleted: false)
+            .filter { PlaylistFolderManager.shared.folderUuid(forPlaylist: $0.uuid) == nil && !feederUuids.contains($0.uuid) }
+            .filter { !(hideSessions && SessionStore.shared.session(forStore: $0.uuid) != nil) }
+        if playlistsSortOrder == .titleAtoZ {
+            folders.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            playlists.sort { $0.playlistName.localizedCaseInsensitiveCompare($1.playlistName) == .orderedAscending }
+        }
+
+        let grid = PlaylistsGridView(
+            columns: playlistsLayout == .fourByFour ? 4 : 3,
+            onFolderTapped: { [weak self] folder in
+                self?.navigationController?.pushViewController(PlaylistFolderViewController(folderUuid: folder.uuid), animated: true)
+            },
+            onPlaylistTapped: { [weak self] playlist in
+                self?.showFilter(playlist)
+            },
+            folders: folders,
+            playlists: playlists
+        )
+        gridHost?.rootView = AnyView(grid.environmentObject(Theme.sharedTheme))
+        gridHost?.view.isHidden = playlistsLayout == .list || listPlaylistItems.isEmpty
+        filtersTable.isHidden = playlistsLayout != .list && !listPlaylistItems.isEmpty
+    }
+
+    /// Reorder mode, like the podcast page's Edit: drag handles plus a Done button.
+    private func setReorderMode(_ editing: Bool) {
+        filtersTable.setEditing(editing, animated: true)
+        if editing {
+            customRightBtn = UIBarButtonItem(barButtonSystemItem: .done, target: self, action: #selector(reorderDoneTapped))
+        } else {
+            customRightBtn = UIBarButtonItem(image: UIImage(named: "more"), style: .plain, target: self, action: #selector(playlistOptionsTapped))
+            customRightBtn?.accessibilityLabel = L10n.accessibilityMoreActions
+        }
+    }
+
+    @objc private func reorderDoneTapped() {
+        setReorderMode(false)
+    }
+
+    private func presentNewPlaylistFolder() {
+        let createView = CreatePlaylistFolderView { [weak self] in
+            self?.dismiss(animated: true)
+        }
+        let host = PCHostingController(rootView: createView.environmentObject(Theme.sharedTheme))
+        present(host, animated: true)
     }
 
     private func presentFilterPreview() {
@@ -206,7 +361,26 @@ class PlaylistsViewController: PCViewController, FilterCreatedDelegate {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
 
-            let newData = DataManager.sharedManager.allPlaylists(includeDeleted: false).map { ListPlaylist(playlist: $0) }
+            // Fork: Playlist Folders lead the list; playlists inside a folder show on
+            // the folder's own page instead of the top level.
+            var folderRows: [ListPlaylist] = PlaylistFolderManager.shared.allFolders().map { folder in
+                ListPlaylistFolder(folder: folder, count: PlaylistFolderManager.shared.playlistUuids(inFolder: folder.uuid).count)
+            }
+            let feederUuids = SessionStore.shared.feederPlaylistUuids
+            let hideSessions = UserDefaults.standard.bool(forKey: "SJPlaylistsHideSessions")
+            var playlistRows = DataManager.sharedManager.allPlaylists(includeDeleted: false)
+                .filter { PlaylistFolderManager.shared.folderUuid(forPlaylist: $0.uuid) == nil && !feederUuids.contains($0.uuid) }
+                .filter { !(hideSessions && SessionStore.shared.session(forStore: $0.uuid) != nil) }
+                .map { ListPlaylist(playlist: $0) }
+            if self.playlistsSortOrder == .titleAtoZ {
+                folderRows.sort { ($0 as? ListPlaylistFolder)?.folder.name.localizedCaseInsensitiveCompare(($1 as? ListPlaylistFolder)?.folder.name ?? "") == .orderedAscending }
+                playlistRows.sort { $0.playlist.playlistName.localizedCaseInsensitiveCompare($1.playlist.playlistName) == .orderedAscending }
+            }
+            let newData = folderRows + playlistRows
+
+            DispatchQueue.main.async {
+                self.refreshGrid()
+            }
 
             let oldData = self.listPlaylistItems
             let isFirstLoad = self.firstTimeLoading
@@ -264,6 +438,7 @@ class PlaylistsViewController: PCViewController, FilterCreatedDelegate {
 
     private func refreshContentUnavailable() {
         customRightBtn?.isHidden = listPlaylistItems.isEmpty
+        navigationItem.leftBarButtonItem?.isHidden = listPlaylistItems.isEmpty
 
         var config: UIContentConfiguration?
 
