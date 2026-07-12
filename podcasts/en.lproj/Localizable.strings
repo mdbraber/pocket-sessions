@@ -2110,7 +2110,7 @@
 "podcasts_episode_sort_shortest_to_longest" = "Shortest to Longest";
 
 /* Episodes will be displayed in custom order by drag and drop */
-"podcasts_episode_sort_drag_and_drop" = "Custom order";
+"podcasts_episode_sort_drag_and_drop" = "Drag and Drop";
 
 /* Presents the podcasts with large podcast artwork tiles. */
 "podcasts_large_grid" = "Large Grid";
@@ -5120,29 +5120,23 @@
 /* Footer under a collapsed paused session's resume row. %1$@ is the number of additional episodes */
 "playback_session_more_episodes_plural" = "%1$@ more episodes";
 
-/* Section header for untriaged new episodes in a custom-ordered smart playlist. %1$@ is the episode count */
-"playlist_inbox_section_header" = "Inbox · %1$@";
-
-/* Section header for the ordered episodes of a custom-ordered smart playlist */
-"playlist_lineup_section_header" = "Lineup";
-
 /* Label on the insert-marker row showing where added episodes are placed in the lineup */
 "playlist_insert_marker_title" = "Added episodes land below this marker";
 
 /* Swipe action that inserts a new (inbox) episode into the playlist lineup at the insert marker */
-"playlist_add_to_lineup" = "Add to Lineup";
+"playlist_add_to_lineup" = "Add to Session";
 
 /* Setting title: what happens to new episodes in a custom-ordered smart playlist */
 "playlist_new_episodes_setting" = "New Episodes";
 
 /* New-episodes option: hold new episodes in the inbox for manual triage */
-"playlist_new_episodes_inbox" = "Hold in Inbox";
+"playlist_new_episodes_inbox" = "Hold in Episodes";
 
 /* New-episodes option: automatically add new episodes to the lineup at the insert marker */
-"playlist_new_episodes_auto" = "Add to Lineup Automatically";
+"playlist_new_episodes_auto" = "Add to Session Automatically";
 
 /* Setting title: where 'Add to Lineup' inserts episodes */
-"playlist_insert_mode_setting" = "Add to Lineup At";
+"playlist_insert_mode_setting" = "Add to Session At";
 
 /* Insert position option: pinned to the top of the lineup */
 "playlist_insert_mode_top" = "Top";
@@ -5168,6 +5162,9 @@
 /* Section label above the recently used filters in the Up Next filter picker */
 "up_next_filter_recent_header" = "Recent";
 
+/* Section header above the filter-kind rows on the Filter Up Next sheet */
+"up_next_filter_type_header" = "Type";
+
 /* Playlist header button that starts a playback session from the playlist (replaces 'Play All' while sessions are enabled) */
 "playlist_play_as_session" = "Play as Session";
 
@@ -5175,13 +5172,13 @@
 "playback_session_meta" = "%1$@ episodes · %2$@ left";
 
 /* Action in the New section header that moves every inbox episode into the lineup at once */
-"playlist_add_all_to_lineup" = "Add all new episodes to Lineup";
+"playlist_add_all_to_lineup" = "Add All to Session";
 
 /* Title of the picker shown when playing a playlist whose lineup is empty. %1$@ is the number of episodes in the New section */
-"playlist_empty_lineup_title" = "Your Lineup is empty · %1$@ in New";
+"playlist_empty_lineup_title" = "Your Session is empty · %1$@ in Episodes";
 
 /* Picker option: move all New episodes into the lineup, then start the session */
-"playlist_empty_lineup_add_all_and_play" = "Add all to Lineup & Play";
+"playlist_empty_lineup_add_all_and_play" = "Add All to Session & Play";
 
 /* Picker option: start the session over the episodes as currently shown, without triaging */
 "playlist_empty_lineup_play_as_is" = "Play as-is";
@@ -5198,23 +5195,134 @@
 /* Empty-state action that turns the session eye off again */
 "up_next_session_hidden_show" = "Show them";
 
-/* Session header title suffix when no session is active ("Session: None") */
-"playback_session_none" = "None";
-
 /* Title of the picker that offers the most recently played sessions */
 "playback_session_switch_title" = "Switch Session";
 
 /* Short nav bar button that opens the Switch Session sheet */
 "playback_session_switch_short" = "Switch";
 
-/* Button that navigates to the source the session mirrors (podcast, playlist, or smart playlist) */
-"playback_session_go_to" = "Go to session source";
-
 /* Title of the empty state shown on the Session view when no session is active */
 "playback_session_empty_title" = "Choose a session to listen";
 
 /* Button on the empty Session view that opens the recent sessions picker */
-"playback_session_choose" = "Choose session";
+"playback_session_choose" = "Choose Session";
+
+/* Title of the global Inbox tab */
+"inbox_title" = "Inbox";
+
+/* Title of the empty global Inbox state */
+"inbox_empty_title" = "Inbox zero";
+
+/* Message of the empty global Inbox state */
+"inbox_empty_message" = "New episodes from your podcasts will appear here to triage.";
+
+/* Toast after shelving an inbox episode. %1$@ is the playlist name(s) */
+"inbox_shelved_toast" = "Added to %1$@";
+
+/* Per-podcast toggle controlling whether new episodes enter the global Inbox */
+"inbox_podcast_toggle" = "Add to global Inbox";
+
+/* Title of the smart playlist tab listing archived episodes */
+"playlist_archived_section_header" = "Archived";
+
+/* Subtitle on Session Playlist rows */
+"session_playlist_subtitle" = "Session Playlist";
+
+/* The session's dismissed-episodes screen: title, restore action, empty text */
+"session_dismissed_title" = "Dismissed Episodes";
+"session_dismissed_restore" = "Restore";
+"session_dismissed_empty" = "Nothing dismissed from this session.";
+
+/* Alert when an ephemeral session's lineup drains. %1$@ = playlist name */
+"session_finished_title" = "\"%1$@\" finished";
+"session_finished_message" = "The session is empty. Keep the playlist or delete it?";
+"session_finished_keep" = "Keep";
+"session_finished_delete" = "Delete Playlist";
+
+/* Folder page: opens the folder session's playlist page */
+"folder_manage_session" = "Manage Session";
+
+/* Playlists overview: filter sheet by playlist type */
+"playlists_hide_sessions" = "Hide Session Playlists";
+"playlist_type_sessions" = "Session Playlists";
+"playlist_type_smart" = "Smart Playlists";
+"playlist_type_manual" = "Playlists";
+
+/* Toggle marking an episode as seen or unseen (a local attention mark) */
+"episode_mark_seen" = "Mark as Seen";
+"episode_mark_unseen" = "Mark as Unseen";
+
+/* Menu option capping every Group By group to its first N episodes */
+"episode_group_limit" = "Limit Groups";
+
+/* Inbox grouping option titles */
+"inbox_group_by" = "Group By";
+"inbox_group_none" = "None";
+"inbox_group_date" = "Release Date";
+"inbox_group_podcast" = "Podcast";
+"inbox_group_folder" = "Folder";
+
+/* Inbox group header for episodes whose podcast is not in any folder */
+"inbox_group_no_folder" = "No Folder";
+
+/* Options on the Inbox Clear sheet: dismiss the remaining episodes without touching them, or archive them all */
+"inbox_clear_keep_all" = "Mark All as Seen";
+"inbox_clear_archive_all" = "Archive All";
+
+
+/* Settings > Inbox: where the Add to Session action puts an episode */
+"inbox_add_mode_all" = "All Matching Sessions";
+"inbox_add_mode_current" = "This Session Only";
+"inbox_add_mode_ask" = "Ask Every Time";
+
+/* Option in the Add to Session picker that adds the episode to every matching session */
+"inbox_add_all_sessions" = "All Sessions";
+
+/* Multi-select action removing the selected episodes from the current session */
+"session_remove_from" = "Remove from Session";
+
+/* Group header action: the session's lineup becomes exactly this group, then plays */
+"session_replace_with" = "Replace as Session";
+
+/* Episodes filter option (default): every episode that is not archived */
+"episode_filter_unarchived" = "Unarchived";
+
+/* Episodes filter sheet section headers */
+"episode_filter_session_status" = "Session Status";
+"episode_filter_playing_status" = "Playing Status";
+"episode_filter_starred_status" = "Starred Status";
+
+/* Episodes filter options: episodes in / not in this page's session */
+"episode_filter_in_session" = "In Session";
+"episode_filter_not_in_session" = "Not in Session";
+
+/* Playlist Folders: device-local folders grouping playlists, mirroring podcast folders */
+"playlist_folder_new" = "New Playlist Folder";
+"playlist_folder_choose" = "Choose Playlist Folder";
+"playlist_folder_choose_playlists" = "Choose Playlists";
+"playlist_folder_delete" = "Delete Playlist Folder";
+"playlist_folder_delete_message" = "The playlists inside will move back to your Playlists list.";
+
+/* Button confirming the playlist selection when creating a Playlist Folder. Singular and plural; %1$@ is the number */
+"playlist_folder_add_singular" = "Add 1 Playlist";
+
+/* Folder page option opening the membership editor */
+"playlist_folder_add_remove" = "Add or Remove Playlists";
+
+/* Playlists overview option entering reorder mode */
+"playlists_edit_playlists" = "Edit Playlists";
+"playlist_folder_add_plural_format" = "Add %1$@ Playlists";
+
+/* Playlist count shown on a Playlist Folder row. Singular and plural forms; %1$@ is the number */
+"playlist_count_singular" = "1 playlist";
+"playlist_count_plural_format" = "%1$@ playlists";
+
+/* Inbox release-date group headers */
+"inbox_group_today" = "Today";
+"inbox_group_yesterday" = "Yesterday";
+"inbox_group_this_week" = "This Week";
+"inbox_group_this_month" = "This Month";
+"inbox_group_older" = "Older";
 
 /* Settings row: how many recent sessions the Switch Session picker offers */
 "settings_recent_sessions" = "Recent Sessions";
