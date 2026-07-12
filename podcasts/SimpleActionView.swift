@@ -42,7 +42,9 @@ class SimpleActionView: UIView {
         let iconTintColor = action.destructive ? AppTheme.destructiveTextColor(for: themeOverride) : AppTheme.colorForStyle(iconTintStyle, themeOverride: themeOverride)
 
         // Fork: icon names fall back to SF Symbols so pickers can use them too.
-        var image = action.icon.flatMap { UIImage(named: $0) ?? UIImage(systemName: $0) }
+        var image = action.icon.flatMap {
+            UIImage(named: $0) ?? UIImage(systemName: $0, withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .medium))
+        }
 
         if action.tintIcon {
             image = image?.tintedImage(iconTintColor)
@@ -50,6 +52,8 @@ class SimpleActionView: UIView {
 
         if let image {
             let imageView = UIImageView(image: image)
+            // Non-square symbols (eye.slash) must not stretch into the square frame.
+            imageView.contentMode = .scaleAspectFit
             imageView.translatesAutoresizingMaskIntoConstraints = false
             addSubview(imageView)
 

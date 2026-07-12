@@ -60,9 +60,13 @@ enum TriageSwipes {
 
     /// The session glyph family (play.square.stack) with a plus: "add to the stack".
     static var sessionAddImage: UIImage? {
+        sessionAddTemplateImage?.withTintColor(.white, renderingMode: .alwaysOriginal)
+    }
+
+    /// Template variant for surfaces that tint themselves (settings rows).
+    static var sessionAddTemplateImage: UIImage? {
         UIImage(systemName: "rectangle.stack.badge.plus",
-                withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .bold))?
-            .withTintColor(.white, renderingMode: .alwaysOriginal)
+                withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .bold))
     }
 
     /// The remove counterpart: the session stack with an xmark badged top-right,

@@ -203,13 +203,12 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
         table.tableHeaderView = container
     }
 
-    /// The Clear button under the list — same rounded action button as an empty
-    /// playlist's, offered once the reader reaches the bottom of the stream.
+    /// The Clear button under the list — the inbox pill every other inbox surface
+    /// uses, offered once the reader reaches the bottom of the stream.
     private func setupClearFooter() {
         let host = UIHostingController(rootView: AnyView(
-            Button(L10n.clear) { [weak self] in self?.clearTapped() }
-                .buttonStyle(RoundedButtonStyle(theme: .sharedTheme))
-                .padding(16)
+            InboxClearPill { [weak self] in self?.clearTapped() }
+                .environmentObject(Theme.sharedTheme)
         ))
         host.view.backgroundColor = .clear
         addChild(host)
@@ -302,11 +301,10 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
         })
 
         // Archive: archives every inbox episode (which also clears them).
-        let archiveAction = OptionAction(label: L10n.inboxClearArchiveAll, icon: "list_archive") { [weak self] in
+        // Recoverable, so it reads as a normal action — not destructive red.
+        optionsPicker.addAction(action: OptionAction(label: L10n.inboxClearArchiveAll, icon: "list_archive") { [weak self] in
             self?.archiveAllInboxEpisodes()
-        }
-        archiveAction.destructive = true
-        optionsPicker.addAction(action: archiveAction)
+        })
 
         optionsPicker.present(from: self)
     }
@@ -575,8 +573,8 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
                 guard let self, let episode = episode as? Episode else { return }
                 SessionManager.shared.addToSessions(episodeUuids: [episode.uuid], preferred: nil, presenting: self) { landed in
                     guard !landed.isEmpty else { return }
-                    // Landing anywhere means the global stream is done with it.
-                    SessionStore.shared.setDismissed(true, episodeUuid: episode.uuid, sessionUuid: SessionStore.shared.globalInbox.uuid)
+                    // Lineup membership hides it from every inbox — no dismissal, so a
+                    // later remove-from-lineup returns it to triage.
                     let names = landed.compactMap { SessionManager.shared.store(for: $0)?.playlistName }
                     Toast.show(L10n.inboxShelvedToast(names.joined(separator: ", ")))
                 }
@@ -704,5 +702,24 @@ extension InboxViewController: PCSearchBarDelegate {
         self.searchTerm = searchTerm
         reloadData()
         completion()
+    }
+}
+
+/// The global Inbox's Clear pill — outlined, theme-reactive, in the shared inbox
+/// pill shape.
+private struct InboxClearPill: View {
+    @EnvironmentObject var theme: Theme
+    let action: () -> Void
+
+    var body: some View {
+        InboxPillButton(
+            icon: Image(systemName: "eye.slash"),
+            title: L10n.clear,
+            color: theme.primaryUi01,
+            background: theme.primaryInteractive01,
+            stroke: nil,
+            action: action
+        )
+        .padding(16)
     }
 }

@@ -12,7 +12,7 @@ struct InboxActionsFooterView: View {
 
     var body: some View {
         VStack(spacing: 12) {
-            pill(
+            InboxPillButton(
                 icon: Image(systemName: "rectangle.stack.badge.plus"),
                 title: L10n.playlistAddAllToLineup,
                 color: theme.primaryUi01,
@@ -20,7 +20,7 @@ struct InboxActionsFooterView: View {
                 stroke: nil,
                 action: addAll
             )
-            pill(
+            InboxPillButton(
                 icon: Image(systemName: "eye.slash"),
                 title: L10n.inboxClearKeepAll,
                 color: theme.primaryText01,
@@ -31,16 +31,29 @@ struct InboxActionsFooterView: View {
         }
         .padding(16)
     }
+}
 
-    private func pill(icon: Image, title: String, color: Color, background: Color, stroke: Color?, action: @escaping () -> Void) -> some View {
+/// The inbox action pill — the header's Play-as-Session button shape, shared by
+/// every inbox surface (podcast/playlist footers and the global Inbox's Clear).
+struct InboxPillButton: View {
+    var icon: Image?
+    let title: String
+    let color: Color
+    let background: Color
+    let stroke: Color?
+    let action: () -> Void
+
+    var body: some View {
         Button(action: action) {
             HStack(alignment: .center, spacing: 8.0) {
-                icon
-                    .renderingMode(.template)
-                    .resizable()
-                    .scaledToFit()
-                    .foregroundStyle(color)
-                    .frame(width: 20, height: 20)
+                if let icon {
+                    icon
+                        .renderingMode(.template)
+                        .resizable()
+                        .scaledToFit()
+                        .foregroundStyle(color)
+                        .frame(width: 20, height: 20)
+                }
                 Text(title)
                     .font(style: .subheadline, weight: .medium)
                     .foregroundStyle(color)

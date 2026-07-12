@@ -107,7 +107,7 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
             let cell = tableView.dequeueReusableCell(withIdentifier: PodcastSettingsViewController.switchCellId, for: indexPath) as! SwitchCell
             cell.cellLabel.text = L10n.playlistAddToLineup
             cell.cellSwitch.onTintColor = podcast.switchTintColor()
-            cell.setImage(image: TriageSwipes.sessionAddImage)
+            cell.setImage(image: TriageSwipes.sessionAddTemplateImage)
             cell.cellSwitch.isOn = SessionStore.shared.session(forPodcast: podcast.uuid)?.autoAdd ?? false
 
             cell.cellSwitch.removeTarget(self, action: #selector(addToSessionChanged(_:)), for: UIControl.Event.valueChanged)
