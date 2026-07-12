@@ -32,6 +32,9 @@ struct Session: Codable, Equatable, Identifiable {
     /// Episodes-tab funnel: include archived episodes. Optional so documents written
     /// before this field existed still decode.
     var showArchived: Bool? = nil
+    /// When the session was last the active playback session — the Switch Session
+    /// sheet orders by it, latest first.
+    var lastUsed: Date? = nil
 
     var id: String { uuid }
 }
@@ -134,6 +137,17 @@ final class SessionStore {
                 document.sessions.append(session)
             }
         }
+    }
+
+    /// Stamps last-used for whichever session the playback-session uuid names (a
+    /// store, a fed lens, or a podcast) — feeds the Switch Session sheet's recency
+    /// ordering.
+    func markUsed(playbackUuid: String) {
+        guard var session = session(forStore: playbackUuid)
+            ?? session(forSmartPlaylistFeeder: playbackUuid)
+            ?? session(forPodcast: playbackUuid) else { return }
+        session.lastUsed = Date()
+        upsert(session)
     }
 
     /// Removes the session row and its bookkeeping. The store playlist and any feeder

@@ -51,6 +51,8 @@ extension PlaylistDetailViewController: UISheetPresentationControllerDelegate, P
 
     private func startSession() {
         let playlist = viewModel.playlist
+        // Recency for the Switch Session sheet.
+        SessionStore.shared.markUsed(playbackUuid: playlist.uuid)
         PlaybackManager.shared.startPlaybackSession(PlaybackSession(type: playlist.manual ? .playlist : .smartPlaylist, uuid: playlist.uuid))
     }
 

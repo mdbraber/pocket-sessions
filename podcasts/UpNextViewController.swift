@@ -1634,8 +1634,24 @@ class SwitchSessionViewController: UIViewController, UITableViewDataSource, UITa
     private let themeOverride: Theme.ThemeType?
     private let includeUpNext: Bool
     private let onSwitched: (Bool) -> Void
-    private let playlists = DataManager.sharedManager.allPlaylists(includeDeleted: false)
-        .filter { !SessionStore.shared.feederPlaylistUuids.contains($0.uuid) }
+    /// Sessions ordered by recency of use, latest first; never-used ones keep their
+    /// list order after the used ones.
+    private let playlists: [EpisodeFilter] = {
+        let stores = DataManager.sharedManager.allPlaylists(includeDeleted: false)
+            .filter { !SessionStore.shared.feederPlaylistUuids.contains($0.uuid) }
+        return stores.enumerated().sorted { a, b in
+            let aUsed = lastUsed(for: a.element)
+            let bUsed = lastUsed(for: b.element)
+            if aUsed == bUsed { return a.offset < b.offset }
+            return aUsed > bUsed
+        }.map(\.element)
+    }()
+
+    private static func lastUsed(for playlist: EpisodeFilter) -> Date {
+        let session = SessionStore.shared.session(forStore: playlist.uuid)
+            ?? SessionStore.shared.session(forSmartPlaylistFeeder: playlist.uuid)
+        return session?.lastUsed ?? .distantPast
+    }
     /// Shortcuts: the queue filtered by a recently used lens (switch sheet only).
     private let recentFilters: [UpNextFilter]
     private let table = UITableView(frame: .zero, style: .plain)
@@ -1782,6 +1798,8 @@ class SwitchSessionViewController: UIViewController, UITableViewDataSource, UITa
         }
 
         let playlist = playlists[indexPath.row]
+        // Recency for this sheet's ordering.
+        SessionStore.shared.markUsed(playbackUuid: playlist.uuid)
         let session = PlaybackSession(type: playlist.manual ? .playlist : .smartPlaylist, uuid: playlist.uuid)
         if session != Settings.playbackSession() {
             PlaybackManager.shared.startPlaybackSession(session)

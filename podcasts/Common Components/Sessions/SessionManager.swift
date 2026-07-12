@@ -309,6 +309,8 @@ class SessionManager {
             Settings.setPlaybackSession(target)
             Settings.setPlaybackSessionPaused(false)
         }
+        // Recency for the Switch Session sheet.
+        SessionStore.shared.markUsed(playbackUuid: storeUuid)
         PlaybackManager.shared.play(sessionEpisode: episode)
     }
 
@@ -393,6 +395,8 @@ class SessionManager {
             }
         }
         guard let storeUuid = session.storePlaylistUuid else { return }
+        // Recency for the Switch Session sheet.
+        SessionStore.shared.markUsed(playbackUuid: storeUuid)
         PlaybackManager.shared.startPlaybackSession(PlaybackSession(type: .playlist, uuid: storeUuid))
     }
 
