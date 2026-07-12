@@ -47,7 +47,7 @@ class FolderListCell: ThemeableCollectionCell {
 
         if badgeType.showsCount {
             let metric = UIFontMetrics(forTextStyle: .largeTitle)
-            unplayedHeight.constant = max(28, metric.scaledValue(for: 28))
+            unplayedHeight.constant = max(22, metric.scaledValue(for: 22))
             unplayedBadge.layoutIfNeeded()
 
             unplayedBadge.showsNumber = true
@@ -55,7 +55,7 @@ class FolderListCell: ThemeableCollectionCell {
             unplayedBadge.isHidden = folder.cachedUnreadCount == 0
         } else if badgeType.showsDot {
             let metric = UIFontMetrics(forTextStyle: .largeTitle)
-            unplayedHeight.constant = max(12, metric.scaledValue(for: 12))
+            unplayedHeight.constant = max(10, metric.scaledValue(for: 10))
             unplayedBadge.layoutIfNeeded()
 
             unplayedBadge.showsNumber = false
@@ -65,6 +65,21 @@ class FolderListCell: ThemeableCollectionCell {
         }
 
         unplayedBadge.updateColors()
+
+        // Fork: folders navigate into a page — the chevron says so (podcast rows
+        // don't get one, matching the playlist rows' pattern).
+        addChevronIfNeeded()
+        chevron?.tintColor = ThemeColor.primaryIcon02()
+    }
+
+    private var chevron: UIImageView?
+
+    private func addChevronIfNeeded() {
+        guard chevron == nil, let stack = unplayedBadge.superview as? UIStackView else { return }
+        let imageView = UIImageView(image: UIImage(systemName: "chevron.right", withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold)))
+        imageView.contentMode = .center
+        stack.addArrangedSubview(imageView)
+        chevron = imageView
     }
 
     private func updateSize() {
@@ -74,9 +89,9 @@ class FolderListCell: ThemeableCollectionCell {
 
         let badgeMetric = UIFontMetrics(forTextStyle: .largeTitle)
         if badgeType.showsCount {
-            unplayedHeight.constant = max(28, badgeMetric.scaledValue(for: 28))
+            unplayedHeight.constant = max(22, badgeMetric.scaledValue(for: 22))
         } else if badgeType.showsDot {
-            unplayedHeight.constant = max(12, badgeMetric.scaledValue(for: 12))
+            unplayedHeight.constant = max(10, badgeMetric.scaledValue(for: 10))
         }
         unplayedBadge.layoutIfNeeded()
     }

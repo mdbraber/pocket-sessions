@@ -225,6 +225,8 @@ extension AppBadge: AnalyticsDescribable {
             return "total_unplayed"
         case .newSinceLastOpened:
             return "new_since_app_opened"
+        case .inboxCount:
+            return "inbox_count"
         case .filterCount:
             return "filter_count"
         }

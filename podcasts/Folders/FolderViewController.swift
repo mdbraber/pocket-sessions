@@ -68,7 +68,7 @@ class FolderViewController: PCViewController {
         addCustomObserver(Constants.Notifications.podcastUpdated, selector: #selector(reloadFolder))
         addCustomObserver(Constants.Notifications.folderChanged, selector: #selector(reloadFolder))
         // Fork: inbox/session badges follow triage state.
-        addCustomObserver(SessionStore.changed, selector: #selector(reloadFolder))
+        addCustomObserver(SessionStore.changed, selector: #selector(sessionStateChanged))
         addCustomObserver(Constants.Notifications.miniPlayerDidAppear, selector: #selector(miniPlayerStatusDidChange))
         addCustomObserver(Constants.Notifications.miniPlayerDidDisappear, selector: #selector(miniPlayerStatusDidChange))
 
@@ -115,6 +115,13 @@ class FolderViewController: PCViewController {
         reloadPodcasts()
 
         updateNavTintColor()
+    }
+
+    /// Only the session-aware badge types care about triage state — everyone else
+    /// skips the reload.
+    @objc private func sessionStateChanged() {
+        guard Settings.podcastBadgeType().isSessionBased else { return }
+        reloadFolder()
     }
 
     @objc private func folderOptionsTapped(_ sender: UIBarButtonItem) {
@@ -269,9 +276,10 @@ class FolderViewController: PCViewController {
                     podcast.cachedUnreadCount = 0
                 }
             }
-        } else if badgeType == .anyInInbox || badgeType == .inboxCount || badgeType == .sessionCount {
+        } else if badgeType.isSessionBased {
+            let counts = HomeGridDataHelper.sessionBadgeCounts(for: podcasts, badgeType: badgeType)
             for podcast in podcasts {
-                podcast.cachedUnreadCount = HomeGridDataHelper.sessionBadgeCount(for: podcast, badgeType: badgeType)
+                podcast.cachedUnreadCount = counts[podcast.uuid] ?? 0
             }
         }
 

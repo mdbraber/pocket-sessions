@@ -101,6 +101,8 @@ class NewPlaylistCell: ThemeableCell {
         viewModel.episodesCount = 0
         viewModel.images = []
         viewModel.displayType = .count
+        viewModel.badgeType = .off
+        viewModel.badgeCount = 0
         playlistCountLoadTask?.cancel()
         playlistCountLoadTask = nil
         playlistImageLoadTask?.cancel()
@@ -135,6 +137,23 @@ class NewPlaylistCell: ThemeableCell {
 
     func loadMetadata(for playlist: EpisodeFilter) {
         playlistID = playlist.uuid
+
+        // Fork: the row badge (replaces the plain count when a type is chosen).
+        let badgeType = Settings.playlistsBadgeType()
+        viewModel.badgeType = badgeType
+        if badgeType != .off {
+            Task { [weak self] in
+                guard let self else { return }
+                let loadingPlaylist = playlistID
+                let count = SessionFeederEngine.badgeCount(forPlaylist: playlist, badgeType: badgeType)
+                guard self.playlistID == loadingPlaylist else { return }
+                await MainActor.run {
+                    if count != self.viewModel.badgeCount {
+                        self.viewModel.badgeCount = count
+                    }
+                }
+            }
+        }
 
         // Cancel previous subscriptions and set up new ones for this playlist
         if FeatureFlag.playlistCacheInvalidation.enabled {

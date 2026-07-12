@@ -173,9 +173,9 @@ class PodcastListViewController: PCViewController, ShareListDelegate {
         addCustomObserver(Constants.Notifications.episodePlayStatusChanged, selector: #selector(refreshGridItems))
         // Fork: the inbox/session badge types ride triage state — seen marks and
         // lineup membership (SessionStore) plus queue moves (queued offers leave the
-        // inbox).
-        addCustomObserver(SessionStore.changed, selector: #selector(refreshGridItems))
-        addCustomObserver(Constants.Notifications.upNextQueueChanged, selector: #selector(refreshGridItems))
+        // inbox). Gated so other badge modes don't pay for the extra rebuilds.
+        addCustomObserver(SessionStore.changed, selector: #selector(sessionStateChanged))
+        addCustomObserver(Constants.Notifications.upNextQueueChanged, selector: #selector(sessionStateChanged))
 
         addCustomObserver(Constants.Notifications.folderChanged, selector: #selector(refreshGridItems))
         addCustomObserver(Constants.Notifications.folderDeleted, selector: #selector(refreshGridItems))
@@ -423,6 +423,13 @@ class PodcastListViewController: PCViewController, ShareListDelegate {
     private func updateBottomFadeColor() {
         guard LiquidGlass.isEnabled else { return }
         bottomFadeView.setColor(ThemeColor.primaryUi02())
+    }
+
+    /// Only the session-aware badge types care about triage/queue state — everyone
+    /// else skips the rebuild.
+    @objc private func sessionStateChanged() {
+        guard Settings.podcastBadgeType().isSessionBased else { return }
+        refreshGridItems()
     }
 
     @objc func refreshGridItems() {

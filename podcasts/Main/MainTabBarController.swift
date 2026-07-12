@@ -94,6 +94,9 @@ class MainTabBarController: UITabBarController, NavigationProtocol, UIGestureRec
 
     private let errorBannerHeight: CGFloat = LiquidGlass.isEnabled ? 60 : 48
 
+    /// Fork: coalesces the bursty inbox-badge notifications into one recount.
+    private let inboxBadgeDebounce = Debounce(delay: 0.3)
+
     override func viewDidLoad() {
         super.viewDidLoad()
 
@@ -333,12 +336,20 @@ class MainTabBarController: UITabBarController, NavigationProtocol, UIGestureRec
         }
     }
 
-    /// Fork: the Inbox tab wears its count.
+    /// Fork: the Inbox tab wears its count. The global inbox query is a sweep over
+    /// every unarchived episode and the observers fire on every play/archive/queue
+    /// event — debounce and compute off the main thread so the UI never waits on it.
     @objc private func updateInboxBadge() {
-        guard let index = pcTabs.firstIndex(of: .inbox), let items = tabBar.items, let item = items[safe: index] else { return }
-        let global = SessionStore.shared.globalInbox
-        let count = SessionFeederEngine.inboxEpisodes(for: global).filter { global.showSeen || !$0.isSeen }.count
-        item.badgeValue = count > 0 ? "\(count)" : nil
+        inboxBadgeDebounce.call {
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                let global = SessionStore.shared.globalInbox
+                let count = SessionFeederEngine.inboxEpisodes(for: global).filter { global.showSeen || !$0.isSeen }.count
+                DispatchQueue.main.async {
+                    guard let self, let index = self.pcTabs.firstIndex(of: .inbox), let items = self.tabBar.items, let item = items[safe: index] else { return }
+                    item.badgeValue = count > 0 ? "\(count)" : nil
+                }
+            }
+        }
     }
 
     /// Fork: a long press on the Up Next/Session tab opens the Switch Session sheet

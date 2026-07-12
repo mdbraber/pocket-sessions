@@ -422,6 +422,18 @@ class Settings: NSObject {
         NotificationCenter.postOnMainThread(notification: Constants.Notifications.upNextFilterChanged)
     }
 
+    static let playlistsBadgeKey = "SJPlaylistsBadgeType"
+
+    /// Fork: the Playlists overview's badge type — the session-aware subset of the
+    /// podcast badges.
+    class func playlistsBadgeType() -> BadgeType {
+        BadgeType(rawValue: Int32(UserDefaults.standard.integer(forKey: Settings.playlistsBadgeKey))) ?? .off
+    }
+
+    class func setPlaylistsBadgeType(_ badgeType: BadgeType) {
+        UserDefaults.standard.set(badgeType.rawValue, forKey: Settings.playlistsBadgeKey)
+    }
+
     static let sessionAutoAddLimitKey = "SJSessionAutoAddLimit"
 
     /// Fork: auto-add to Session stops once a session's lineup holds this many

@@ -100,20 +100,18 @@ class HomeGridDataHelper {
                         gridItem.frozenBadgeCount = folder.cachedUnreadCount
                     }
                 }
-            } else if badgeType == .anyInInbox || badgeType == .inboxCount || badgeType == .sessionCount {
+            } else if badgeType.isSessionBased {
+                let counts = sessionBadgeCounts(for: allPodcasts, badgeType: badgeType)
                 for gridItem in gridItems {
                     if let podcast = gridItem.podcast {
-                        podcast.cachedUnreadCount = sessionBadgeCount(for: podcast, badgeType: badgeType)
+                        podcast.cachedUnreadCount = counts[podcast.uuid] ?? 0
                         gridItem.frozenBadgeCount = podcast.cachedUnreadCount
                     } else if let folder = gridItem.folder {
                         // a folder's badge sums its podcasts; the dot flavour only
                         // needs presence
-                        let allPodcastsInFolder = allPodcasts.filter { $0.folderUuid == folder.uuid }
-                        var total = 0
-                        for podcast in allPodcastsInFolder {
-                            total += sessionBadgeCount(for: podcast, badgeType: badgeType)
-                            if badgeType == .anyInInbox, total > 0 { break }
-                        }
+                        let total = allPodcasts
+                            .filter { $0.folderUuid == folder.uuid }
+                            .reduce(0) { $0 + (counts[$1.uuid] ?? 0) }
                         folder.cachedUnreadCount = badgeType == .anyInInbox ? min(total, 1) : total
                         gridItem.frozenBadgeCount = folder.cachedUnreadCount
                     }
@@ -124,17 +122,17 @@ class HomeGridDataHelper {
         }
 
         /// Fork: badge counts for the session-aware badge types — the same numbers
-        /// the podcast page's Inbox and Session tabs show.
-        class func sessionBadgeCount(for podcast: Podcast, badgeType: BadgeType) -> Int {
+        /// the podcast page's Inbox and Session tabs show, computed in bulk.
+        class func sessionBadgeCounts(for podcasts: [Podcast], badgeType: BadgeType) -> [String: Int] {
             switch badgeType {
             case .anyInInbox:
-                return SessionFeederEngine.inboxBadgeCount(forPodcast: podcast) > 0 ? 1 : 0
+                return SessionFeederEngine.inboxBadgeCounts(forPodcasts: podcasts).mapValues { min($0, 1) }
             case .inboxCount:
-                return SessionFeederEngine.inboxBadgeCount(forPodcast: podcast)
+                return SessionFeederEngine.inboxBadgeCounts(forPodcasts: podcasts)
             case .sessionCount:
-                return SessionFeederEngine.sessionBadgeCount(forPodcast: podcast)
+                return SessionFeederEngine.sessionBadgeCounts(forPodcasts: podcasts)
             default:
-                return 0
+                return [:]
             }
         }
     #endif

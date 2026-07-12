@@ -107,6 +107,11 @@ public enum BadgeType: Int32, Codable {
     public var showsCount: Bool {
         self == .allUnplayed || self == .inboxCount || self == .sessionCount
     }
+
+    /// Driven by inbox/session triage state rather than play/archive state.
+    public var isSessionBased: Bool {
+        self == .anyInInbox || self == .inboxCount || self == .sessionCount
+    }
 }
 
 public enum PodcastEpisodeSortOrder: Int32, Codable, CaseIterable {

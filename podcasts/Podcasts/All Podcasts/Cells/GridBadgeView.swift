@@ -92,8 +92,9 @@ class GridBadgeView: UIView {
     private func updateBadgeColors() {
         badgeLabel.clipsToBounds = true
         backgroundColor = .clear
-        badgeLabel.textColor = ThemeColor.primaryInteractive02()
-        badgeLabel.backgroundColor = ThemeColor.primaryInteractive01()
+        // Counts are neutral — only the presence dot wears the accent.
+        badgeLabel.textColor = ThemeColor.primaryUi01()
+        badgeLabel.backgroundColor = ThemeColor.primaryIcon02()
         badgeLabel.layer.borderColor = ThemeColor.primaryUi04().cgColor
 
         simpleBadge.borderColor = ThemeColor.primaryUi02()

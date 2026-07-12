@@ -158,6 +158,11 @@ class PlaylistsViewController: PCViewController, FilterCreatedDelegate {
         addCustomObserver(Constants.Notifications.playlistChanged, selector: #selector(filtersUpdated))
         addCustomObserver(PlaylistFolderManager.foldersChanged, selector: #selector(filtersUpdated))
         addCustomObserver(Constants.Notifications.tappedOnSelectedTab, selector: #selector(checkForScrollTap(_:)))
+        // Fork: row badges follow triage/play state; skipped entirely when off.
+        addCustomObserver(SessionStore.changed, selector: #selector(badgeStateChanged))
+        addCustomObserver(Constants.Notifications.episodePlayStatusChanged, selector: #selector(badgeStateChanged))
+        addCustomObserver(Constants.Notifications.episodeArchiveStatusChanged, selector: #selector(badgeStateChanged))
+        addCustomObserver(Constants.Notifications.upNextQueueChanged, selector: #selector(badgeStateChanged))
 
         Analytics.track(.filterListShown, properties: ["filter_count": listPlaylistItems.count])
 
@@ -190,6 +195,12 @@ class PlaylistsViewController: PCViewController, FilterCreatedDelegate {
         }
     }
 
+    /// Only rows wearing a badge care about triage/play state.
+    @objc private func badgeStateChanged() {
+        guard Settings.playlistsBadgeType() != .off else { return }
+        filtersUpdated()
+    }
+
     @IBAction func addNewFilter() {
         Analytics.track(.filterCreateButtonTapped)
         presentFilterPreview()
@@ -209,6 +220,12 @@ class PlaylistsViewController: PCViewController, FilterCreatedDelegate {
         let sortAction = OptionAction(label: L10n.sortBy, secondaryLabel: playlistsSortOrder.description, icon: "podcast-sort") {}
         sortAction.submenu = { [weak self] in self?.makeSortOptionsPicker() }
         optionsPicker.addAction(action: sortAction)
+
+        // Fork: row badges, same option set as the podcast grid's. A badge replaces
+        // the row's plain episode count.
+        let badgeAction = OptionAction(label: L10n.podcastsBadges, secondaryLabel: Settings.playlistsBadgeType().description, icon: "badges") {}
+        badgeAction.submenu = { [weak self] in self?.makeBadgeOptionsPicker() }
+        optionsPicker.addAction(action: badgeAction)
 
         let largeGridAction = OptionAction(label: L10n.podcastsLargeGrid, icon: "podcastlist_largegrid", selected: playlistsLayout == .threeByThree) { [weak self] in
             self?.playlistsLayout = .threeByThree
@@ -234,6 +251,19 @@ class PlaylistsViewController: PCViewController, FilterCreatedDelegate {
         }
 
         optionsPicker.present(from: self)
+    }
+
+    private func makeBadgeOptionsPicker() -> OptionsPicker {
+        let options = OptionsPicker(title: L10n.podcastsBadges.localizedUppercase)
+        let current = Settings.playlistsBadgeType()
+        let orderedTypes: [BadgeType] = [.off, .allUnplayed, .latestEpisode, .anyInInbox, .inboxCount, .sessionCount]
+        for type in orderedTypes {
+            options.addAction(action: OptionAction(label: type.description, selected: current == type) { [weak self] in
+                Settings.setPlaylistsBadgeType(type)
+                self?.reloadFilters()
+            })
+        }
+        return options
     }
 
     private func makeSortOptionsPicker() -> OptionsPicker {

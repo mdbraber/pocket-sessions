@@ -68,7 +68,7 @@ public enum PrimaryUpNextSwipeAction: Int32, Codable {
 }
 
 public enum AppBadge: Int32, Codable {
-    case off = 0, totalUnplayed = 1, newSinceLastOpened = 2, filterCount = 10
+    case off = 0, totalUnplayed = 1, newSinceLastOpened = 2, inboxCount = 3, filterCount = 10
 }
 
 public enum HeadphoneControl: Int32, Codable {

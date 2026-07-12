@@ -2,6 +2,7 @@ import PocketCastsDataModel
 import PocketCastsServer
 import PocketCastsUtils
 import UIKit
+import UserNotifications
 
 class BadgeSettingsViewController: PCViewController, UITableViewDelegate, UITableViewDataSource {
     private let optionsSection = 0
@@ -35,7 +36,7 @@ class BadgeSettingsViewController: PCViewController, UITableViewDelegate, UITabl
     }
 
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        if section == optionsSection { return 3 }
+        if section == optionsSection { return 4 }
 
         return playlists.count
     }
@@ -61,6 +62,10 @@ class BadgeSettingsViewController: PCViewController, UITableViewDelegate, UITabl
                 cell.buttonTitle.text = L10n.settingsBadgeTotalUnplayed
             } else if indexPath.row == 2 {
                 cell.buttonTitle.text = L10n.settingsBadgeNewSinceOpened
+            } else if indexPath.row == 3 {
+                // Fork: the global Inbox count (row index doubles as the AppBadge
+                // rawValue, and inboxCount is 3).
+                cell.buttonTitle.text = L10n.podcastsBadgeInboxCount
             }
 
             let badgeSetting = Int(Settings.appBadge?.rawValue ?? AppBadge.off.rawValue)
@@ -76,6 +81,12 @@ class BadgeSettingsViewController: PCViewController, UITableViewDelegate, UITabl
     }
 
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        // Fork: the badge works without New Episodes notifications, but iOS still
+        // needs badge authorization — ask for just that.
+        if indexPath.section != optionsSection || indexPath.row != Int(AppBadge.off.rawValue) {
+            UNUserNotificationCenter.current().requestAuthorization(options: [.badge]) { _, _ in }
+        }
+
         if indexPath.section == optionsSection {
             Settings.appBadge = AppBadge(rawValue: Int32(indexPath.row))
             Settings.appBadgeFilterUuid = nil

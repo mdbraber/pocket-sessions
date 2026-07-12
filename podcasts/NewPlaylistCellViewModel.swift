@@ -22,6 +22,9 @@ class NewPlaylistCellViewModel: ObservableObject {
     /// Fork: names the row a Session Playlist, optionally with its feeder.
     @Published var sessionSubtitle: String?
     @Published var displayType: DisplayType = .count
+    /// Fork: the overview's badge — replaces the plain count when a type is chosen.
+    @Published var badgeType: BadgeType = .off
+    @Published var badgeCount: Int = 0
 
     var isBelowEpisodeLimit: Bool {
 #if DEBUG

@@ -102,6 +102,21 @@ struct NewPlaylistCellView: View {
 
     @ViewBuilder private func accesoryView() -> some View {
         switch viewModel.displayType {
+        case .count where viewModel.badgeType != .off:
+            // Fork: the chosen badge replaces the plain count — a dot for the
+            // presence types, otherwise just the number (no lozenge).
+            if viewModel.badgeCount > 0 {
+                if viewModel.badgeType.showsDot {
+                    Circle()
+                        .fill(theme.primaryInteractive01)
+                        .frame(width: 10, height: 10)
+                } else {
+                    subtitleView(text: "\(min(viewModel.badgeCount, 99))")
+                        .lineLimit(1)
+                }
+            } else {
+                EmptyView()
+            }
         case .count, .upNext:
             HStack(spacing: 5.0) {
                 subtitleView(text: "\(viewModel.episodesCount)")

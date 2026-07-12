@@ -22,7 +22,10 @@ class BadgeHelper {
                                                     Constants.Notifications.episodeDownloaded,
                                                     Constants.Notifications.playbackTrackChanged,
                                                     Constants.Notifications.playbackEnded,
-                                                    Constants.Notifications.playbackStarted]
+                                                    Constants.Notifications.playbackStarted,
+                                                    // Fork: the Inbox Count badge moves with triage state and the queue.
+                                                    SessionStore.changed,
+                                                    Constants.Notifications.upNextQueueChanged]
 
         let mergedNotifications = notifications
             .map { NotificationCenter.default.publisher(for: $0) }
@@ -44,11 +47,11 @@ class BadgeHelper {
     @objc func updateBadge() {
         guard let badgeSetting = Settings.appBadge else { return }
 
-        let pushOn = NotificationsHelper.shared.pushEnabled()
-
-        if badgeSetting == .off && !pushOn { return } // user has both the badge and push turned off, don't attempt to badge their app. Results in iOS 8 push message request popup
-
-        if badgeSetting == .off || !pushOn {
+        // Fork: the badge is independent of New Episodes push notifications — it
+        // renders under its own (badge-only) authorization.
+        if badgeSetting == .off {
+            // clearBadge no-ops at zero, so an off setting never triggers a
+            // permission prompt.
             clearBadge(clearNotificationsToo: false)
         } else if badgeSetting == .totalUnplayed {
             let unplayedCount = DataManager.sharedManager.count(query: "SELECT COUNT(e.id) FROM SJEpisode e LEFT JOIN SJPodcast p ON p.id = e.podcast_id WHERE p.subscribed = 1 AND e.playingStatus == 1 AND e.archived = 0", values: nil)
@@ -62,6 +65,14 @@ class BadgeHelper {
 
             let newCount = DataManager.sharedManager.count(query: "SELECT COUNT(e.id) FROM SJEpisode e LEFT JOIN SJPodcast p ON p.id = e.podcast_id WHERE p.subscribed = 1 AND e.playingStatus == 1 AND e.archived = 0 AND e.addedDate > ?", values: [lastClosedDate])
             setBadgeTo(newCount)
+        } else if badgeSetting == .inboxCount {
+            // Fork: the global Inbox count — the same number the Inbox tab wears.
+            // The sweep reads every unarchived episode, so it stays off the main thread.
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                let global = SessionStore.shared.globalInbox
+                let count = SessionFeederEngine.inboxEpisodes(for: global).filter { global.showSeen || !$0.isSeen }.count
+                self?.setBadgeTo(count)
+            }
         } else if badgeSetting == .filterCount {
             guard let playlistId = Settings.appBadgeFilterUuid else {
                 Settings.appBadge = .off

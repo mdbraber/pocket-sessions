@@ -12,6 +12,12 @@ class NotificationsViewController: PCViewController, UITableViewDataSource, UITa
     private var sections: [Section] = [.episodes]
     private var rows: [[Row]] = [[.newEpisodes, .podcastsChosen, .appBadges], [.trendingRecommendations, .dailyReminders], [.newFeaturesAndTips, .pocketCastsOffers]]
 
+    /// Fork: App Badge is independent of New Episodes notifications — it stays
+    /// visible when they're off; only Choose Podcasts rides the toggle.
+    private var episodesRows: [Row] {
+        NotificationsGroup.newEpisodes.isEnabled ? [.newEpisodes, .podcastsChosen, .appBadges] : [.newEpisodes, .appBadges]
+    }
+
     private var notificationsDenied = false
 
     private lazy var notificationsCoordinator: NotificationsCoordinator = {
@@ -152,7 +158,7 @@ class NotificationsViewController: PCViewController, UITableViewDataSource, UITa
         }
         switch sectionType {
         case .episodes:
-            return NotificationsGroup.newEpisodes.isEnabled ? 3 : 1
+            return episodesRows.count
         case .featuresAndOffers, .recommendationsAndReminders:
             return rows[section].count
         }
@@ -162,7 +168,7 @@ class NotificationsViewController: PCViewController, UITableViewDataSource, UITa
         guard let sectionType = Section(rawValue: indexPath.section) else {
             return UITableViewCell()
         }
-        let row = rows[sectionType.rawValue][indexPath.row]
+        let row = sectionType == .episodes ? episodesRows[indexPath.row] : rows[sectionType.rawValue][indexPath.row]
         switch row {
         case .podcastsChosen:
             let cell = tableView.dequeueReusableCell(withIdentifier: disclosureCellId, for: indexPath) as! DisclosureCell
@@ -198,7 +204,7 @@ class NotificationsViewController: PCViewController, UITableViewDataSource, UITa
         else {
             return
         }
-        let rowType = rows[indexPath.section][indexPath.row]
+        let rowType = sectionType == .episodes ? episodesRows[indexPath.row] : rows[indexPath.section][indexPath.row]
 
         switch sectionType {
         case .episodes:
@@ -345,6 +351,8 @@ extension AppBadge {
             return L10n.settingsNotificationsSmartPlaylistCount
         case .newSinceLastOpened:
             return L10n.newEpisodes
+        case .inboxCount:
+            return L10n.podcastsBadgeInboxCount
         default:
             return L10n.off
         }
