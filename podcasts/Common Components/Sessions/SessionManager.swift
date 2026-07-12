@@ -50,7 +50,7 @@ class SessionManager {
 
     /// A new session wrapping a fresh manual store. The store is a real synced playlist.
     @discardableResult
-    func createSession(name: String, feeder: SessionFeeder, seedEpisodeUuids: [String] = []) -> ForkSession {
+    func createSession(name: String, feeder: SessionFeeder, seedEpisodeUuids: [String] = []) -> Session {
         let store = PlaylistManager.createNewPlaylist()
         store.playlistName = name
         store.manual = true
@@ -65,20 +65,20 @@ class SessionManager {
             _ = DataManager.sharedManager.add(episodes: episodes, to: store)
         }
 
-        let session = ForkSession(uuid: UUID().uuidString, storePlaylistUuid: store.uuid, feeder: feeder)
+        let session = Session(uuid: UUID().uuidString, storePlaylistUuid: store.uuid, feeder: feeder)
         SessionStore.shared.upsert(session)
         NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged)
         return session
     }
 
     /// The session for a podcast, created on first use (feeder = the podcast itself).
-    func findOrCreateSession(forPodcast podcast: Podcast, seedEpisodeUuids: [String] = []) -> ForkSession {
+    func findOrCreateSession(forPodcast podcast: Podcast, seedEpisodeUuids: [String] = []) -> Session {
         if let existing = SessionStore.shared.session(forPodcast: podcast.uuid) { return existing }
         return createSession(name: podcast.title ?? L10n.filtersDefaultNewFilter, feeder: .podcast(uuid: podcast.uuid), seedEpisodeUuids: seedEpisodeUuids)
     }
 
     /// Deletes the session, its store playlist, and (for rule sessions) its feeder playlist.
-    func deleteSession(_ session: ForkSession) {
+    func deleteSession(_ session: Session) {
         if let storeUuid = session.storePlaylistUuid, let store = DataManager.sharedManager.findPlaylist(uuid: storeUuid) {
             PlaylistManager.delete(playlist: store, fireEvent: false)
         }
@@ -97,7 +97,7 @@ class SessionManager {
     /// store — keeping its name, uuid and spot — seeded with the current query order,
     /// while a fresh hidden feeder playlist carries the rules onward.
     @discardableResult
-    func convertLens(_ lens: EpisodeFilter, seedEpisodeUuids: [String]) -> ForkSession {
+    func convertLens(_ lens: EpisodeFilter, seedEpisodeUuids: [String]) -> Session {
         let feeder = EpisodeFilter.makeDefault()
         feeder.copySessionRules(from: lens)
         feeder.playlistName = "\(lens.playlistName) — feed"
@@ -114,7 +114,7 @@ class SessionManager {
         let episodes = seedEpisodeUuids.compactMap { DataManager.sharedManager.findEpisode(uuid: $0) }
         _ = DataManager.sharedManager.add(episodes: episodes, to: lens)
 
-        let session = ForkSession(uuid: UUID().uuidString, storePlaylistUuid: lens.uuid, feeder: .smartPlaylist(uuid: feeder.uuid))
+        let session = Session(uuid: UUID().uuidString, storePlaylistUuid: lens.uuid, feeder: .smartPlaylist(uuid: feeder.uuid))
         SessionStore.shared.upsert(session)
         NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged)
         return session
@@ -134,7 +134,7 @@ class SessionManager {
 
     // MARK: - Store access
 
-    func store(for session: ForkSession) -> EpisodeFilter? {
+    func store(for session: Session) -> EpisodeFilter? {
         guard let uuid = session.storePlaylistUuid else { return nil }
         return DataManager.sharedManager.findPlaylist(uuid: uuid)
     }
@@ -157,7 +157,7 @@ class SessionManager {
     /// Inserts episodes at the session's insert marker. Adding means intent to play,
     /// so archived episodes come back out of the archive on the way in (otherwise the
     /// decisive-action sweep would immediately remove them from the store again).
-    func addToLineup(episodeUuids: [String], session: ForkSession) {
+    func addToLineup(episodeUuids: [String], session: Session) {
         guard let store = store(for: session), !episodeUuids.isEmpty else { return }
         unarchiveIfNeeded(episodeUuids: episodeUuids)
         var order = DataManager.sharedManager.positionedEpisodeUuids(for: store).filter { !episodeUuids.contains($0) }
@@ -179,7 +179,7 @@ class SessionManager {
     /// Replaces the lineup wholesale: the store becomes exactly these episodes, in
     /// this order. Former members return to triage (no dismissals are recorded —
     /// replacement isn't a per-episode "no").
-    func replaceLineup(episodeUuids: [String], session: ForkSession) {
+    func replaceLineup(episodeUuids: [String], session: Session) {
         guard let store = store(for: session), !episodeUuids.isEmpty else { return }
         let current = DataManager.sharedManager.positionedEpisodeUuids(for: store).filter { !episodeUuids.contains($0) }
         if !current.isEmpty {
@@ -197,7 +197,7 @@ class SessionManager {
     }
 
     /// Persists a full lineup order (after drag reorder).
-    func setLineupOrder(episodeUuids: [String], session: ForkSession) {
+    func setLineupOrder(episodeUuids: [String], session: Session) {
         guard let store = store(for: session) else { return }
         DataManager.sharedManager.setCustomOrder(episodeUuids: episodeUuids, for: store)
         markStoreChanged(store)
@@ -205,7 +205,7 @@ class SessionManager {
 
     /// Removes from the lineup and records the scoped dismissal so the feeder never
     /// re-offers it. Recoverable via the Dismissed list.
-    func removeFromLineup(episodeUuids: [String], session: ForkSession) {
+    func removeFromLineup(episodeUuids: [String], session: Session) {
         guard let store = store(for: session) else { return }
         DataManager.sharedManager.deleteEpisodes(episodeUuids, from: store)
         SessionStore.shared.setDismissed(episodeUuids: episodeUuids, sessionUuid: session.uuid)
@@ -217,7 +217,7 @@ class SessionManager {
     /// current page's session), only the current one, or a picker. The chosen or
     /// current session receives everything; other matching sessions receive only
     /// the episodes their feeder actually covers.
-    func addToSessions(episodeUuids: [String], preferred: ForkSession?, presenting: UIViewController?, onAdded: (([ForkSession]) -> Void)? = nil) {
+    func addToSessions(episodeUuids: [String], preferred: Session?, presenting: UIViewController?, onAdded: (([Session]) -> Void)? = nil) {
         guard !episodeUuids.isEmpty else { return }
         let episodes = episodeUuids.compactMap { DataManager.sharedManager.findEpisode(uuid: $0) }
 
@@ -243,16 +243,16 @@ class SessionManager {
             }
         }()
 
-        func withPodcastSessions(_ sessions: [ForkSession]) -> [ForkSession] {
+        func withPodcastSessions(_ sessions: [Session]) -> [Session] {
             sessions + podcastsWithoutSessions.map { findOrCreateSession(forPodcast: $0) }
         }
 
-        func add(to targets: [ForkSession]) {
+        func add(to targets: [Session]) {
             // Store mutations are DB-heavy for long selections — off the main thread,
             // with the completion back on it.
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 guard let self else { return }
-                var landed = [ForkSession]()
+                var landed = [Session]()
                 for session in targets {
                     let uuids = (session.uuid == preferred?.uuid || targets.count == 1)
                         ? episodeUuids
@@ -302,7 +302,7 @@ class SessionManager {
 
     /// Fork: tap-to-play from a Session tab, Up Next style — switches the active
     /// playback session to this one when needed, then plays the tapped episode.
-    func play(episode: BaseEpisode, in session: ForkSession) {
+    func play(episode: BaseEpisode, in session: Session) {
         guard let storeUuid = session.storePlaylistUuid else { return }
         let target = PlaybackSession(type: .playlist, uuid: storeUuid)
         if Settings.playbackSession() != target {
@@ -312,7 +312,7 @@ class SessionManager {
         PlaybackManager.shared.play(sessionEpisode: episode)
     }
 
-    func sessionsCovering(podcastUuid: String) -> [ForkSession] {
+    func sessionsCovering(podcastUuid: String) -> [Session] {
         SessionStore.shared.sessions.filter { $0.uuid != SessionStore.globalInboxUuid && feeder($0.feeder, coversPodcast: podcastUuid) }
     }
 
@@ -332,7 +332,7 @@ class SessionManager {
 
     // MARK: - Insert marker
 
-    func insertMarkerIndex(for session: ForkSession, inLineup lineup: [String]) -> Int {
+    func insertMarkerIndex(for session: Session, inLineup lineup: [String]) -> Int {
         switch PlaylistInsertMode(rawValue: session.insertMode) ?? .afterLastInserted {
         case .top:
             return 0
@@ -368,20 +368,20 @@ class SessionManager {
 
     /// The smart playlist's session — the playlist itself is the feeder; the store
     /// carries its name. Created lazily, seeded with the current query order.
-    func findOrCreateSession(forSmartPlaylist lens: EpisodeFilter, seedEpisodeUuids: [String] = []) -> ForkSession {
+    func findOrCreateSession(forSmartPlaylist lens: EpisodeFilter, seedEpisodeUuids: [String] = []) -> Session {
         if let existing = SessionStore.shared.session(forSmartPlaylistFeeder: lens.uuid) { return existing }
         return createSession(name: lens.playlistName, feeder: .smartPlaylist(uuid: lens.uuid), seedEpisodeUuids: seedEpisodeUuids)
     }
 
     /// The folder's session, created lazily on first use.
-    func findOrCreateSession(forFolder folder: Folder) -> ForkSession {
+    func findOrCreateSession(forFolder folder: Folder) -> Session {
         if let existing = SessionStore.shared.session(forFolder: folder.uuid) { return existing }
         return createSession(name: folder.name, feeder: .folder(uuid: folder.uuid))
     }
 
     /// Starts a session, refilling a drained store from its feeder's offers (or the
     /// given seed) first — pressing play always starts something when anything exists.
-    func play(session: ForkSession, fallbackSeed: [String] = []) {
+    func play(session: Session, fallbackSeed: [String] = []) {
         if SessionFeederEngine.storeMemberUuids(for: session).isEmpty {
             var refill = SessionFeederEngine.inboxEpisodes(for: session).map(\.uuid)
             if refill.isEmpty {
@@ -430,7 +430,7 @@ class SessionManager {
     }
 
     /// The playing session just drained: ephemeral stores offer to clean themselves up.
-    private func promptIfSessionFinished(_ session: ForkSession, store: EpisodeFilter, remaining: Int) {
+    private func promptIfSessionFinished(_ session: Session, store: EpisodeFilter, remaining: Int) {
         guard remaining <= 0,
               session.feeder == SessionFeeder.none,
               let playing = Settings.playbackSession(), playing.uuid == store.uuid,
@@ -466,7 +466,7 @@ class SessionManager {
         }
     }
 
-    func ingestAutoAdd(session: ForkSession) {
+    func ingestAutoAdd(session: Session) {
         var offers = SessionFeederEngine.inboxEpisodes(for: session).map(\.uuid)
         guard !offers.isEmpty else { return }
         // The global limit caps auto-adds only: once the lineup is full, new arrivals
@@ -539,14 +539,14 @@ class SessionManager {
 
 // MARK: - Fork: session subtitles
 
-extension ForkSession {
+extension Session {
     /// The row subtitle: sessions announce themselves plainly.
     var displaySubtitle: String {
         L10n.sessionPlaylistSubtitle
     }
 }
 
-extension ForkSession {
+extension Session {
     /// The stable artwork tiles for this session — derived from the feeder, so the
     /// artwork never shifts as the lineup drains. Empty means "fall back to episodes".
     var artworkPodcastUuids: [String] {
@@ -564,5 +564,26 @@ extension ForkSession {
         case .none, .allPodcasts:
             return []
         }
+    }
+}
+
+extension EpisodeFilter {
+    /// Copies the smart-rule fields onto another playlist — used when a lens converts
+    /// to a session and a hidden feeder playlist takes over its rules.
+    func copySessionRules(from other: EpisodeFilter) {
+        filterAllPodcasts = other.filterAllPodcasts
+        podcastUuids = other.podcastUuids
+        filterUnplayed = other.filterUnplayed
+        filterPartiallyPlayed = other.filterPartiallyPlayed
+        filterFinished = other.filterFinished
+        filterDownloaded = other.filterDownloaded
+        filterNotDownloaded = other.filterNotDownloaded
+        filterAudioVideoType = other.filterAudioVideoType
+        filterStarred = other.filterStarred
+        filterHours = other.filterHours
+        filterDuration = other.filterDuration
+        longerThan = other.longerThan
+        shorterThan = other.shorterThan
+        customIcon = other.customIcon
     }
 }

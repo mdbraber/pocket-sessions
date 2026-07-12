@@ -15,7 +15,7 @@ enum SessionFeeder: Codable, Equatable {
 
 /// Fork: a Session — a thin local coordinator. The lineup itself lives in a synced
 /// manual playlist (the store); this row carries the feeder, settings, and marker.
-struct ForkSession: Codable, Equatable, Identifiable {
+struct Session: Codable, Equatable, Identifiable {
     let uuid: String
     /// The manual playlist holding the lineup. Nil only for the global Inbox.
     var storePlaylistUuid: String?
@@ -42,21 +42,20 @@ struct ForkSession: Codable, Equatable, Identifiable {
 final class SessionStore {
     static let shared = SessionStore()
 
-    static let changed = NSNotification.Name(rawValue: "SJForkSessionsChanged")
-    static let globalInboxUuid = "fork-global-inbox-session"
+    static let changed = NSNotification.Name(rawValue: "SJSessionsChanged")
+    static let globalInboxUuid = "global-inbox"
 
     private struct Document: Codable {
-        var sessions: [ForkSession] = []
+        var sessions: [Session] = []
         var seen: [String: Date] = [:] // episodeUuid -> date marked
         var dismissals: [String: [String: Date]] = [:] // sessionUuid -> episodeUuid -> date
-        var migrated: Bool = false
     }
 
     private var document = Document()
-    private let queue = DispatchQueue(label: "au.com.pocketcasts.fork.sessionstore")
+    private let queue = DispatchQueue(label: "au.com.pocketcasts.sessionstore")
     private lazy var fileURL: URL = {
         let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        return documents.appendingPathComponent("fork-sessions.json")
+        return documents.appendingPathComponent("sessions.json")
     }()
 
     init() {
@@ -65,23 +64,19 @@ final class SessionStore {
 
     // MARK: - Sessions
 
-    var sessions: [ForkSession] {
+    var sessions: [Session] {
         queue.sync { document.sessions }
     }
 
-    var hasMigrated: Bool {
-        queue.sync { document.migrated }
-    }
-
-    func session(uuid: String) -> ForkSession? {
+    func session(uuid: String) -> Session? {
         queue.sync { document.sessions.first { $0.uuid == uuid } }
     }
 
-    func session(forStore storePlaylistUuid: String) -> ForkSession? {
+    func session(forStore storePlaylistUuid: String) -> Session? {
         queue.sync { document.sessions.first { $0.storePlaylistUuid == storePlaylistUuid } }
     }
 
-    func session(forFolder folderUuid: String) -> ForkSession? {
+    func session(forFolder folderUuid: String) -> Session? {
         queue.sync {
             document.sessions.first {
                 if case .folder(let uuid) = $0.feeder { return uuid == folderUuid }
@@ -90,7 +85,7 @@ final class SessionStore {
         }
     }
 
-    func session(forPodcast podcastUuid: String) -> ForkSession? {
+    func session(forPodcast podcastUuid: String) -> Session? {
         queue.sync {
             document.sessions.first {
                 if case .podcast(let uuid) = $0.feeder { return uuid == podcastUuid }
@@ -99,9 +94,9 @@ final class SessionStore {
         }
     }
 
-    var globalInbox: ForkSession {
+    var globalInbox: Session {
         if let existing = session(uuid: Self.globalInboxUuid) { return existing }
-        var session = ForkSession(uuid: Self.globalInboxUuid, storePlaylistUuid: nil, feeder: .allPodcasts)
+        var session = Session(uuid: Self.globalInboxUuid, storePlaylistUuid: nil, feeder: .allPodcasts)
         session.groupBy = 1 // release date
         upsert(session)
         return session
@@ -122,7 +117,7 @@ final class SessionStore {
         })
     }
 
-    func session(forSmartPlaylistFeeder playlistUuid: String) -> ForkSession? {
+    func session(forSmartPlaylistFeeder playlistUuid: String) -> Session? {
         queue.sync {
             document.sessions.first {
                 if case .smartPlaylist(let uuid) = $0.feeder { return uuid == playlistUuid }
@@ -131,7 +126,7 @@ final class SessionStore {
         }
     }
 
-    func upsert(_ session: ForkSession) {
+    func upsert(_ session: Session) {
         mutate { document in
             if let index = document.sessions.firstIndex(where: { $0.uuid == session.uuid }) {
                 document.sessions[index] = session
@@ -240,10 +235,6 @@ final class SessionStore {
                 document.dismissals[sessionUuid] = kept.isEmpty ? nil : kept
             }
         }
-    }
-
-    func markMigrated() {
-        mutate { $0.migrated = true }
     }
 
     // MARK: - Persistence

@@ -5,7 +5,7 @@ import PocketCastsUtils
 
 extension PlaylistDetailViewController: MultiSelectActionDelegate {
 
-    func multiSelectPreferredSession() -> ForkSession? {
+    func multiSelectPreferredSession() -> Session? {
         if let session = viewModel.session { return session }
         if viewModel.isLensPage {
             return SessionManager.shared.findOrCreateSession(forSmartPlaylist: viewModel.playlist)
@@ -13,7 +13,7 @@ extension PlaylistDetailViewController: MultiSelectActionDelegate {
         return nil
     }
 
-    func multiSelectCurrentSession() -> ForkSession? {
+    func multiSelectCurrentSession() -> Session? {
         viewModel.session ?? viewModel.lensSession
     }
 

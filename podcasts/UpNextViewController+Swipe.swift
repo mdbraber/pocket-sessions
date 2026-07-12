@@ -174,8 +174,8 @@ extension UpNextViewController: SwipeTableViewCellDelegate, SwipeHandler {
             defer { action.fulfill(with: .reset) }
             guard let self else { return }
             if let playbackSession = Settings.playbackSession(),
-               let forkSession = SessionStore.shared.session(forStore: playbackSession.uuid) {
-                SessionManager.shared.removeFromLineup(episodeUuids: [episode.uuid], session: forkSession)
+               let storeSession = SessionStore.shared.session(forStore: playbackSession.uuid) {
+                SessionManager.shared.removeFromLineup(episodeUuids: [episode.uuid], session: storeSession)
             } else if let playbackSession = Settings.playbackSession(), playbackSession.type == .playlist,
                       let playlist = DataManager.sharedManager.findPlaylist(uuid: playbackSession.uuid) {
                 DataManager.sharedManager.deleteEpisodes([episode.uuid], from: playlist)

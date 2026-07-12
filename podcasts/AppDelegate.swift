@@ -337,10 +337,6 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
             PlaylistManager.createDefaultPlaylists()
             UserDefaults.standard.set(true, forKey: "CreatedDefPlaylistsV2")
         }
-        SessionMigration.runIfNeeded()
-        SessionMigration.runFolderFeederMigrationIfNeeded()
-        SessionMigration.runFeedRestoreMigrationIfNeeded()
-        SessionMigration.runSeenSentinelCleanupIfNeeded()
         SessionManager.shared.setup()
         SessionManager.shared.healSessions()
         Task {
