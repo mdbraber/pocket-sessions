@@ -115,7 +115,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
 
     func tableView(_ tableView: UITableView, heightForHeaderInSection section: Int) -> CGFloat {
         if FeatureFlag.playbackSessions.enabled {
-            return tableData[section] == .nowPlayingSection ? 8 : 4
+            return tableData[section] == .nowPlayingSection ? 8 : .leastNormalMagnitude
         }
         let section = tableData[section]
         switch section {
@@ -304,9 +304,14 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
             tableView.deselectRow(at: indexPath, animated: true)
             let section = tableData[indexPath.section]
 
-            // Tapping the Now Playing card opens the full-screen player.
+            // Tapping the Now Playing card opens the full-screen player — unless it's
+            // sitting paused and tap-to-play is on, in which case it resumes.
             if section == .nowPlayingSection {
                 guard !FeatureFlag.playbackSessions.enabled || (topBlockHasCard && indexPath.row == 0) else { return }
+                if Settings.playUpNextOnTap(), !PlaybackManager.shared.playing() {
+                    PlaybackManager.shared.play()
+                    return
+                }
                 track(.upNextNowPlayingTapped)
 
                 dismiss(animated: true, completion: {
@@ -466,7 +471,11 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         if section == .nowPlayingSection {
             if FeatureFlag.playbackSessions.enabled, !(topBlockHasCard && indexPath.row == 0) {
                 let metrics = UIFontMetrics(forTextStyle: .footnote)
-                return displayedWorld == .session ? metrics.scaledValue(for: 48) : queueHeaderHeight
+                // A touch of air below the card: the label sits low in the row
+                // (top-heavy padding), keeping the tight gap to the episode below.
+                if displayedWorld == .session { return metrics.scaledValue(for: 48) }
+                let filterRowVisible = FeatureFlag.upNextFilter.enabled && Settings.upNextFilter() != nil && PlaybackManager.shared.queue.upNextCount() > 0
+                return metrics.scaledValue(for: 50) + (filterRowVisible ? 26 : 0)
             }
             return UpNextViewController.nowPlayingRowHeight
         }
@@ -540,6 +549,8 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         navigationController?.tabBarItem.title = title
         updateWorldSwitcher()
         updateStickyChrome()
+        // Nav buttons are world-dependent (Switch vs Clear) — keep them in step.
+        updateNavBarButtons()
         upNextTable.reloadData()
     }
 

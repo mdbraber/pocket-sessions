@@ -3,7 +3,7 @@ import PocketCastsUtils
 import PocketCastsServer
 import UIKit
 
-class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
+class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, FilterCreatedDelegate {
     static let playerCell = "PlayerCell"
     static let nowPlayingCell = "UpNextNowPlayingCell"
     static let emptyStateCell = "EmptyStateCell"
@@ -273,12 +273,14 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
         sessionSortButton.translatesAutoresizingMaskIntoConstraints = false
 
         NSLayoutConstraint.activate([
+            // Bottom-anchored: extra row height becomes breathing room below the card,
+            // keeping the tight gap to the first episode.
             sessionMetaLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
-            sessionMetaLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            sessionMetaLabel.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -11),
             sessionMetaLabel.trailingAnchor.constraint(lessThanOrEqualTo: sessionSortButton.leadingAnchor, constant: -10),
 
             sessionSortButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
-            sessionSortButton.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            sessionSortButton.centerYAnchor.constraint(equalTo: sessionMetaLabel.centerYAnchor),
             sessionSortButton.widthAnchor.constraint(equalToConstant: 24),
             sessionSortButton.heightAnchor.constraint(equalToConstant: 24)
         ])
@@ -404,6 +406,15 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
         openSessionSource()
     }
 
+    // Fork: FilterCreatedDelegate — required to push PlaylistDetailViewController from
+    // the session title; nothing creates filters from here.
+    var presentingPlaylistDetail: Bool {
+        get { false }
+        set {}
+    }
+
+    func filterCreated(newFilter: EpisodeFilter) {}
+
     /// Fork: navigates to the session's source — the playlist (manual or smart) or podcast
     /// it plays from. Reached from the session title and the inbox notice row. With no
     /// session, the title tap opens the switcher instead.
@@ -418,18 +429,29 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
         switch session.type {
         case .podcast:
             guard let podcast = DataManager.sharedManager.findPodcast(uuid: session.uuid, includeUnsubscribed: true) else { return }
-            navigate = {
-                NavigationManager.sharedManager.navigateTo(
-                    NavigationManager.podcastPageKey,
-                    data: [NavigationManager.podcastKey: podcast]
-                )
+            navigate = { [weak self] in
+                // From the tab, push locally so Back returns to the Session; from the
+                // player sheet there is no local stack — route through navigation.
+                if let nav = self?.navigationController {
+                    nav.pushViewController(PodcastViewController(podcast: podcast), animated: true)
+                } else {
+                    NavigationManager.sharedManager.navigateTo(
+                        NavigationManager.podcastPageKey,
+                        data: [NavigationManager.podcastKey: podcast]
+                    )
+                }
             }
         case .playlist, .smartPlaylist:
-            navigate = {
-                NavigationManager.sharedManager.navigateTo(
-                    NavigationManager.filterPageKey,
-                    data: [NavigationManager.filterUuidKey: session.uuid]
-                )
+            navigate = { [weak self] in
+                if let self, let nav = self.navigationController,
+                   let filter = DataManager.sharedManager.findPlaylist(uuid: session.uuid) {
+                    nav.pushViewController(PlaylistDetailViewController(playlist: filter, delegate: self), animated: true)
+                } else {
+                    NavigationManager.sharedManager.navigateTo(
+                        NavigationManager.filterPageKey,
+                        data: [NavigationManager.filterUuidKey: session.uuid]
+                    )
+                }
             }
         }
 
@@ -440,14 +462,14 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
         }
     }
 
-    /// Fork: how many episodes of the session's playlist are still in its inbox.
+    /// Fork: how many episodes of the playing session's feeder are waiting in its inbox.
     static func inboxCount(for session: PlaybackSession) -> Int {
-        guard session.type == .smartPlaylist,
-              let filter = DataManager.sharedManager.findPlaylist(uuid: session.uuid),
-              filter.usesCustomOrderOverlay, !filter.newEpisodesAutoAdd else { return 0 }
-        let members = DataManager.sharedManager.playlistEpisodes(for: filter).map { $0.uuid }
-        let positioned = Set(DataManager.sharedManager.positionedEpisodeUuids(for: filter))
-        return members.filter { !positioned.contains($0) }.count
+        guard session.type == .playlist || session.type == .smartPlaylist,
+              let forkSession = SessionStore.shared.session(forStore: session.uuid),
+              forkSession.feeder != .none, !forkSession.autoAdd else { return 0 }
+        return SessionFeederEngine.inboxEpisodes(for: forkSession)
+            .filter { forkSession.showSeen || !$0.isSeen }
+            .count
     }
 
 
@@ -499,7 +521,8 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
         NSLayoutConstraint.activate([
             controlsRow.leadingAnchor.constraint(equalTo: headerView.leadingAnchor),
             controlsRow.trailingAnchor.constraint(equalTo: headerView.trailingAnchor),
-            controlsRow.topAnchor.constraint(equalTo: headerView.topAnchor),
+            // Fork layout: a touch of air between the card above and this line.
+            controlsRow.topAnchor.constraint(equalTo: headerView.topAnchor, constant: FeatureFlag.playbackSessions.enabled ? 8 : 0),
             controlsRow.heightAnchor.constraint(equalToConstant: 48)
         ])
 
@@ -1122,17 +1145,6 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
             Settings.setUpNextFilter(nil)
         })
 
-        for (type, label) in Self.filterTypeLabels {
-            let isActiveType = activeFilter?.type == type
-            let action = OptionAction(label: label, secondaryLabel: isActiveType ? activeFilter?.title : nil) {}
-            // A submenu presents the item list on top; choosing there dismisses both,
-            // and the row renders a disclosure chevron.
-            action.submenu = { [weak self] in
-                self?.makeFilterItemPicker(for: type, title: label)
-            }
-            optionsPicker.addAction(action: action)
-        }
-
         // Shortcuts to the last few filters used, so the common case skips the drill-in.
         let recents = Settings.upNextRecentFilters().filter { $0.title != nil }
         if !recents.isEmpty {
@@ -1143,6 +1155,18 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate {
                     Settings.setUpNextFilter(recent)
                 })
             }
+        }
+
+        optionsPicker.addSectionTitle(L10n.upNextFilterTypeHeader.localizedUppercase)
+        for (type, label) in Self.filterTypeLabels {
+            let isActiveType = activeFilter?.type == type
+            let action = OptionAction(label: label, secondaryLabel: isActiveType ? activeFilter?.title : nil) {}
+            // A submenu presents the item list on top; choosing there dismisses both,
+            // and the row renders a disclosure chevron.
+            action.submenu = { [weak self] in
+                self?.makeFilterItemPicker(for: type, title: label)
+            }
+            optionsPicker.addAction(action: action)
         }
 
         optionsPicker.present(from: self)
@@ -1597,11 +1621,20 @@ extension UpNextViewController {
 /// row is "Up Next": it ends the session and hands playback back to the queue. With
 /// `includeUpNext: false` it becomes the "Choose session" sheet (no session active yet,
 /// so there is no queue mode to switch back to).
+extension UpNextViewController {
+    /// Fork: Remove from Session on session rows targets the playing session.
+    func multiSelectCurrentSession() -> ForkSession? {
+        guard let playing = Settings.playbackSession() else { return nil }
+        return SessionStore.shared.session(forStore: playing.uuid)
+    }
+}
+
 class SwitchSessionViewController: UIViewController, UITableViewDataSource, UITableViewDelegate {
     private let themeOverride: Theme.ThemeType?
     private let includeUpNext: Bool
     private let onSwitched: (Bool) -> Void
     private let playlists = DataManager.sharedManager.allPlaylists(includeDeleted: false)
+        .filter { !SessionStore.shared.feederPlaylistUuids.contains($0.uuid) }
     /// Shortcuts: the queue filtered by a recently used lens (switch sheet only).
     private let recentFilters: [UpNextFilter]
     private let table = UITableView(frame: .zero, style: .plain)
@@ -1759,6 +1792,34 @@ class SwitchSessionViewController: UIViewController, UITableViewDataSource, UITa
         } else if !PlaybackManager.shared.playing() {
             PlaybackManager.shared.play()
         }
-        dismiss(animated: true) { [onSwitched] in onSwitched(false) }
+        dismiss(animated: true) { [onSwitched] in
+            onSwitched(false)
+            // Switching to a session means going there — land on its feeder page.
+            Self.navigateToSessionHome(storePlaylist: playlist)
+        }
+    }
+
+    /// Fork: sessions land on their feeder page (podcast page's Session tab, or the
+    /// lens playlist); anything else lands on the playlist itself.
+    private static func navigateToSessionHome(storePlaylist playlist: EpisodeFilter) {
+        if let session = SessionStore.shared.session(forStore: playlist.uuid) {
+            switch session.feeder {
+            case .podcast(let uuid):
+                if let podcast = DataManager.sharedManager.findPodcast(uuid: uuid, includeUnsubscribed: true) {
+                    SessionManager.pendingSessionLanding = uuid
+                    NavigationManager.sharedManager.navigateTo(NavigationManager.podcastPageKey, data: [NavigationManager.podcastKey: podcast])
+                    return
+                }
+            case .smartPlaylist(let uuid):
+                // Hidden "— feed" machinery isn't a destination; fall through to the store.
+                if !SessionStore.shared.feederPlaylistUuids.contains(uuid), DataManager.sharedManager.findPlaylist(uuid: uuid) != nil {
+                    NavigationManager.sharedManager.navigateTo(NavigationManager.filterPageKey, data: [NavigationManager.filterUuidKey: uuid])
+                    return
+                }
+            default:
+                break
+            }
+        }
+        NavigationManager.sharedManager.navigateTo(NavigationManager.filterPageKey, data: [NavigationManager.filterUuidKey: playlist.uuid])
     }
 }
