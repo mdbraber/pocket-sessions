@@ -45,6 +45,14 @@ class MultiSelectHelper {
             removeListeningHistory(actionDelegate: actionDelegate)
         case .addToPlaylist:
             addToPlaylist(actionDelegate: actionDelegate)
+        case .addToSession:
+            addToSession(actionDelegate: actionDelegate)
+        case .removeFromSession:
+            removeFromSession(actionDelegate: actionDelegate)
+        case .markAsSeen:
+            setSeenEpisodes(actionDelegate: actionDelegate, seen: true)
+        case .markAsUnseen:
+            setSeenEpisodes(actionDelegate: actionDelegate, seen: false)
         }
     }
 
@@ -359,6 +367,46 @@ class MultiSelectHelper {
         let chooser = ManualPlaylistsChooserViewController(episodes: episodes, analyticsSource: "multi_select")
         let navController = UINavigationController(rootViewController: chooser)
         presentingVC.present(navController, animated: true)
+    }
+
+    /// Fork: the Add to Session verb for a selection — routed per Settings → Inbox
+    /// (all matching sessions / ask), with the episodes' podcast sessions created on
+    /// demand like every other Add to Session.
+    private class func addToSession(actionDelegate: MultiSelectActionDelegate) {
+        let episodes = actionDelegate.multiSelectedBaseEpisodes().compactMap { $0 as? Episode }
+        guard !episodes.isEmpty else { return }
+
+        let presentingVC = actionDelegate.multiSelectPresentingViewController()
+        // Progress treatment for the non-interactive modes; ask-mode shows a picker
+        // instead, and the status bar would just sit behind it.
+        if AddToSessionMode.current != .ask {
+            actionDelegate.multiSelectActionBegan(status: L10n.playlistAddToLineup)
+        }
+        SessionManager.shared.addToSessions(episodeUuids: episodes.map(\.uuid), preferred: actionDelegate.multiSelectPreferredSession(), presenting: presentingVC) { _ in
+            actionDelegate.multiSelectActionCompleted()
+        }
+    }
+
+    /// Fork: removes the selection from the page's session lineup (dismissals
+    /// recorded, so feeders don't re-offer). No session in context = no-op.
+    private class func removeFromSession(actionDelegate: MultiSelectActionDelegate) {
+        guard let session = actionDelegate.multiSelectCurrentSession() else { return }
+        let uuids = actionDelegate.multiSelectedBaseEpisodes().map(\.uuid)
+        guard !uuids.isEmpty else { return }
+        SessionManager.shared.removeFromLineup(episodeUuids: uuids, session: session)
+        actionDelegate.multiSelectActionCompleted()
+    }
+
+    /// Fork: seen/unseen for a selection — batched and off the main thread, with the
+    /// standard progress treatment. Unseen is the full "fresh again" reset.
+    private class func setSeenEpisodes(actionDelegate: MultiSelectActionDelegate, seen: Bool) {
+        let episodes = actionDelegate.multiSelectedBaseEpisodes()
+        guard !episodes.isEmpty else { return }
+        actionDelegate.multiSelectActionBegan(status: seen ? L10n.episodeMarkSeen : L10n.episodeMarkUnseen)
+        Task.detached {
+            EpisodeSeenManager.setSeen(seen, episodes: episodes)
+            await actionDelegate.multiSelectActionCompleted()
+        }
     }
 
     private class func removeListeningHistory(actionDelegate: MultiSelectActionDelegate) {

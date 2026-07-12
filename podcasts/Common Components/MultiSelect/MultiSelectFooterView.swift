@@ -231,7 +231,7 @@ class MultiSelectFooterView: UIView, MultiSelectActionOrderDelegate {
         if leftAction != newLeftAction {
             leftAction = newLeftAction
             if let leftAction {
-                leftActionButton.setImage(UIImage(named: leftAction.iconName()), for: .normal)
+                leftActionButton.setImage(leftAction.iconImage(), for: .normal)
                 leftActionButton.accessibilityLabel = leftAction.title(isUpNextContext: isUpNextContext)
             }
         }
@@ -241,7 +241,7 @@ class MultiSelectFooterView: UIView, MultiSelectActionOrderDelegate {
             rightAction = newRightAction
 
             if let rightAction {
-                rightActionButton.setImage(UIImage(named: rightAction.iconName()), for: .normal)
+                rightActionButton.setImage(rightAction.iconImage(), for: .normal)
                 rightActionButton.accessibilityLabel = rightAction.title(isUpNextContext: isUpNextContext)
             }
         }

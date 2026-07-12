@@ -609,9 +609,37 @@ class EpisodeCell: ThemeableSwipeCell, MainEpisodeActionViewDelegate {
         return nil
     }
 
+    /// Fork: mini indicator — this episode is in the session of the page being viewed.
+    /// Green, wearing the session glyph; lives next to the Up Next indicator.
+    private lazy var sessionIndicator: UIImageView = {
+        let imageView = UIImageView(image: UIImage(systemName: "rectangle.stack.fill", withConfiguration: UIImage.SymbolConfiguration(pointSize: 11, weight: .semibold)))
+        imageView.tintColor = ThemeColor.support02()
+        imageView.setContentHuggingPriority(.required, for: .horizontal)
+        imageView.setContentCompressionResistancePriority(.required, for: .horizontal)
+        return imageView
+    }()
+
+    func setSessionIndicator(visible: Bool) {
+        if visible, sessionIndicator.superview == nil {
+            if let stack = upNextIndicator.superview as? UIStackView, let index = stack.arrangedSubviews.firstIndex(of: upNextIndicator) {
+                stack.insertArrangedSubview(sessionIndicator, at: index)
+            } else if let superview = upNextIndicator.superview {
+                superview.addSubview(sessionIndicator)
+                sessionIndicator.translatesAutoresizingMaskIntoConstraints = false
+                NSLayoutConstraint.activate([
+                    sessionIndicator.trailingAnchor.constraint(equalTo: upNextIndicator.leadingAnchor, constant: -4),
+                    sessionIndicator.centerYAnchor.constraint(equalTo: upNextIndicator.centerYAnchor)
+                ])
+            }
+        }
+        sessionIndicator.tintColor = ThemeColor.support02()
+        sessionIndicator.isHidden = !visible
+    }
+
     override func prepareForReuse() {
         super.prepareForReuse()
 
+        sessionIndicator.isHidden = true
         starIndicator.isHidden = true
         upNextIndicator.layer.removeAllAnimations()
         upNextIndicator.isHidden = true

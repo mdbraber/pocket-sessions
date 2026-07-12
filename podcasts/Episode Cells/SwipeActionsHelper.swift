@@ -105,33 +105,6 @@ enum SwipeActionsHelper {
         return tableSwipeActions
     }
 
-    /// Fork: right-swipe actions for New (inbox) rows on custom-ordered smart playlists.
-    /// Triage verbs only: Add to Lineup (inserts at the playlist's marker) and Archive as
-    /// discard. The left swipe keeps the app-wide Play Next / Play Last meaning.
-    static func createInboxRightActionsForEpisode(_ episode: Episode, tableView: UITableView, indexPath: IndexPath, swipeHandler: SwipeHandler, addToLineup: @escaping (String) -> Void) -> TableSwipeActions {
-        let tableSwipeActions = TableSwipeActions()
-        let storedUuid = episode.uuid
-
-        let addAction = TableSwipeAction(indexPath: indexPath, title: L10n.playlistAddToLineup, removesFromList: true, backgroundColor: addToPlaylistSwipeBackground, icon: UIImage(named: "playlist-add-episode"), tableView: tableView, hidesWhenSelected: true, handler: { _ -> Bool in
-            addToLineup(storedUuid)
-            Self.performAction(.addToLineup, handler: swipeHandler, willBeRemoved: true)
-            return true
-        })
-        tableSwipeActions.addAction(addAction)
-
-        let archiveAction = TableSwipeAction(indexPath: indexPath, title: L10n.archive, removesFromList: true, backgroundColor: ThemeColor.support06(), icon: UIImage(named: "list_archive"), tableView: tableView, handler: { _ -> Bool in
-            if let loadedEpisode = DataManager.sharedManager.findEpisode(uuid: storedUuid) {
-                EpisodeManager.archiveEpisode(episode: loadedEpisode, fireNotification: true)
-                Self.performAction(.archive, handler: swipeHandler, willBeRemoved: true)
-            }
-
-            return true
-        })
-        tableSwipeActions.addAction(archiveAction)
-
-        return tableSwipeActions
-    }
-
     static func createRightActionsForEpisode(_ episode: BaseEpisode, tableView: UITableView, indexPath: IndexPath, swipeHandler: SwipeHandler) -> TableSwipeActions {
         let tableSwipeActions = TableSwipeActions()
         let storedUuid = episode.uuid
@@ -171,20 +144,20 @@ enum SwipeActionsHelper {
         }
 
         if let episode = episode as? Episode {
-            let shareAction = TableSwipeAction(indexPath: indexPath, title: L10n.share, removesFromList: false, backgroundColor: ThemeColor.support03(), icon: UIImage(named: "podcast-share"), tableView: tableView, hidesWhenSelected: true, handler: { indexPath -> Bool in
-                    swipeHandler.share(episode: episode, at: indexPath)
-                    Self.performAction(.share, handler: swipeHandler, willBeRemoved: false)
-                return true
-            })
-            tableSwipeActions.addAction(shareAction)
-
+            // Fork: sharing is never a swipe — it stays on the episode card.
             if swipeHandler.swipeSourceType.canAddEpisodeToManualPlaylist {
-                let shareAction = TableSwipeAction(indexPath: indexPath, title: L10n.playlistManualAddEpisodes, removesFromList: false, backgroundColor: addToPlaylistSwipeBackground, icon: UIImage(named: "playlist-add-episode"), tableView: tableView, hidesWhenSelected: true, handler: { indexPath -> Bool in
+                let addToPlaylistAction = TableSwipeAction(indexPath: indexPath, title: L10n.playlistManualAddEpisodes, removesFromList: false, backgroundColor: addToPlaylistSwipeBackground, icon: UIImage(named: "playlist-add-episode"), tableView: tableView, hidesWhenSelected: true, handler: { indexPath -> Bool in
                     swipeHandler.addToManualPlaylist(episode: episode, at: indexPath)
                     Self.performAction(.addToManualPlaylist, handler: swipeHandler, willBeRemoved: false)
                     return true
                 })
-                tableSwipeActions.addAction(shareAction)
+                // Fork: on smart playlist screens, add-to-playlist takes the edge slot
+                // (swapped with archive).
+                if swipeHandler.swipeSourceType == .smartPlaylistDetail {
+                    tableSwipeActions.addAction(addToPlaylistAction, at: 0)
+                } else {
+                    tableSwipeActions.addAction(addToPlaylistAction)
+                }
             }
 
             if swipeHandler.swipeSourceType.canRemoveEpisodeFromManualPlaylist {
@@ -259,7 +232,7 @@ enum SwipeActionsHelper {
 
 fileprivate extension TableSwipeAction {
     static func removeAction(indexPath: IndexPath, tableView: UITableView, swipeHandler: SwipeHandler, episode: Episode) -> TableSwipeAction {
-        return TableSwipeAction(indexPath: indexPath, title: L10n.delete, removesFromList: true, backgroundColor: ThemeColor.support05(), icon: UIImage(named: "delete"), tableView: tableView, handler: { _ -> Bool in
+        return TableSwipeAction(indexPath: indexPath, title: L10n.remove, removesFromList: true, backgroundColor: ThemeColor.support05(), icon: UIImage(named: "episode-removenext"), tableView: tableView, handler: { _ -> Bool in
             swipeHandler.removeFromManualPlaylist(episode: episode, at: indexPath)
             SwipeActionsHelper.performAction(.removeFromManualPlaylist, handler: swipeHandler, willBeRemoved: false)
             return true

@@ -502,7 +502,7 @@ extension PlayerAction: AnalyticsDescribable {
 }
 
 enum MultiSelectAction: Int32, CaseIterable, AnalyticsDescribable {
-    case playLast = 1, playNext, download, archive, markAsPlayed, star, moveToTop, moveToBottom, removeFromUpNext, unstar, unarchive, removeDownload, markAsUnplayed, delete, share, removeListeningHistory, addToPlaylist
+    case playLast = 1, playNext, download, archive, markAsPlayed, star, moveToTop, moveToBottom, removeFromUpNext, unstar, unarchive, removeDownload, markAsUnplayed, delete, share, removeListeningHistory, addToPlaylist, addToSession, removeFromSession, markAsSeen, markAsUnseen
 
     func title(isUpNextContext: Bool = false) -> String {
         switch self {
@@ -542,6 +542,14 @@ enum MultiSelectAction: Int32, CaseIterable, AnalyticsDescribable {
             return L10n.listeningHistoryRemove
         case .addToPlaylist:
             return L10n.playlistManualEpisodeAddToPlaylist
+        case .addToSession:
+            return L10n.playlistAddToLineup
+        case .removeFromSession:
+            return L10n.sessionRemoveFrom
+        case .markAsSeen:
+            return L10n.episodeMarkSeen
+        case .markAsUnseen:
+            return L10n.episodeMarkUnseen
         }
     }
 
@@ -581,8 +589,20 @@ enum MultiSelectAction: Int32, CaseIterable, AnalyticsDescribable {
             return "episode-delete"
         case .addToPlaylist:
             return "plus-circle"
+        case .addToSession:
+            // SF symbol — the multi-select icon loaders fall back to systemName.
+            return "rectangle.stack.badge.plus"
+        case .removeFromSession:
+            // Unused — iconImage() composes the session-stack-with-x glyph.
+            return "episode-removenext"
+        case .markAsSeen:
+            // SF symbols — the seen language everywhere: crossed eye marks seen.
+            return "eye.slash"
+        case .markAsUnseen:
+            return "eye"
         }
     }
+
 
     var analyticsDescription: String {
         switch self {
@@ -620,6 +640,14 @@ enum MultiSelectAction: Int32, CaseIterable, AnalyticsDescribable {
             return "listening_history_remove_episode"
         case .addToPlaylist:
             return "add_to_playlist"
+        case .addToSession:
+            return "add_to_session"
+        case .removeFromSession:
+            return "remove_from_session"
+        case .markAsSeen:
+            return "mark_as_seen"
+        case .markAsUnseen:
+            return "mark_as_unseen"
         }
     }
 
