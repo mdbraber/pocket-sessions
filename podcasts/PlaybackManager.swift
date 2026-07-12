@@ -173,13 +173,22 @@ class PlaybackManager: ServerPlaybackDelegate {
         // Captured before the reset below: an interrupted session episode must not be
         // pushed into Up Next — it stays in the (paused) session's own list.
         let interruptedEpisodeIsFromSession = currentEpisodeIsFromSession
+
+        // Fork: playing an episode that BELONGS to the active session is a jump
+        // within it — episode card, list row, wherever the tap came from. Only
+        // choosing something outside the session pauses it.
+        let jumpingWithinSession = FeatureFlag.playbackSessions.enabled && episodeIsChanging
+            && !isLoadingSessionEpisode && !Settings.playbackSessionPaused()
+            && activeSessionContains(episode: episode)
+
         if episodeIsChanging, !isLoadingSessionEpisode {
-            currentEpisodeIsFromSession = false
+            currentEpisodeIsFromSession = jumpingWithinSession
         }
 
         // explicitly playing something else pauses the session — it stays saved and
         // collapsed in Up Next, and playing one of its episodes resumes it
         if FeatureFlag.playbackSessions.enabled, episodeIsChanging, !isLoadingSessionEpisode,
+           !jumpingWithinSession,
            Settings.playbackSession() != nil, !Settings.playbackSessionPaused() {
             FileLog.shared.addMessage("Playback session paused: a different episode was played explicitly")
             Settings.setPlaybackSessionPaused(true)
@@ -762,6 +771,12 @@ class PlaybackManager: ServerPlaybackDelegate {
             DataManager.sharedManager.setCustomOrder(episodeUuids: order, for: playlist)
         }
         NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged, object: playlist)
+    }
+
+    /// Whether the active playback session's list contains the episode.
+    private func activeSessionContains(episode: BaseEpisode) -> Bool {
+        guard let session = Settings.playbackSession() else { return false }
+        return session.orderedEpisodes().contains { $0.uuid == episode.uuid }
     }
 
     /// Advances within the active session instead of the queue. Returns false when there's

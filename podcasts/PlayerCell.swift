@@ -243,9 +243,93 @@ class PlayerCell: ThemeableSwipeCell {
         super.setEditing(false, animated: animated)
     }
 
+    /// Fork: mini indicator — this queued episode is also in a session's lineup.
+    /// Green, wearing the session glyph, next to the download indicator.
+    private lazy var sessionIndicator: UIImageView = {
+        let imageView = UIImageView(image: UIImage(systemName: "rectangle.stack.fill", withConfiguration: UIImage.SymbolConfiguration(pointSize: 11, weight: .semibold)))
+        imageView.tintColor = ThemeColor.support02()
+        imageView.setContentHuggingPriority(.required, for: .horizontal)
+        imageView.setContentCompressionResistancePriority(.required, for: .horizontal)
+        return imageView
+    }()
+
+    /// Fork: the reverse indicator — this session row is also queued in Up Next.
+    /// Stock orange queued glyph, same slot.
+    private lazy var upNextMiniIndicator: UIImageView = {
+        let imageView = UIImageView(image: UIImage(named: "list_upnext"))
+        imageView.tintColor = ThemeColor.support01()
+        imageView.setContentHuggingPriority(.required, for: .horizontal)
+        imageView.setContentCompressionResistancePriority(.required, for: .horizontal)
+        return imageView
+    }()
+
+    func setUpNextIndicator(visible: Bool) {
+        if visible, upNextMiniIndicator.superview == nil {
+            if let stack = downloadedIndicator.superview as? UIStackView, let index = stack.arrangedSubviews.firstIndex(of: downloadedIndicator) {
+                stack.insertArrangedSubview(upNextMiniIndicator, at: index)
+            } else if let superview = downloadedIndicator.superview {
+                superview.addSubview(upNextMiniIndicator)
+                upNextMiniIndicator.translatesAutoresizingMaskIntoConstraints = false
+                NSLayoutConstraint.activate([
+                    upNextMiniIndicator.trailingAnchor.constraint(equalTo: downloadedIndicator.leadingAnchor, constant: -4),
+                    upNextMiniIndicator.centerYAnchor.constraint(equalTo: downloadedIndicator.centerYAnchor)
+                ])
+            }
+        }
+        upNextMiniIndicator.tintColor = ThemeColor.support01()
+        upNextMiniIndicator.isHidden = !visible
+    }
+
+    /// Fork: the equalizer bars + accent title for the row that's sounding right now.
+    private lazy var nowPlayingIndicator: NowPlayingIndicatorView = {
+        let view = NowPlayingIndicatorView()
+        view.setContentHuggingPriority(.required, for: .horizontal)
+        view.setContentCompressionResistancePriority(.required, for: .horizontal)
+        return view
+    }()
+
+    func setNowPlaying(_ nowPlaying: Bool) {
+        if nowPlaying, nowPlayingIndicator.superview == nil {
+            if let stack = downloadedIndicator.superview as? UIStackView, let index = stack.arrangedSubviews.firstIndex(of: downloadedIndicator) {
+                stack.insertArrangedSubview(nowPlayingIndicator, at: index)
+            } else if let superview = downloadedIndicator.superview {
+                superview.addSubview(nowPlayingIndicator)
+                nowPlayingIndicator.translatesAutoresizingMaskIntoConstraints = false
+                NSLayoutConstraint.activate([
+                    nowPlayingIndicator.trailingAnchor.constraint(equalTo: downloadedIndicator.leadingAnchor, constant: -4),
+                    nowPlayingIndicator.centerYAnchor.constraint(equalTo: downloadedIndicator.centerYAnchor)
+                ])
+            }
+        }
+        nowPlayingIndicator.color = ThemeColor.primaryInteractive01(for: themeOverride)
+        nowPlayingIndicator.isHidden = !nowPlaying
+        episodeTitle.style = nowPlaying ? .primaryInteractive01 : .primaryText01
+    }
+
+    func setSessionIndicator(visible: Bool) {
+        if visible, sessionIndicator.superview == nil {
+            if let stack = downloadedIndicator.superview as? UIStackView, let index = stack.arrangedSubviews.firstIndex(of: downloadedIndicator) {
+                stack.insertArrangedSubview(sessionIndicator, at: index)
+            } else if let superview = downloadedIndicator.superview {
+                superview.addSubview(sessionIndicator)
+                sessionIndicator.translatesAutoresizingMaskIntoConstraints = false
+                NSLayoutConstraint.activate([
+                    sessionIndicator.trailingAnchor.constraint(equalTo: downloadedIndicator.leadingAnchor, constant: -4),
+                    sessionIndicator.centerYAnchor.constraint(equalTo: downloadedIndicator.centerYAnchor)
+                ])
+            }
+        }
+        sessionIndicator.tintColor = ThemeColor.support02()
+        sessionIndicator.isHidden = !visible
+    }
+
     override func prepareForReuse() {
         super.prepareForReuse()
 
+        sessionIndicator.isHidden = true
+        upNextMiniIndicator.isHidden = true
+        nowPlayingIndicator.isHidden = true
+        episodeTitle.style = .primaryText01
         showTick = false
         setSelected(false, animated: false)
     }

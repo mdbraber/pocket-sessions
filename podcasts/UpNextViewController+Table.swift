@@ -178,6 +178,10 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
             playerCell.delegate = self
             if let episode = sessionEpisodes?[safe: indexPath.row] {
                 playerCell.populateFrom(episode: episode)
+                // Session rows ARE the session — but show when one is also queued.
+                playerCell.setSessionIndicator(visible: false)
+                playerCell.setUpNextIndicator(visible: PlaybackManager.shared.inUpNext(episode: episode))
+                playerCell.setNowPlaying(PlaybackManager.shared.isNowPlayingEpisode(episodeUuid: episode.uuid))
                 playerCell.showTick = selectedEpisodesContains(uuid: episode.uuid)
             } else {
                 playerCell.showTick = false
@@ -223,6 +227,11 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
 
         if let episode = PlaybackManager.shared.queue.episodeAt(index: queueIndex(forVisibleRow: indexPath.row)) {
             playerCell.populateFrom(episode: episode)
+            playerCell.setSessionIndicator(visible: sessionMemberUuidsForDisplay.contains(episode.uuid))
+            playerCell.setUpNextIndicator(visible: false)
+            // Fork: session playback can leave the sounding episode sitting in the
+            // queue — the equalizer bars + accent title mark it.
+            playerCell.setNowPlaying(PlaybackManager.shared.isNowPlayingEpisode(episodeUuid: episode.uuid))
             playerCell.showTick = selectedEpisodesContains(uuid: episode.uuid)
             // With an Up Next filter active, dim episodes playback will skip. They stay fully
             // interactive: reorder, swipe, and tap-to-play are unaffected by the filter.
@@ -538,7 +547,18 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         tableData = sections
     }
 
+    /// Fork: uuids across every session store — drives the green in-a-session
+    /// indicator on queue rows. Refreshed per table reload, not per row.
+    private static var cachedSessionMemberUuids: Set<String> = []
+
+    func refreshSessionMembership() {
+        Self.cachedSessionMemberUuids = Set(SessionStore.shared.sessions.flatMap { SessionFeederEngine.storeMemberUuids(for: $0) })
+    }
+
+    var sessionMemberUuidsForDisplay: Set<String> { Self.cachedSessionMemberUuids }
+
     @objc func reloadTable() {
+        refreshSessionMembership()
         refreshUpNextFilterMatches()
         refreshSections()
         // The title (and tab bar item) follows who owns playback: "Session" while the

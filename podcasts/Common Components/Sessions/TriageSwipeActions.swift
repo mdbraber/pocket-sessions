@@ -15,6 +15,12 @@ enum TriageSwipes {
         add.accessibilityLabel = L10n.playlistAddToLineup
         add.hidesWhenSelected = true
 
+        // The now-playing episode gets no left remove — the right swipe already
+        // carries the remove verb, and two removes on one row is one too many.
+        if PlaybackManager.shared.isNowPlayingEpisode(episodeUuid: episode.uuid) {
+            return [add]
+        }
+
         // State-aware, like the app-wide queue swipes: a queued episode offers
         // Remove from Up Next instead of Play Next / Play Last.
         if PlaybackManager.shared.inUpNext(episode: episode) {

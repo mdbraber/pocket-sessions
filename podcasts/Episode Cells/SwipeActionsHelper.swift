@@ -64,6 +64,12 @@ enum SwipeActionsHelper {
             return tableSwipeActions // Should be empty
         }
 
+        // Fork: the now-playing episode gets no left remove — the right swipe
+        // already carries the remove verb.
+        if PlaybackManager.shared.isNowPlayingEpisode(episodeUuid: episode.uuid) {
+            return tableSwipeActions
+        }
+
         if PlaybackManager.shared.inUpNext(episode: episode) {
             let removeFromUpNextAction = TableSwipeAction(indexPath: indexPath, title: L10n.removeFromUpNext, removesFromList: false, backgroundColor: ThemeColor.support05(), icon: UIImage(named: "episode-removenext"), tableView: tableView, hidesWhenSelected: true, handler: { _ -> Bool in
                 if let loadedEpisode = DataManager.sharedManager.findBaseEpisode(uuid: storedUuid) {

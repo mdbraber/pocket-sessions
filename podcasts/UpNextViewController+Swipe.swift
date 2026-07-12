@@ -32,7 +32,7 @@ extension UpNextViewController: SwipeTableViewCellDelegate, SwipeHandler {
             removeAction.backgroundColor = ThemeColor.support05(for: themeOverride)
             removeAction.accessibilityLabel = L10n.removeFromUpNext
 
-            return [removeAction]
+            return [removeAction, archiveSwipeAction(for: episode), markPlayedSwipeAction(for: episode)].compactMap { $0 }
         }
 
         // Session rows aren't queue rows — moves reorder the mirrored playlist on the
@@ -121,7 +121,10 @@ extension UpNextViewController: SwipeTableViewCellDelegate, SwipeHandler {
             deleteAction.backgroundColor = ThemeColor.support05(for: themeOverride)
             deleteAction.accessibilityLabel = L10n.removeFromUpNext
 
-            return [deleteAction]
+            guard let episode = PlaybackManager.shared.queue.episodeAt(index: queueIndex(forVisibleRow: indexPath.row)) else {
+                return [deleteAction]
+            }
+            return [deleteAction, archiveSwipeAction(for: episode), markPlayedSwipeAction(for: episode)].compactMap { $0 }
         }
     }
 
@@ -188,20 +191,47 @@ extension UpNextViewController: SwipeTableViewCellDelegate, SwipeHandler {
         remove.accessibilityLabel = L10n.sessionRemoveFrom
         remove.hidesWhenSelected = true
 
-        var actions = [remove]
-        if let episode = episode as? Episode {
-            let archive = SwipeAction(style: .default, title: nil) { [weak self] action, _ in
-                EpisodeManager.archiveEpisode(episode: episode, fireNotification: true)
-                self?.reloadTable()
-                action.fulfill(with: .reset)
+        return [remove, archiveSwipeAction(for: episode), markPlayedSwipeAction(for: episode)].compactMap { $0 }
+    }
+
+    /// Archive/unarchive, fresh-fetched and state-aware — shared by every Up Next row.
+    private func archiveSwipeAction(for episode: BaseEpisode) -> SwipeAction? {
+        guard let episode = episode as? Episode else { return nil }
+        let uuid = episode.uuid
+        let archived = episode.archived
+        let action = SwipeAction(style: .default, title: nil) { [weak self] action, _ in
+            if let fresh = DataManager.sharedManager.findEpisode(uuid: uuid) {
+                if archived {
+                    EpisodeManager.unarchiveEpisode(episode: fresh, fireNotification: true)
+                } else {
+                    EpisodeManager.archiveEpisode(episode: fresh, fireNotification: true)
+                }
             }
-            archive.image = UIImage(named: "list_archive")
-            archive.backgroundColor = ThemeColor.support06()
-            archive.accessibilityLabel = L10n.archive
-            archive.hidesWhenSelected = true
-            actions.append(archive)
+            self?.reloadTable()
+            action.fulfill(with: .reset)
         }
-        return actions
+        action.image = UIImage(named: archived ? "list_unarchive" : "list_archive")
+        action.backgroundColor = ThemeColor.support06()
+        action.accessibilityLabel = archived ? L10n.unarchive : L10n.archive
+        action.hidesWhenSelected = true
+        return action
+    }
+
+    /// Mark as played — shared by every Up Next row.
+    private func markPlayedSwipeAction(for episode: BaseEpisode) -> SwipeAction {
+        let uuid = episode.uuid
+        let action = SwipeAction(style: .default, title: nil) { [weak self] action, _ in
+            if let fresh = DataManager.sharedManager.findBaseEpisode(uuid: uuid) {
+                EpisodeManager.markAsPlayed(episode: fresh, fireNotification: true)
+            }
+            self?.reloadTable()
+            action.fulfill(with: .reset)
+        }
+        action.image = UIImage(named: "episode-markasplayed")
+        action.backgroundColor = ThemeColor.support02()
+        action.accessibilityLabel = L10n.markPlayedShort
+        action.hidesWhenSelected = true
+        return action
     }
 
     // MARK: - SwipeHandler (session rows)
