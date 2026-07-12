@@ -51,44 +51,48 @@ class ShortcutManager: CustomObserver {
     private func updateShortcuts() {
         var shortcutItems = [UIMutableApplicationShortcutItem]()
 
-        // top playlist
-        if let topPlaylist = DataManager.sharedManager.allPlaylists(includeDeleted: false).first, let iconName = topPlaylist.iconImageName() {
+        // Fork: two play options — Up Next and the active session, each captioned with
+        // the episode that would play there.
+        let session = Settings.playbackSession()
+
+        let upNextEpisode: BaseEpisode? = session == nil
+            ? (PlaybackManager.shared.currentEpisode() ?? PlaybackManager.shared.queue.allEpisodes(includeNowPlaying: false).first)
+            : PlaybackManager.shared.queue.allEpisodes(includeNowPlaying: false).first
+        if let upNextEpisode {
             shortcutItems.append(
                 UIMutableApplicationShortcutItem(
                     type: "au.com.shiftyjelly.podcasts",
-                    localizedTitle: topPlaylist.playlistName,
-                    localizedSubtitle: "\(DataManager.sharedManager.episodeCount(for: topPlaylist, episodeUuidToAdd: topPlaylist.episodeUuidToAddToQueries())) items",
-                    icon: UIApplicationShortcutIcon(templateImageName: iconName),
-                    userInfo: ["url": "pktc://shortcuts/filter/\(topPlaylist.uuid)" as NSSecureCoding]
+                    localizedTitle: L10n.upNext,
+                    localizedSubtitle: upNextEpisode.displayableTitle(),
+                    icon: UIApplicationShortcutIcon(type: .play),
+                    userInfo: ["url": "pktc://shortcuts/play-upnext" as NSSecureCoding]
                 )
             )
         }
 
-        if let currentEpisode = PlaybackManager.shared.currentEpisode() {
-            // add a play/pause shortcut
-            if PlaybackManager.shared.playing() {
+        if let session {
+            let sessionName: String?
+            switch session.type {
+            case .podcast:
+                sessionName = DataManager.sharedManager.findPodcast(uuid: session.uuid, includeUnsubscribed: true)?.title
+            case .playlist, .smartPlaylist:
+                sessionName = DataManager.sharedManager.findPlaylist(uuid: session.uuid)?.playlistName
+            }
+            let sessionEpisode = PlaybackManager.shared.currentEpisode() ?? session.nextEpisode(after: nil)
+            if let sessionName {
                 shortcutItems.append(
                     UIMutableApplicationShortcutItem(
                         type: "au.com.shiftyjelly.podcasts",
-                        localizedTitle: L10n.pause,
-                        localizedSubtitle: currentEpisode.displayableTitle(),
-                        icon: UIApplicationShortcutIcon(type: .pause),
-                        userInfo: ["url": "pktc://shortcuts/pause" as NSSecureCoding]
-                    )
-                )
-            } else {
-                shortcutItems.append(
-                    UIMutableApplicationShortcutItem(
-                        type: "au.com.shiftyjelly.podcasts",
-                        localizedTitle: L10n.play,
-                        localizedSubtitle: currentEpisode.displayableTitle(),
+                        localizedTitle: sessionName,
+                        localizedSubtitle: sessionEpisode?.displayableTitle(),
                         icon: UIApplicationShortcutIcon(type: .play),
-                        userInfo: ["url": "pktc://shortcuts/play" as NSSecureCoding]
+                        userInfo: ["url": "pktc://shortcuts/play-session" as NSSecureCoding]
                     )
                 )
             }
-        } else {
-            // discover
+        }
+
+        if shortcutItems.isEmpty {
             shortcutItems.append(
                 UIMutableApplicationShortcutItem(
                     type: "au.com.shiftyjelly.podcasts",

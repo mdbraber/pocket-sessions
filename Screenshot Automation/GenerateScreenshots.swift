@@ -162,13 +162,11 @@ final class ForkScreenshots: XCTestCase {
         sleep(5) // give the cold launch time to open the database and warm caches
         dismissAnySheet()
 
-        // Starred playlist page with the Play as Session pill.
+        // Starred playlist page: Inbox/Lineup tabs and the accent Play as Session.
         tabBar.buttons.element(boundBy: 1).waitForThenTap() // Playlists
         sleep(2)
         dismissTips()
         tap("Starred")
-        // The episode list loads asynchronously — wait for a non-zero count before
-        // trusting the page (Play as Session no-ops on an empty list).
         let loadedCount = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS ' episodes' AND NOT label CONTAINS '0 episodes'")).firstMatch
         _ = loadedCount.waitForExistence(timeout: 30)
         sleep(2)
@@ -176,20 +174,25 @@ final class ForkScreenshots: XCTestCase {
 
         // Start the session on Starred.
         tap("Play as Session")
-        // Custom-order playlists with an empty Lineup ask before playing.
         let playAsIs = app.buttons["Play as-is"]
         if playAsIs.waitForExistence(timeout: 2) {
             playAsIs.tap()
         }
         sleep(3)
 
-        // Session view on the Up Next screen.
+        // Session world on the Up Next screen.
         tabBar.buttons.element(boundBy: 3).waitForThenTap() // Session / Up Next
         sleep(2)
         snapshot("session-in-up-next")
 
-        // Peek at the queue and open the filter picker. The pill switcher is not
-        // exposed as a segmented control, so find the segment by its label.
+        // The Switch sheet (nav bar button).
+        tap("Switch")
+        sleep(2)
+        snapshot("switch-session")
+        app.swipeDown(velocity: .fast)
+        sleep(1)
+
+        // Peek at the queue and open the filter picker.
         tap("Up Next ·")
         sleep(1)
         tap("Filter Up Next By")
@@ -198,8 +201,7 @@ final class ForkScreenshots: XCTestCase {
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.1)).tap() // dismiss picker
         sleep(1)
 
-        // Smart rules editor, then the folder rule picker — last, since the sheet
-        // has no swipe-to-dismiss and the test can end with it open.
+        // Smart rules, then the podcast picker with its folders section.
         tabBar.buttons.element(boundBy: 1).waitForThenTap()
         sleep(1)
         tap("Starred")
@@ -208,11 +210,11 @@ final class ForkScreenshots: XCTestCase {
         tap("Smart rules")
         sleep(2)
         snapshot("smart-rules")
-        let foldersRow = element(labeled: "Folders")
-        if foldersRow.waitForExistence(timeout: 3) {
-            foldersRow.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let podcastsRow = element(labeled: "Podcasts")
+        if podcastsRow.waitForExistence(timeout: 3) {
+            podcastsRow.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
             sleep(2)
-            snapshot("smart-rule-folders")
+            snapshot("choose-podcasts")
         }
     }
 }

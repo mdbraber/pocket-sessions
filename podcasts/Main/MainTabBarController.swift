@@ -13,7 +13,7 @@ class MainTabBarController: UITabBarController, NavigationProtocol, UIGestureRec
         true
     }
 
-    enum Tab: Int { case podcasts, filter, discover, profile, upNext }
+    enum Tab: Int { case podcasts, filter, discover, profile, upNext, inbox }
 
     var pcTabs = [Tab]()
 
@@ -99,7 +99,8 @@ class MainTabBarController: UITabBarController, NavigationProtocol, UIGestureRec
 
         fixTarBarTraitCollectionOnIpadForiOS18()
 
-        pcTabs = [.podcasts, .filter, .discover, .upNext, .profile]
+        // Fork: the global Inbox leads the tab bar; Discover lives under Profile.
+        pcTabs = [.inbox, .podcasts, .filter, .upNext, .profile]
 
         // Fork: long-pressing the Up Next/Session tab offers the Switch Session sheet.
         if FeatureFlag.playbackSessions.enabled {
@@ -111,22 +112,21 @@ class MainTabBarController: UITabBarController, NavigationProtocol, UIGestureRec
 
         var vcsInTab = [UIViewController]()
 
+        let inboxViewController = InboxViewController()
+        inboxViewController.tabBarItem = UITabBarItem(title: L10n.inboxTitle, image: UIImage(systemName: "tray"), tag: pcTabs.firstIndex(of: .inbox)!)
+
         let podcastsController = PodcastListViewController()
         podcastsController.tabBarItem = UITabBarItem(title: L10n.podcastsPlural, image: UIImage(named: "podcasts_tab"), tag: pcTabs.firstIndex(of: .podcasts)!)
 
         let filtersViewController = PlaylistsViewController()
         filtersViewController.tabBarItem = UITabBarItem(title: L10n.playlists, image: UIImage(named: "playlists_tab"), tag: pcTabs.firstIndex(of: .filter)!)
 
-        let discoverViewController = DiscoverCollectionViewController(coordinator: DiscoverCoordinator())
-
-        discoverViewController.tabBarItem = UITabBarItem(title: L10n.discover, image: UIImage(named: "discover_tab"), tag: pcTabs.firstIndex(of: .discover)!)
-
         let profileViewController = ProfileViewController()
         profileViewController.tabBarItem = profileTabBarItem
 
         let upNextViewController = UpNextViewController(source: .tabBar, showingInTab: true)
         upNextViewController.tabBarItem = upNextTabBarItem
-        vcsInTab = [podcastsController, filtersViewController, discoverViewController, upNextViewController, profileViewController]
+        vcsInTab = [inboxViewController, podcastsController, filtersViewController, upNextViewController, profileViewController]
 
         displayEndOfYearBadgeIfNeeded()
 
@@ -137,6 +137,17 @@ class MainTabBarController: UITabBarController, NavigationProtocol, UIGestureRec
         trackTabOpened(pcTabs[selectedIndex], isInitial: true)
 
         NavigationManager.sharedManager.mainViewControllerDidLoad(controller: self)
+        NotificationCenter.default.addObserver(self, selector: #selector(updateInboxBadge), name: SessionStore.changed, object: nil)
+        // The inbox count also moves with episode state, the queue, and refreshes —
+        // without these the badge goes stale (e.g. showing a number at inbox zero).
+        NotificationCenter.default.addObserver(self, selector: #selector(updateInboxBadge), name: Constants.Notifications.episodePlayStatusChanged, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(updateInboxBadge), name: Constants.Notifications.episodeArchiveStatusChanged, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(updateInboxBadge), name: Constants.Notifications.manyEpisodesChanged, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(updateInboxBadge), name: Constants.Notifications.upNextQueueChanged, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(updateInboxBadge), name: Constants.Notifications.upNextEpisodeRemoved, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(updateInboxBadge), name: Constants.Notifications.upNextEpisodeAdded, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(updateInboxBadge), name: ServerNotifications.podcastsRefreshed, object: nil)
+        updateInboxBadge()
         setupMiniPlayer()
         updateTabBarColor()
         setupKeyboardShortcuts()
@@ -196,7 +207,7 @@ class MainTabBarController: UITabBarController, NavigationProtocol, UIGestureRec
 
         // if this key was never set lets default to Discovery or Podcast depending of podcasts followed
         if UserDefaults.standard.object(forKey: Constants.UserDefaults.lastTabOpened) == nil {
-            selectedIndex = DataManager.sharedManager.podcastCount() > 0 ? Tab.podcasts.rawValue: Tab.discover.rawValue
+            selectedIndex = pcTabs.firstIndex(of: DataManager.sharedManager.podcastCount() > 0 ? .podcasts : .inbox) ?? 0
         }
 
         showInitialOnboardingIfNeeded()
@@ -322,6 +333,14 @@ class MainTabBarController: UITabBarController, NavigationProtocol, UIGestureRec
         }
     }
 
+    /// Fork: the Inbox tab wears its count.
+    @objc private func updateInboxBadge() {
+        guard let index = pcTabs.firstIndex(of: .inbox), let items = tabBar.items, let item = items[safe: index] else { return }
+        let global = SessionStore.shared.globalInbox
+        let count = SessionFeederEngine.inboxEpisodes(for: global).filter { global.showSeen || !$0.isSeen }.count
+        item.badgeValue = count > 0 ? "\(count)" : nil
+    }
+
     /// Fork: a long press on the Up Next/Session tab opens the Switch Session sheet
     /// from anywhere in the app.
     @objc private func upNextTabLongPressed(_ recognizer: UILongPressGestureRecognizer) {
@@ -357,6 +376,10 @@ class MainTabBarController: UITabBarController, NavigationProtocol, UIGestureRec
         if tabIndex == selectedIndex, let navController = selectedViewController as? UINavigationController, navController.visibleViewController == navController.viewControllers.first {
             // the user has tapped on a tab they are already at the root of, so trigger an action so we can handle this
             NotificationCenter.postOnMainThread(notification: Constants.Notifications.tappedOnSelectedTab, object: tabIndex)
+            // Fork: re-tapping the Up Next/Session tab snaps back to the playing world.
+            if pcTabs[safe: tabIndex] == .upNext {
+                NotificationCenter.postOnMainThread(notification: Constants.Notifications.upNextTabActivated)
+            }
         }
 
         if tabIndex != selectedIndex {
@@ -479,29 +502,32 @@ class MainTabBarController: UITabBarController, NavigationProtocol, UIGestureRec
         }
     }
 
+    /// Fork: Discover lives under the Profile tab now — switch there and push it.
+    @discardableResult
+    private func pushDiscover() -> DiscoverCollectionViewController? {
+        guard switchToTab(.profile), let navController = selectedViewController as? UINavigationController else { return nil }
+        if let existing = navController.topViewController as? DiscoverCollectionViewController {
+            return existing
+        }
+        navController.popToRootViewController(animated: false)
+        let discover = DiscoverCollectionViewController(coordinator: DiscoverCoordinator())
+        navController.pushViewController(discover, animated: false)
+        return discover
+    }
+
     func navigateToDiscover(_ animated: Bool) {
-        switchToTab(.discover)
+        pushDiscover()
     }
 
     func navigateToDiscover(category: String, animated: Bool) {
-        switchToTab(.discover)
-        if let index = pcTabs.firstIndex(of: .discover),
-           let navController = viewControllers?[safe: index] as? UINavigationController {
-            navController.popToRootViewController(animated: false)
-            if let discoverDelegate = navController.topViewController as? DiscoverDelegate {
-                discoverDelegate.navigateTo(category: category)
-            }
+        if let discoverDelegate = pushDiscover() as? DiscoverDelegate {
+            discoverDelegate.navigateTo(category: category)
         }
     }
 
     func navigateToDiscover(listID: String, animated: Bool) {
-        switchToTab(.discover)
-        if let index = pcTabs.firstIndex(of: .discover),
-           let navController = viewControllers?[safe: index] as? UINavigationController {
-            navController.popToRootViewController(animated: false)
-            if let discoverDelegate = navController.topViewController as? DiscoverDelegate {
-                discoverDelegate.navigateTo(listID: listID)
-            }
+        if let discoverDelegate = pushDiscover() as? DiscoverDelegate {
+            discoverDelegate.navigateTo(listID: listID)
         }
     }
 
@@ -1084,6 +1110,9 @@ private extension MainTabBarController {
         case .profile:
             event = .profileTabOpened
         case .upNext:
+            event = .upNextTabOpened
+        case .inbox:
+            // Fork tab — no dedicated analytics event; the queue's is close enough.
             event = .upNextTabOpened
         }
 

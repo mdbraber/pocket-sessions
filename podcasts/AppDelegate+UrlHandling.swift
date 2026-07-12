@@ -135,6 +135,32 @@ extension AppDelegate {
         JLRoutes.global().addRoute("/open") { _ -> Bool in
             true
         }
+        // Fork: the icon quick actions' two play options.
+        JLRoutes.global().addRoute("/shortcuts/play-upnext") { _ -> Bool in
+            if Settings.playbackSession() != nil {
+                PlaybackManager.shared.endPlaybackSession()
+            }
+            if !PlaybackManager.shared.playing() {
+                if PlaybackManager.shared.currentEpisode() != nil {
+                    PlaybackManager.shared.play()
+                } else if let first = PlaybackManager.shared.queue.allEpisodes(includeNowPlaying: false).first {
+                    PlaybackManager.shared.load(episode: first, autoPlay: true, overrideUpNext: false)
+                }
+            }
+            return true
+        }
+        JLRoutes.global().addRoute("/shortcuts/play-session") { _ -> Bool in
+            guard let session = Settings.playbackSession() else { return false }
+            if Settings.playbackSessionPaused() {
+                if let episode = session.nextEpisode(after: nil) {
+                    PlaybackManager.shared.play(sessionEpisode: episode)
+                }
+            } else if !PlaybackManager.shared.playing() {
+                PlaybackManager.shared.play()
+            }
+            return true
+        }
+
         JLRoutes.global().addRoute("/play") { _ -> Bool in
             PlaybackManager.shared.play()
 

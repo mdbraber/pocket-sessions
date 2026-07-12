@@ -87,7 +87,7 @@ class ProfileViewController: PCViewController, UITableViewDataSource, UITableVie
     private let settingsCellId = "SettingsCell"
     private let endOfYearPromptCell = "EndOfYearPromptCell"
 
-    enum TableRow { case informationalBanner, kidsProfile, referralsClaim, allStats, downloaded, starred, listeningHistory, help, uploadedFiles, endOfYearPrompt, bookmarks }
+    enum TableRow { case informationalBanner, kidsProfile, referralsClaim, discover, allStats, downloaded, starred, listeningHistory, help, uploadedFiles, endOfYearPrompt, bookmarks }
 
     private lazy var informationalBannerCoordinator: InformationalBannerViewCoordinator = {
         let viewModel = InformationalBannerViewModel(bannerType: .profile)
@@ -359,6 +359,10 @@ class ProfileViewController: PCViewController, UITableViewDataSource, UITableVie
             return KidsProfileBannerTableCell()
         case .referralsClaim:
             return ReferralsClaimBannerTableCell()
+        case .discover:
+            // Fork: Discover moved out of the tab bar (the Inbox took its slot).
+            cell.settingsImage.image = UIImage(named: "discover_tab")
+            cell.settingsLabel.text = L10n.discover
         case .allStats:
             cell.settingsImage.image = UIImage(named: "profile-stats")
             cell.settingsLabel.text = L10n.settingsStats
@@ -435,6 +439,9 @@ class ProfileViewController: PCViewController, UITableViewDataSource, UITableVie
             ReferralsCoordinator.shared.startClaimFlow(from: self) { [weak self] in
                 self?.profileTable.reloadData()
             }
+        case .discover:
+            let discover = DiscoverCollectionViewController(coordinator: DiscoverCoordinator())
+            navigationController?.pushViewController(discover, animated: true)
         case .allStats:
             let statsViewController = StatsViewController()
             navigationController?.pushViewController(statsViewController, animated: true)
@@ -486,7 +493,7 @@ class ProfileViewController: PCViewController, UITableViewDataSource, UITableVie
 
     private func refreshTableData() {
         var data: [[ProfileViewController.TableRow]]
-        data = [[.allStats, .downloaded, .uploadedFiles, .starred, .bookmarks, .listeningHistory, .help]]
+        data = [[.discover, .allStats, .downloaded, .uploadedFiles, .starred, .bookmarks, .listeningHistory, .help]]
 
         if EndOfYear.isEndOfYearActive, EndOfYear.isEligible {
             data[0].insert(.endOfYearPrompt, at: 0)
