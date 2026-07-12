@@ -30,6 +30,9 @@ struct PodcastDetailsTabView: View {
 
     @State private var sessionCount: Int = 0
     @State private var inboxCount: Int = 0
+    /// Fork: auto-add sessions absorb their offers, so there is nothing to triage —
+    /// the Inbox tab hides, exactly like the playlist page.
+    @State private var inboxHidden = false
 
     private var sessionTabTitle: String {
         sessionCount > 0 ? "\(L10n.playbackSessionTabSession) · \(sessionCount.localized())" : L10n.playbackSessionTabSession
@@ -43,12 +46,17 @@ struct PodcastDetailsTabView: View {
         guard let podcast = delegate?.displayedPodcast() else {
             sessionCount = 0
             inboxCount = 0
+            inboxHidden = false
             return
         }
         let session = SessionStore.shared.session(forPodcast: podcast.uuid)
         sessionCount = session.map { SessionFeederEngine.storeMemberUuids(for: $0).count } ?? 0
         let feeder = session ?? ForkSession(uuid: "podcast-inbox-preview", storePlaylistUuid: nil, feeder: .podcast(uuid: podcast.uuid))
         inboxCount = SessionFeederEngine.displayEpisodes(for: feeder, showArchived: false, showPlayed: false, showSeen: false).count
+        inboxHidden = session?.autoAdd == true
+        if inboxHidden, selectedTab == .inbox {
+            openSession()
+        }
     }
 
     private func openSession() {
@@ -94,14 +102,16 @@ struct PodcastDetailsTabView: View {
 
     @ViewBuilder var tabs: some View {
         HStack(spacing: 12) {
-            Text(inboxTabTitle)
-                .buttonize {
-                    openInbox()
-                } customize: { config in
-                    config.label
-                        .applyStyle(theme: theme, highlighted: selectedTab == .inbox)
-                        .applyButtonEffect(isPressed: config.isPressed)
-                }
+            if !inboxHidden {
+                Text(inboxTabTitle)
+                    .buttonize {
+                        openInbox()
+                    } customize: { config in
+                        config.label
+                            .applyStyle(theme: theme, highlighted: selectedTab == .inbox)
+                            .applyButtonEffect(isPressed: config.isPressed)
+                    }
+            }
 
             Text(sessionTabTitle)
                 .buttonize {

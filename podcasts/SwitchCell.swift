@@ -48,6 +48,13 @@ class SwitchCell: ThemeableCell {
         updateSize()
     }
 
+    func setImage(image: UIImage?) {
+        cellTextToImageConstraint.isActive = true
+        cellImage.tintColor = cellSwitch.onTintColor
+        cellImage.image = image
+        updateSize()
+    }
+
     func setNoImage() {
         cellTextToImageConstraint.isActive = false
         cellImage.image = nil

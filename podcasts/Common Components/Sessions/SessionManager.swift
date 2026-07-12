@@ -467,8 +467,15 @@ class SessionManager {
     }
 
     func ingestAutoAdd(session: ForkSession) {
-        let offers = SessionFeederEngine.inboxEpisodes(for: session).map(\.uuid)
+        var offers = SessionFeederEngine.inboxEpisodes(for: session).map(\.uuid)
         guard !offers.isEmpty else { return }
+        // The global limit caps auto-adds only: once the lineup is full, new arrivals
+        // stay in the inbox. Manual adds are never capped.
+        if let store = store(for: session) {
+            let capacity = Settings.sessionAutoAddLimit() - DataManager.sharedManager.positionedEpisodeUuids(for: store).count
+            guard capacity > 0 else { return }
+            offers = Array(offers.prefix(capacity))
+        }
         addToLineup(episodeUuids: offers, session: session)
     }
 

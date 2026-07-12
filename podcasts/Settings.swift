@@ -422,6 +422,19 @@ class Settings: NSObject {
         NotificationCenter.postOnMainThread(notification: Constants.Notifications.upNextFilterChanged)
     }
 
+    static let sessionAutoAddLimitKey = "SJSessionAutoAddLimit"
+
+    /// Fork: auto-add to Session stops once a session's lineup holds this many
+    /// episodes (manual adds are never capped). Mirrors the Up Next auto-add limit.
+    class func sessionAutoAddLimit() -> Int {
+        let limit = UserDefaults.standard.integer(forKey: Settings.sessionAutoAddLimitKey)
+        return limit > 0 ? limit : 100
+    }
+
+    class func setSessionAutoAddLimit(_ limit: Int) {
+        UserDefaults.standard.set(limit, forKey: Settings.sessionAutoAddLimitKey)
+    }
+
     static let playbackSessionTypeKey = "SJPlaybackSessionType"
     static let playbackSessionUuidKey = "SJPlaybackSessionUuid"
 

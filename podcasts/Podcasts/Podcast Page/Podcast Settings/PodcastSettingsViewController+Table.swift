@@ -101,6 +101,36 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
             cell.cellSecondaryLabel.text = L10n.settingsEpisodeLimitFormat(ServerSettings.autoAddToUpNextLimit().localized())
 
             return cell
+        case .session:
+            // Fork: auto-add new episodes to this podcast's Session, exactly the
+            // Add to Up Next pattern one section up.
+            let cell = tableView.dequeueReusableCell(withIdentifier: PodcastSettingsViewController.switchCellId, for: indexPath) as! SwitchCell
+            cell.cellLabel.text = L10n.playlistAddToLineup
+            cell.cellSwitch.onTintColor = podcast.switchTintColor()
+            cell.setImage(image: TriageSwipes.sessionAddImage)
+            cell.cellSwitch.isOn = SessionStore.shared.session(forPodcast: podcast.uuid)?.autoAdd ?? false
+
+            cell.cellSwitch.removeTarget(self, action: #selector(addToSessionChanged(_:)), for: UIControl.Event.valueChanged)
+            cell.cellSwitch.addTarget(self, action: #selector(addToSessionChanged(_:)), for: UIControl.Event.valueChanged)
+
+            return cell
+        case .sessionPosition:
+            let cell = tableView.dequeueReusableCell(withIdentifier: PodcastSettingsViewController.disclosureCellId, for: indexPath) as! DisclosureCell
+            cell.cellLabel.text = L10n.playlistInsertModeSetting
+            cell.setImage(imageName: nil)
+            cell.showSecondaryLabel = true
+            let mode = SessionStore.shared.session(forPodcast: podcast.uuid).flatMap { PlaylistInsertMode(rawValue: $0.insertMode) } ?? .afterLastInserted
+            cell.cellSecondaryLabel.text = mode.description
+
+            return cell
+        case .globalSession:
+            let cell = tableView.dequeueReusableCell(withIdentifier: PodcastSettingsViewController.disclosureCellId, for: indexPath) as! DisclosureCell
+            cell.cellLabel.text = L10n.settingsGlobalSettings
+            cell.setImage(imageName: nil)
+            cell.showSecondaryLabel = true
+            cell.cellSecondaryLabel.text = L10n.settingsEpisodeLimitFormat(Settings.sessionAutoAddLimit().localized())
+
+            return cell
         case .playbackEffects:
             let cell = tableView.dequeueReusableCell(withIdentifier: PodcastSettingsViewController.disclosureCellId, for: indexPath) as! DisclosureCell
             cell.cellLabel.text = PlayerAction.effects.title()
@@ -243,6 +273,11 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
         } else if row == .globalUpNext {
             let globalSettings = AutoAddToUpNextViewController()
             navigationController?.pushViewController(globalSettings, animated: true)
+        } else if row == .sessionPosition {
+            showSessionAutoAddPositionSettings()
+        } else if row == .globalSession {
+            let globalSettings = AutoAddToSessionViewController()
+            navigationController?.pushViewController(globalSettings, animated: true)
         } else if row == .playbackEffects {
             let effectsController = PodcastEffectsViewController(podcast: podcast)
             navigationController?.pushViewController(effectsController, animated: true)
@@ -307,6 +342,8 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
             } else {
                 return L10n.settingsUpNextLimit(upNextLimit.localized())
             }
+        } else if firstRow == .session {
+            return L10n.settingsSessionLimit(Settings.sessionAutoAddLimit().localized())
         } else if firstRow == .feedError {
             return L10n.settingsFeedErrorMsg
         } else if firstRow == .autoArchive {
@@ -353,6 +390,27 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
         Analytics.track(.podcastSettingsAutoAddUpNextPositionOptionChanged, properties: ["value": setting])
     }
 
+    // MARK: - Auto Add To Session
+
+    /// Fork: where auto-added episodes land in the lineup — the session's own insert
+    /// modes, not just Up Next's top/bottom.
+    private func showSessionAutoAddPositionSettings() {
+        guard let session = SessionStore.shared.session(forPodcast: podcast.uuid) else { return }
+        let positionPicker = OptionsPicker(title: L10n.playlistInsertModeSetting.localizedUppercase)
+        let currentMode = PlaylistInsertMode(rawValue: session.insertMode) ?? .afterLastInserted
+
+        for mode in PlaylistInsertMode.allCases {
+            positionPicker.addAction(action: OptionAction(label: mode.description, icon: nil, selected: currentMode == mode) { [weak self] in
+                guard let self, var session = SessionStore.shared.session(forPodcast: self.podcast.uuid) else { return }
+                session.insertMode = mode.rawValue
+                SessionStore.shared.upsert(session)
+                self.settingsTable.reloadData()
+            })
+        }
+
+        positionPicker.present(from: self)
+    }
+
     // MARK: - Settings changes
 
     @objc private func globalInboxChanged(_ sender: UISwitch) {
@@ -384,6 +442,24 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
         Analytics.track(.podcastSettingsAutoAddUpNextToggled, properties: ["enabled": sender.isOn])
     }
 
+    @objc private func addToSessionChanged(_ sender: UISwitch) {
+        if sender.isOn {
+            // Turning it on creates the podcast's session on first use and absorbs
+            // the current inbox offers right away.
+            var session = SessionManager.shared.findOrCreateSession(forPodcast: podcast)
+            session.autoAdd = true
+            SessionStore.shared.upsert(session)
+            DispatchQueue.global(qos: .userInitiated).async {
+                SessionManager.shared.ingestAutoAdd(session: session)
+            }
+        } else if var session = SessionStore.shared.session(forPodcast: podcast.uuid) {
+            session.autoAdd = false
+            SessionStore.shared.upsert(session)
+        }
+
+        settingsTable.reloadData()
+    }
+
     @objc private func notificationChanged(_ sender: UISwitch) {
         Analytics.track(.podcastSettingsNotificationsToggled, properties: ["enabled": sender.isOn])
         NotificationsHelper.shared.registerForPushNotifications() { [weak self] granted in
@@ -401,15 +477,23 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
     }
 
     private func tableData() -> [[TableRow]] {
-        var data: [[TableRow]] = [[.autoDownload, .notifications, .globalInbox], [.upNext], [.playbackEffects, .skipFirst, .skipLast], [.autoArchive]]
+        var data: [[TableRow]] = [[.autoDownload, .notifications, .globalInbox], [.upNext], [.session], [.playbackEffects, .skipFirst, .skipLast], [.autoArchive]]
 
         if podcast.refreshAvailable {
             data.insert([.feedError], at: 0)
         }
 
-        if podcast.autoAddToUpNextOn() {
-            data[1].append(.upNextPosition)
-            data[1].append(.globalUpNext)
+        // Sections are found by their anchor row — the feedError insert above shifts
+        // every index.
+        if podcast.autoAddToUpNextOn(), let upNextSection = data.firstIndex(where: { $0.first == .upNext }) {
+            data[upNextSection].append(.upNextPosition)
+            data[upNextSection].append(.globalUpNext)
+        }
+
+        if SessionStore.shared.session(forPodcast: podcast.uuid)?.autoAdd == true,
+           let sessionSection = data.firstIndex(where: { $0.first == .session }) {
+            data[sessionSection].append(.sessionPosition)
+            data[sessionSection].append(.globalSession)
         }
 
         if !playlistsPodcastCanAppearIn().isEmpty {
