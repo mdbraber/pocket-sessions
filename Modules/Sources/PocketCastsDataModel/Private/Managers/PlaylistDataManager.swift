@@ -344,16 +344,11 @@ class PlaylistDataManager {
         }
     }
 
-    // Fork: preserveEpisodeRows keeps the per-playlist episode rows (the smart
-    // playlists' custom-order positions) — used when a sync rebuild deletes and
-    // recreates the same playlist uuid.
-    func delete(playlist: EpisodeFilter, preserveEpisodeRows: Bool = false, dbQueue: PCDBQueue) {
+    func delete(playlist: EpisodeFilter, dbQueue: PCDBQueue) {
         dbQueue.write { db in
             do {
                 try db.executeUpdate("DELETE FROM \(DataManager.playlistsTableName) WHERE uuid = ?", values: [playlist.uuid])
-                if !preserveEpisodeRows {
-                    try db.executeUpdate("DELETE FROM \(DataManager.playlistEpisodeTableName) WHERE playlist_uuid = ? OR playlist_id = ?", values: [playlist.uuid, playlist.id])
-                }
+                try db.executeUpdate("DELETE FROM \(DataManager.playlistEpisodeTableName) WHERE playlist_uuid = ? OR playlist_id = ?", values: [playlist.uuid, playlist.id])
             } catch {
                 FileLog.shared.addMessage("PlaylistDataManager.delete error: \(error)")
             }

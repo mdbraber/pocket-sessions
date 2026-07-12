@@ -13,7 +13,7 @@ extension SyncTask {
                 // fork-only rule fields aren't in the sync proto — carry them across the
                 // rebuild, and keep smart playlists' custom-order rows (same uuid returns)
                 playlist.copyForkOnlyFields(from: localPlaylist)
-                DataManager.sharedManager.delete(playlist: localPlaylist, preserveEpisodeRows: !localPlaylist.manual)
+                DataManager.sharedManager.delete(playlist: localPlaylist)
             }
 
             // save the server version of the filter, as long as it's not deleted
