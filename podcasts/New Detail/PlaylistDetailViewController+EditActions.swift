@@ -28,6 +28,52 @@ extension PlaylistDetailViewController {
             optionsPicker.addAction(action: insertModeAction())
         }
 
+        // Fork: the session's dismissed pile, restorable.
+        if let session = viewModel.session, !SessionStore.shared.dismissedUuids(sessionUuid: session.uuid).isEmpty {
+            optionsPicker.addAction(action: OptionAction(label: L10n.sessionDismissedTitle, icon: "episode-remove") { [weak self] in
+                guard let self else { return }
+                let view = DismissedEpisodesView(sessionUuid: session.uuid) { [weak self] in
+                    self?.dismiss(animated: true)
+                    self?.viewModel.reloadEpisodeList()
+                }
+                self.present(PCHostingController(rootView: view.environmentObject(Theme.sharedTheme)), animated: true)
+            })
+        }
+
+        // Fork: Group By and its limit, identical to the global Inbox's — it shapes
+        // the Inbox and Episodes views; the Session lineup never groups, so the
+        // options hide while that tab is up.
+        if viewModel.usesTriageTabs, viewModel.selectedTriageTab != .lineup {
+            let groupAction = OptionAction(label: L10n.inboxGroupBy, secondaryLabel: viewModel.groupBy.title, icon: "option-group") {}
+            groupAction.submenu = { [weak self] in
+                guard let self else { return nil }
+                let picker = OptionsPicker(title: L10n.inboxGroupBy.localizedUppercase)
+                for option in EpisodeGroupBy.menuOrder {
+                    picker.addAction(action: OptionAction(label: option.title, selected: self.viewModel.groupBy == option) {
+                        self.viewModel.groupBy = option
+                    })
+                }
+                return picker
+            }
+            optionsPicker.addAction(action: groupAction)
+
+            let limitAction = OptionAction(label: L10n.episodeGroupLimit, secondaryLabel: viewModel.groupLimit > 0 ? "\(viewModel.groupLimit)" : L10n.off, icon: "option-group") {}
+            limitAction.submenu = { [weak self] in
+                guard let self else { return nil }
+                let picker = OptionsPicker(title: L10n.episodeGroupLimit.localizedUppercase)
+                picker.addAction(action: OptionAction(label: L10n.off, selected: self.viewModel.groupLimit == 0) {
+                    self.viewModel.groupLimit = 0
+                })
+                for limit in EpisodeGrouper.limitOptions {
+                    picker.addAction(action: OptionAction(label: "\(limit)", selected: self.viewModel.groupLimit == limit) {
+                        self.viewModel.groupLimit = limit
+                    })
+                }
+                return picker
+            }
+            optionsPicker.addAction(action: limitAction)
+        }
+
         let downloadAllAction = downloadAllOption()
         optionsPicker.addAction(action: downloadAllAction)
 
@@ -35,9 +81,6 @@ extension PlaylistDetailViewController {
             let archiveAction = archiveAction()
             optionsPicker.addAction(action: archiveAction)
         }
-
-        let editAction = editAction()
-        optionsPicker.addAction(action: editAction)
 
         optionsPicker.present(from: self)
     }
@@ -100,7 +143,7 @@ extension PlaylistDetailViewController {
     // MARK: - Fork: custom-order overlay settings
 
     private func newEpisodesAction() -> OptionAction {
-        let current = viewModel.playlist.newEpisodesAutoAdd ? L10n.playlistNewEpisodesAuto : L10n.playlistNewEpisodesInbox
+        let current = viewModel.sessionAutoAdd ? L10n.playlistNewEpisodesAuto : L10n.playlistNewEpisodesInbox
         let action = OptionAction(label: L10n.playlistNewEpisodesSetting, secondaryLabel: current, icon: "option-group") { }
         action.submenu = { [weak self] in self?.makeNewEpisodesPicker() }
         return action
@@ -108,7 +151,7 @@ extension PlaylistDetailViewController {
 
     private func makeNewEpisodesPicker() -> OptionsPicker {
         let optionsPicker = OptionsPicker(title: L10n.playlistNewEpisodesSetting.localizedUppercase)
-        let autoAdd = viewModel.playlist.newEpisodesAutoAdd
+        let autoAdd = viewModel.sessionAutoAdd
 
         let inboxAction = OptionAction(label: L10n.playlistNewEpisodesInbox, selected: !autoAdd) { [weak self] in
             self?.viewModel.updatePlaylist(newEpisodesAutoAdd: false)
@@ -124,15 +167,17 @@ extension PlaylistDetailViewController {
     }
 
     private func insertModeAction() -> OptionAction {
-        let action = OptionAction(label: L10n.playlistInsertModeSetting, secondaryLabel: viewModel.playlist.insertMode.description, icon: "filter_manual_episode_order") { }
+        let sessionInsertMode = PlaylistInsertMode(rawValue: viewModel.session?.insertMode ?? 0) ?? .afterLastInserted
+        let action = OptionAction(label: L10n.playlistInsertModeSetting, secondaryLabel: sessionInsertMode.description, icon: "filter_manual_episode_order") { }
         action.submenu = { [weak self] in self?.makeInsertModePicker() }
         return action
     }
 
     private func makeInsertModePicker() -> OptionsPicker {
+        let currentInsertMode = PlaylistInsertMode(rawValue: viewModel.session?.insertMode ?? 0) ?? .afterLastInserted
         let optionsPicker = OptionsPicker(title: L10n.playlistInsertModeSetting.localizedUppercase)
         for mode in PlaylistInsertMode.allCases {
-            let action = OptionAction(label: mode.description, selected: viewModel.playlist.insertMode == mode) { [weak self] in
+            let action = OptionAction(label: mode.description, selected: currentInsertMode == mode) { [weak self] in
                 self?.viewModel.updatePlaylist(insertMode: mode)
             }
             optionsPicker.addAction(action: action)
@@ -267,16 +312,42 @@ extension PlaylistDetailViewController {
         }
     }
 
-    // MARK: - Edit
+    // MARK: - Fork: Playlist Folder
 
-    private func editAction() -> OptionAction {
-        OptionAction(label: L10n.playlistOptions, icon: "profile-settings") { [weak self] in
-            self?.track(.filterOptionsButtonTapped)
-            self?.playlistOptionsTapped()
+    func playlistFolderTapped() {
+        let playlistUuid = viewModel.playlist.uuid
+        if let folderUuid = PlaylistFolderManager.shared.folderUuid(forPlaylist: playlistUuid),
+           let folder = PlaylistFolderManager.shared.folder(uuid: folderUuid) {
+            let optionPicker = OptionsPicker(title: folder.name.localizedUppercase)
+
+            optionPicker.addAction(action: OptionAction(label: L10n.folderRemoveFrom, icon: "folder-remove") {
+                PlaylistFolderManager.shared.setFolder(nil, forPlaylist: playlistUuid)
+            })
+            optionPicker.addAction(action: OptionAction(label: L10n.folderChange, icon: "folder-arrow") { [weak self] in
+                self?.showPlaylistFolderPicker()
+            })
+            optionPicker.addAction(action: OptionAction(label: L10n.folderGoTo, icon: "folder-goto") { [weak self] in
+                self?.navigationController?.pushViewController(PlaylistFolderViewController(folderUuid: folderUuid), animated: true)
+            })
+
+            optionPicker.present(from: self)
+        } else {
+            showPlaylistFolderPicker()
         }
     }
 
-    private func playlistOptionsTapped() {
+    private func showPlaylistFolderPicker() {
+        let chooseView = ChoosePlaylistFolderView(playlistUuid: viewModel.playlist.uuid) { [weak self] in
+            self?.dismiss(animated: true)
+        }
+        let host = PCHostingController(rootView: chooseView.environmentObject(Theme.sharedTheme))
+        present(host, animated: true)
+    }
+
+    // MARK: - Edit
+
+    func playlistOptionsTapped() {
+        track(.filterOptionsButtonTapped)
         let filterEditController = FilterEditOptionsViewController()
         filterEditController.filterToEdit = viewModel.playlist
         navigationController?.pushViewController(filterEditController, animated: true)

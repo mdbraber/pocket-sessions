@@ -9,6 +9,13 @@ extension PlaylistDetailViewController {
         static let playlist = PlaylistReloadScope(rawValue: 1 << 1)
     }
 
+    /// Fork: folder membership shows in the header's folder icon — re-render it.
+    @objc private func playlistFoldersChanged() {
+        DispatchQueue.main.async { [weak self] in
+            self?.viewModel.objectWillChange.send()
+        }
+    }
+
     func addObservers() {
         addCustomObserver(ServerNotifications.podcastsRefreshed, selector: #selector(refreshEpisodesFromNotification))
         addCustomObserver(Constants.Notifications.opmlImportCompleted, selector: #selector(refreshEpisodesFromNotification))
@@ -16,10 +23,14 @@ extension PlaylistDetailViewController {
         addCustomObserver(Constants.Notifications.playbackEnded, selector: #selector(refreshEpisodesFromNotification))
         addCustomObserver(Constants.Notifications.playbackFailed, selector: #selector(refreshEpisodesFromNotification))
         addCustomObserver(Constants.Notifications.playlistChanged, selector: #selector(refreshFilterFromNotification))
+        addCustomObserver(PlaylistFolderManager.foldersChanged, selector: #selector(playlistFoldersChanged))
         addCustomObserver(Constants.Notifications.episodePlayStatusChanged, selector: #selector(refreshEpisodesFromNotification))
         addCustomObserver(Constants.Notifications.episodeArchiveStatusChanged, selector: #selector(refreshEpisodesFromNotification))
         addCustomObserver(Constants.Notifications.episodeStarredChanged, selector: #selector(refreshEpisodesFromNotification))
         addCustomObserver(Constants.Notifications.manyEpisodesChanged, selector: #selector(refreshEpisodesFromNotification))
+        // Fork: seen marks and dismissals live in the session store — without this,
+        // a mark-as-seen never refreshes the Inbox tab.
+        addCustomObserver(SessionStore.changed, selector: #selector(refreshEpisodesFromNotification))
         addCustomObserver(UIResponder.keyboardWillShowNotification, selector: #selector(keyboardWillShow(_:)))
         addCustomObserver(UIResponder.keyboardWillHideNotification, selector: #selector(keyboardWillHide(_:)))
     }

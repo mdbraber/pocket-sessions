@@ -7,6 +7,22 @@ struct PlaylistHeaderView: View {
 
     @ScaledMetric(relativeTo: .largeTitle) private var iconSize = CGFloat(18)
 
+    // The podcast header's exact spacing metrics (collapsed state), so switching
+    // between a podcast page and a playlist page keeps everything pinned in place.
+    @ScaledMetric(relativeTo: .body) private var titleBottomMargin = 16
+    @ScaledMetric(relativeTo: .largeTitle) private var itemMargin = 24
+
+    private var topMarginForTitle: CGFloat {
+        let font = UIFont.preferredFont(forTextStyle: .title2)
+        let adjustment = font.lineHeight - font.capHeight + font.descender
+        return 26 - adjustment
+    }
+
+    private var bottomMarginAdjustmentForTitle: CGFloat {
+        let font = UIFont.preferredFont(forTextStyle: .title2)
+        return -font.descender
+    }
+
     var description: String {
         let duration = viewModel.totalDuration()
         switch viewModel.playlistEpisodesCount {
@@ -28,40 +44,48 @@ struct PlaylistHeaderView: View {
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
             VStack(spacing: 0) {
+                Spacer().frame(height: titleBottomMargin)
                 HStack(spacing: 0) {
                     Spacer()
                     HeaderArtwork(items: viewModel.images)
                         .equatable()
                     Spacer()
                 }
+                Spacer().frame(height: topMarginForTitle)
 
-                VStack(spacing: 0.0) {
-                    Text(viewModel.playlistName)
-                        .font(style: .title2, weight: .bold)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .foregroundStyle(theme.primaryText01)
-                        .multilineTextAlignment(.center)
-                        .padding(.bottom, 10.0)
-                    Text(viewModel.usesCustomOrderOverlay ? " " : description)
-                        .font(style: .footnote, weight: .regular)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .foregroundStyle(theme.primaryText02)
-                        .multilineTextAlignment(.center)
-                }
-                .padding(.top, 15.0)
-                .padding(.bottom, 16.0)
+                // The counts line lives under the search bar, so the title stands
+                // alone. Font and margins mirror the podcast header's title exactly.
+                Text(viewModel.playlistName)
+                    .font(.title2).bold()
+                    .fixedSize(horizontal: false, vertical: true)
+                    .foregroundStyle(theme.primaryText01)
+                    .multilineTextAlignment(.center)
+                Spacer().frame(height: titleBottomMargin - bottomMarginAdjustmentForTitle)
+                // (The podcast page's stars row sits here, collapsed to zero height.)
+                Spacer().frame(height: titleBottomMargin)
 
-                HStack(spacing: 8.0) {
+                // Fork: podcast-page action rows — bare icon buttons (smart rules /
+                // Playlist Folder / playlist options), then the Play pill beneath.
+                HStack(spacing: 0) {
                     Spacer()
-                    actionButton(
+                    iconButton(
                         type: viewModel.isManualPlaylist ? .addEpisodes : .smartRules,
-                        color: theme.primaryText01,
                         image: Image(viewModel.isManualPlaylist ? "filter_new_episode" : "cs-sparkle-black"),
-                        title: viewModel.isManualPlaylist ? L10n.playlistManualAddEpisodes : L10n.playlistSmartRulesTitle,
-                        background: .clear,
-                        stroke: theme.primaryUi05) { type in
-                            viewModel.onButtonTapped(type)
-                    }
+                        title: viewModel.isManualPlaylist ? L10n.playlistManualAddEpisodes : L10n.playlistSmartRulesTitle)
+                    iconButton(
+                        type: .playlistFolder,
+                        image: Image(PlaylistFolderManager.shared.folderUuid(forPlaylist: viewModel.playlist.uuid) == nil ? "folder-empty" : "folder-check"),
+                        title: L10n.folder)
+                    iconButton(
+                        type: .playlistSettings,
+                        image: Image("podcast-settings"),
+                        title: L10n.playlistOptions)
+                    Spacer()
+                }
+                Spacer().frame(height: 12)
+
+                HStack(spacing: 0) {
+                    Spacer()
                     actionButton(
                         type: .playAll,
                         color: viewModel.isSearching ? theme.primaryText01 : theme.primaryUi01,
@@ -73,14 +97,11 @@ struct PlaylistHeaderView: View {
                     }
                     Spacer()
                 }
-                .padding(.bottom, 10.0)
                 .animation(.easeInOut(duration: 0.2), value: viewModel.isSearching)
+                Spacer().frame(height: itemMargin)
 
-                if viewModel.usesCustomOrderOverlay, !viewModel.isSearching, !viewModel.playlist.newEpisodesAutoAdd {
-                    // Same button-to-tabs gap as the podcast page (itemMargin 24;
-                    // the buttons row already pads 10).
+                if viewModel.usesTriageTabs, !viewModel.isSearching {
                     triageTabs
-                        .padding(.top, 14.0)
                         .padding(.horizontal, 16.0)
                 }
 
@@ -97,36 +118,72 @@ struct PlaylistHeaderView: View {
 
         var body: some View {
             PlaylistArtworkView(items: items, cornerRadius: 8)
-                .frame(width: 192.0, height: 192.0)
-                .padding(.top, LiquidGlass.isEnabled ? 0 : 15.0)
+                .frame(width: PodcastHeaderView.Constants.smallImageSize, height: PodcastHeaderView.Constants.smallImageSize)
                 .shadow(color: .black.opacity(0.2), radius: 30, x: 0, y: 2)
         }
     }
 
-    /// Fork: the New | Lineup selector, styled and placed like the podcast page's tabs.
+    /// Fork: the Inbox | Session | Episodes selector, exactly the podcast page's tab
+    /// strip. Inbox and Episodes (the feeder's views) need a feeder; Session always
+    /// shows. Inbox and Session carry counts; Episodes doesn't.
     @ViewBuilder private var triageTabs: some View {
+        let hasInboxTab = viewModel.hasInboxTab
         HStack(spacing: 12) {
-            Text(L10n.playlistInboxSectionHeader(viewModel.triageNewCount.localized()))
-                .buttonize {
-                    viewModel.selectTriageTab(.new)
-                } customize: { config in
-                    config.label
-                        .applyTriageTabStyle(theme: theme, highlighted: viewModel.selectedTriageTab == .new)
-                        .applyButtonEffect(isPressed: config.isPressed)
-                }
+            if hasInboxTab {
+                Text(viewModel.triageNewCount > 0 ? "\(L10n.inboxTitle) · \(viewModel.triageNewCount.localized())" : L10n.inboxTitle)
+                    .buttonize {
+                        viewModel.selectTriageTab(.new)
+                    } customize: { config in
+                        config.label
+                            .applyTriageTabStyle(theme: theme, highlighted: viewModel.selectedTriageTab == .new)
+                            .applyButtonEffect(isPressed: config.isPressed)
+                    }
+            }
 
-            Text("\(L10n.playlistLineupSectionHeader) · \(viewModel.triageLineupCount.localized())")
+            Text("\(L10n.playbackSessionTabSession) · \(viewModel.triageLineupCount.localized())")
                 .buttonize {
                     viewModel.selectTriageTab(.lineup)
                 } customize: { config in
                     config.label
-                        .applyTriageTabStyle(theme: theme, highlighted: viewModel.selectedTriageTab == .lineup)
+                        .applyTriageTabStyle(theme: theme, highlighted: viewModel.selectedTriageTab == .lineup || (!hasInboxTab && viewModel.selectedTriageTab == .new))
                         .applyButtonEffect(isPressed: config.isPressed)
                 }
+
+            if hasInboxTab {
+                Text(L10n.episodes)
+                    .buttonize {
+                        viewModel.selectTriageTab(.browse)
+                    } customize: { config in
+                        config.label
+                            .applyTriageTabStyle(theme: theme, highlighted: viewModel.selectedTriageTab == .browse)
+                            .applyButtonEffect(isPressed: config.isPressed)
+                    }
+            }
 
             Spacer()
         }
         .font(.subheadline.weight(.medium))
+    }
+
+    /// A bare padded template icon, exactly the podcast header's action-button style.
+    private func iconButton(
+        type: PlaylistDetailViewModel.ButtonTag,
+        image: Image,
+        title: String
+    ) -> some View {
+        Button {
+            viewModel.onButtonTapped(type)
+        } label: {
+            image
+                .renderingMode(.template)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 24, height: 24)
+                .padding(8)
+                .foregroundStyle(theme.primaryIcon03)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
     }
 
     private func actionButton(
@@ -147,7 +204,7 @@ struct PlaylistHeaderView: View {
                     .resizable()
                     .foregroundStyle(color)
                     .scaledToFit()
-                    .frame(width: iconSize, height: iconSize)
+                    .frame(width: 20, height: 20)
                 Text(title)
                     .font(style: .subheadline, weight: .medium)
                     .foregroundStyle(color)

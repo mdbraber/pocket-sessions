@@ -3,7 +3,7 @@ import PocketCastsUtils
 
 extension PlaylistDetailViewController: UISheetPresentationControllerDelegate, PlaylistPlayAllSheetHostDelegate {
     func playAll() {
-        if viewModel.episodes.isEmpty {
+        if viewModel.episodes.isEmpty, viewModel.session == nil {
             Toast.show(L10n.playlistManualPlayAllEmptyList)
             return
         }
@@ -16,10 +16,25 @@ extension PlaylistDetailViewController: UISheetPresentationControllerDelegate, P
         if FeatureFlag.playbackSessions.enabled {
             let playlist = viewModel.playlist
 
-            // Sessions play the Lineup; with an empty Lineup and everything still in New,
-            // silently playing untriaged episodes would contradict the inbox model — ask.
-            if playlist.usesCustomOrderOverlay, viewModel.lineupEpisodes.isEmpty, !viewModel.inboxEpisodes.isEmpty {
-                presentEmptyLineupPlayPicker()
+            // Fork: a smart playlist plays through its session — the query stays the
+            // visible feeder; the store is created lazily and seeded with the current
+            // matches in the current order.
+            if !playlist.manual, viewModel.session == nil {
+                let seed = viewModel.episodes.map { $0.episode.uuid }
+                let session = SessionManager.shared.findOrCreateSession(forSmartPlaylist: playlist, seedEpisodeUuids: seed)
+                SessionManager.shared.play(session: session, fallbackSeed: seed)
+                return
+            }
+
+            // Sessions play the Lineup. An empty lineup would make the session start
+            // silently no-op — offer the inbox, or say there's nothing to play.
+            if let session = viewModel.session, SessionFeederEngine.storeMemberUuids(for: session).isEmpty {
+                let offers = SessionFeederEngine.inboxEpisodes(for: session)
+                if offers.isEmpty {
+                    Toast.show(L10n.playlistManualPlayAllEmptyList)
+                } else {
+                    presentEmptyLineupPlayPicker(offerUuids: offers.map(\.uuid))
+                }
                 return
             }
 
@@ -39,19 +54,15 @@ extension PlaylistDetailViewController: UISheetPresentationControllerDelegate, P
         PlaybackManager.shared.startPlaybackSession(PlaybackSession(type: playlist.manual ? .playlist : .smartPlaylist, uuid: playlist.uuid))
     }
 
-    /// The Lineup is empty and every episode sits in New: offer to triage the lot into the
-    /// Lineup before playing, or play the on-screen order as-is (the session's fallback).
-    private func presentEmptyLineupPlayPicker() {
-        let optionsPicker = OptionsPicker(title: L10n.playlistEmptyLineupTitle(viewModel.inboxEpisodes.count.localized()).localizedUppercase)
+    /// The Lineup is empty and everything sits in the Inbox: offer to triage the lot
+    /// into the Lineup and play.
+    private func presentEmptyLineupPlayPicker(offerUuids: [String]) {
+        let optionsPicker = OptionsPicker(title: L10n.playlistEmptyLineupTitle(offerUuids.count.localized()).localizedUppercase)
 
         optionsPicker.addAction(action: OptionAction(label: L10n.playlistEmptyLineupAddAllAndPlay, icon: "filter_play") { [weak self] in
             guard let self else { return }
-            self.viewModel.addToLineup(episodeUuids: self.viewModel.inboxEpisodes.map { $0.episode.uuid })
+            self.viewModel.addToLineup(episodeUuids: offerUuids)
             self.startSession()
-        })
-
-        optionsPicker.addAction(action: OptionAction(label: L10n.playlistEmptyLineupPlayAsIs, icon: "filter_play") { [weak self] in
-            self?.startSession()
         })
 
         optionsPicker.present(from: self)

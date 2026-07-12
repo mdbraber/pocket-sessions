@@ -29,7 +29,7 @@ class PlaylistHeaderViewCell: ThemeableCell {
         contentConfiguration = UIHostingConfiguration {
             PlaylistHeaderView(viewModel: viewModel)
                 .environmentObject(Theme.sharedTheme)
-                .frame(maxWidth: .infinity, minHeight: 335, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
         .margins(.horizontal, 0)
         .margins(.vertical, 0)

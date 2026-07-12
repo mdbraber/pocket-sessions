@@ -4,6 +4,19 @@ import PocketCastsServer
 import PocketCastsUtils
 
 extension PlaylistDetailViewController: MultiSelectActionDelegate {
+
+    func multiSelectPreferredSession() -> ForkSession? {
+        if let session = viewModel.session { return session }
+        if viewModel.isLensPage {
+            return SessionManager.shared.findOrCreateSession(forSmartPlaylist: viewModel.playlist)
+        }
+        return nil
+    }
+
+    func multiSelectCurrentSession() -> ForkSession? {
+        viewModel.session ?? viewModel.lensSession
+    }
+
         // MARK: - MultiSelect action delegate
 
         func multiSelectPresentingViewController() -> UIViewController {

@@ -7,21 +7,70 @@ extension PlaylistDetailViewController: SwipeTableViewCellDelegate, SwipeHandler
     func tableView(_ tableView: UITableView, editActionsForRowAt indexPath: IndexPath, for orientation: SwipeActionsOrientation) -> [SwipeAction]? {
         guard !isMultiSelectEnabled, let episode = viewModel.listEpisode(at: indexPath)?.episode else { return nil }
 
+        let rowSection = viewModel.section(at: indexPath.section)
         switch orientation {
         case .left:
+            // Inbox and Episodes rows use the shared triage vocabulary; Session
+            // lineup rows keep the app-wide queue actions.
+            if rowSection == .inbox || rowSection == .browse {
+                return TriageSwipes.leftActions(for: episode) { [weak self] in
+                    guard let self else { return }
+                    self.viewModel.addToSessionsPerSetting(episodeUuids: [episode.uuid], presenting: self)
+                }
+            }
             let actions = SwipeActionsHelper.createLeftActionsForEpisode(episode, tableView: tableView, indexPath: indexPath, swipeHandler: self)
             return actions.swipeKitActions()
         case .right:
-            // Fork: New (inbox) rows get triage actions — Add to Lineup + Archive.
-            if viewModel.section(at: indexPath.section) == .inbox {
-                let actions = SwipeActionsHelper.createInboxRightActionsForEpisode(episode, tableView: tableView, indexPath: indexPath, swipeHandler: self) { [weak self] uuid in
-                    self?.viewModel.addToLineup(episodeUuids: [uuid])
+            if rowSection == .inbox || rowSection == .browse {
+                return TriageSwipes.rightActions(for: episode) { [weak self] in
+                    self?.viewModel.reloadEpisodeList(animated: true)
                 }
-                return actions.swipeKitActions()
+            }
+            // Fork: lens-page Session rows — Remove from the session at the edge,
+            // then the archive toggle (same shape as a store's lineup).
+            if viewModel.isLensPage {
+                return lensLineupRightActions(for: episode)
             }
             let actions = SwipeActionsHelper.createRightActionsForEpisode(episode, tableView: tableView, indexPath: indexPath, swipeHandler: self)
             return actions.swipeKitActions()
         }
+    }
+
+    private func lensLineupRightActions(for episode: BaseEpisode) -> [SwipeAction] {
+        let remove = SwipeAction(style: .default, title: nil) { [weak self] action, _ in
+            defer { action.fulfill(with: .reset) }
+            guard let self, let session = self.viewModel.lensSession else { return }
+            SessionManager.shared.removeFromLineup(episodeUuids: [episode.uuid], session: session)
+            self.viewModel.reloadEpisodeList(animated: true)
+        }
+        remove.image = TriageSwipes.sessionRemoveImage()?.withTintColor(.white, renderingMode: .alwaysOriginal)
+        remove.backgroundColor = ThemeColor.support05()
+        remove.accessibilityLabel = L10n.sessionRemoveFrom
+        remove.hidesWhenSelected = true
+
+        var actions = [remove]
+        if let episode = episode as? Episode {
+            let archived = episode.archived
+            let uuid = episode.uuid
+            let archive = SwipeAction(style: .default, title: nil) { [weak self] action, _ in
+                // Fresh object so the diff sees the change; fulfill closes the swipe.
+                if let fresh = DataManager.sharedManager.findEpisode(uuid: uuid) {
+                    if archived {
+                        EpisodeManager.unarchiveEpisode(episode: fresh, fireNotification: true)
+                    } else {
+                        EpisodeManager.archiveEpisode(episode: fresh, fireNotification: true)
+                    }
+                }
+                self?.viewModel.reloadEpisodeList(animated: true)
+                action.fulfill(with: .reset)
+            }
+            archive.image = UIImage(named: archived ? "list_unarchive" : "list_archive")
+            archive.backgroundColor = ThemeColor.support06()
+            archive.accessibilityLabel = archived ? L10n.unarchive : L10n.archive
+            archive.hidesWhenSelected = true
+            actions.append(archive)
+        }
+        return actions
     }
 
     func tableView(_ tableView: UITableView, editActionsOptionsForRowAt indexPath: IndexPath, for orientation: SwipeActionsOrientation) -> SwipeOptions {

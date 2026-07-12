@@ -12,6 +12,7 @@ extension PlaylistDetailViewController: UITableViewDataSource {
         tableView.register(DummyEmptyCell.self, forCellReuseIdentifier: DummyEmptyCell.reuseIdentifier)
         tableView.register(PlaylistHeaderViewCell.self, forCellReuseIdentifier: PlaylistHeaderViewCell.reuseIdentifier)
         tableView.register(PlaylistArchiveViewCell.self, forCellReuseIdentifier: PlaylistArchiveViewCell.reuseIdentifier)
+        tableView.register(UINib(nibName: "HeadingCell", bundle: nil), forCellReuseIdentifier: "GroupHeading")
     }
 
     func registerLongPress() {
@@ -41,6 +42,17 @@ extension PlaylistDetailViewController: UITableViewDataSource {
                     self?.track(allAboveAreSelected ? .filterDeselectAllAbove : .filterSelectAllAbove)
                 } allBelowAction: { [weak self] allBelowAreSelected in
                     self?.track(allBelowAreSelected ? .filterDeselectAllBelow : .filterSelectAllBelow)
+                }
+            } else if viewModel.usesTriageTabs, viewModel.selectedTriageTab == .lineup,
+                      let session = viewModel.session ?? viewModel.lensSession {
+                // Fork: Session rows behave like Up Next — long-press is the inverse
+                // of the tap setting.
+                if !Settings.playUpNextOnTap() {
+                    SessionManager.shared.play(episode: episode, in: session)
+                } else if let parentPodcast = episode.parentPodcast() {
+                    let episodeController = EpisodeDetailViewController(episode: episode, podcast: parentPodcast, source: .filters, playlist: .filter(uuid: viewModel.playlist.uuid))
+                    episodeController.modalPresentationStyle = .formSheet
+                    present(episodeController, animated: true, completion: nil)
                 }
             } else {
                 longPressMultiSelectIndexPath = indexPath
@@ -93,10 +105,27 @@ extension PlaylistDetailViewController: UITableViewDataSource {
             cell.configure(archivedEpisodesCount: placeholder.archived, isSelected: isSelected)
             return cell
 
-        case .inbox, .episodes:
+        case .inbox, .episodes, .browse:
             guard let itemAtRow = viewModel.dataSource[safe: indexPath.section]?.elements[safe: indexPath.row] as? ListItem else {
                 FileLog.shared.addMessage("Playlist Detail tableView: missing ListItem in section \(indexPath.section), row \(indexPath.row)")
                 return UITableViewCell()
+            }
+
+            if let groupHeader = itemAtRow as? PlaylistGroupHeaderPlaceholder {
+                let cell = tableView.dequeueReusableCell(withIdentifier: "GroupHeading", for: indexPath) as! HeadingCell
+                cell.heading.text = groupHeader.title
+                cell.button.isHidden = true
+                cell.action = nil
+                return cell
+            }
+
+            if itemAtRow is PlaylistTabEmptyPlaceholder {
+                return configuredEmptyCell(
+                    for: tableView,
+                    at: indexPath,
+                    title: L10n.episodeFilterNoEpisodesTitle.sentenceCased,
+                    message: ""
+                )
             }
 
             if itemAtRow is NoSearchResultsPlaceholder {
@@ -127,6 +156,10 @@ extension PlaylistDetailViewController: UITableViewDataSource {
             cell.delegate = self
             if let listEpisode = itemAtRow as? ListEpisode {
                 cell.populateFrom(episode: listEpisode.episode, tintColor: nil, playlistUuid: viewModel.playlist.uuid)
+                // The green in-this-session mini icon, on Episodes rows only (Session
+                // rows are all members; Inbox rows never are).
+                cell.setSessionIndicator(visible: sectionModel(at: indexPath.section) == .browse
+                    && viewModel.sessionMemberUuidsForDisplay.contains(listEpisode.episode.uuid))
                 cell.shouldShowSelect = isMultiSelectEnabled
                 if isMultiSelectEnabled {
                     cell.showTick = selectedEpisodesContains(uuid: listEpisode.episode.uuid)
@@ -175,33 +208,38 @@ extension PlaylistDetailViewController: UITableViewDelegate {
         let title = overlayHeaderTitle(for: model)
         let showsSearch = model == searchHeaderSection
 
-        if title != nil {
+        // Every playlist type shows the counts line under the search bar (manual
+        // playlists included), so the composite header covers both cases.
+        if title != nil || showsSearch {
             return triageTabsHeader(includingSearch: showsSearch)
-        }
-        if showsSearch {
-            // The composite overlay header pins the search bar with autolayout; restore
-            // frame-based sizing when it's returned as a plain section header again.
-            searchHeaderView.removeFromSuperview()
-            searchHeaderView.translatesAutoresizingMaskIntoConstraints = true
-            return searchHeaderView
         }
         return nil
     }
 
     func tableView(_ tableView: UITableView, heightForHeaderInSection section: Int) -> CGFloat {
         let model = sectionModel(at: section)
-        let titleHeight: CGFloat = overlayHeaderTitle(for: model) != nil ? Self.triageTabsHeaderHeight : 0
-        let searchHeight: CGFloat = model == searchHeaderSection ? PCSearchBarController.defaultHeight : 0
+        let showsCounts = overlayHeaderTitle(for: model) != nil || model == searchHeaderSection
+        let titleHeight: CGFloat = showsCounts ? Self.triageTabsHeaderHeight : 0
+        let searchHeight: CGFloat = model == searchHeaderSection ? PlaylistDetailViewController.searchRowHeight : 0
         let total = titleHeight + searchHeight
-        return total > 0 ? total : 0
+        // Grouped tables treat a literal 0 as "use the default section spacing" —
+        // leastNormalMagnitude actually collapses it.
+        return total > 0 ? total : .leastNormalMagnitude
     }
 
     func tableView(_ tableView: UITableView, heightForFooterInSection section: Int) -> CGFloat {
-        return .leastNormalMagnitude
+        showsInboxActionsFooter(at: section) ? PlaylistDetailViewController.inboxActionsFooterHeight : .leastNormalMagnitude
     }
 
     func tableView(_ tableView: UITableView, viewForFooterInSection section: Int) -> UIView? {
-        return UIView()
+        showsInboxActionsFooter(at: section) ? inboxActionsFooter() : UIView()
+    }
+
+    /// Fork: the Inbox tab closes with two action buttons — Add All to Session and
+    /// Clear All (the same rounded style as the global Inbox's Clear).
+    private func showsInboxActionsFooter(at section: Int) -> Bool {
+        sectionModel(at: section) == .inbox && viewModel.usesTriageTabs
+            && viewModel.selectedTriageTab == .new && viewModel.triageNewCount > 0 && !isMultiSelectEnabled
     }
 
     // MARK: - Selection
@@ -267,6 +305,15 @@ extension PlaylistDetailViewController: UITableViewDelegate {
                 return
             }
 
+            // Fork: Session rows behave like Up Next — the tap setting decides
+            // between playing the episode in this session and showing its card.
+            if viewModel.usesTriageTabs, viewModel.selectedTriageTab == .lineup,
+               Settings.playUpNextOnTap(),
+               let session = viewModel.session ?? viewModel.lensSession {
+                SessionManager.shared.play(episode: selectedEpisode, in: session)
+                return
+            }
+
             let episodeController = EpisodeDetailViewController(episode: selectedEpisode, podcast: parentPodcast, source: .filters, playlist: .filter(uuid: viewModel.playlist.uuid))
             episodeController.modalPresentationStyle = .formSheet
             present(episodeController, animated: true, completion: nil)
@@ -326,6 +373,7 @@ extension PlaylistDetailViewController: UITableViewDragDelegate, UITableViewDrop
         // Lineup rows reorder; inbox (New) rows drag INTO the lineup as triage-by-drag.
         // Drops are constrained to the lineup either way.
         guard canReorderInline, isEpisodeSection(at: indexPath.section),
+              viewModel.section(at: indexPath.section) != .browse,
               viewModel.listEpisode(at: indexPath)?.episode.wasDeleted == false else { return [] }
 
         let dragItem = UIDragItem(itemProvider: NSItemProvider())
@@ -396,7 +444,7 @@ extension PlaylistDetailViewController: UITableViewDragDelegate, UITableViewDrop
 private extension PlaylistDetailViewController {
     static let overlayHeaderTitleHeight: CGFloat = 30
     /// The selected tab's counts line (the tab selector lives in the header cell).
-    static let triageTabsHeaderHeight: CGFloat = 30
+    static let triageTabsHeaderHeight: CGFloat = 44
 
     func sectionModel(at index: Int) -> PlaylistDetailViewModel.Section? {
         viewModel.dataSource[safe: index]?.model
@@ -404,26 +452,40 @@ private extension PlaylistDetailViewController {
 
     func isEpisodeSection(at index: Int) -> Bool {
         let model = sectionModel(at: index)
-        return model == .episodes || model == .inbox
+        return model == .episodes || model == .inbox || model == .browse
     }
 
     var searchHeaderSection: PlaylistDetailViewModel.Section {
-        if viewModel.isManualPlaylist { return .archive }
-        // Fork: with the overlay's New section present, the search bar anchors above it.
+        if viewModel.isManualPlaylist, viewModel.session == nil { return .archive }
+        // Fork: the search bar anchors above whichever tab section is visible.
+        if viewModel.usesTriageTabs {
+            switch viewModel.selectedTriageTab {
+            case .new: return viewModel.hasInboxSection ? .inbox : .episodes
+            case .lineup: return .episodes
+            case .browse: return .browse
+            }
+        }
         return viewModel.hasInboxSection ? .inbox : .episodes
     }
 
-    /// Fork: New/Lineup section titles when the custom-order overlay is active.
+    /// Fork: marks the sections that carry the counts/controls header — the overlay's
+    /// triage sections, and smart playlists on any sort order (their archived toggle
+    /// lives on that line).
     func overlayHeaderTitle(for model: PlaylistDetailViewModel.Section?) -> String? {
-        guard viewModel.usesCustomOrderOverlay, !viewModel.isSearching else { return nil }
-        switch model {
-        case .inbox:
-            return L10n.playlistInboxSectionHeader(viewModel.inboxEpisodes.count.localized())
-        case .episodes:
-            return L10n.playlistLineupSectionHeader
-        default:
-            return nil
+        guard !viewModel.isSearching else { return nil }
+        if viewModel.usesTriageTabs {
+            switch model {
+            case .inbox:
+                return L10n.inboxTitle
+            case .episodes:
+                return L10n.playbackSessionTabSession
+            case .browse:
+                return L10n.episodes
+            default:
+                return nil
+            }
         }
+        return nil
     }
 
     /// Fork: the Lineup | New tab selector (styled like the podcast page's tabs) with
@@ -433,14 +495,33 @@ private extension PlaylistDetailViewController {
         let container = UIView()
         container.backgroundColor = AppTheme.colorForStyle(.primaryUi02)
 
+        // The counts block sits between two hairlines, podcast-page style: one under
+        // the search bar, one closing the header off from the rows.
+        let topDivider = UIView()
+        topDivider.backgroundColor = AppTheme.colorForStyle(.primaryUi05)
+        topDivider.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(topDivider)
+        let bottomDivider = UIView()
+        bottomDivider.backgroundColor = AppTheme.colorForStyle(.primaryUi05)
+        bottomDivider.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(bottomDivider)
+
         // The selected tab's counts line, with bulk triage on the Inbox tab. Outside
         // the overlay (any other sort) the line covers the whole list.
-        let isNew = viewModel.usesCustomOrderOverlay && viewModel.selectedTriageTab == .new && !viewModel.playlist.newEpisodesAutoAdd
         let count: Int
         let duration: TimeInterval
-        if viewModel.usesCustomOrderOverlay {
-            count = isNew ? viewModel.triageNewCount : viewModel.triageLineupCount
-            duration = isNew ? viewModel.triageNewDuration : viewModel.triageLineupDuration
+        if viewModel.usesTriageTabs {
+            switch viewModel.selectedTriageTab {
+            case .new:
+                count = viewModel.triageNewCount
+                duration = viewModel.triageNewDuration
+            case .lineup:
+                count = viewModel.triageLineupCount
+                duration = viewModel.triageLineupDuration
+            case .browse:
+                count = viewModel.triageBrowseCount
+                duration = viewModel.triageBrowseDuration
+            }
         } else {
             let episodes = viewModel.episodes
             count = episodes.count
@@ -449,58 +530,34 @@ private extension PlaylistDetailViewController {
         let time = TimeFormatter.shared.multipleUnitFormattedShortTime(time: duration)
         let countsLabel = UILabel()
         countsLabel.text = count == 1 ? L10n.playlistDetailDescriptionOneEpisode(time) : L10n.playlistDetailDescription(count, time)
-        countsLabel.font = .systemFont(ofSize: 13, weight: .medium)
+        countsLabel.font = UIFont.font(ofSize: 14, weight: .regular, scalingWith: .footnote)
         countsLabel.textColor = AppTheme.colorForStyle(.primaryText02)
         countsLabel.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(countsLabel)
 
         var constraints = [
             countsLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
-            countsLabel.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -6),
+            countsLabel.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -13),
             countsLabel.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -16)
         ]
 
-        var trailingAnchorForNext = container.trailingAnchor
-
-        // Fork: single-podcast smart playlists offer the podcast page's archived toggle.
-        if viewModel.isSinglePodcastSmartPlaylist {
-            let archiveToggle = UIButton(type: .system)
-            archiveToggle.setTitle(viewModel.shouldShowArchived ? L10n.podcastHideArchived : L10n.podcastShowArchived, for: .normal)
-            archiveToggle.titleLabel?.font = .systemFont(ofSize: 13, weight: .semibold)
-            archiveToggle.setTitleColor(AppTheme.colorForStyle(.primaryInteractive01), for: .normal)
-            archiveToggle.addAction(UIAction { [weak self] _ in
-                guard let self else { return }
-                let show = !self.viewModel.shouldShowArchived
-                self.track(show ? .filterShowArchivedTapped : .filterHideArchivedTapped)
-                self.viewModel.updateShowArchivedEpisodes(show: show)
-                self.viewModel.reloadEpisodeList(animated: true)
+        // Fork: the Episodes tab carries the filter funnel, exactly like the podcast
+        // page — Show Archived / Show Played as checkable rows.
+        if viewModel.usesTriageTabs, viewModel.selectedTriageTab == .browse {
+            let funnel = UIButton(type: .system)
+            funnel.setImage(UIImage(named: "podcast-filter"), for: .normal)
+            // The cue: neutral when everything is default, accent when filtering.
+            funnel.tintColor = AppTheme.colorForStyle(viewModel.isEpisodesFunnelActive ? .primaryInteractive01 : .primaryIcon02)
+            funnel.accessibilityLabel = L10n.filters
+            funnel.addAction(UIAction { [weak self] _ in
+                self?.presentEpisodesFunnel()
             }, for: .touchUpInside)
-            archiveToggle.translatesAutoresizingMaskIntoConstraints = false
-            container.addSubview(archiveToggle)
+            funnel.translatesAutoresizingMaskIntoConstraints = false
+            container.addSubview(funnel)
             constraints.append(contentsOf: [
-                archiveToggle.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
-                archiveToggle.centerYAnchor.constraint(equalTo: countsLabel.centerYAnchor),
-                countsLabel.trailingAnchor.constraint(lessThanOrEqualTo: archiveToggle.leadingAnchor, constant: -10)
-            ])
-            trailingAnchorForNext = archiveToggle.leadingAnchor
-        }
-
-        if isNew, viewModel.triageNewCount > 0 {
-            let addAll = UIButton(type: .system)
-            addAll.setTitle(L10n.playlistAddAllToLineup, for: .normal)
-            addAll.titleLabel?.font = .systemFont(ofSize: 13, weight: .semibold)
-            addAll.setTitleColor(AppTheme.colorForStyle(.primaryInteractive01), for: .normal)
-            addAll.addAction(UIAction { [weak self] _ in
-                guard let self else { return }
-                self.viewModel.addToLineup(episodeUuids: self.viewModel.inboxEpisodes.map { $0.episode.uuid })
-            }, for: .touchUpInside)
-            addAll.translatesAutoresizingMaskIntoConstraints = false
-            container.addSubview(addAll)
-            let gap: CGFloat = trailingAnchorForNext === container.trailingAnchor ? -16 : -12
-            constraints.append(contentsOf: [
-                addAll.trailingAnchor.constraint(equalTo: trailingAnchorForNext, constant: gap),
-                addAll.centerYAnchor.constraint(equalTo: countsLabel.centerYAnchor),
-                countsLabel.trailingAnchor.constraint(lessThanOrEqualTo: addAll.leadingAnchor, constant: -10)
+                funnel.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
+                funnel.centerYAnchor.constraint(equalTo: countsLabel.centerYAnchor),
+                countsLabel.trailingAnchor.constraint(lessThanOrEqualTo: funnel.leadingAnchor, constant: -10)
             ])
         }
 
@@ -511,12 +568,78 @@ private extension PlaylistDetailViewController {
                 searchHeaderView.topAnchor.constraint(equalTo: container.topAnchor),
                 searchHeaderView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
                 searchHeaderView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-                searchHeaderView.heightAnchor.constraint(equalToConstant: PCSearchBarController.defaultHeight)
+                searchHeaderView.heightAnchor.constraint(equalToConstant: PlaylistDetailViewController.searchRowHeight)
             ])
+            constraints.append(topDivider.topAnchor.constraint(equalTo: searchHeaderView.bottomAnchor))
+        } else {
+            constraints.append(topDivider.topAnchor.constraint(equalTo: container.topAnchor))
         }
+
+        constraints.append(contentsOf: [
+            topDivider.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            topDivider.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            topDivider.heightAnchor.constraint(equalToConstant: 1.0 / UIScreen.main.scale),
+
+            bottomDivider.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            bottomDivider.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            bottomDivider.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            bottomDivider.heightAnchor.constraint(equalToConstant: 1.0 / UIScreen.main.scale)
+        ])
 
         NSLayoutConstraint.activate(constraints)
         return container
+    }
+
+    /// Fork: the Episodes-tab funnel, matching the podcast page's — display filters
+    /// as checkable rows, backed by the session's settings.
+    func presentEpisodesFunnel() {
+        let optionPicker = OptionsPicker(title: nil)
+
+        // Per-state switches (they keep the sheet open): all on = everything shows;
+        // switching one off hides that state. Grouped by axis, smart-rules style.
+        let currentFilter = viewModel.episodesFilter
+        for section in EpisodeStateFilter.sheetSections {
+            if let title = section.title {
+                optionPicker.addSectionTitle(title.localizedUppercase)
+            }
+            for option in section.options {
+                let action = OptionAction(label: option.title, icon: nil, selected: currentFilter.enabled.contains(option)) { [weak self] in
+                    self?.viewModel.toggleEpisodesFilter(option)
+                }
+                action.onOffAction = true
+                optionPicker.addAction(action: action)
+            }
+        }
+
+        optionPicker.present(from: self)
+    }
+
+    /// Fork: the Inbox tab's closing action buttons — pills matching the header's
+    /// Play-as-Session button.
+    private func inboxActionsFooter() -> UIView {
+        if inboxActionsFooterHost == nil {
+            let host = UIHostingController(rootView: AnyView(
+                InboxActionsFooterView(
+                    addAll: { [weak self] in self?.inboxAddAllTapped() },
+                    markAllSeen: { [weak self] in self?.inboxMarkAllSeenTapped() }
+                )
+                .environmentObject(Theme.sharedTheme)
+            ))
+            host.view.backgroundColor = .clear
+            addChild(host)
+            host.didMove(toParent: self)
+            inboxActionsFooterHost = host
+        }
+        return inboxActionsFooterHost!.view
+    }
+
+    private func inboxAddAllTapped() {
+        viewModel.addToSessionsPerSetting(episodeUuids: viewModel.inboxEpisodes.map { $0.episode.uuid }, presenting: self)
+    }
+
+    private func inboxMarkAllSeenTapped() {
+        EpisodeSeenManager.setSeen(true, episodes: viewModel.inboxEpisodes.map(\.episode))
+        viewModel.reloadEpisodeList(animated: true)
     }
 
     /// Builds a section header with a themed title, optionally stacking the search bar
@@ -560,7 +683,7 @@ private extension PlaylistDetailViewController {
                 searchHeaderView.topAnchor.constraint(equalTo: container.topAnchor),
                 searchHeaderView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
                 searchHeaderView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-                searchHeaderView.heightAnchor.constraint(equalToConstant: PCSearchBarController.defaultHeight)
+                searchHeaderView.heightAnchor.constraint(equalToConstant: PlaylistDetailViewController.searchRowHeight)
             ])
         }
 

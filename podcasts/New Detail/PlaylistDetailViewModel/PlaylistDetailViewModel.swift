@@ -14,33 +14,75 @@ class PlaylistDetailViewModel: ObservableObject {
         case archive
         case inbox
         case episodes
+        /// Fork: the session page's Episodes tab — the feeder's full domain, browsed
+        /// without triage semantics.
+        case browse
 
         func isContentEqual(to source: Section) -> Bool {
             self == source
         }
     }
 
-    /// Fork: which triage tab of a custom-ordered playlist is shown — Lineup (the
-    /// hand-ordered plays-next list) or New (untriaged arrivals).
+    /// Fork: which tab of a session page is shown — Inbox (the feeder's fresh offers),
+    /// Session (the hand-ordered plays-next list), or Episodes (the feeder's full
+    /// domain, widened by the funnel).
     enum TriageTab {
-        case lineup
         case new
+        case lineup
+        case browse
     }
 
     @Published var selectedTriageTab: TriageTab = .new
-    /// The opening tab is picked once per visit: Inbox when it has episodes, else Lineup.
+    /// The opening tab is picked once per visit: Inbox when it has offers, else Session.
     private var triageTabAutoSelected = false
     @Published private(set) var triageNewCount = 0
     @Published private(set) var triageLineupCount = 0
     private(set) var triageNewDuration: TimeInterval = 0
     private(set) var triageLineupDuration: TimeInterval = 0
+    private(set) var triageBrowseCount = 0
+    private(set) var triageBrowseDuration: TimeInterval = 0
+
+    /// Fork: the Episodes-tab funnel — per-state switches, all on by default except
+    /// Archived; off hides that state. One global filter, shared app-wide.
+    var episodesFilter: EpisodeStateFilterSet {
+        get { EpisodeStateFilterSet.global }
+        set {
+            newValue.saveGlobal()
+            reloadEpisodeList(animated: false)
+        }
+    }
+
+    func toggleEpisodesFilter(_ option: EpisodeStateFilter) {
+        var filter = episodesFilter
+        filter.toggle(option)
+        episodesFilter = filter
+    }
+
+    /// Fork: true when the view genuinely narrows — drives the icon cue.
+    var isEpisodesFunnelActive: Bool { episodesFilter.showsActiveCue }
+
     /// The full fetched list, regardless of the selected tab - the header artwork
     /// always reflects the whole playlist.
     private(set) var allOverlayEpisodes: [ListEpisode] = []
 
+    /// Fork: the viewed session's store members — drives the little green
+    /// in-this-session indicator on Episodes rows.
+    private(set) var sessionMemberUuidsForDisplay: Set<String> = []
+
+    /// The last fetch's episodes — lets tab switches rebuild sections instantly
+    /// instead of waiting for the async fetch (which still follows for freshness).
+    private var lastFetchedEpisodes: [ListEpisode] = []
+
     func selectTriageTab(_ tab: TriageTab) {
         guard selectedTriageTab != tab else { return }
         selectedTriageTab = tab
+
+        // Instant: the new tab renders from data already in hand, so the table never
+        // sits on the previous tab's rows.
+        let changeSetTuple = buildChangeSet(source: episodes, newData: lastFetchedEpisodes)
+        onChange(changeSetTuple.1, false, changeSetTuple.0)
+
+        // Freshness pass (engine sets, counts) in the background.
         reloadEpisodeList(animated: false)
     }
 
@@ -48,6 +90,8 @@ class PlaylistDetailViewModel: ObservableObject {
         case smartRules
         case addEpisodes
         case playAll
+        case playlistFolder
+        case playlistSettings
     }
 
     let onButtonTapped: (ButtonTag) -> Void
@@ -76,17 +120,42 @@ class PlaylistDetailViewModel: ObservableObject {
         dataSource.contains { $0.model == .inbox }
     }
 
-    /// Fork: a smart playlist tracking exactly one podcast (e.g. a podcast session's
-    /// bridge playlist) — it behaves enough like a podcast page to offer the
-    /// Show/Hide Archived toggle.
-    var isSinglePodcastSmartPlaylist: Bool {
-        !playlist.manual && !playlist.filterAllPodcasts && !playlist.podcastUuids.isEmpty
-            && playlist.podcastUuids != "none" && !playlist.podcastUuids.contains(",")
+    /// Fork: the session coordinating this playlist as its store, when there is one.
+    var session: ForkSession? {
+        SessionStore.shared.session(forStore: playlist.uuid)
     }
 
+    /// Fork: kept as the UI's switch for the triage experience — now meaning "this
+    /// playlist is a session's store".
     var usesCustomOrderOverlay: Bool {
-        playlist.usesCustomOrderOverlay
+        session != nil
     }
+
+    var sessionAutoAdd: Bool {
+        session?.autoAdd ?? false
+    }
+
+    var hasInboxTab: Bool {
+        if let session { return session.feeder != .none && !session.autoAdd }
+        if isLensPage { return !(lensSession?.autoAdd ?? false) }
+        return false
+    }
+
+    /// Fork: smart playlist (lens) pages carry the same triage tabs — the lens itself
+    /// is the feeder; its session's store lives elsewhere and may not exist yet.
+    var isLensPage: Bool { !isManualPlaylist }
+
+    var lensSession: ForkSession? {
+        SessionStore.shared.session(forSmartPlaylistFeeder: playlist.uuid)
+    }
+
+    /// The feeder used to compute lens-page offers before a session exists.
+    var lensFeederSession: ForkSession {
+        lensSession ?? ForkSession(uuid: "lens-inbox-preview", storePlaylistUuid: nil, feeder: .smartPlaylist(uuid: playlist.uuid))
+    }
+
+    /// Fork: pages showing the Inbox | Session | Episodes strip.
+    var usesTriageTabs: Bool { session != nil || isLensPage }
 
     /// The episode backing a table row, resilient to placeholder rows (marker, empty states)
     /// sharing a section with episodes.
@@ -141,12 +210,60 @@ class PlaylistDetailViewModel: ObservableObject {
     /// Fork: persists the lineup exactly as currently displayed (after a cross-section
     /// drag), then reloads so sections rebuild (e.g. an emptied inbox disappears).
     func commitLineupOrder() {
-        dataManager.setCustomOrder(episodeUuids: lineupEpisodes.map { $0.episode.uuid }, for: playlist)
+        let order = lineupEpisodes.map { $0.episode.uuid }
+        if let session {
+            SessionManager.shared.setLineupOrder(episodeUuids: order, session: session)
+        } else {
+            dataManager.setCustomOrder(episodeUuids: order, for: playlist)
+        }
         reloadEpisodeList()
     }
 
     var isManualPlaylist: Bool {
         playlist.manual
+    }
+
+    // Fork: Group By — session-backed for stores; per-playlist defaults for lenses.
+    var groupBy: EpisodeGroupBy {
+        get {
+            if let session { return EpisodeGroupBy(rawValue: session.groupBy) ?? .none }
+            return EpisodeGroupBy(rawValue: UserDefaults.standard.integer(forKey: "SJPlaylistGroupBy-\(playlist.uuid)")) ?? .none
+        }
+        set {
+            if var session {
+                session.groupBy = newValue.rawValue
+                SessionStore.shared.upsert(session)
+            } else {
+                UserDefaults.standard.set(newValue.rawValue, forKey: "SJPlaylistGroupBy-\(playlist.uuid)")
+            }
+            reloadEpisodeList(animated: false)
+        }
+    }
+
+    /// Episodes per group; 0 means no limit.
+    var groupLimit: Int {
+        get {
+            if let session { return session.groupLimit }
+            return UserDefaults.standard.integer(forKey: "SJPlaylistGroupLimit-\(playlist.uuid)")
+        }
+        set {
+            if var session {
+                session.groupLimit = newValue
+                SessionStore.shared.upsert(session)
+            } else {
+                UserDefaults.standard.set(newValue, forKey: "SJPlaylistGroupLimit-\(playlist.uuid)")
+            }
+            reloadEpisodeList(animated: false)
+        }
+    }
+
+    /// Interleaves Group By heading rows (and applies the group limit) in display order.
+    private func groupedElements(_ episodes: [ListEpisode]) -> [ListItem] {
+        guard groupBy != .none || groupLimit > 0 else { return episodes }
+        return EpisodeGrouper.group(episodes, by: groupBy, limit: groupLimit) { $0.episode }
+            .flatMap { group -> [ListItem] in
+                (group.title.map { [PlaylistGroupHeaderPlaceholder(title: $0)] } ?? []) + group.items
+            }
     }
 
     var hasSubscribedPodcasts: Bool {
@@ -206,8 +323,20 @@ class PlaylistDetailViewModel: ObservableObject {
 
         artworkLoadingTask?.cancel()
 
-        // Capture the newly updated episodes on the main thread before entering the async task
-        let currentEpisodes = allOverlayEpisodes.isEmpty ? self.episodes : allOverlayEpisodes
+        // Capture the newly updated episodes on the main thread before entering the async task.
+        // Artwork comes from the unarchived subset so the Show Archived toggle (which only
+        // interleaves archived rows into the same ordering) can't reshuffle it.
+        let currentEpisodes = (allOverlayEpisodes.isEmpty ? self.episodes : allOverlayEpisodes)
+            .filter { !(($0.episode as? Episode)?.archived ?? false) }
+        // Fork: session artwork comes from the feeder (stable); lenses naming podcasts
+        // use their rule. Neither shifts with episode order, tabs, or arrivals.
+        let rulePodcastUuids: [String] = {
+            if let session { return session.artworkPodcastUuids }
+            if !isManualPlaylist, !playlist.filterAllPodcasts {
+                return playlist.podcastUuids.components(separatedBy: ",").filter { !$0.isEmpty && $0 != "none" }
+            }
+            return []
+        }()
 
         artworkLoadingTask = Task { [weak self] in
             guard let self else { return }
@@ -218,8 +347,13 @@ class PlaylistDetailViewModel: ObservableObject {
                         self.playlistEpisodesCount = count
                     }
                 } else {
-                    let firstFourDistinct = self.firstDistinctPodcasts(from: currentEpisodes, limit: self.artworkImagesLimit)
-                    let images = try await self.loadImagesURLs(episodes: firstFourDistinct)
+                    let images: [PlaylistArtworkView.ImageItem]
+                    if !rulePodcastUuids.isEmpty {
+                        images = self.imageItems(forPodcastUuids: rulePodcastUuids)
+                    } else {
+                        let firstFourDistinct = self.firstDistinctPodcasts(from: currentEpisodes, limit: self.artworkImagesLimit)
+                        images = try await self.loadImagesURLs(episodes: firstFourDistinct)
+                    }
 
                     guard !Task.isCancelled else { return }
 
@@ -277,13 +411,14 @@ class PlaylistDetailViewModel: ObservableObject {
             dataManager: dataManager,
             episodesDataManager: episodesDataManager,
             playlist: playlist,
-            shouldShowArchived: playlist.showArchivedEpisodes
+            shouldShowArchived: isManualPlaylist ? playlist.showArchivedEpisodes : true
         ) { [weak self] newData, archivedEpisodeCount in
             guard let self else { return }
             DispatchQueue.main.async {
                 self.archivedEpisodesCount = archivedEpisodeCount
                 let isFirstReload = self.firstTimeLoading
                 self.firstTimeLoading = false
+                self.lastFetchedEpisodes = newData
                 let changeSetTuple = self.buildChangeSet(source: self.episodes, newData: newData)
                 let contentHasChanged = changeSetTuple.0
                 if contentHasChanged {
@@ -305,7 +440,11 @@ class PlaylistDetailViewModel: ObservableObject {
     }
 
     func delete(episodes uuids: [String]) {
-        dataManager.deleteEpisodes(uuids, from: playlist)
+        if let session {
+            SessionManager.shared.removeFromLineup(episodeUuids: uuids, session: session)
+        } else {
+            dataManager.deleteEpisodes(uuids, from: playlist)
+        }
     }
 
     func remove(episode uuid: String, at index: Int) {
@@ -338,16 +477,47 @@ class PlaylistDetailViewModel: ObservableObject {
     // MARK: - Fork: custom-order overlay actions
 
     /// Places episodes into the lineup at the insert marker ("Add to lineup").
+    /// Fork: the user-facing Add to Session verb — routes per Settings → Inbox
+    /// (all matching sessions / this one / ask), with this page's session preferred.
+    func addToSessionsPerSetting(episodeUuids: [String], presenting: UIViewController?) {
+        guard !episodeUuids.isEmpty else { return }
+        let preferred: ForkSession
+        if let session {
+            preferred = session
+        } else if isLensPage {
+            preferred = SessionManager.shared.findOrCreateSession(forSmartPlaylist: playlist)
+        } else {
+            addToLineup(episodeUuids: episodeUuids)
+            return
+        }
+        SessionManager.shared.addToSessions(episodeUuids: episodeUuids, preferred: preferred, presenting: presenting) { [weak self] _ in
+            self?.reloadEpisodeList(animated: true)
+        }
+    }
+
     func addToLineup(episodeUuids: [String]) {
         guard !episodeUuids.isEmpty else { return }
-        dataManager.insertIntoCustomOrder(episodeUuids: episodeUuids, for: playlist)
+        if let session {
+            SessionManager.shared.addToLineup(episodeUuids: episodeUuids, session: session)
+        } else if isLensPage {
+            let session = SessionManager.shared.findOrCreateSession(forSmartPlaylist: playlist)
+            SessionManager.shared.addToLineup(episodeUuids: episodeUuids, session: session)
+        } else {
+            dataManager.insertIntoCustomOrder(episodeUuids: episodeUuids, for: playlist)
+        }
         reloadEpisodeList()
     }
 
     func updatePlaylist(insertMode: PlaylistInsertMode) {
-        guard playlist.insertMode != insertMode else { return }
-        playlist.insertMode = insertMode
-        dataManager.save(playlist: playlist)
+        if var session {
+            guard session.insertMode != insertMode.rawValue else { return }
+            session.insertMode = insertMode.rawValue
+            SessionStore.shared.upsert(session)
+        } else {
+            guard playlist.insertMode != insertMode else { return }
+            playlist.insertMode = insertMode
+            dataManager.save(playlist: playlist)
+        }
         reloadEpisodeList()
     }
 
@@ -356,21 +526,21 @@ class PlaylistDetailViewModel: ObservableObject {
     /// ("after last added" when coming from top/bottom; an existing "before" mode keeps its
     /// direction).
     func updateInsertMarker(toLineupIndex index: Int, lineupUuids: [String]) {
-        if playlist.insertMode == .beforeLastInserted {
-            playlist.customOrderLastInsertedUuid = index < lineupUuids.count ? lineupUuids[index] : ""
+        guard var session else { return }
+        if PlaylistInsertMode(rawValue: session.insertMode) == .beforeLastInserted {
+            session.lastInsertedUuid = index < lineupUuids.count ? lineupUuids[index] : ""
         } else {
-            playlist.insertMode = .afterLastInserted
-            playlist.customOrderLastInsertedUuid = index > 0 ? lineupUuids[index - 1] : ""
+            session.insertMode = PlaylistInsertMode.afterLastInserted.rawValue
+            session.lastInsertedUuid = index > 0 ? lineupUuids[index - 1] : ""
         }
-        dataManager.save(playlist: playlist)
+        SessionStore.shared.upsert(session)
         reloadEpisodeList()
     }
 
     func updatePlaylist(newEpisodesAutoAdd: Bool) {
-        guard playlist.newEpisodesAutoAdd != newEpisodesAutoAdd else { return }
-        playlist.newEpisodesAutoAdd = newEpisodesAutoAdd
-        dataManager.save(playlist: playlist)
-        // Switching to auto absorbs the current inbox on the next reload.
+        guard var session, session.autoAdd != newEpisodesAutoAdd else { return }
+        session.autoAdd = newEpisodesAutoAdd
+        SessionStore.shared.upsert(session)
         reloadEpisodeList()
     }
 
@@ -397,7 +567,7 @@ class PlaylistDetailViewModel: ObservableObject {
             ArraySection(model: .header, elements: [PlaylistHeaderViewCellPlaceholder()])
         ]
 
-        if isManualPlaylist {
+        if isManualPlaylist, session == nil {
             // Keep the .archive section alive even while searching so the search bar
             // (rendered as this section's header view) stays anchored. Hide the
             // Show Archived row by emptying the section's elements during search.
@@ -412,27 +582,137 @@ class PlaylistDetailViewModel: ObservableObject {
             )
         }
 
-        // Fork: the custom-order overlay splits episodes into New (inbox) and Lineup.
-        // The insert marker exists only as state (it steers swipe-triage and auto-add);
-        // it isn't rendered — dragging gives explicit placement.
-        if usesCustomOrderOverlay, !isSearching {
-            let (inbox, lineup) = partitionForOverlay(episodes: episodes)
-            allOverlayEpisodes = episodes
-            if !triageTabAutoSelected, !episodes.isEmpty {
-                triageTabAutoSelected = true
-                selectedTriageTab = inbox.isEmpty ? .lineup : .new
+        // Fork: a session's store splits by tab — Inbox (feeder's fresh offers),
+        // Session (the store itself), Episodes (the feeder's full domain, widened by
+        // the funnel). Membership is computed by the feeder engine; the fetched
+        // episodes ARE the session lineup.
+        if let session, !isSearching {
+            let tint = AppTheme.appTintColor()
+            let hasInboxTab = session.feeder != .none && !session.autoAdd
+            if !hasInboxTab, selectedTriageTab == .new {
+                selectedTriageTab = .lineup
             }
+
+            let inbox = SessionFeederEngine.displayEpisodes(
+                for: session,
+                showArchived: false,
+                showPlayed: false,
+                showSeen: false
+            ).map { ListEpisode(episode: $0, tintColor: tint) }
+            let lineup = episodes
+            allOverlayEpisodes = episodes
+            sessionMemberUuidsForDisplay = Set(lineup.map { $0.episode.uuid })
+
+            if !triageTabAutoSelected {
+                triageTabAutoSelected = true
+                if selectedTriageTab != .browse {
+                    selectedTriageTab = (hasInboxTab && !inbox.isEmpty) ? .new : .lineup
+                }
+            }
+
             triageNewCount = inbox.count
             triageLineupCount = lineup.count
             triageNewDuration = inbox.reduce(0.0) { $0 + max(0, $1.episode.duration - $1.episode.playedUpTo) }
             triageLineupDuration = lineup.reduce(0.0) { $0 + max(0, $1.episode.duration - $1.episode.playedUpTo) }
-            // Tabs show one group at a time; auto-add playlists absorb the inbox, so
-            // they show no tabs and always the lineup.
-            if selectedTriageTab == .new, !playlist.newEpisodesAutoAdd {
-                sections.append(ArraySection(model: .inbox, elements: inbox))
-            } else {
-                sections.append(ArraySection(model: .episodes, elements: lineup))
+
+            let shown: [ListEpisode]
+            let model: Section
+            switch selectedTriageTab {
+            case .new:
+                shown = inbox
+                model = .inbox
+            case .lineup:
+                shown = lineup
+                model = .episodes
+            case .browse:
+                let members = episodesFilter.needsSessionContext
+                    ? Set(SessionFeederEngine.storeMemberUuids(for: session)) : []
+                // Fresh offers live in the Inbox only — Episodes never shows them.
+                let inboxUuids = Set(inbox.map { $0.episode.uuid })
+                shown = SessionFeederEngine.domainEpisodes(for: session, includeArchived: true)
+                    .filter { !inboxUuids.contains($0.uuid) && episodesFilter.matches($0, sessionMemberUuids: members) }
+                    .map { ListEpisode(episode: $0, tintColor: tint) }
+                model = .browse
             }
+            if selectedTriageTab == .browse {
+                triageBrowseCount = shown.count
+                triageBrowseDuration = shown.reduce(0.0) { $0 + max(0, $1.episode.duration - $1.episode.playedUpTo) }
+            }
+            // Group By shapes the Inbox and Episodes views; the Session lineup is
+            // hand-ordered and never grouped.
+            let elements: [ListItem]
+            if shown.isEmpty {
+                elements = [PlaylistTabEmptyPlaceholder()]
+            } else if selectedTriageTab == .lineup {
+                elements = shown
+            } else {
+                elements = groupedElements(shown)
+            }
+            sections.append(ArraySection(model: model, elements: elements))
+            return sections
+        }
+
+        // Fork: smart playlist (lens) pages carry the same three tabs — the lens is
+        // the feeder, its session's store (if any) is the Session lineup, and
+        // Episodes is the query itself behind the funnel.
+        if isLensPage, !isSearching {
+            let tint = AppTheme.appTintColor()
+            let inbox = SessionFeederEngine.displayEpisodes(for: lensFeederSession, showArchived: false, showPlayed: false, showSeen: false)
+                .map { ListEpisode(episode: $0, tintColor: tint) }
+            var lineup = [ListEpisode]()
+            if let real = lensSession, let storeUuid = real.storePlaylistUuid,
+               let store = DataManager.sharedManager.findPlaylist(uuid: storeUuid) {
+                lineup = DataManager.sharedManager.positionedEpisodeUuids(for: store)
+                    .compactMap { DataManager.sharedManager.findEpisode(uuid: $0) }
+                    .map { ListEpisode(episode: $0, tintColor: tint) }
+            }
+            let browseMembers = episodesFilter.needsSessionContext
+                ? Set(lensSession.map { SessionFeederEngine.storeMemberUuids(for: $0) } ?? []) : []
+            // Fresh offers live in the Inbox only — Episodes never shows them.
+            let lensInboxUuids = Set(inbox.map { $0.episode.uuid })
+            let browse = episodes.filter { !lensInboxUuids.contains($0.episode.uuid) && episodesFilter.matches($0.episode, sessionMemberUuids: browseMembers) }
+            allOverlayEpisodes = episodes
+            sessionMemberUuidsForDisplay = Set(lineup.map { $0.episode.uuid })
+
+            if !triageTabAutoSelected {
+                triageTabAutoSelected = true
+                if selectedTriageTab == .new {
+                    selectedTriageTab = (hasInboxTab && !inbox.isEmpty) ? .new : .browse
+                }
+            }
+            if !hasInboxTab, selectedTriageTab == .new {
+                selectedTriageTab = .browse
+            }
+
+            triageNewCount = inbox.count
+            triageLineupCount = lineup.count
+            triageNewDuration = inbox.reduce(0.0) { $0 + max(0, $1.episode.duration - $1.episode.playedUpTo) }
+            triageLineupDuration = lineup.reduce(0.0) { $0 + max(0, $1.episode.duration - $1.episode.playedUpTo) }
+            triageBrowseCount = browse.count
+            triageBrowseDuration = browse.reduce(0.0) { $0 + max(0, $1.episode.duration - $1.episode.playedUpTo) }
+
+            let shown: [ListEpisode]
+            let model: Section
+            switch selectedTriageTab {
+            case .new:
+                shown = inbox
+                model = .inbox
+            case .lineup:
+                shown = lineup
+                model = .episodes
+            case .browse:
+                shown = browse
+                model = .browse
+            }
+            let elements: [ListItem]
+            if shown.isEmpty {
+                elements = [PlaylistTabEmptyPlaceholder()]
+            } else if selectedTriageTab == .lineup {
+                elements = shown
+            } else {
+                elements = groupedElements(shown)
+            }
+            sections.append(ArraySection(model: model, elements: elements))
             return sections
         }
 
@@ -453,38 +733,11 @@ class PlaylistDetailViewModel: ObservableObject {
                 episodeElements = []
             }
         } else {
-            episodeElements = episodes
+            episodeElements = groupedElements(episodes)
         }
 
         sections.append(ArraySection(model: .episodes, elements: episodeElements))
         return sections
-    }
-
-    /// Fork: splits the fetched episodes into unpositioned (inbox) and positioned (lineup)
-    /// groups. Prunes position rows for episodes that left the playlist, and absorbs the
-    /// inbox at the marker when the playlist auto-adds new episodes.
-    private func partitionForOverlay(episodes: [ListEpisode]) -> (inbox: [ListEpisode], lineup: [ListEpisode]) {
-        var positioned = dataManager.positionedEpisodeUuids(for: playlist)
-        let memberUuids = Set(episodes.map { $0.episode.uuid })
-
-        if !episodes.isEmpty, positioned.contains(where: { !memberUuids.contains($0) }) {
-            dataManager.pruneCustomOrder(keepingEpisodeUuids: Array(memberUuids), for: playlist)
-            positioned = dataManager.positionedEpisodeUuids(for: playlist)
-        }
-
-        let positionedSet = Set(positioned)
-        var inbox = episodes.filter { !positionedSet.contains($0.episode.uuid) }
-
-        if playlist.newEpisodesAutoAdd, !inbox.isEmpty {
-            // Auto mode: the batch lands at the marker as a block, in on-screen order.
-            dataManager.insertIntoCustomOrder(episodeUuids: inbox.map { $0.episode.uuid }, for: playlist)
-            positioned = dataManager.positionedEpisodeUuids(for: playlist)
-            inbox = []
-        }
-
-        let byUuid = Dictionary(episodes.map { ($0.episode.uuid, $0) }, uniquingKeysWith: { first, _ in first })
-        let lineup = positioned.compactMap { byUuid[$0] }
-        return (inbox, lineup)
     }
 
     private func loadImagesURLs(episodes: [ListEpisode], includingEpisodeArtwork: Bool = false) async throws -> [PlaylistArtworkView.ImageItem] {
@@ -513,6 +766,16 @@ class PlaylistDetailViewModel: ObservableObject {
                 return lhsIndex < rhsIndex
             }
         }
+    }
+
+    /// Artwork tiles straight from the podcast rule, in its stored order. Matches the
+    /// episode-derived grid's shape: four tiles, or a single one when fewer exist.
+    private func imageItems(forPodcastUuids uuids: [String]) -> [PlaylistArtworkView.ImageItem] {
+        var tiles = Array(uuids.prefix(artworkImagesLimit))
+        if tiles.count < artworkImagesLimit {
+            tiles = Array(tiles.prefix(1))
+        }
+        return tiles.map { PlaylistArtworkView.ImageItem(id: $0, url: imageManager.podcastUrl(imageSize: .detail, uuid: $0)) }
     }
 
     private func firstDistinctPodcasts(from episodes: [ListEpisode], limit: Int) -> [ListEpisode] {

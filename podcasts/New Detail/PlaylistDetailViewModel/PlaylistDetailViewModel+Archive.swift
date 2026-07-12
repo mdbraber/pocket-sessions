@@ -10,7 +10,10 @@ extension PlaylistDetailViewModel {
     }
 
     var shouldShowEmptyPlaceholder: Bool {
-        episodes.isEmpty && !shouldShowArchivePlaceholder
+        // Fork: sessions keep their full chrome (header, tabs, feeder) — emptiness
+        // renders as a row inside the selected tab. Only plain manual playlists get
+        // the whole-screen Add Episodes state.
+        episodes.isEmpty && !shouldShowArchivePlaceholder && isManualPlaylist && session == nil
     }
 
     func unarchivedEpisodesCount() -> Int {

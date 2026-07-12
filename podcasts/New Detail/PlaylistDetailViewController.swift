@@ -6,6 +6,13 @@ import PocketCastsServer
 import PocketCastsUtils
 
 class PlaylistDetailViewController: PCViewController, UIScrollViewDelegate {
+    /// Fork: the search row uses the podcast page's exact metrics (56pt row, 36pt pill).
+    static let searchRowHeight: CGFloat = 56
+
+    /// Fork: the Inbox tab's Add All / Mark All as Seen footer.
+    static let inboxActionsFooterHeight: CGFloat = InboxActionsFooterView.height
+    var inboxActionsFooterHost: UIHostingController<AnyView>?
+
     private(set) var viewModel: PlaylistDetailViewModel!
 
     private(set) var searchController: PCSearchBarController! {
@@ -156,6 +163,10 @@ class PlaylistDetailViewController: PCViewController, UIScrollViewDelegate {
                 self.editPlaylist()
             case .addEpisodes:
                 self.addEpisodes()
+            case .playlistFolder:
+                self.playlistFolderTapped()
+            case .playlistSettings:
+                self.playlistOptionsTapped()
             }
         }
     }
@@ -243,13 +254,8 @@ class PlaylistDetailViewController: PCViewController, UIScrollViewDelegate {
             navTitleLabel.anchorToAllSidesOf(view: view)
             return view
         }()
-        defaultRightBarButton = FakeNavBarButton.makeBarButtonItem(
-            image: UIImage(named: "more"),
-            accessibilityLabel: L10n.accessibilityMoreActions,
-            target: self,
-            action: #selector(moreTapped)
-        )
-        customRightBtn = defaultRightBarButton
+        // Fork: the ... options moved next to the search bar (podcast-page style);
+        // the nav bar's right slot stays free for multi-select's Cancel.
 
         if !LiquidGlass.isEnabled {
             defaultBackBarButton = FakeNavBarButton.makeBarButtonItem(
@@ -283,6 +289,34 @@ class PlaylistDetailViewController: PCViewController, UIScrollViewDelegate {
         searchHeaderView.addSubview(searchController.view)
         searchController.didMove(toParent: self)
 
+        // Match the podcast page's search field exactly: 15pt subheadline-scaled font,
+        // 36pt pill (radius 18) vertically centered in the 56pt row.
+        searchController.searchTextField.font = UIFont.font(ofSize: 15, weight: .regular, scalingWith: .subheadline)
+        searchController.roundedBackgroundView.layer.cornerRadius = 18
+        var pillHeightAdjusted = false
+        for constraint in searchController.roundedBackgroundView.constraints where constraint.firstAttribute == .height && constraint.relation == .equal {
+            constraint.constant = 36
+            pillHeightAdjusted = true
+        }
+        if !pillHeightAdjusted {
+            searchController.roundedBackgroundView.heightAnchor.constraint(equalToConstant: 36).isActive = true
+        }
+        for constraint in searchController.view.constraints {
+            let involvesPill = (constraint.firstItem as? UIView) == searchController.roundedBackgroundView
+                || (constraint.secondItem as? UIView) == searchController.roundedBackgroundView
+            if involvesPill, constraint.firstAttribute == .bottom || constraint.secondAttribute == .bottom {
+                constraint.constant = 10
+            }
+        }
+
+        // Fork: the ⋯ options button rides next to the search bar, podcast-page style.
+        let overflowButton = ThemeSecondaryButton(type: .custom)
+        overflowButton.setImage(UIImage(named: "podcast-more-options")?.withRenderingMode(.alwaysTemplate), for: .normal)
+        overflowButton.accessibilityLabel = L10n.accessibilityMoreActions
+        overflowButton.addTarget(self, action: #selector(moreTapped), for: .touchUpInside)
+        overflowButton.translatesAutoresizingMaskIntoConstraints = false
+        searchHeaderView.addSubview(overflowButton)
+
         let topAnchor = searchController.view.topAnchor.constraint(equalTo: searchHeaderView.topAnchor)
 
         multiSelectFooter = MultiSelectFooterView(frame: .zero)
@@ -302,9 +336,17 @@ class PlaylistDetailViewController: PCViewController, UIScrollViewDelegate {
             blurHeaderView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: 20),
 
             searchController.view.leadingAnchor.constraint(equalTo: searchHeaderView.leadingAnchor),
-            searchController.view.trailingAnchor.constraint(equalTo: searchHeaderView.trailingAnchor),
-            searchController.view.heightAnchor.constraint(equalToConstant: PCSearchBarController.defaultHeight),
+            // The search view pads its field by 16 internally — overlap the button's
+            // slot so the visual pill-to-dots gap is the podcast page's 12pt.
+            searchController.view.trailingAnchor.constraint(equalTo: overflowButton.leadingAnchor, constant: 4),
+            searchController.view.heightAnchor.constraint(equalToConstant: Self.searchRowHeight),
             topAnchor,
+
+            overflowButton.trailingAnchor.constraint(equalTo: searchHeaderView.trailingAnchor, constant: -13),
+            // Center on the field itself, not the container (its padding is asymmetric).
+            overflowButton.centerYAnchor.constraint(equalTo: searchController.searchTextField.centerYAnchor),
+            overflowButton.widthAnchor.constraint(equalToConstant: 36),
+            overflowButton.heightAnchor.constraint(equalToConstant: 36),
 
             multiSelectFooter.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 8.0),
             multiSelectFooter.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -8.0),
@@ -363,12 +405,19 @@ class PlaylistDetailViewController: PCViewController, UIScrollViewDelegate {
                 viewModel.update(data: data) { [weak self] in
                     self?.reloadRefreshControlColor()
                 }
+            } else {
+                // An empty changeset still needs update() — the first fetch can match
+                // the init-time sections exactly (lens inbox comes from the engine both
+                // times), and artwork/count loading lives inside update().
+                viewModel.update(data: viewModel.dataSource) { [weak self] in
+                    self?.reloadRefreshControlColor()
+                }
             }
             tableView.reloadData()
         }
         // The backdrop reflects the whole playlist — an empty triage tab must not
         // toggle it off.
-        blurHeaderView.isHidden = viewModel.usesCustomOrderOverlay
+        blurHeaderView.isHidden = viewModel.usesTriageTabs
             ? viewModel.allOverlayEpisodes.isEmpty
             : viewModel.episodes.isEmpty
         reloadEmptyState()
