@@ -366,7 +366,10 @@ extension PlaylistDetailViewController: UITableViewDragDelegate, UITableViewDrop
     /// Reorder is always live while custom order is on — episode rows and the insert
     /// marker both drag; inbox rows are triaged via swipe instead.
     var canReorderInline: Bool {
+        // A date-sorted Session view is display-only — reordering it would write the
+        // wrong lineup order.
         !isMultiSelectEnabled && !viewModel.isSearching && viewModel.playlist.sortType == PlaylistSort.dragAndDrop.rawValue
+            && TriageTabSort.order(.session, pageUuid: viewModel.playlist.uuid) == .custom
     }
 
     func tableView(_ tableView: UITableView, itemsForBeginning session: UIDragSession, at indexPath: IndexPath) -> [UIDragItem] {
@@ -473,6 +476,22 @@ extension PlaylistDetailViewController {
     func refreshTriageCountsLine() {
         triageCountsLabel?.text = triageCountsText()
     }
+
+    /// Fork: the tab's sort picker — Session offers its custom lineup order plus the
+    /// date orders; Inbox and Episodes the date orders.
+    func presentTriageSortPicker() {
+        let tab = viewModel.selectedTriageTab.sortKey
+        let pageUuid = viewModel.playlist.uuid
+        let picker = OptionsPicker(title: L10n.sortBy.localizedUppercase)
+        let current = TriageTabSort.order(tab, pageUuid: pageUuid)
+        for option in tab.options {
+            picker.addAction(action: OptionAction(label: option.title, selected: current == option) { [weak self] in
+                TriageTabSort.setOrder(option, tab: tab, pageUuid: pageUuid)
+                self?.viewModel.reloadEpisodeList(animated: false)
+            })
+        }
+        picker.present(from: self)
+    }
 }
 
 private extension PlaylistDetailViewController {
@@ -558,6 +577,7 @@ private extension PlaylistDetailViewController {
 
         // Fork: the Episodes tab carries the filter funnel, exactly like the podcast
         // page — Show Archived / Show Played as checkable rows.
+        var funnelButton: UIButton?
         if viewModel.usesTriageTabs, viewModel.selectedTriageTab == .browse {
             let funnel = UIButton(type: .system)
             funnel.setImage(UIImage(named: "podcast-filter"), for: .normal)
@@ -571,9 +591,35 @@ private extension PlaylistDetailViewController {
             container.addSubview(funnel)
             constraints.append(contentsOf: [
                 funnel.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
-                funnel.centerYAnchor.constraint(equalTo: countsLabel.centerYAnchor),
-                countsLabel.trailingAnchor.constraint(lessThanOrEqualTo: funnel.leadingAnchor, constant: -10)
+                funnel.centerYAnchor.constraint(equalTo: countsLabel.centerYAnchor)
             ])
+            funnelButton = funnel
+        }
+
+        // Fork: the per-tab sort control, left of the funnel (or at its spot on tabs
+        // without one). Accented whenever the tab isn't in its natural order.
+        if viewModel.usesTriageTabs {
+            let sortKey = viewModel.selectedTriageTab.sortKey
+            let sort = UIButton(type: .system)
+            sort.setImage(UIImage(systemName: "arrow.up.arrow.down", withConfiguration: UIImage.SymbolConfiguration(pointSize: 14, weight: .medium)), for: .normal)
+            sort.tintColor = AppTheme.colorForStyle(TriageTabSort.isNonDefault(sortKey, pageUuid: viewModel.playlist.uuid) ? .primaryInteractive01 : .primaryIcon02)
+            sort.accessibilityLabel = L10n.sortBy
+            sort.addAction(UIAction { [weak self] _ in
+                self?.presentTriageSortPicker()
+            }, for: .touchUpInside)
+            sort.translatesAutoresizingMaskIntoConstraints = false
+            container.addSubview(sort)
+            if let funnelButton {
+                constraints.append(sort.trailingAnchor.constraint(equalTo: funnelButton.leadingAnchor, constant: -12))
+            } else {
+                constraints.append(sort.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16))
+            }
+            constraints.append(contentsOf: [
+                sort.centerYAnchor.constraint(equalTo: countsLabel.centerYAnchor),
+                countsLabel.trailingAnchor.constraint(lessThanOrEqualTo: sort.leadingAnchor, constant: -10)
+            ])
+        } else if let funnelButton {
+            constraints.append(countsLabel.trailingAnchor.constraint(lessThanOrEqualTo: funnelButton.leadingAnchor, constant: -10))
         }
 
         if includingSearch {

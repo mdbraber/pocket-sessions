@@ -44,6 +44,12 @@ class EpisodeListSearchController: SimpleNotificationsViewController, UISearchBa
         }
     }
     @IBOutlet var overflowButton: ThemeSecondaryButton!
+
+    // Fork: the per-tab sort toggle, left of the funnel (or at its spot when the
+    // funnel hides on the Inbox/Session tabs).
+    private let sortButton = UIButton(type: .system)
+    private var sortTrailingToFunnel: NSLayoutConstraint?
+    private var sortTrailingToEdge: NSLayoutConstraint?
     var isOverflowButtonEnabled = true {
         didSet {
             overflowButton.isEnabled = isOverflowButtonEnabled
@@ -66,6 +72,19 @@ class EpisodeListSearchController: SimpleNotificationsViewController, UISearchBa
         super.viewDidLoad()
         showHideArchiveBtn.titleLabel?.textAlignment = .center
         showHideArchiveBtn.titleLabel?.heightAnchor.constraint(equalTo: showHideArchiveBtn.heightAnchor).isActive = true
+
+        sortButton.translatesAutoresizingMaskIntoConstraints = false
+        sortButton.accessibilityLabel = L10n.sortBy
+        sortButton.addTarget(self, action: #selector(sortToggleTapped), for: .touchUpInside)
+        view.addSubview(sortButton)
+        sortTrailingToFunnel = sortButton.trailingAnchor.constraint(equalTo: showHideArchiveBtn.leadingAnchor, constant: -2)
+        sortTrailingToEdge = sortButton.trailingAnchor.constraint(equalTo: showHideArchiveBtn.trailingAnchor)
+        NSLayoutConstraint.activate([
+            sortButton.centerYAnchor.constraint(equalTo: showHideArchiveBtn.centerYAnchor),
+            sortButton.widthAnchor.constraint(equalToConstant: 32),
+            sortButton.heightAnchor.constraint(equalToConstant: 32)
+        ])
+
         updateInfoView()
         themeChanged()
         addCustomObserver(Constants.Notifications.themeChanged, selector: #selector(themeChanged))
@@ -103,7 +122,7 @@ class EpisodeListSearchController: SimpleNotificationsViewController, UISearchBa
                 count = SessionStore.shared.session(forPodcast: podcast.uuid).map { SessionFeederEngine.storeMemberUuids(for: $0).count } ?? 0
             } else {
                 let session = SessionStore.shared.session(forPodcast: podcast.uuid)
-                    ?? ForkSession(uuid: "podcast-inbox-preview", storePlaylistUuid: nil, feeder: .podcast(uuid: podcast.uuid))
+                    ?? Session(uuid: "podcast-inbox-preview", storePlaylistUuid: nil, feeder: .podcast(uuid: podcast.uuid))
                 count = SessionFeederEngine.displayEpisodes(for: session, showArchived: false, showPlayed: false, showSeen: false).count
             }
             // An empty tab already says "No episodes" in the list — a "0 episodes"
@@ -115,6 +134,7 @@ class EpisodeListSearchController: SimpleNotificationsViewController, UISearchBa
                 episodeInfoLabel?.attributedText = nil
             }
             showHideArchiveBtn?.isHidden = true
+            updateSortButton()
             return
         }
         showHideArchiveBtn?.isHidden = false
@@ -145,6 +165,64 @@ class EpisodeListSearchController: SimpleNotificationsViewController, UISearchBa
                 showHideBtn.layoutIfNeeded()
             }
         }
+        updateSortButton()
+    }
+
+    /// The current tab's sort key on the podcast page.
+    private var currentSortTab: TriageTabSort.Tab {
+        guard let delegate = podcastDelegate else { return .episodes }
+        if delegate.isShowingInbox() { return .inbox }
+        if delegate.isShowingSession() { return .session }
+        return .episodes
+    }
+
+    /// Fork: the per-tab sort control — accented whenever the shown order isn't the
+    /// tab's natural one (Episodes: the stock per-podcast sort, newest first by
+    /// default; Session: the custom lineup order; Inbox: newest first).
+    private func updateSortButton() {
+        guard let podcast = podcastDelegate?.displayedPodcast() else { return }
+        let tab = currentSortTab
+        let nonDefault: Bool
+        if tab == .episodes {
+            nonDefault = (podcast.podcastSortOrder ?? .newestToOldest) != .newestToOldest
+        } else {
+            nonDefault = TriageTabSort.isNonDefault(tab, pageUuid: podcast.uuid)
+        }
+        UIView.performWithoutAnimation {
+            sortButton.setImage(UIImage(systemName: "arrow.up.arrow.down", withConfiguration: UIImage.SymbolConfiguration(pointSize: 14, weight: .medium)), for: .normal)
+            sortButton.tintColor = nonDefault ? ThemeColor.primaryInteractive01() : ThemeColor.primaryIcon02()
+            sortButton.layoutIfNeeded()
+        }
+        sortTrailingToFunnel?.isActive = false
+        sortTrailingToEdge?.isActive = false
+        if tab == .episodes {
+            sortTrailingToFunnel?.isActive = true
+        } else {
+            sortTrailingToEdge?.isActive = true
+        }
+    }
+
+    @objc private func sortToggleTapped() {
+        guard let podcast = podcastDelegate?.displayedPodcast() else { return }
+        let tab = currentSortTab
+
+        // Episodes rides the stock per-podcast sort (full option set); the other
+        // tabs get their own per-podcast order picker.
+        if tab == .episodes {
+            makeSortOptionsPicker()?.present(from: self)
+            return
+        }
+
+        let picker = OptionsPicker(title: L10n.sortBy.localizedUppercase)
+        let current = TriageTabSort.order(tab, pageUuid: podcast.uuid)
+        for option in tab.options {
+            picker.addAction(action: OptionAction(label: option.title, selected: current == option) { [weak self] in
+                TriageTabSort.setOrder(option, tab: tab, pageUuid: podcast.uuid)
+                self?.updateSortButton()
+                self?.podcastDelegate?.episodesDidChange()
+            })
+        }
+        picker.present(from: self)
     }
 
     func episodesDidReload() {

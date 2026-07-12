@@ -30,6 +30,15 @@ class PlaylistDetailViewModel: ObservableObject {
         case new
         case lineup
         case browse
+
+        /// The tab's global sort-direction key.
+        var sortKey: TriageTabSort.Tab {
+            switch self {
+            case .new: return .inbox
+            case .lineup: return .session
+            case .browse: return .episodes
+            }
+        }
     }
 
     @Published var selectedTriageTab: TriageTab = .new
@@ -121,7 +130,7 @@ class PlaylistDetailViewModel: ObservableObject {
     }
 
     /// Fork: the session coordinating this playlist as its store, when there is one.
-    var session: ForkSession? {
+    var session: Session? {
         SessionStore.shared.session(forStore: playlist.uuid)
     }
 
@@ -145,13 +154,13 @@ class PlaylistDetailViewModel: ObservableObject {
     /// is the feeder; its session's store lives elsewhere and may not exist yet.
     var isLensPage: Bool { !isManualPlaylist }
 
-    var lensSession: ForkSession? {
+    var lensSession: Session? {
         SessionStore.shared.session(forSmartPlaylistFeeder: playlist.uuid)
     }
 
     /// The feeder used to compute lens-page offers before a session exists.
-    var lensFeederSession: ForkSession {
-        lensSession ?? ForkSession(uuid: "lens-inbox-preview", storePlaylistUuid: nil, feeder: .smartPlaylist(uuid: playlist.uuid))
+    var lensFeederSession: Session {
+        lensSession ?? Session(uuid: "lens-inbox-preview", storePlaylistUuid: nil, feeder: .smartPlaylist(uuid: playlist.uuid))
     }
 
     /// Fork: pages showing the Inbox | Session | Episodes strip.
@@ -469,7 +478,7 @@ class PlaylistDetailViewModel: ObservableObject {
     /// (all matching sessions / this one / ask), with this page's session preferred.
     func addToSessionsPerSetting(episodeUuids: [String], presenting: UIViewController?) {
         guard !episodeUuids.isEmpty else { return }
-        let preferred: ForkSession
+        let preferred: Session
         if let session {
             preferred = session
         } else if isLensPage {
@@ -498,7 +507,7 @@ class PlaylistDetailViewModel: ObservableObject {
 
     /// The session whose insert mode this page controls — the store's own on a
     /// session page, or the lens's fed session on a smart-playlist page.
-    var insertModeSession: ForkSession? {
+    var insertModeSession: Session? {
         session ?? lensSession
     }
 
@@ -599,7 +608,7 @@ class PlaylistDetailViewModel: ObservableObject {
             triageNewDuration = inbox.reduce(0.0) { $0 + max(0, $1.episode.duration - $1.episode.playedUpTo) }
             triageLineupDuration = lineup.reduce(0.0) { $0 + max(0, $1.episode.duration - $1.episode.playedUpTo) }
 
-            let shown: [ListEpisode]
+            var shown: [ListEpisode]
             let model: Section
             switch selectedTriageTab {
             case .new:
@@ -618,6 +627,8 @@ class PlaylistDetailViewModel: ObservableObject {
                     .map { ListEpisode(episode: $0, tintColor: tint) }
                 model = .browse
             }
+            // Fork: the tab's per-page sort.
+            shown = TriageTabSort.arrange(shown, tab: selectedTriageTab.sortKey, pageUuid: playlist.uuid)
             if selectedTriageTab == .browse {
                 triageBrowseCount = shown.count
                 triageBrowseDuration = shown.reduce(0.0) { $0 + max(0, $1.episode.duration - $1.episode.playedUpTo) }
@@ -675,7 +686,7 @@ class PlaylistDetailViewModel: ObservableObject {
             triageBrowseCount = browse.count
             triageBrowseDuration = browse.reduce(0.0) { $0 + max(0, $1.episode.duration - $1.episode.playedUpTo) }
 
-            let shown: [ListEpisode]
+            var shown: [ListEpisode]
             let model: Section
             switch selectedTriageTab {
             case .new:
@@ -688,6 +699,8 @@ class PlaylistDetailViewModel: ObservableObject {
                 shown = browse
                 model = .browse
             }
+            // Fork: the tab's per-page sort.
+            shown = TriageTabSort.arrange(shown, tab: selectedTriageTab.sortKey, pageUuid: playlist.uuid)
             let elements: [ListItem]
             if shown.isEmpty {
                 elements = [PlaylistTabEmptyPlaceholder()]

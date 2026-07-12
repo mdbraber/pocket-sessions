@@ -820,6 +820,9 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
                 }
                 .map { ListEpisode(episode: $0, tintColor: tintColor) }
         }
+        // Fork: the Session tab's per-podcast sort — lineup order by default, date
+        // orders on request (display only).
+        episodes = TriageTabSort.arrange(episodes.compactMap { $0 as? ListEpisode }, tab: .session, pageUuid: podcast.uuid)
         if episodes.isEmpty, !searchTerm.isEmpty {
             episodes = [NoSearchResultsPlaceholder()]
         }
@@ -879,6 +882,8 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
             return uuidsToFilter.contains(episode.uuid) || (!searchTerm.isEmpty && episode.displayableTitle().localizedCaseInsensitiveContains(searchTerm))
         }
         .map { ListEpisode(episode: $0, tintColor: tintColor) }
+        // Fork: the Inbox tab's per-podcast sort — newest first by default.
+        episodes = TriageTabSort.arrange(episodes.compactMap { $0 as? ListEpisode }, tab: .inbox, pageUuid: podcast.uuid)
         if episodes.isEmpty, !searchTerm.isEmpty {
             episodes = [NoSearchResultsPlaceholder()]
         }
@@ -922,9 +927,9 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
     /// The session whose feeder drives the Inbox tab — the real one when it exists,
     /// otherwise a transient preview (no store, no dismissals) so the inbox works
     /// before a session is ever created.
-    func inboxSession(for podcast: Podcast) -> ForkSession {
+    func inboxSession(for podcast: Podcast) -> Session {
         SessionStore.shared.session(forPodcast: podcast.uuid)
-            ?? ForkSession(uuid: "podcast-inbox-preview", storePlaylistUuid: nil, feeder: .podcast(uuid: podcast.uuid))
+            ?? Session(uuid: "podcast-inbox-preview", storePlaylistUuid: nil, feeder: .podcast(uuid: podcast.uuid))
     }
 
     /// Fork: the Inbox tab's closing action buttons — pills matching the header's
@@ -1371,13 +1376,12 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
         SessionManager.shared.addToSessions(episodeUuids: group.map { $0.episode.uuid }, preferred: session, presenting: self)
     }
 
-    /// Fork: the lineup becomes exactly this group, then it plays. Former members
-    /// return to triage.
+    /// Fork: the lineup becomes exactly this group. Former members return to triage.
+    /// Nothing plays — that's Play as Session's job.
     private func replaceSessionWithGroup(_ group: [ListEpisode]) {
-        guard let podcast, let first = group.first?.episode else { return }
+        guard let podcast, !group.isEmpty else { return }
         let session = SessionManager.shared.findOrCreateSession(forPodcast: podcast)
         SessionManager.shared.replaceLineup(episodeUuids: group.map { $0.episode.uuid }, session: session)
-        SessionManager.shared.play(episode: first, in: session)
     }
 
     private func downloadAction(for group: [ListEpisode], season: Int?) -> OptionAction? {
@@ -1674,12 +1678,12 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
         showingInbox
     }
 
-    func multiSelectPreferredSession() -> ForkSession? {
+    func multiSelectPreferredSession() -> Session? {
         guard let podcast else { return nil }
         return SessionManager.shared.findOrCreateSession(forPodcast: podcast)
     }
 
-    func multiSelectCurrentSession() -> ForkSession? {
+    func multiSelectCurrentSession() -> Session? {
         guard let podcast else { return nil }
         return SessionStore.shared.session(forPodcast: podcast.uuid)
     }

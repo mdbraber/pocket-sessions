@@ -13,9 +13,9 @@ class EpisodesDataManager: PlaybackSessionEpisodeSource {
         case .playlist, .smartPlaylist:
             // Sessions play their store (a manual playlist) in its order. Auto-add
             // sessions ingest pending offers first so nothing waits in the inbox.
-            if let filter = DataManager.sharedManager.findPlaylist(uuid: session.uuid), let forkSession = SessionStore.shared.session(forStore: filter.uuid) {
-                if forkSession.autoAdd {
-                    SessionManager.shared.ingestAutoAdd(session: forkSession)
+            if let filter = DataManager.sharedManager.findPlaylist(uuid: session.uuid), let storeSession = SessionStore.shared.session(forStore: filter.uuid) {
+                if storeSession.autoAdd {
+                    SessionManager.shared.ingestAutoAdd(session: storeSession)
                 }
                 return playlistEpisodes(for: filter).map { $0.episode }
             }
@@ -65,18 +65,21 @@ class EpisodesDataManager: PlaybackSessionEpisodeSource {
         // Fresh offers live in the Inbox tab only — Episodes never shows them,
         // funnel or no funnel.
         let inboxSession = SessionStore.shared.session(forPodcast: podcast.uuid)
-            ?? ForkSession(uuid: "podcast-inbox-preview", storePlaylistUuid: nil, feeder: .podcast(uuid: podcast.uuid))
+            ?? Session(uuid: "podcast-inbox-preview", storePlaylistUuid: nil, feeder: .podcast(uuid: podcast.uuid))
         let inboxUuids = Set(SessionFeederEngine.displayEpisodes(for: inboxSession, showArchived: false, showPlayed: false, showSeen: false).map(\.uuid))
 
         // Groups whose rows all filter away disappear entirely — a grouping header
-        // with nothing under it is noise. One (possibly empty) episodes section
-        // always remains so the page's placeholder machinery keeps its shape.
-        var filtered = sections.dropFirst().map { section in
-            ArraySection(model: section.model, elements: section.elements.filter { item in
+        // with nothing under it is noise. Group headers are ListHeader ELEMENTS
+        // interleaved with their rows, so orphaned ones are pruned per element run.
+        // One (possibly empty) episodes section always remains so the page's
+        // placeholder machinery keeps its shape.
+        var filtered = sections.dropFirst().map { section -> ArraySection<String, ListItem> in
+            let kept = section.elements.filter { item in
                 guard let listEpisode = item as? ListEpisode else { return true }
                 if inboxUuids.contains(listEpisode.episode.uuid) { return false }
                 return filter.isUnfiltered || filter.matches(listEpisode.episode, sessionMemberUuids: members)
-            })
+            }
+            return ArraySection(model: section.model, elements: droppingEmptyGroupHeaders(kept))
         }.filter { !$0.elements.isEmpty }
         if filtered.isEmpty {
             filtered = [ArraySection(model: "episodes", elements: [])]
@@ -137,6 +140,22 @@ class EpisodesDataManager: PlaybackSessionEpisodeSource {
         }
 
         return applyDisplayFilters(newData, podcast: podcast)
+    }
+
+    /// A group header immediately followed by another header (or by nothing) lost
+    /// its whole group to the filters — drop it.
+    private func droppingEmptyGroupHeaders(_ elements: [ListItem]) -> [ListItem] {
+        var result = [ListItem]()
+        for element in elements {
+            if element is ListHeader, result.last is ListHeader {
+                result.removeLast()
+            }
+            result.append(element)
+        }
+        if result.last is ListHeader {
+            result.removeLast()
+        }
+        return result
     }
 
     func createEpisodesQuery(_ podcast: Podcast, uuidsToFilter: [String]? = nil) -> String {

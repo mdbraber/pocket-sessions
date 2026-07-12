@@ -354,7 +354,8 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         case .playlist, .smartPlaylist:
             sourceName = DataManager.sharedManager.findPlaylist(uuid: session.uuid)?.playlistName ?? L10n.playbackSessionTabSession
         }
-        sessionHeaderLabel.text = sourceName
+        // The chevron signals the title links to its session page.
+        sessionHeaderLabel.text = sourceName + " ›"
         sessionHeaderLabel.style = .primaryText01
         sessionMetaLabel.text = sessionMetaText()
 
@@ -465,10 +466,10 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     /// Fork: how many episodes of the playing session's feeder are waiting in its inbox.
     static func inboxCount(for session: PlaybackSession) -> Int {
         guard session.type == .playlist || session.type == .smartPlaylist,
-              let forkSession = SessionStore.shared.session(forStore: session.uuid),
-              forkSession.feeder != .none, !forkSession.autoAdd else { return 0 }
-        return SessionFeederEngine.inboxEpisodes(for: forkSession)
-            .filter { forkSession.showSeen || !$0.isSeen }
+              let storeSession = SessionStore.shared.session(forStore: session.uuid),
+              storeSession.feeder != .none, !storeSession.autoAdd else { return 0 }
+        return SessionFeederEngine.inboxEpisodes(for: storeSession)
+            .filter { storeSession.showSeen || !$0.isSeen }
             .count
     }
 
@@ -1623,7 +1624,7 @@ extension UpNextViewController {
 /// so there is no queue mode to switch back to).
 extension UpNextViewController {
     /// Fork: Remove from Session on session rows targets the playing session.
-    func multiSelectCurrentSession() -> ForkSession? {
+    func multiSelectCurrentSession() -> Session? {
         guard let playing = Settings.playbackSession() else { return nil }
         return SessionStore.shared.session(forStore: playing.uuid)
     }
