@@ -67,6 +67,8 @@ class FolderViewController: PCViewController {
 
         addCustomObserver(Constants.Notifications.podcastUpdated, selector: #selector(reloadFolder))
         addCustomObserver(Constants.Notifications.folderChanged, selector: #selector(reloadFolder))
+        // Fork: inbox/session badges follow triage state.
+        addCustomObserver(SessionStore.changed, selector: #selector(reloadFolder))
         addCustomObserver(Constants.Notifications.miniPlayerDidAppear, selector: #selector(miniPlayerStatusDidChange))
         addCustomObserver(Constants.Notifications.miniPlayerDidDisappear, selector: #selector(miniPlayerStatusDidChange))
 
@@ -266,6 +268,10 @@ class FolderViewController: PCViewController {
                 } else {
                     podcast.cachedUnreadCount = 0
                 }
+            }
+        } else if badgeType == .anyInInbox || badgeType == .inboxCount || badgeType == .sessionCount {
+            for podcast in podcasts {
+                podcast.cachedUnreadCount = HomeGridDataHelper.sessionBadgeCount(for: podcast, badgeType: badgeType)
             }
         }
 

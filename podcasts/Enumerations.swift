@@ -58,6 +58,12 @@ extension BadgeType: AnalyticsDescribable {
             return L10n.podcastsBadgeLatestEpisode
         case .allUnplayed:
             return L10n.podcastsBadgeAllUnplayed
+        case .anyInInbox:
+            return L10n.podcastsBadgeAnyInbox
+        case .inboxCount:
+            return L10n.podcastsBadgeInboxCount
+        case .sessionCount:
+            return L10n.podcastsBadgeSessionCount
         }
     }
 
@@ -69,6 +75,12 @@ extension BadgeType: AnalyticsDescribable {
             return "only_latest_episode"
         case .allUnplayed:
             return "unfinished_episodes"
+        case .anyInInbox:
+            return "any_in_inbox"
+        case .inboxCount:
+            return "inbox_count"
+        case .sessionCount:
+            return "session_count"
         }
     }
 }

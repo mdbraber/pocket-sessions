@@ -100,9 +100,42 @@ class HomeGridDataHelper {
                         gridItem.frozenBadgeCount = folder.cachedUnreadCount
                     }
                 }
+            } else if badgeType == .anyInInbox || badgeType == .inboxCount || badgeType == .sessionCount {
+                for gridItem in gridItems {
+                    if let podcast = gridItem.podcast {
+                        podcast.cachedUnreadCount = sessionBadgeCount(for: podcast, badgeType: badgeType)
+                        gridItem.frozenBadgeCount = podcast.cachedUnreadCount
+                    } else if let folder = gridItem.folder {
+                        // a folder's badge sums its podcasts; the dot flavour only
+                        // needs presence
+                        let allPodcastsInFolder = allPodcasts.filter { $0.folderUuid == folder.uuid }
+                        var total = 0
+                        for podcast in allPodcastsInFolder {
+                            total += sessionBadgeCount(for: podcast, badgeType: badgeType)
+                            if badgeType == .anyInInbox, total > 0 { break }
+                        }
+                        folder.cachedUnreadCount = badgeType == .anyInInbox ? min(total, 1) : total
+                        gridItem.frozenBadgeCount = folder.cachedUnreadCount
+                    }
+                }
             }
 
             return gridItems
+        }
+
+        /// Fork: badge counts for the session-aware badge types — the same numbers
+        /// the podcast page's Inbox and Session tabs show.
+        class func sessionBadgeCount(for podcast: Podcast, badgeType: BadgeType) -> Int {
+            switch badgeType {
+            case .anyInInbox:
+                return SessionFeederEngine.inboxBadgeCount(forPodcast: podcast) > 0 ? 1 : 0
+            case .inboxCount:
+                return SessionFeederEngine.inboxBadgeCount(forPodcast: podcast)
+            case .sessionCount:
+                return SessionFeederEngine.sessionBadgeCount(forPodcast: podcast)
+            default:
+                return 0
+            }
         }
     #endif
 

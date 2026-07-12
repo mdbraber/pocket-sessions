@@ -38,15 +38,14 @@ class GridBadgeView: UIView {
             return
         }
         isHidden = false
-        switch badgeType {
-        case .latestEpisode:
+        if badgeType.showsDot {
             simpleBadge.isHidden = false
             badgeLabel.isHidden = true
-        case .allUnplayed:
+        } else if badgeType.showsCount {
             simpleBadge.isHidden = true
             badgeLabel.isHidden = false
             badgeLabel.text = count < 99 ? "\(count)" : "99"
-        case .off:
+        } else {
             simpleBadge.isHidden = true
             badgeLabel.isHidden = true
         }

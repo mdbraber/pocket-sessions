@@ -96,7 +96,17 @@ public enum LibraryType: Int32, Codable {
 }
 
 public enum BadgeType: Int32, Codable {
-    case off = 0, latestEpisode, allUnplayed
+    case off = 0, latestEpisode, allUnplayed, anyInInbox, inboxCount, sessionCount
+
+    /// Renders as a simple presence dot rather than a number.
+    public var showsDot: Bool {
+        self == .latestEpisode || self == .anyInInbox
+    }
+
+    /// Renders as a numeric badge.
+    public var showsCount: Bool {
+        self == .allUnplayed || self == .inboxCount || self == .sessionCount
+    }
 }
 
 public enum PodcastEpisodeSortOrder: Int32, Codable, CaseIterable {

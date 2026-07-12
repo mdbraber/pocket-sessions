@@ -94,4 +94,19 @@ enum SessionFeederEngine {
         return EpisodesDataManager().playlistEpisodes(for: store, limit: 0).map { $0.episode.uuid }
     }
 
+    // MARK: - Grid badges
+
+    /// The podcast page's Inbox tab count — undecided offers for the podcast's
+    /// session (or its sessionless preview). Feeds the Podcasts grid badges.
+    static func inboxBadgeCount(forPodcast podcast: Podcast) -> Int {
+        let session = SessionStore.shared.session(forPodcast: podcast.uuid)
+            ?? ForkSession(uuid: "podcast-inbox-preview", storePlaylistUuid: nil, feeder: .podcast(uuid: podcast.uuid))
+        return displayEpisodes(for: session, showArchived: false, showPlayed: false, showSeen: false).count
+    }
+
+    /// The podcast page's Session tab count — lineup members of the podcast's session.
+    static func sessionBadgeCount(forPodcast podcast: Podcast) -> Int {
+        guard let session = SessionStore.shared.session(forPodcast: podcast.uuid) else { return 0 }
+        return storeMemberUuids(for: session).count
+    }
 }

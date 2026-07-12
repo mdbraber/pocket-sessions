@@ -171,6 +171,11 @@ class PodcastListViewController: PCViewController, ShareListDelegate {
         addCustomObserver(Constants.Notifications.playbackEnded, selector: #selector(refreshGridItems))
         addCustomObserver(Constants.Notifications.episodeArchiveStatusChanged, selector: #selector(refreshGridItems))
         addCustomObserver(Constants.Notifications.episodePlayStatusChanged, selector: #selector(refreshGridItems))
+        // Fork: the inbox/session badge types ride triage state — seen marks and
+        // lineup membership (SessionStore) plus queue moves (queued offers leave the
+        // inbox).
+        addCustomObserver(SessionStore.changed, selector: #selector(refreshGridItems))
+        addCustomObserver(Constants.Notifications.upNextQueueChanged, selector: #selector(refreshGridItems))
 
         addCustomObserver(Constants.Notifications.folderChanged, selector: #selector(refreshGridItems))
         addCustomObserver(Constants.Notifications.folderDeleted, selector: #selector(refreshGridItems))
@@ -567,32 +572,19 @@ class PodcastListViewController: PCViewController, ShareListDelegate {
 
         let badgeOption = Settings.podcastBadgeType()
 
-        let badgeOffAction = OptionAction(label: BadgeType.off.description, selected: badgeOption == .off) { [weak self] in
-            guard let strongSelf = self else { return }
+        // Fork: session-aware badge types joined the stock trio, so the rows are
+        // generated from one list.
+        let orderedTypes: [BadgeType] = [.off, .allUnplayed, .latestEpisode, .anyInInbox, .inboxCount, .sessionCount]
+        for type in orderedTypes {
+            let action = OptionAction(label: type.description, selected: badgeOption == type) { [weak self] in
+                guard let strongSelf = self else { return }
 
-            Settings.setPodcastBadgeType(.off)
-            strongSelf.refreshGridItems()
-            Analytics.track(.podcastsListBadgesChanged, properties: ["type": BadgeType.off])
+                Settings.setPodcastBadgeType(type)
+                strongSelf.refreshGridItems()
+                Analytics.track(.podcastsListBadgesChanged, properties: ["type": type])
+            }
+            options.addAction(action: action)
         }
-        options.addAction(action: badgeOffAction)
-
-        let latestEpisodeAction = OptionAction(label: BadgeType.allUnplayed.description, selected: badgeOption == .allUnplayed) { [weak self] in
-            guard let strongSelf = self else { return }
-
-            Settings.setPodcastBadgeType(.allUnplayed)
-            strongSelf.refreshGridItems()
-            Analytics.track(.podcastsListBadgesChanged, properties: ["type": BadgeType.allUnplayed])
-        }
-        options.addAction(action: latestEpisodeAction)
-
-        let unplayedCountAction = OptionAction(label: BadgeType.latestEpisode.description, selected: badgeOption == .latestEpisode) { [weak self] in
-            guard let strongSelf = self else { return }
-
-            Settings.setPodcastBadgeType(.latestEpisode)
-            strongSelf.refreshGridItems()
-            Analytics.track(.podcastsListBadgesChanged, properties: ["type": BadgeType.latestEpisode])
-        }
-        options.addAction(action: unplayedCountAction)
 
         return options
     }

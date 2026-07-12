@@ -45,7 +45,7 @@ class FolderListCell: ThemeableCollectionCell {
         let count = DataManager.sharedManager.countOfPodcastsInFolder(folder: folder)
         folderInfo.text = L10n.podcastCount(count)
 
-        if badgeType == .allUnplayed {
+        if badgeType.showsCount {
             let metric = UIFontMetrics(forTextStyle: .largeTitle)
             unplayedHeight.constant = max(28, metric.scaledValue(for: 28))
             unplayedBadge.layoutIfNeeded()
@@ -53,7 +53,7 @@ class FolderListCell: ThemeableCollectionCell {
             unplayedBadge.showsNumber = true
             unplayedBadge.unplayedCount = folder.cachedUnreadCount > 99 ? 99 : folder.cachedUnreadCount
             unplayedBadge.isHidden = folder.cachedUnreadCount == 0
-        } else if badgeType == .latestEpisode {
+        } else if badgeType.showsDot {
             let metric = UIFontMetrics(forTextStyle: .largeTitle)
             unplayedHeight.constant = max(12, metric.scaledValue(for: 12))
             unplayedBadge.layoutIfNeeded()
@@ -73,13 +73,10 @@ class FolderListCell: ThemeableCollectionCell {
         folderPreview.updateSizeConstraints(to: imageSize)
 
         let badgeMetric = UIFontMetrics(forTextStyle: .largeTitle)
-        switch badgeType {
-            case .allUnplayed:
-                unplayedHeight.constant = max(28, badgeMetric.scaledValue(for: 28))
-            case .latestEpisode:
-                unplayedHeight.constant = max(12, badgeMetric.scaledValue(for: 12))
-            case .off:
-                break
+        if badgeType.showsCount {
+            unplayedHeight.constant = max(28, badgeMetric.scaledValue(for: 28))
+        } else if badgeType.showsDot {
+            unplayedHeight.constant = max(12, badgeMetric.scaledValue(for: 12))
         }
         unplayedBadge.layoutIfNeeded()
     }

@@ -39,13 +39,13 @@ class PodcastListCell: ThemeableCollectionCell {
 
         accessibilityLabel = podcast.title
 
-        if badgeType == .allUnplayed {
+        if badgeType.showsCount {
             unplayedHeight.constant = 28
 
             unplayedBadge.showsNumber = true
             unplayedBadge.unplayedCount = podcast.cachedUnreadCount > 99 ? 99 : podcast.cachedUnreadCount
             unplayedBadge.isHidden = podcast.cachedUnreadCount == 0
-        } else if badgeType == .latestEpisode {
+        } else if badgeType.showsDot {
             unplayedHeight.constant = 12
 
             unplayedBadge.showsNumber = false
@@ -87,13 +87,10 @@ class PodcastListCell: ThemeableCollectionCell {
         podcastImage.updateSizeConstraints(to: imageSize)
 
         let badgeMetric = UIFontMetrics(forTextStyle: .largeTitle)
-        switch badgeType {
-            case .allUnplayed:
-                unplayedHeight.constant = max(28, badgeMetric.scaledValue(for: 28))
-            case .latestEpisode:
-                unplayedHeight.constant = max(12, badgeMetric.scaledValue(for: 12))
-            case .off:
-                break
+        if badgeType.showsCount {
+            unplayedHeight.constant = max(28, badgeMetric.scaledValue(for: 28))
+        } else if badgeType.showsDot {
+            unplayedHeight.constant = max(12, badgeMetric.scaledValue(for: 12))
         }
 
         podcastTitle.updateNumberOfLines(regular: 1, accessibility: 3)
