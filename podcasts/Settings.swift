@@ -991,7 +991,7 @@ class Settings: NSObject {
 
     private static let multiSelectActionsKey = "MultiSelectActions"
     class func multiSelectActions() -> [MultiSelectAction] {
-        let defaultActions: [MultiSelectAction] = [.playNext, .playLast, .removeFromUpNext, .addToPlaylist, .download, .archive, .share, .markAsPlayed, .star]
+        let defaultActions: [MultiSelectAction] = [.addToSession, .removeFromSession, .markAsSeen, .playNext, .playLast, .removeFromUpNext, .addToPlaylist, .download, .archive, .share, .markAsPlayed, .star]
         guard let savedInts = UserDefaults.standard.object(forKey: Settings.multiSelectActionsKey) as? [Int32] else {
             return defaultActions
         }
@@ -1009,7 +1009,7 @@ class Settings: NSObject {
 
     private static let listeningHistoryMultiSelectActionsKey = "ListeningHistoryMultiSelectActions"
     class func listeningHistoryMultiSelectActions() -> [MultiSelectAction] {
-        let defaultActions: [MultiSelectAction] = [.playNext, .playLast, .removeFromUpNext, .download, .archive, .share, .removeListeningHistory, .markAsPlayed, .star]
+        let defaultActions: [MultiSelectAction] = [.addToSession, .playNext, .playLast, .removeFromUpNext, .download, .archive, .share, .removeListeningHistory, .markAsPlayed, .star]
         guard let savedInts = UserDefaults.standard.object(forKey: Settings.listeningHistoryMultiSelectActionsKey) as? [Int32] else {
             return defaultActions
         }
@@ -1045,7 +1045,7 @@ class Settings: NSObject {
     // actions (no queue moves/removal; sessions aren't queue rows).
     private static let sessionMultiSelectActionsKey = "SessionMultiSelectActions"
     class func sessionMultiSelectActions() -> [MultiSelectAction] {
-        let defaultActions: [MultiSelectAction] = [.playNext, .playLast, .download, .markAsPlayed, .archive, .addToPlaylist, .star]
+        let defaultActions: [MultiSelectAction] = [.removeFromSession, .playNext, .playLast, .download, .markAsPlayed, .archive, .addToPlaylist, .star]
         guard let savedInts = UserDefaults.standard.object(forKey: Settings.sessionMultiSelectActionsKey) as? [Int32] else {
             return defaultActions
         }
@@ -1063,7 +1063,7 @@ class Settings: NSObject {
 
     private static let upNextMultiSelectActionsKey = "UpNextMultiSelectActions"
     class func upNextMultiSelectActions() -> [MultiSelectAction] {
-        let defaultActions: [MultiSelectAction] = [.moveToTop, .moveToBottom, .removeFromUpNext, .download, .markAsPlayed, .archive, .addToPlaylist, .star]
+        let defaultActions: [MultiSelectAction] = [.moveToTop, .moveToBottom, .removeFromUpNext, .addToSession, .download, .markAsPlayed, .archive, .addToPlaylist, .star]
         guard let savedInts = UserDefaults.standard.object(forKey: Settings.upNextMultiSelectActionsKey) as? [Int32] else {
             return defaultActions
         }

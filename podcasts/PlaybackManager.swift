@@ -623,9 +623,17 @@ class PlaybackManager: ServerPlaybackDelegate {
         if isNowPlayingEpisode(episodeUuid: episode?.uuid) {
             if advanceSessionIfNeeded(autoPlay: playing()) { return }
 
-            autoplayIfNeeded()
+            // Removing the playing episode is an explicit "not this" — autoplay's
+            // "keep going from the last-played list" magic stays out of it. The queue
+            // takes over; with nothing queued a paused session resumes; else playback
+            // simply ends. (Autoplay still applies to natural episode completion.)
             if queue.upNextCount() > 0 {
                 playNextEpisode(autoPlay: playing())
+            } else if FeatureFlag.playbackSessions.enabled, Settings.playbackSession() != nil, Settings.playbackSessionPaused() {
+                Settings.setPlaybackSessionPaused(false)
+                if !advanceSessionIfNeeded(autoPlay: playing(), requireSessionEpisode: false) {
+                    endPlayback(saveCurrentEpisode: saveCurrentEpisode)
+                }
             } else {
                 endPlayback(saveCurrentEpisode: saveCurrentEpisode)
             }
@@ -759,8 +767,11 @@ class PlaybackManager: ServerPlaybackDelegate {
     /// Advances within the active session instead of the queue. Returns false when there's
     /// no active session, or the session just ran dry (it's then ended, and the caller
     /// falls through to normal queue handling — which is the "return to your queue" step).
-    private func advanceSessionIfNeeded(autoPlay: Bool) -> Bool {
+    private func advanceSessionIfNeeded(autoPlay: Bool, requireSessionEpisode: Bool = true) -> Bool {
         guard FeatureFlag.playbackSessions.enabled, let session = Settings.playbackSession(), !Settings.playbackSessionPaused() else { return false }
+        // Only session playback advances the session — a queue episode playing while
+        // a session is somehow unpaused must not get hijacked into it.
+        if requireSessionEpisode, !currentEpisodeIsFromSession { return false }
 
         guard let next = session.nextEpisode(after: currentEpisode()?.uuid) else {
             FileLog.shared.addMessage("Playback session finished — returning to the Up Next queue")

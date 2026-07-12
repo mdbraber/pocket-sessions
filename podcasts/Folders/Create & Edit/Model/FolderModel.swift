@@ -90,7 +90,8 @@ class FolderModel: ObservableObject {
         guard let folderUuid else { return }
 
         DataManager.sharedManager.delete(folderUuid: folderUuid, markAsDeleted: SyncManager.isUserLoggedIn())
-        PlaylistManager.handleFolderDeleted(folderUuid: folderUuid)
+        // Fork: a deleted folder degrades any session it fed to a static store.
+        SessionManager.shared.healSessions()
         NotificationCenter.postOnMainThread(notification: Constants.Notifications.folderDeleted, object: folderUuid)
     }
 

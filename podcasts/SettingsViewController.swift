@@ -7,6 +7,7 @@ import WatchConnectivity
 class SettingsViewController: PCViewController, UITableViewDataSource, UITableViewDelegate {
     enum TableRow: String {
         case general, notifications, appearance, storageAndDataUse
+        case inbox
         case autoArchive, autoDownload, autoAddToUpNext, siriShortcuts
         case watch, customFiles, importSteps, opml
         case about, pocketCastsPlus, privacy
@@ -38,6 +39,8 @@ class SettingsViewController: PCViewController, UITableViewDataSource, UITableVi
                 return (L10n.settingsAppearance, UIImage(named: "settings_appearance"))
             case .storageAndDataUse:
                 return (L10n.settingsStorage, UIImage(named: "settings_storage"))
+            case .inbox:
+                return (L10n.inboxTitle, UIImage(systemName: "tray"))
             case .autoArchive:
                 return (L10n.settingsAutoArchive, UIImage(named: "settings_archive"))
             case .autoAddToUpNext:
@@ -88,7 +91,7 @@ class SettingsViewController: PCViewController, UITableViewDataSource, UITableVi
             developerSection,
             [.pocketCastsPlus],
             [.general, .notifications, .appearance],
-            [.autoArchive, .autoDownload, .autoAddToUpNext],
+            [.inbox, .autoArchive, .autoDownload, .autoAddToUpNext],
             [.storageAndDataUse, .siriShortcuts, .headphoneControls, .watch, .customFiles],
             [.importSteps, .opml],
             [.upNextHistory, .foldersHistory],
@@ -168,6 +171,8 @@ class SettingsViewController: PCViewController, UITableViewDataSource, UITableVi
             navigationController?.pushViewController(AppearanceViewController(), animated: true)
         case .storageAndDataUse:
             navigationController?.pushViewController(StorageAndDataUseViewController(), animated: true)
+        case .inbox:
+            navigationController?.pushViewController(InboxSettingsViewController(), animated: true)
         case .autoAddToUpNext:
             navigationController?.pushViewController(AutoAddToUpNextViewController(), animated: true)
         case .autoArchive:
