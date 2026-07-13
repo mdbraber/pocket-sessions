@@ -273,7 +273,7 @@ extension PlayerAction: AnalyticsDescribable {
         [
             .effects, .sleepTimer, .routePicker, .shareEpisode, .addToPlaylist, .download,
             .transcript, .goToPodcast, .addBookmark, .markPlayed,
-            .starEpisode, .chromecast, .archive
+            .starEpisode, .chromecast, .archive, .videoToggle
         ]
     }
 
@@ -305,6 +305,8 @@ extension PlayerAction: AnalyticsDescribable {
             self = .download
         case 13:
             self = .addToPlaylist
+        case 14:
+            self = .videoToggle
         default:
             return nil
         }
@@ -338,6 +340,8 @@ extension PlayerAction: AnalyticsDescribable {
             return 12
         case .addToPlaylist:
             return 13
+        case .videoToggle:
+            return 14
         }
     }
 
@@ -386,6 +390,8 @@ extension PlayerAction: AnalyticsDescribable {
             return episode.downloaded(pathFinder: DownloadManager.shared) ? L10n.removeDownload : (episode.isInDownloadProcess ? L10n.statusDownloading : L10n.download)
         case .addToPlaylist:
             return L10n.playlistManualEpisodeAddToPlaylist
+        case .videoToggle:
+            return PlaybackManager.shared.shouldRenderVideo() ? L10n.playerActionHideVideo : L10n.playerActionShowVideo
         }
     }
 
@@ -431,6 +437,8 @@ extension PlayerAction: AnalyticsDescribable {
             return episode.downloaded(pathFinder: DownloadManager.shared) ? "episode-downloaded" : "episode-download"
         case .addToPlaylist:
             return "playlist-add-episode"
+        case .videoToggle:
+            return PlaybackManager.shared.shouldRenderVideo() ? "video_off" : "video_on"
         }
     }
 
@@ -465,6 +473,8 @@ extension PlayerAction: AnalyticsDescribable {
             return episode.downloaded(pathFinder: DownloadManager.shared) ? "episode-downloaded" : "episode-download"
         case .addToPlaylist:
             return "playlist-add-episode"
+        case .videoToggle:
+            return PlaybackManager.shared.shouldRenderVideo() ? "video_off" : "video_on"
         }
     }
 
@@ -472,6 +482,8 @@ extension PlayerAction: AnalyticsDescribable {
         switch self {
         case .starEpisode, .shareEpisode:
             return episode is Episode
+        case .videoToggle:
+            return PlaybackManager.shared.canToggleVideoRendering()
         default:
             return true
         }
@@ -511,6 +523,8 @@ extension PlayerAction: AnalyticsDescribable {
             return "download"
         case .addToPlaylist:
             return "add_to_playlist"
+        case .videoToggle:
+            return "video_toggle"
         }
     }
 }

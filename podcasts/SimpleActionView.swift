@@ -39,6 +39,7 @@ class SimpleActionView: UIView {
         addSubview(label)
         label.setContentHuggingPriority(.defaultLow, for: .vertical)
         label.setContentCompressionResistancePriority(.required, for: .vertical)
+        label.setContentCompressionResistancePriority(.init(rawValue: 751), for: .horizontal)
         let iconTintColor = action.destructive ? AppTheme.destructiveTextColor(for: themeOverride) : AppTheme.colorForStyle(iconTintStyle, themeOverride: themeOverride)
 
         // Fork: icon names fall back to SF Symbols so pickers can use them too.
@@ -88,15 +89,14 @@ class SimpleActionView: UIView {
             secondaryLabel.textAlignment = .right
             secondaryLabel.textColor = ThemeColor.primaryText02(for: themeOverride)
             secondaryLabel.translatesAutoresizingMaskIntoConstraints = false
+            secondaryLabel.setContentCompressionResistancePriority(.init(rawValue: 749), for: .horizontal)
             addSubview(secondaryLabel)
 
             secondaryLabelVerticalConstraints = [
                 secondaryLabel.topAnchor.constraint(equalTo: layoutMarginsGuide.topAnchor),
                 secondaryLabel.bottomAnchor.constraint(equalTo: layoutMarginsGuide.bottomAnchor)
             ]
-            NSLayoutConstraint.activate(secondaryLabelVerticalConstraints + [
-                label.widthAnchor.constraint(greaterThanOrEqualTo: secondaryLabel.widthAnchor, multiplier: 1)
-            ])
+            NSLayoutConstraint.activate(secondaryLabelVerticalConstraints)
             self.secondaryLabel = secondaryLabel
             previousView = secondaryLabel
         }
@@ -146,12 +146,13 @@ class SimpleActionView: UIView {
         }
         // Horizontal chain: label — secondaryLabel — accessory (tick/switch) — trailing edge.
         // Only some of those exist for any given action; link whichever are present, so a
-        // secondary label never ends up without horizontal constraints.
+        // secondary label never ends up without horizontal constraints. (Upstream widened
+        // the plain-label gap to 24.)
         if let secondaryLabel, previousView != secondaryLabel {
             secondaryLabel.trailingAnchor.constraint(equalTo: previousView.leadingAnchor, constant: -10).isActive = true
             label.trailingAnchor.constraint(equalTo: secondaryLabel.leadingAnchor, constant: -10).isActive = true
         } else if previousView != label {
-            label.trailingAnchor.constraint(equalTo: previousView.leadingAnchor, constant: -10).isActive = true
+            label.trailingAnchor.constraint(equalTo: previousView.leadingAnchor, constant: -24).isActive = true
         }
         trailingAnchor.constraint(equalTo: previousView.trailingAnchor, constant: 20).isActive = true
 

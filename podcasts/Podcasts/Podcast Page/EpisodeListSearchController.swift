@@ -454,10 +454,6 @@ class EpisodeListSearchController: SimpleNotificationsViewController, UISearchBa
 
     private func setSortSetting(_ setting: PodcastEpisodeSortOrder) {
         guard let podcast = podcastDelegate?.displayedPodcast() else { return }
-        if FeatureFlag.newSettingsStorage.enabled {
-            podcast.settings.episodesSortOrder = setting
-            podcast.syncStatus = SyncStatus.notSynced.rawValue
-        }
         podcast.episodeSortOrder = setting.old.rawValue
         DataManager.sharedManager.save(podcast: podcast)
         // Fork: the podcast's session lineup mirrors the page order.
@@ -468,10 +464,6 @@ class EpisodeListSearchController: SimpleNotificationsViewController, UISearchBa
 
     private func setGroupingSetting(_ setting: PodcastGrouping) {
         guard let podcast = podcastDelegate?.displayedPodcast() else { return }
-        if FeatureFlag.newSettingsStorage.enabled {
-            podcast.settings.episodeGrouping = setting
-            podcast.syncStatus = SyncStatus.notSynced.rawValue
-        }
         podcast.episodeGrouping = setting.rawValue
         DataManager.sharedManager.save(podcast: podcast)
         // Fork: the podcast's session lineup mirrors the page order.

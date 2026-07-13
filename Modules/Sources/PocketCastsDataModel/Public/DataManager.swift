@@ -1232,11 +1232,7 @@ public class DataManager {
     }
 
     public func pushEnabledPodcastsCount() -> Int {
-        if FeatureFlag.newSettingsStorage.enabled {
-            DataManager.sharedManager.count(query: "SELECT COUNT(*) FROM \(DataManager.podcastTableName) WHERE json_extract(settings, '$.notification.value') = ? AND subscribed = 1", values: [true])
-        } else {
-            DataManager.sharedManager.count(query: "SELECT COUNT(*) FROM \(DataManager.podcastTableName) WHERE pushEnabled = 1 AND subscribed = 1", values: nil)
-        }
+        DataManager.sharedManager.count(query: "SELECT COUNT(*) FROM \(DataManager.podcastTableName) WHERE pushEnabled = 1 AND subscribed = 1", values: nil)
     }
 
     // MARK: - Up Next History Manager
@@ -1281,6 +1277,23 @@ public extension DataManager {
 
             try? db.executeUpdate(query, values: nil)
         }
+    }
+}
+
+// MARK: - Orphaned Episode Cleanup
+
+public extension DataManager {
+    func findOrphanedEpisodes() -> [Episode] {
+        episodeManager.findOrphanedEpisodes(dbQueue)
+    }
+
+    /// Deletes episode rows by internal id (not uuid), so a duplicate "live" row sharing the same uuid is left untouched.
+    func deleteOrphanedEpisodes(ids: [Int64]) {
+        episodeManager.deleteOrphanedEpisodes(ids: ids, dbQueue: dbQueue)
+    }
+
+    func reconcileOrphanedEpisode(survivorId: Int64, realPodcastId: Int64, idsToDelete: [Int64]) {
+        episodeManager.reconcileOrphanedEpisode(survivorId: survivorId, realPodcastId: realPodcastId, idsToDelete: idsToDelete, dbQueue: dbQueue)
     }
 }
 

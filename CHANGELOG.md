@@ -1,9 +1,14 @@
 8.17
 -----
-
+- Add support for Flightcast JSON transcripts [#4706](https://github.com/Automattic/pocket-casts-ios/pull/4706)
+- Fix player opening on Bookmarks tab in RTL languages [#4696](https://github.com/Automattic/pocket-casts-ios/pull/4696)
+- Fix the Discover search screen background color and colors in filters on some themes [#4719](https://github.com/Automattic/pocket-casts-ios/pull/4719)
+- Fix the mini player initial loading shimmer not showing up when Reduce Motion is enabled [#4713](https://github.com/Automattic/pocket-casts-ios/pull/4713)
+- Fix options picker rows like "Sort By" wrapping their labels to multiple lines when there is enough space [#4722](https://github.com/Automattic/pocket-casts-ios/pull/4722)
 
 8.16
 -----
+- Fix the Liquid Glass mini player controls and progress bar not using the podcast tint color [#4701](https://github.com/Automattic/pocket-casts-ios/pull/4701)
 - Make the Liquid Glass mini player's play button translucent with a springy bounce on tap [#4677](https://github.com/Automattic/pocket-casts-ios/pull/4677)
 - Fix the smart playlist and podcast page header showing the system light/dark appearance instead of the in-app theme when scrolling on iOS 18 [#4662](https://github.com/Automattic/pocket-casts-ios/pull/4662)
 - Fix episode lists jumping when a background download finishes [#4648](https://github.com/Automattic/pocket-casts-ios/pull/4648)
@@ -27,6 +32,7 @@
 - Fix separator alignment and list background color on the Discover category list [#4653](https://github.com/Automattic/pocket-casts-ios/pull/4653)
 - Add episode sorting to the podcast screen on tvOS [#4650](https://github.com/Automattic/pocket-casts-ios/pull/4650)
 - Scale the mini player title with Dynamic Type under Liquid Glass [#4676](https://github.com/Automattic/pocket-casts-ios/pull/4676)
+- Add a Troubleshooting screen under Help & Feedback to find and remove orphaned duplicate episodes [#4697](https://github.com/Automattic/pocket-casts-ios/pull/4697)
 
 8.15
 -----
