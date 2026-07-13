@@ -228,16 +228,19 @@ public class PlaylistQueryBuilder {
                 )
             }
         } else {
+            // Fork: a smart playlist with drag-and-drop sort uses the custom-order overlay —
+            // membership still comes from the smart rules, order from SJPlaylistEpisode rows.
+            let usesCustomOrderOverlay = sortType == PlaylistSort.dragAndDrop.rawValue
+
             var queryValues = [QueryResult]()
-            let addedUuid = add(episodeUuidToAdd: episodeUuidToAdd)
+            // Pinning the playing episode into the results would ALSO pin it to the
+            // top of a custom order (unpositioned rows sort first) — a hand-ordered
+            // list must never reshuffle just because something is playing.
+            let addedUuid = add(episodeUuidToAdd: usesCustomOrderOverlay ? nil : episodeUuidToAdd)
             queryValues.append(addedUuid)
             queryValues.append(add(smartRulesFor: playlist))
             var stringifiedValues = queryValues.map({$0.value}).joined(separator: " ")
             PlaylistQueryBuilder.removeEmptyFilterGroups(from: &stringifiedValues)
-
-            // Fork: a smart playlist with drag-and-drop sort uses the custom-order overlay —
-            // membership still comes from the smart rules, order from SJPlaylistEpisode rows.
-            let usesCustomOrderOverlay = sortType == PlaylistSort.dragAndDrop.rawValue
 
             if clause == .firstDistinctEpisodes {
                 // The distinct-episodes CTE can't reference the overlay join; degrade to newest-first.

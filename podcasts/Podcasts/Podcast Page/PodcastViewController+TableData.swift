@@ -70,6 +70,9 @@ extension PodcastViewController: UITableViewDataSource, UITableViewDelegate {
                     statusBarStyle: preferredStatusBarStyle,
                     excludingCellTypes: [HeadingCell.self]
                 )
+            } else if showingSession, canReorderSessionLineup {
+                // Fork: on a custom-ordered lineup, drag-reorder owns the long press.
+                return
             } else if showingSession, let podcast, let episode = episodeAtIndexPath(indexPath),
                       let session = SessionStore.shared.session(forPodcast: podcast.uuid) {
                 // Fork: Session rows behave like Up Next — long-press is the inverse
@@ -527,5 +530,63 @@ extension PodcastViewController: UITableViewDataSource, UITableViewDelegate {
 
     func tableViewDidEndMultipleSelectionInteraction(_ tableView: UITableView) {
         multiSelectGestureInProgress = false
+    }
+}
+
+// MARK: - Fork: Session lineup drag-reorder (long press starts the drag)
+
+extension PodcastViewController: UITableViewDragDelegate, UITableViewDropDelegate {
+    /// Reorder is live only on the Session tab with the lineup in its custom order —
+    /// a date-sorted view is display-only.
+    var canReorderSessionLineup: Bool {
+        guard showingSession, !isMultiSelectEnabled, let podcast,
+              TriageTabSort.order(.session, pageUuid: podcast.uuid) == .custom,
+              SessionStore.shared.session(forPodcast: podcast.uuid) != nil else { return false }
+        return true
+    }
+
+    func registerSessionReorder() {
+        episodesTable.dragInteractionEnabled = true
+        episodesTable.dragDelegate = self
+        episodesTable.dropDelegate = self
+    }
+
+    func tableView(_ tableView: UITableView, itemsForBeginning session: UIDragSession, at indexPath: IndexPath) -> [UIDragItem] {
+        guard canReorderSessionLineup, episodeAtIndexPath(indexPath) != nil else { return [] }
+        return [UIDragItem(itemProvider: NSItemProvider())]
+    }
+
+    func tableView(_ tableView: UITableView, dropSessionDidUpdate session: UIDropSession, withDestinationIndexPath destinationIndexPath: IndexPath?) -> UITableViewDropProposal {
+        guard session.localDragSession != nil, canReorderSessionLineup,
+              let destination = destinationIndexPath,
+              episodeInfo[safe: destination.section]?.model == "episodes" else {
+            return UITableViewDropProposal(operation: .cancel)
+        }
+        return UITableViewDropProposal(operation: .move, intent: .insertAtDestinationIndexPath)
+    }
+
+    func tableView(_ tableView: UITableView, performDropWith coordinator: UITableViewDropCoordinator) {
+        guard canReorderSessionLineup, let podcast,
+              let session = SessionStore.shared.session(forPodcast: podcast.uuid),
+              let item = coordinator.items.first,
+              let source = item.sourceIndexPath,
+              var destination = coordinator.destinationIndexPath,
+              destination.section == source.section,
+              var elements = episodeInfo[safe: source.section]?.elements,
+              let moved = elements[safe: source.row] as? ListEpisode else { return }
+
+        destination.row = min(destination.row, max(elements.count - 1, 0))
+        guard source != destination else { return }
+
+        elements.remove(at: source.row)
+        elements.insert(moved, at: destination.row)
+        episodeInfo[source.section].elements = elements
+        tableView.performBatchUpdates {
+            tableView.moveRow(at: source, to: destination)
+        }
+        coordinator.drop(item.dragItem, toRowAt: destination)
+
+        let order = elements.compactMap { ($0 as? ListEpisode)?.episode.uuid }
+        SessionManager.shared.setLineupOrder(episodeUuids: order, session: session)
     }
 }

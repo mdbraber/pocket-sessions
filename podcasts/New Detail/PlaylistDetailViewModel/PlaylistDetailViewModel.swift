@@ -208,7 +208,8 @@ class PlaylistDetailViewModel: ObservableObject {
     /// drag), then reloads so sections rebuild (e.g. an emptied inbox disappears).
     func commitLineupOrder() {
         let order = lineupEpisodes.map { $0.episode.uuid }
-        if let session {
+        if let session = session ?? lensSession {
+            // Store pages write their own session; lens pages write the fed one.
             SessionManager.shared.setLineupOrder(episodeUuids: order, session: session)
         } else {
             dataManager.setCustomOrder(episodeUuids: order, for: playlist)
@@ -453,10 +454,6 @@ class PlaylistDetailViewModel: ObservableObject {
         delete(episodes: [uuid])
     }
 
-    func move(episode: ListEpisode, toIndex index: Int) {
-        dataManager.moveEpisode(episode.episode.uuid, in: playlist, to: index)
-    }
-
     func updatePlaylist(sortType type: PlaylistSort) {
         if playlist.sortType == type.rawValue { return }
         // Fork: seed the lineup from the currently displayed order when a smart playlist
@@ -586,20 +583,16 @@ class PlaylistDetailViewModel: ObservableObject {
                 selectedTriageTab = .lineup
             }
 
-            let inbox = SessionFeederEngine.displayEpisodes(
-                for: session,
-                showArchived: false,
-                showPlayed: false,
-                showSeen: false
-            ).map { ListEpisode(episode: $0, tintColor: tint) }
+            let inbox = SessionFeederEngine.inboxEpisodes(for: session).map { ListEpisode(episode: $0, tintColor: tint) }
             let lineup = episodes
             allOverlayEpisodes = episodes
             sessionMemberUuidsForDisplay = Set(lineup.map { $0.episode.uuid })
 
             if !triageTabAutoSelected {
                 triageTabAutoSelected = true
+                // Land on the Session; an empty lineup lands on Episodes instead.
                 if selectedTriageTab != .browse {
-                    selectedTriageTab = (hasInboxTab && !inbox.isEmpty) ? .new : .lineup
+                    selectedTriageTab = lineup.isEmpty ? .browse : .lineup
                 }
             }
 
@@ -652,7 +645,7 @@ class PlaylistDetailViewModel: ObservableObject {
         // Episodes is the query itself behind the funnel.
         if isLensPage, !isSearching {
             let tint = AppTheme.appTintColor()
-            let inbox = SessionFeederEngine.displayEpisodes(for: lensFeederSession, showArchived: false, showPlayed: false, showSeen: false)
+            let inbox = SessionFeederEngine.inboxEpisodes(for: lensFeederSession)
                 .map { ListEpisode(episode: $0, tintColor: tint) }
             var lineup = [ListEpisode]()
             if let real = lensSession, let storeUuid = real.storePlaylistUuid,
@@ -671,8 +664,9 @@ class PlaylistDetailViewModel: ObservableObject {
 
             if !triageTabAutoSelected {
                 triageTabAutoSelected = true
+                // Land on the Session; an empty lineup lands on Episodes instead.
                 if selectedTriageTab == .new {
-                    selectedTriageTab = (hasInboxTab && !inbox.isEmpty) ? .new : .browse
+                    selectedTriageTab = lineup.isEmpty ? .browse : .lineup
                 }
             }
             if !hasInboxTab, selectedTriageTab == .new {

@@ -368,8 +368,11 @@ extension PlaylistDetailViewController: UITableViewDragDelegate, UITableViewDrop
     var canReorderInline: Bool {
         // A date-sorted Session view is display-only — reordering it would write the
         // wrong lineup order.
-        !isMultiSelectEnabled && !viewModel.isSearching && viewModel.playlist.sortType == PlaylistSort.dragAndDrop.rawValue
-            && TriageTabSort.order(.session, pageUuid: viewModel.playlist.uuid) == .custom
+        guard !isMultiSelectEnabled, !viewModel.isSearching,
+              TriageTabSort.order(.session, pageUuid: viewModel.playlist.uuid) == .custom else { return false }
+        if viewModel.playlist.sortType == PlaylistSort.dragAndDrop.rawValue { return true }
+        // Fork: lens pages reorder their fed session's lineup on the Session tab.
+        return viewModel.isLensPage && viewModel.selectedTriageTab == .lineup && viewModel.lensSession != nil
     }
 
     func tableView(_ tableView: UITableView, itemsForBeginning session: UIDragSession, at indexPath: IndexPath) -> [UIDragItem] {
@@ -434,13 +437,11 @@ extension PlaylistDetailViewController: UITableViewDragDelegate, UITableViewDrop
         }
         coordinator.drop(item.dragItem, toRowAt: destination)
 
-        if let moved = viewModel.listEpisode(at: destination) {
-            let lineupUuids = viewModel.lineupEpisodes.map { $0.episode.uuid }
-            let lineupIndex = lineupUuids.firstIndex(of: moved.episode.uuid) ?? destination.row
-            viewModel.move(episode: moved, toIndex: lineupIndex)
-            NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged, object: viewModel.playlist)
-            track(.filterManualEpisodesRearranged)
-        }
+        // One whole-order write covers store pages and lens pages alike (the lens's
+        // fed session owns the lineup there).
+        viewModel.commitLineupOrder()
+        NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged, object: viewModel.playlist)
+        track(.filterManualEpisodesRearranged)
     }
 }
 

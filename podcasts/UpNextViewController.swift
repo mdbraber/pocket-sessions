@@ -469,7 +469,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
               let storeSession = SessionStore.shared.session(forStore: session.uuid),
               storeSession.feeder != .none, !storeSession.autoAdd else { return 0 }
         return SessionFeederEngine.inboxEpisodes(for: storeSession)
-            .filter { storeSession.showSeen || !$0.isSeen }
+            .filter { !$0.isSeen }
             .count
     }
 
@@ -1635,11 +1635,20 @@ class SwitchSessionViewController: UIViewController, UITableViewDataSource, UITa
     private let includeUpNext: Bool
     private let onSwitched: (Bool) -> Void
     /// Sessions ordered by recency of use, latest first; never-used ones keep their
-    /// list order after the used ones.
+    /// list order after the used ones. One row per session: a lens acting as a
+    /// session's feeder IS that session — its store row (which plays the lineup)
+    /// stands for both, so the lens row is dropped.
     private let playlists: [EpisodeFilter] = {
-        let stores = DataManager.sharedManager.allPlaylists(includeDeleted: false)
+        let all = DataManager.sharedManager.allPlaylists(includeDeleted: false)
             .filter { !SessionStore.shared.feederPlaylistUuids.contains($0.uuid) }
-        return stores.enumerated().sorted { a, b in
+        let listedUuids = Set(all.map(\.uuid))
+        let unique = all.filter { playlist in
+            guard !playlist.manual,
+                  let session = SessionStore.shared.session(forSmartPlaylistFeeder: playlist.uuid),
+                  let storeUuid = session.storePlaylistUuid, listedUuids.contains(storeUuid) else { return true }
+            return false
+        }
+        return unique.enumerated().sorted { a, b in
             let aUsed = lastUsed(for: a.element)
             let bUsed = lastUsed(for: b.element)
             if aUsed == bUsed { return a.offset < b.offset }
