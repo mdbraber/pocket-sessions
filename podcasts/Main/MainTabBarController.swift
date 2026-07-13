@@ -102,10 +102,16 @@ class MainTabBarController: UITabBarController, NavigationProtocol, UIGestureRec
 
         fixTarBarTraitCollectionOnIpadForiOS18()
 
-        // Fork: the global Inbox leads the tab bar; Discover lives under Profile.
-        pcTabs = FeatureFlag.globalInboxTab.enabled
-            ? [.inbox, .podcasts, .filter, .upNext, .profile]
-            : [.podcasts, .filter, .upNext, .profile]
+        // Fork: two independent axes — the layout flag decides whether Discover is a
+        // tab (custom layout parks it under Profile), and the inbox flag decides
+        // whether the global Inbox leads the bar, in either layout.
+        var tabs: [Tab] = FeatureFlag.customTabBar.enabled
+            ? [.podcasts, .filter, .upNext, .profile]
+            : [.podcasts, .filter, .discover, .upNext, .profile]
+        if FeatureFlag.globalInboxTab.enabled {
+            tabs.insert(.inbox, at: 0)
+        }
+        pcTabs = tabs
 
         // Fork: long-pressing the Up Next/Session tab offers the Switch Session sheet.
         if FeatureFlag.playbackSessions.enabled {
@@ -129,12 +135,23 @@ class MainTabBarController: UITabBarController, NavigationProtocol, UIGestureRec
         let filtersViewController = PlaylistsViewController()
         filtersViewController.tabBarItem = UITabBarItem(title: L10n.playlists, image: UIImage(named: "playlists_tab"), tag: pcTabs.firstIndex(of: .filter)!)
 
+        var discoverViewController: UIViewController?
+        if let discoverIndex = pcTabs.firstIndex(of: .discover) {
+            let discover = DiscoverCollectionViewController(coordinator: DiscoverCoordinator())
+            discover.tabBarItem = UITabBarItem(title: L10n.discover, image: UIImage(named: "discover_tab"), tag: discoverIndex)
+            discoverViewController = discover
+        }
+
         let profileViewController = ProfileViewController()
         profileViewController.tabBarItem = profileTabBarItem
 
         let upNextViewController = UpNextViewController(source: .tabBar, showingInTab: true)
         upNextViewController.tabBarItem = upNextTabBarItem
-        vcsInTab.append(contentsOf: [podcastsController, filtersViewController, upNextViewController, profileViewController])
+        vcsInTab.append(contentsOf: [podcastsController, filtersViewController])
+        if let discoverViewController {
+            vcsInTab.append(discoverViewController)
+        }
+        vcsInTab.append(contentsOf: [upNextViewController, profileViewController])
 
         displayEndOfYearBadgeIfNeeded()
 

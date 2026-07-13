@@ -82,6 +82,8 @@ class EpisodesDataManager: PlaybackSessionEpisodeSource {
             let kept = section.elements.filter { item in
                 guard let listEpisode = item as? ListEpisode else { return true }
                 if inboxUuids.contains(listEpisode.episode.uuid) { return false }
+                // Funnel off: the query's archived clause already decided visibility.
+                guard FeatureFlag.episodesFunnel.enabled else { return true }
                 return filter.isUnfiltered || filter.matches(listEpisode.episode, sessionMemberUuids: members)
             }
             return ArraySection(model: section.model, elements: droppingEmptyGroupHeaders(kept))
@@ -203,6 +205,10 @@ class EpisodesDataManager: PlaybackSessionEpisodeSource {
         // Fork: load the full set; the single Episodes filter (applyDisplayFilters)
         // decides archived visibility — hidden under No Filter, interleaved under All.
         var whereClauses = ["podcast_id = \(podcast.id)", "wasDeleted = 0"]
+        // Funnel off: the stock per-podcast archived clause owns visibility again.
+        if !FeatureFlag.episodesFunnel.enabled, !podcast.shouldShowArchived {
+            whereClauses.append("archived = 0")
+        }
         if let uuids = uuidsToFilter { // ignore uuid filtering if uuid list is empty or nil
             whereClauses.append("uuid IN (\(uuids.map { "'\($0)'" }.joined(separator: ",")))")
         }

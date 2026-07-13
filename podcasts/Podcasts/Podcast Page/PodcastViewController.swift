@@ -1232,6 +1232,15 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
     func toggleShowArchived() {
         guard let podcast else { return }
 
+        // Funnel off: the stock per-podcast Show Archived toggle.
+        guard FeatureFlag.episodesFunnel.enabled else {
+            podcast.shouldShowArchived = !podcast.shouldShowArchived
+            DataManager.sharedManager.save(podcast: podcast)
+            loadLocalEpisodes(podcast: podcast, animated: true)
+            Analytics.track(.podcastScreenToggleArchived, properties: ["show_archived": podcast.shouldShowArchived])
+            return
+        }
+
         // Fork: flips the (global) Episodes filter between Archived-only and default.
         let current = EpisodeStateFilterSet.global
         let showingArchivedOnly = current.enabled.contains(.archived) && !current.enabled.contains(.unarchived)
@@ -1245,9 +1254,10 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
     }
 
     func showingArchived() -> Bool {
+        guard FeatureFlag.episodesFunnel.enabled else { return podcast?.shouldShowArchived ?? false }
         // Fork: any view other than the clean default can surface archived episodes,
         // so only the default warrants the "all archived" placeholder.
-        EpisodeStateFilterSet.global.showsActiveCue
+        return EpisodeStateFilterSet.global.showsActiveCue
     }
 
     /// Fork: display filters (played/seen) changed — rebuild the episode list.
