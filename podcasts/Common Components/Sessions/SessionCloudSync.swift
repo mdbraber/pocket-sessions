@@ -14,23 +14,12 @@ final class SessionCloudSync {
     private static let zoneName = "ForkSessions"
     private static let stateKey = "SJSessionCloudSyncState"
     private static let bootstrappedKey = "SJSessionCloudSyncBootstrapped"
-    // One-time recovery: a decode bug once wiped the local session document. Clearing
-    // the saved sync-engine state makes CKSyncEngine start from a nil token and
-    // re-fetch every record in the zone, so sessions the token already passed come
-    // back. Bump this key's suffix to force another full re-fetch in future.
-    private static let recoveryKey = "SJSessionCloudRecovery1Done"
 
     private let zoneID = CKRecordZone.ID(zoneName: zoneName)
     private var engine: CKSyncEngine?
 
     static func start() {
         guard FeatureFlag.sessions.enabled, shared == nil else { return }
-        if !UserDefaults.standard.bool(forKey: recoveryKey) {
-            // Reset the token BEFORE the engine reads it, forcing a full re-fetch.
-            UserDefaults.standard.removeObject(forKey: stateKey)
-            UserDefaults.standard.set(true, forKey: recoveryKey)
-            FileLog.shared.addMessage("SessionCloudSync: forcing one-time full re-fetch to recover sessions")
-        }
         // No entitlement (or no account) → containerIdentifier lookup/engine setup
         // throws at the CK layer; the catch keeps the app fully functional offline.
         shared = SessionCloudSync()
