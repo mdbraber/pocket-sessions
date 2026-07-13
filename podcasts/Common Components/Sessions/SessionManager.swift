@@ -261,6 +261,10 @@ class SessionManager {
                     self.addToLineup(episodeUuids: uuids, session: session)
                     landed.append(session)
                 }
+                // Linked adds: one mirrored hop into the queue when enabled.
+                if !landed.isEmpty {
+                    SessionLinking.mirrorSessionAdd(episodeUuids: episodeUuids)
+                }
                 DispatchQueue.main.async {
                     onAdded?(landed)
                 }

@@ -101,6 +101,18 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
             cell.cellSecondaryLabel.text = L10n.settingsEpisodeLimitFormat(ServerSettings.autoAddToUpNextLimit().localized())
 
             return cell
+        case .mirrorToSession, .mirrorToUpNext:
+            // Fork: linked-adds override — Default tracks the global switch live.
+            let cell = tableView.dequeueReusableCell(withIdentifier: PodcastSettingsViewController.disclosureCellId, for: indexPath) as! DisclosureCell
+            let isToSession = row == .mirrorToSession
+            cell.cellLabel.text = isToSession ? L10n.settingsAlsoAddToSession : L10n.settingsAlsoAddToUpNext
+            cell.setImage(imageName: nil)
+            cell.showSecondaryLabel = true
+            cell.cellSecondaryLabel.text = mirrorOverrideTitle(
+                Settings.mirrorOverride(key: isToSession ? Settings.mirrorUpNextToSessionKey : Settings.mirrorSessionToUpNextKey, podcastUuid: podcast.uuid),
+                globalOn: isToSession ? Settings.mirrorUpNextToSession() : Settings.mirrorSessionToUpNext()
+            )
+            return cell
         case .session:
             // Fork: auto-add new episodes to this podcast's Session, exactly the
             // Add to Up Next pattern one section up.
@@ -273,6 +285,8 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
         } else if row == .globalUpNext {
             let globalSettings = AutoAddToUpNextViewController()
             navigationController?.pushViewController(globalSettings, animated: true)
+        } else if row == .mirrorToSession || row == .mirrorToUpNext {
+            showMirrorOverridePicker(toSession: row == .mirrorToSession)
         } else if row == .sessionPosition {
             showSessionAutoAddPositionSettings()
         } else if row == .globalSession {
@@ -390,6 +404,31 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
         Analytics.track(.podcastSettingsAutoAddUpNextPositionOptionChanged, properties: ["value": setting])
     }
 
+    // MARK: - Fork: linked-adds override
+
+    private func mirrorOverrideTitle(_ override: MirrorOverride, globalOn: Bool) -> String {
+        switch override {
+        case .followGlobal: return L10n.settingsMirrorDefaultFormat(globalOn ? L10n.on : L10n.off)
+        case .on: return L10n.on
+        case .off: return L10n.off
+        }
+    }
+
+    private func showMirrorOverridePicker(toSession: Bool) {
+        let key = toSession ? Settings.mirrorUpNextToSessionKey : Settings.mirrorSessionToUpNextKey
+        let globalOn = toSession ? Settings.mirrorUpNextToSession() : Settings.mirrorSessionToUpNext()
+        let current = Settings.mirrorOverride(key: key, podcastUuid: podcast.uuid)
+        let picker = OptionsPicker(title: (toSession ? L10n.settingsAlsoAddToSession : L10n.settingsAlsoAddToUpNext).localizedUppercase)
+        for option in MirrorOverride.allCases {
+            picker.addAction(action: OptionAction(label: mirrorOverrideTitle(option, globalOn: globalOn), selected: current == option) { [weak self] in
+                guard let self else { return }
+                Settings.setMirrorOverride(option, key: key, podcastUuid: self.podcast.uuid)
+                self.settingsTable.reloadData()
+            })
+        }
+        picker.present(from: self)
+    }
+
     // MARK: - Auto Add To Session
 
     /// Fork: where auto-added episodes land in the lineup — the session's own insert
@@ -496,6 +535,17 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
            let sessionSection = data.firstIndex(where: { $0.first == .session }) {
             data[sessionSection].append(.sessionPosition)
             data[sessionSection].append(.globalSession)
+        }
+
+        // Fork: linked-adds overrides — one per direction, always present with
+        // sessions on (mirroring is about manual adds, not auto-add).
+        if FeatureFlag.sessions.enabled {
+            if let upNextSection = data.firstIndex(where: { $0.first == .upNext }) {
+                data[upNextSection].append(.mirrorToSession)
+            }
+            if let sessionSection = data.firstIndex(where: { $0.first == .session }) {
+                data[sessionSection].append(.mirrorToUpNext)
+            }
         }
 
         if !playlistsPodcastCanAppearIn().isEmpty {

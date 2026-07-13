@@ -155,13 +155,20 @@ class EpisodeListSearchController: SimpleNotificationsViewController, UISearchBa
         episodeInfoLabel?.attributedText = attributedText
 
         // Fork: the archived toggle became the episode filter funnel. Its tint is the
-        // cue — neutral when everything is default, accent when filtering.
+        // cue — neutral when everything is default, accent when filtering. With the
+        // funnel off, the stock Show/Hide Archived text button returns.
         if let showHideBtn = showHideArchiveBtn {
-            let funnelActive = EpisodeStateFilterSet.global.showsActiveCue
             UIView.performWithoutAnimation {
-                showHideBtn.setTitle(nil, for: .normal)
-                showHideBtn.setImage(UIImage(named: "podcast-filter"), for: .normal)
-                showHideBtn.tintColor = funnelActive ? ThemeColor.primaryInteractive01() : ThemeColor.primaryIcon02()
+                if FeatureFlag.episodesFunnel.enabled {
+                    let funnelActive = EpisodeStateFilterSet.global.showsActiveCue
+                    showHideBtn.setTitle(nil, for: .normal)
+                    showHideBtn.setImage(UIImage(named: "podcast-filter"), for: .normal)
+                    showHideBtn.tintColor = funnelActive ? ThemeColor.primaryInteractive01() : ThemeColor.primaryIcon02()
+                } else {
+                    showHideBtn.setImage(nil, for: .normal)
+                    showHideBtn.setTitle(delegate.showingArchived() ? L10n.podcastHideArchived : L10n.podcastShowArchived, for: .normal)
+                    showHideBtn.tintColor = ThemeColor.primaryInteractive01()
+                }
                 showHideBtn.layoutIfNeeded()
             }
         }
@@ -234,6 +241,13 @@ class EpisodeListSearchController: SimpleNotificationsViewController, UISearchBa
     /// seen are fork-local per-podcast preferences.
     @IBAction func showHideArchiveTapped(_ sender: Any) {
         guard let delegate = podcastDelegate, let podcast = delegate.displayedPodcast() else { return }
+
+        // Funnel off: the button is the stock archived toggle.
+        guard FeatureFlag.episodesFunnel.enabled else {
+            delegate.toggleShowArchived()
+            return
+        }
+
         let optionPicker = OptionsPicker(title: nil)
 
         // Per-state switches (they keep the sheet open): all on = everything shows;

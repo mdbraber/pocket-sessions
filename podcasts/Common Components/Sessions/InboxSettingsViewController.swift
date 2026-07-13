@@ -7,11 +7,14 @@ import UIKit
 class InboxSettingsViewController: PCViewController, UITableViewDataSource, UITableViewDelegate {
     private static let cellId = "InboxSettingsCell"
 
-    private enum TableRow: CaseIterable { case addToSessionMode, autoAddToUpNext, autoAddToSession }
+    private enum TableRow: CaseIterable { case addToSessionMode, autoAddToUpNext, autoAddToSession, mirrorUpNextToSession, mirrorSessionToUpNext }
 
-    /// With sessions off only the stock Up Next behavior remains.
-    private var rows: [TableRow] {
-        FeatureFlag.sessions.enabled ? TableRow.allCases : [.autoAddToUpNext]
+    /// Grouped: the Add to Session routing stands apart from the Auto Add pages and
+    /// the linked-adds switches. With sessions off only stock Up Next remains.
+    private var sections: [[TableRow]] {
+        FeatureFlag.sessions.enabled
+            ? [[.addToSessionMode], [.autoAddToUpNext, .autoAddToSession], [.mirrorUpNextToSession, .mirrorSessionToUpNext]]
+            : [[.autoAddToUpNext]]
     }
 
     private let settingsTable = ThemeableTable(frame: .zero, style: .grouped)
@@ -37,14 +40,26 @@ class InboxSettingsViewController: PCViewController, UITableViewDataSource, UITa
         settingsTable.reloadData()
     }
 
-    func numberOfSections(in tableView: UITableView) -> Int { 1 }
+    @objc private func mirrorUpNextToSessionChanged(_ sender: UISwitch) {
+        Settings.setMirrorUpNextToSession(sender.isOn)
+    }
 
-    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { rows.count }
+    @objc private func mirrorSessionToUpNextChanged(_ sender: UISwitch) {
+        Settings.setMirrorSessionToUpNext(sender.isOn)
+    }
+
+    func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
+        sections[section].first == .mirrorUpNextToSession ? L10n.settingsLinking : nil
+    }
+
+    func numberOfSections(in tableView: UITableView) -> Int { sections.count }
+
+    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { sections[section].count }
 
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = (tableView.dequeueReusableCell(withIdentifier: Self.cellId) as? ThemeableCell)
             ?? ThemeableCell(style: .value1, reuseIdentifier: Self.cellId)
-        switch rows[indexPath.row] {
+        switch sections[indexPath.section][indexPath.row] {
         case .addToSessionMode:
             cell.textLabel?.text = L10n.playlistAddToLineup
             cell.detailTextLabel?.text = AddToSessionMode.current.title
@@ -54,7 +69,20 @@ class InboxSettingsViewController: PCViewController, UITableViewDataSource, UITa
         case .autoAddToSession:
             cell.textLabel?.text = L10n.settingsAutoAddSession
             cell.detailTextLabel?.text = L10n.settingsEpisodeLimitFormat(Settings.sessionAutoAddLimit().localized())
+        case .mirrorUpNextToSession, .mirrorSessionToUpNext:
+            let isUpNextToSession = sections[indexPath.section][indexPath.row] == .mirrorUpNextToSession
+            cell.textLabel?.text = isUpNextToSession ? L10n.settingsMirrorUpNextToSession : L10n.settingsMirrorSessionToUpNext
+            cell.detailTextLabel?.text = nil
+            let toggle = UISwitch()
+            toggle.isOn = isUpNextToSession ? Settings.mirrorUpNextToSession() : Settings.mirrorSessionToUpNext()
+            toggle.addTarget(self, action: isUpNextToSession ? #selector(mirrorUpNextToSessionChanged(_:)) : #selector(mirrorSessionToUpNextChanged(_:)), for: .valueChanged)
+            cell.accessoryView = toggle
+            cell.accessoryType = .none
+            cell.selectionStyle = .none
+            return cell
         }
+        cell.accessoryView = nil
+        cell.selectionStyle = .default
         cell.accessoryType = .disclosureIndicator
         return cell
     }
@@ -62,7 +90,7 @@ class InboxSettingsViewController: PCViewController, UITableViewDataSource, UITa
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
 
-        switch rows[indexPath.row] {
+        switch sections[indexPath.section][indexPath.row] {
         case .addToSessionMode:
             let modes = AddToSessionMode.allCases
             let selectedIndex = modes.firstIndex(of: .current) ?? 0
@@ -77,6 +105,8 @@ class InboxSettingsViewController: PCViewController, UITableViewDataSource, UITa
             navigationController?.pushViewController(AutoAddToUpNextViewController(), animated: true)
         case .autoAddToSession:
             navigationController?.pushViewController(AutoAddToSessionViewController(), animated: true)
+        case .mirrorUpNextToSession, .mirrorSessionToUpNext:
+            break
         }
     }
 }

@@ -7,6 +7,13 @@ import UIKit
 import SwiftUI
 import PocketCastsUtils
 
+/// Per-podcast override for the fork's linked-adds switches.
+enum MirrorOverride: Int, CaseIterable {
+    case followGlobal = 0
+    case on = 1
+    case off = 2
+}
+
 class Settings: NSObject {
 
 #if !os(watchOS)
@@ -367,6 +374,52 @@ class Settings: NSObject {
 
     class func setPlaylistsBadgeType(_ badgeType: BadgeType) {
         UserDefaults.standard.set(badgeType.rawValue, forKey: Settings.playlistsBadgeKey)
+    }
+
+    // MARK: - Fork: linked adds (Up Next ⇄ Session)
+
+    static let mirrorUpNextToSessionKey = "SJMirrorUpNextToSession"
+    static let mirrorSessionToUpNextKey = "SJMirrorSessionToUpNext"
+
+    class func mirrorUpNextToSession() -> Bool {
+        UserDefaults.standard.bool(forKey: Settings.mirrorUpNextToSessionKey)
+    }
+
+    class func setMirrorUpNextToSession(_ on: Bool) {
+        UserDefaults.standard.set(on, forKey: Settings.mirrorUpNextToSessionKey)
+    }
+
+    class func mirrorSessionToUpNext() -> Bool {
+        UserDefaults.standard.bool(forKey: Settings.mirrorSessionToUpNextKey)
+    }
+
+    class func setMirrorSessionToUpNext(_ on: Bool) {
+        UserDefaults.standard.set(on, forKey: Settings.mirrorSessionToUpNextKey)
+    }
+
+    /// Per-podcast override: follow the global switch (live) or pin On/Off.
+    class func mirrorOverride(key: String, podcastUuid: String) -> MirrorOverride {
+        MirrorOverride(rawValue: UserDefaults.standard.integer(forKey: "\(key)-\(podcastUuid)")) ?? .followGlobal
+    }
+
+    class func setMirrorOverride(_ override: MirrorOverride, key: String, podcastUuid: String) {
+        UserDefaults.standard.set(override.rawValue, forKey: "\(key)-\(podcastUuid)")
+    }
+
+    class func resolvedMirrorUpNextToSession(podcastUuid: String) -> Bool {
+        switch mirrorOverride(key: Settings.mirrorUpNextToSessionKey, podcastUuid: podcastUuid) {
+        case .followGlobal: return mirrorUpNextToSession()
+        case .on: return true
+        case .off: return false
+        }
+    }
+
+    class func resolvedMirrorSessionToUpNext(podcastUuid: String) -> Bool {
+        switch mirrorOverride(key: Settings.mirrorSessionToUpNextKey, podcastUuid: podcastUuid) {
+        case .followGlobal: return mirrorSessionToUpNext()
+        case .on: return true
+        case .off: return false
+        }
     }
 
     static let sessionAutoAddLimitKey = "SJSessionAutoAddLimit"

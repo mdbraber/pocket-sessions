@@ -2452,6 +2452,24 @@
 /* Fork: title of the Settings section grouping Up Next and Session behavior. */
 "settings_up_next_and_session" = "Up Next & Session";
 
+/* Fork: global switch — adding an episode to Up Next also adds it to its podcast's Session. */
+"settings_mirror_up_next_to_session" = "Up Next Adds to Session";
+
+/* Fork: global switch — adding an episode to a Session also adds it to Up Next. */
+"settings_mirror_session_to_up_next" = "Session Adds to Up Next";
+
+/* Fork: per-podcast override row — mirror this podcast's Up Next adds into its Session. */
+"settings_also_add_to_session" = "Also Add to Session";
+
+/* Fork: per-podcast override row — mirror this podcast's Session adds into Up Next. */
+"settings_also_add_to_up_next" = "Also Add to Up Next";
+
+/* Fork: the tri-state override option that follows the global switch. '%1$@' is the global's current On/Off. */
+"settings_mirror_default_format" = "Default (%1$@)";
+
+/* Fork: header of the settings group holding the linked-adds switches. */
+"settings_linking" = "Linking";
+
 /* A common string used throughout the app. Refers to the Auto Archive settings menu */
 "settings_auto_archive" = "Auto Archive";
 

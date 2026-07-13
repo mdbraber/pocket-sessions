@@ -501,7 +501,9 @@ class PlaylistDetailViewModel: ObservableObject {
             SessionManager.shared.addToLineup(episodeUuids: episodeUuids, session: session)
         } else {
             dataManager.insertIntoCustomOrder(episodeUuids: episodeUuids, for: playlist)
-        }
+            // Linked adds: one mirrored hop into the queue when enabled.
+        SessionLinking.mirrorSessionAdd(episodeUuids: episodeUuids)
+    }
         reloadEpisodeList()
     }
 

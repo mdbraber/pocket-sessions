@@ -20,12 +20,14 @@ extension EpisodeDetailViewController {
             let playNextAction = OptionAction(label: L10n.playNextInUpNext, icon: "list_playnext") { [weak self] in
                 guard let self else { return }
                 PlaybackManager.shared.addToUpNext(episode: self.episode, ignoringQueueLimit: true, toTop: true, userInitiated: true)
+                SessionLinking.mirrorQueueAdd(episodes: [self.episode])
             }
             addPicker.addAction(action: playNextAction)
 
             let playLastAction = OptionAction(label: L10n.playLastInUpNext, icon: "list_playlast") { [weak self] in
                 guard let self else { return }
                 PlaybackManager.shared.addToUpNext(episode: self.episode, ignoringQueueLimit: true, toTop: false, userInitiated: true)
+                SessionLinking.mirrorQueueAdd(episodes: [self.episode])
             }
             addPicker.addAction(action: playLastAction)
         }

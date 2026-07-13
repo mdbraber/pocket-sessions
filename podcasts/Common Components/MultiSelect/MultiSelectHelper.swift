@@ -165,6 +165,8 @@ class MultiSelectHelper {
         }
         Task.detached {
             PlaybackManager.shared.bulkAdd(episodesToAdd, toTop: toTop)
+            // Linked adds: one mirrored hop into sessions when enabled.
+            SessionLinking.mirrorQueueAdd(episodes: episodesToAdd)
             if showDelayedCompletionMessage {
                 let timeSinceStatusDisplayed = 0 - statusTime.timeIntervalSinceNow
                 if timeSinceStatusDisplayed < Constants.Animation.multiSelectStatusDelayTime {

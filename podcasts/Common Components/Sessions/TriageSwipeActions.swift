@@ -36,6 +36,7 @@ enum TriageSwipes {
 
         let addTop = SwipeAction(style: .default, title: nil) { _, _ in
             PlaybackManager.shared.addToUpNext(episode: episode, ignoringQueueLimit: true, toTop: true, userInitiated: true)
+                    SessionLinking.mirrorQueueAdd(episodes: [episode])
         }
         addTop.image = UIImage(named: "list_playnext")
         addTop.backgroundColor = ThemeColor.support04()
@@ -44,6 +45,7 @@ enum TriageSwipes {
 
         let addBottom = SwipeAction(style: .default, title: nil) { _, _ in
             PlaybackManager.shared.addToUpNext(episode: episode, ignoringQueueLimit: true, toTop: false, userInitiated: true)
+                    SessionLinking.mirrorQueueAdd(episodes: [episode])
         }
         addBottom.image = UIImage(named: "list_playlast")
         addBottom.backgroundColor = ThemeColor.support03()
