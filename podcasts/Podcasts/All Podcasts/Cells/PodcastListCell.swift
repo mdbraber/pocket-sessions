@@ -31,6 +31,17 @@ class PodcastListCell: ThemeableCollectionCell {
         isAccessibilityElement = true
     }
 
+    override func awakeFromNib() {
+        super.awakeFromNib()
+        // Reserve the folder rows' chevron slot so the numbers column doesn't shift
+        // between podcast rows (no chevron) and folder rows.
+        let spacer = UIView()
+        spacer.translatesAutoresizingMaskIntoConstraints = false
+        spacer.widthAnchor.constraint(equalToConstant: 14).isActive = true
+        spacer.setContentHuggingPriority(.required, for: .horizontal)
+        contentStackView.addArrangedSubview(spacer)
+    }
+
     func populateFrom(_ podcast: Podcast, badgeType: BadgeType) {
         self.badgeType = badgeType
         podcastImage.setPodcast(uuid: podcast.uuid, size: .list)

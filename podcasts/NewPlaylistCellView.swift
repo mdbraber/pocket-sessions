@@ -54,7 +54,6 @@ struct NewPlaylistCellView: View {
                 .cornerRadius(4)
                 .clipped()
                 .frame(width: imageSize, height: imageSize)
-                .padding(.leading, 16.0)
             } else if viewModel.displayType == .upNext {
                 // Fork: the up-next glyph on the same tile the playlist artwork uses
                 ZStack {
@@ -88,6 +87,9 @@ struct NewPlaylistCellView: View {
             }
             Spacer()
             accesoryView()
+                // Reserve the folder rows' chevron slot so the numbers column
+                // doesn't shift between playlist rows and folder rows.
+                .padding(.trailing, 24)
         }
         .accessibilityElement(children: .combine)
         .background(.clear)

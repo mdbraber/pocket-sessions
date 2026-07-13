@@ -54,6 +54,8 @@ class NewPlaylistCell: ThemeableCell {
                 .environmentObject(Theme.sharedTheme)
         }
         .margins(.vertical, 12)
+        // Symmetric row insets — the trailing side matches the leading 16.
+        .margins(.horizontal, 16)
 
         addSubview(artworkImageSource)
         addSubview(separatorView)
