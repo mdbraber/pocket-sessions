@@ -43,7 +43,7 @@ struct PodcastDetailsTabView: View {
     }
 
     private func refreshSessionCount() {
-        guard let podcast = delegate?.displayedPodcast() else {
+        guard FeatureFlag.sessions.enabled, let podcast = delegate?.displayedPodcast() else {
             sessionCount = 0
             inboxCount = 0
             inboxHidden = false
@@ -102,7 +102,7 @@ struct PodcastDetailsTabView: View {
 
     @ViewBuilder var tabs: some View {
         HStack(spacing: 12) {
-            if !inboxHidden {
+            if FeatureFlag.sessions.enabled, !inboxHidden {
                 Text(inboxTabTitle)
                     .buttonize {
                         openInbox()
@@ -113,14 +113,16 @@ struct PodcastDetailsTabView: View {
                     }
             }
 
-            Text(sessionTabTitle)
-                .buttonize {
-                    openSession()
-                } customize: { config in
-                    config.label
-                        .applyStyle(theme: theme, highlighted: selectedTab == .session)
-                        .applyButtonEffect(isPressed: config.isPressed)
-                }
+            if FeatureFlag.sessions.enabled {
+                Text(sessionTabTitle)
+                    .buttonize {
+                        openSession()
+                    } customize: { config in
+                        config.label
+                            .applyStyle(theme: theme, highlighted: selectedTab == .session)
+                            .applyButtonEffect(isPressed: config.isPressed)
+                    }
+            }
 
             Text(L10n.episodes)
                 .buttonize {

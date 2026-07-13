@@ -63,6 +63,11 @@ class Settings: NSObject {
         let storedBadgeType = UserDefaults.standard.integer(forKey: Settings.badgeKey)
 
         if let type = BadgeType(rawValue: Int32(storedBadgeType)) {
+            // Fork flag: the session-aware types read as off while library badges are
+            // disabled (the stored choice survives for when the flag returns).
+            if type.isSessionBased, !FeatureFlag.libraryBadges.enabled || !FeatureFlag.sessions.enabled {
+                return .off
+            }
             return type
         }
 
@@ -353,10 +358,11 @@ class Settings: NSObject {
 
     static let playlistsBadgeKey = "SJPlaylistsBadgeType"
 
-    /// Fork: the Playlists overview's badge type — the session-aware subset of the
-    /// podcast badges.
+    /// Fork: the Playlists overview's badge type — same option set as the podcast
+    /// badges. Off whenever the library-badges flag is.
     class func playlistsBadgeType() -> BadgeType {
-        BadgeType(rawValue: Int32(UserDefaults.standard.integer(forKey: Settings.playlistsBadgeKey))) ?? .off
+        guard FeatureFlag.libraryBadges.enabled else { return .off }
+        return BadgeType(rawValue: Int32(UserDefaults.standard.integer(forKey: Settings.playlistsBadgeKey))) ?? .off
     }
 
     class func setPlaylistsBadgeType(_ badgeType: BadgeType) {
@@ -831,17 +837,23 @@ class Settings: NSObject {
 
     // MARK: Multi Select Actions
 
+    /// Fork flag: the session/triage verbs only exist while sessions do.
+    private class func strippingSessionActions(_ actions: [MultiSelectAction]) -> [MultiSelectAction] {
+        guard !FeatureFlag.sessions.enabled else { return actions }
+        return actions.filter { ![.addToSession, .removeFromSession, .markAsSeen, .markAsUnseen].contains($0) }
+    }
+
     private static let multiSelectActionsKey = "MultiSelectActions"
     class func multiSelectActions() -> [MultiSelectAction] {
         let defaultActions: [MultiSelectAction] = [.addToSession, .removeFromSession, .markAsSeen, .playNext, .playLast, .removeFromUpNext, .addToPlaylist, .download, .archive, .share, .markAsPlayed, .star]
         guard let savedInts = UserDefaults.standard.object(forKey: Settings.multiSelectActionsKey) as? [Int32] else {
-            return defaultActions
+            return strippingSessionActions(defaultActions)
         }
 
         let actions = savedInts.compactMap { MultiSelectAction(rawValue: $0) }
 
         // Make sure new items are shown
-        return actions + defaultActions.filter { !actions.contains($0) }
+        return strippingSessionActions(actions + defaultActions.filter { !actions.contains($0) })
     }
 
     class func updateMultiSelectActions(_ actions: [MultiSelectAction]) {
@@ -853,13 +865,13 @@ class Settings: NSObject {
     class func listeningHistoryMultiSelectActions() -> [MultiSelectAction] {
         let defaultActions: [MultiSelectAction] = [.addToSession, .playNext, .playLast, .removeFromUpNext, .download, .archive, .share, .removeListeningHistory, .markAsPlayed, .star]
         guard let savedInts = UserDefaults.standard.object(forKey: Settings.listeningHistoryMultiSelectActionsKey) as? [Int32] else {
-            return defaultActions
+            return strippingSessionActions(defaultActions)
         }
 
         let actions = savedInts.compactMap { MultiSelectAction(rawValue: $0) }
 
         // Make sure new items are shown
-        return actions + defaultActions.filter { !actions.contains($0) }
+        return strippingSessionActions(actions + defaultActions.filter { !actions.contains($0) })
     }
 
     class func updateListeningHistoryMultiSelectActions(_ actions: [MultiSelectAction]) {
@@ -889,13 +901,13 @@ class Settings: NSObject {
     class func sessionMultiSelectActions() -> [MultiSelectAction] {
         let defaultActions: [MultiSelectAction] = [.removeFromSession, .playNext, .playLast, .download, .markAsPlayed, .archive, .addToPlaylist, .star]
         guard let savedInts = UserDefaults.standard.object(forKey: Settings.sessionMultiSelectActionsKey) as? [Int32] else {
-            return defaultActions
+            return strippingSessionActions(defaultActions)
         }
 
         let actions = savedInts.compactMap { MultiSelectAction(rawValue: $0) }
 
         // Make sure new items are shown
-        return actions + defaultActions.filter { !actions.contains($0) }
+        return strippingSessionActions(actions + defaultActions.filter { !actions.contains($0) })
     }
 
     class func updateSessionMultiSelectActions(_ actions: [MultiSelectAction]) {
@@ -907,13 +919,13 @@ class Settings: NSObject {
     class func upNextMultiSelectActions() -> [MultiSelectAction] {
         let defaultActions: [MultiSelectAction] = [.moveToTop, .moveToBottom, .removeFromUpNext, .addToSession, .download, .markAsPlayed, .archive, .addToPlaylist, .star]
         guard let savedInts = UserDefaults.standard.object(forKey: Settings.upNextMultiSelectActionsKey) as? [Int32] else {
-            return defaultActions
+            return strippingSessionActions(defaultActions)
         }
 
         let actions = savedInts.compactMap { MultiSelectAction(rawValue: $0) }
 
         // Make sure new items are shown
-        return actions + defaultActions.filter { !actions.contains($0) }
+        return strippingSessionActions(actions + defaultActions.filter { !actions.contains($0) })
     }
 
     class func updateUpNextMultiSelectActions(_ actions: [MultiSelectAction]) {

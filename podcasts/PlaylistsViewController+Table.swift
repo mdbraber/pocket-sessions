@@ -41,7 +41,7 @@ extension PlaylistsViewController: UITableViewDelegate, UITableViewDataSource {
         cell.tag = indexPath.row
         if let playlist = listPlaylistItems[safe: indexPath.row]?.playlist {
             cell.set(playlistName: playlist.playlistName, isManualPlaylist: playlist.manual)
-            cell.setSessionSubtitle(SessionStore.shared.session(forStore: playlist.uuid)?.displaySubtitle)
+            cell.setSessionSubtitle(FeatureFlag.sessions.enabled ? SessionStore.shared.session(forStore: playlist.uuid)?.displaySubtitle : nil)
             cell.loadMetadata(for: playlist)
             cell.hideSeparator(indexPath.row == listPlaylistItems.count - 1)
         }

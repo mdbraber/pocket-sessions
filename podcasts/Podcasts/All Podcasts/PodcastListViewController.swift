@@ -581,7 +581,9 @@ class PodcastListViewController: PCViewController, ShareListDelegate {
 
         // Fork: session-aware badge types joined the stock trio, so the rows are
         // generated from one list.
-        let orderedTypes: [BadgeType] = [.off, .allUnplayed, .latestEpisode, .anyInInbox, .inboxCount, .sessionCount]
+        let orderedTypes: [BadgeType] = FeatureFlag.libraryBadges.enabled && FeatureFlag.sessions.enabled
+            ? [.off, .allUnplayed, .latestEpisode, .anyInInbox, .inboxCount, .sessionCount]
+            : [.off, .allUnplayed, .latestEpisode]
         for type in orderedTypes {
             let action = OptionAction(label: type.description, selected: badgeOption == type) { [weak self] in
                 guard let strongSelf = self else { return }

@@ -211,11 +211,13 @@ class PlaylistsViewController: PCViewController, FilterCreatedDelegate {
         let optionsPicker = OptionsPicker(title: nil)
 
         // Fork: every manual playlist is a session — one switch hides them all.
-        let hideSessions = UserDefaults.standard.bool(forKey: "SJPlaylistsHideSessions")
-        optionsPicker.addAction(action: OptionAction(label: L10n.playlistsHideSessions, icon: "option-multiselect", selected: hideSessions) { [weak self] in
-            UserDefaults.standard.set(!hideSessions, forKey: "SJPlaylistsHideSessions")
-            self?.reloadFilters()
-        })
+        if FeatureFlag.sessions.enabled {
+            let hideSessions = UserDefaults.standard.bool(forKey: "SJPlaylistsHideSessions")
+            optionsPicker.addAction(action: OptionAction(label: L10n.playlistsHideSessions, icon: "option-multiselect", selected: hideSessions) { [weak self] in
+                UserDefaults.standard.set(!hideSessions, forKey: "SJPlaylistsHideSessions")
+                self?.reloadFilters()
+            })
+        }
 
         let sortAction = OptionAction(label: L10n.sortBy, secondaryLabel: playlistsSortOrder.description, icon: "podcast-sort") {}
         sortAction.submenu = { [weak self] in self?.makeSortOptionsPicker() }
@@ -223,9 +225,11 @@ class PlaylistsViewController: PCViewController, FilterCreatedDelegate {
 
         // Fork: row badges, same option set as the podcast grid's. A badge replaces
         // the row's plain episode count.
-        let badgeAction = OptionAction(label: L10n.podcastsBadges, secondaryLabel: Settings.playlistsBadgeType().description, icon: "badges") {}
-        badgeAction.submenu = { [weak self] in self?.makeBadgeOptionsPicker() }
-        optionsPicker.addAction(action: badgeAction)
+        if FeatureFlag.libraryBadges.enabled {
+            let badgeAction = OptionAction(label: L10n.podcastsBadges, secondaryLabel: Settings.playlistsBadgeType().description, icon: "badges") {}
+            badgeAction.submenu = { [weak self] in self?.makeBadgeOptionsPicker() }
+            optionsPicker.addAction(action: badgeAction)
+        }
 
         let largeGridAction = OptionAction(label: L10n.podcastsLargeGrid, icon: "podcastlist_largegrid", selected: playlistsLayout == .threeByThree) { [weak self] in
             self?.playlistsLayout = .threeByThree
@@ -238,9 +242,11 @@ class PlaylistsViewController: PCViewController, FilterCreatedDelegate {
         }
         optionsPicker.addSegmentedAction(name: L10n.podcastsLayout, icon: "podcastlist_largegrid", actions: [largeGridAction, smallGridAction, listAction])
 
-        optionsPicker.addAction(action: OptionAction(label: L10n.folderCreateNew, icon: "folder-create") { [weak self] in
-            self?.presentNewPlaylistFolder()
-        })
+        if FeatureFlag.playlistFolders.enabled {
+            optionsPicker.addAction(action: OptionAction(label: L10n.folderCreateNew, icon: "folder-create") { [weak self] in
+                self?.presentNewPlaylistFolder()
+            })
+        }
 
         // Reordering needs the list layout and the custom order to mean anything.
         if playlistsLayout == .list, playlistsSortOrder == .custom {
@@ -300,7 +306,7 @@ class PlaylistsViewController: PCViewController, FilterCreatedDelegate {
             gridHost = host
         }
 
-        var folders = PlaylistFolderManager.shared.allFolders()
+        var folders = FeatureFlag.playlistFolders.enabled ? PlaylistFolderManager.shared.allFolders() : []
         let feederUuids = SessionStore.shared.feederPlaylistUuids
         let hideSessions = UserDefaults.standard.bool(forKey: "SJPlaylistsHideSessions")
         var playlists = DataManager.sharedManager.allPlaylists(includeDeleted: false)
@@ -393,9 +399,11 @@ class PlaylistsViewController: PCViewController, FilterCreatedDelegate {
 
             // Fork: Playlist Folders lead the list; playlists inside a folder show on
             // the folder's own page instead of the top level.
-            var folderRows: [ListPlaylist] = PlaylistFolderManager.shared.allFolders().map { folder in
-                ListPlaylistFolder(folder: folder, count: PlaylistFolderManager.shared.playlistUuids(inFolder: folder.uuid).count)
-            }
+            var folderRows: [ListPlaylist] = FeatureFlag.playlistFolders.enabled
+                ? PlaylistFolderManager.shared.allFolders().map { folder in
+                    ListPlaylistFolder(folder: folder, count: PlaylistFolderManager.shared.playlistUuids(inFolder: folder.uuid).count)
+                }
+                : []
             let feederUuids = SessionStore.shared.feederPlaylistUuids
             let hideSessions = UserDefaults.standard.bool(forKey: "SJPlaylistsHideSessions")
             var playlistRows = DataManager.sharedManager.allPlaylists(includeDeleted: false)

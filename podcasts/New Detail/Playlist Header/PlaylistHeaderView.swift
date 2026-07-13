@@ -72,10 +72,12 @@ struct PlaylistHeaderView: View {
                         type: viewModel.isManualPlaylist ? .addEpisodes : .smartRules,
                         image: Image(viewModel.isManualPlaylist ? "filter_new_episode" : "cs-sparkle-black"),
                         title: viewModel.isManualPlaylist ? L10n.playlistManualAddEpisodes : L10n.playlistSmartRulesTitle)
-                    iconButton(
-                        type: .playlistFolder,
-                        image: Image(PlaylistFolderManager.shared.folderUuid(forPlaylist: viewModel.playlist.uuid) == nil ? "folder-empty" : "folder-check"),
-                        title: L10n.folder)
+                    if FeatureFlag.playlistFolders.enabled {
+                        iconButton(
+                            type: .playlistFolder,
+                            image: Image(PlaylistFolderManager.shared.folderUuid(forPlaylist: viewModel.playlist.uuid) == nil ? "folder-empty" : "folder-check"),
+                            title: L10n.folder)
+                    }
                     iconButton(
                         type: .playlistSettings,
                         image: Image("podcast-settings"),

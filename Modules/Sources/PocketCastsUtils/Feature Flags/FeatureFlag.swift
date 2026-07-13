@@ -96,6 +96,25 @@ public enum FeatureFlag: String, CaseIterable {
     /// Up Next queue, returning to it when done (personal fork feature)
     case playbackSessions
 
+    /// The whole session/triage architecture: Session entities, Inbox | Session |
+    /// Episodes tabs, triage verbs, seen marks, auto-add (personal fork feature).
+    /// Off restores the stock surfaces; session stores show as plain manual playlists.
+    case sessions
+
+    /// The global Inbox tab in the tab bar (personal fork feature; rides sessions)
+    case globalInboxTab
+
+    /// Playlist folders in the Playlists overview (personal fork feature)
+    case playlistFolders
+
+    /// Folder rules on smart playlists, materialized into their podcast rule
+    /// (personal fork feature)
+    case smartPlaylistFolderRules
+
+    /// The extended library badges: session-aware podcast badge types and
+    /// playlist-row badges (personal fork feature)
+    case libraryBadges
+
     /// Push two auto downloads on subscribe of a podcast
     case autoDownloadOnSubscribe
 
@@ -394,6 +413,16 @@ public enum FeatureFlag: String, CaseIterable {
         case .upNextFilter:
             true
         case .playbackSessions:
+            FeatureFlag.sessions.enabled
+        case .sessions:
+            true
+        case .globalInboxTab:
+            FeatureFlag.sessions.enabled
+        case .playlistFolders:
+            true
+        case .smartPlaylistFolderRules:
+            true
+        case .libraryBadges:
             true
         case .autoDownloadOnSubscribe:
             true

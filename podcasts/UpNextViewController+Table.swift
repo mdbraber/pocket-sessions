@@ -552,7 +552,9 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
     private static var cachedSessionMemberUuids: Set<String> = []
 
     func refreshSessionMembership() {
-        Self.cachedSessionMemberUuids = Set(SessionStore.shared.sessions.flatMap { SessionFeederEngine.storeMemberUuids(for: $0) })
+        Self.cachedSessionMemberUuids = FeatureFlag.sessions.enabled
+            ? Set(SessionStore.shared.sessions.flatMap { SessionFeederEngine.storeMemberUuids(for: $0) })
+            : []
     }
 
     var sessionMemberUuidsForDisplay: Set<String> { Self.cachedSessionMemberUuids }

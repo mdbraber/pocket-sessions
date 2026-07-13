@@ -477,7 +477,9 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
     }
 
     private func tableData() -> [[TableRow]] {
-        var data: [[TableRow]] = [[.autoDownload, .notifications, .globalInbox], [.upNext], [.session], [.playbackEffects, .skipFirst, .skipLast], [.autoArchive]]
+        var data: [[TableRow]] = FeatureFlag.sessions.enabled
+            ? [[.autoDownload, .notifications, .globalInbox], [.upNext], [.session], [.playbackEffects, .skipFirst, .skipLast], [.autoArchive]]
+            : [[.autoDownload, .notifications], [.upNext], [.playbackEffects, .skipFirst, .skipLast], [.autoArchive]]
 
         if podcast.refreshAvailable {
             data.insert([.feedError], at: 0)

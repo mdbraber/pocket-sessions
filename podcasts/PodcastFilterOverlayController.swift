@@ -102,8 +102,11 @@ class PodcastFilterOverlayController: PodcastChooserViewController, PodcastSelec
             .store(in: &cancellables)
         setupSaveButton()
 
-        allFolders = DataManager.sharedManager.allFolders()
-            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        // Fork flag: the folder-rule section only offers folders when enabled.
+        allFolders = FeatureFlag.smartPlaylistFolderRules.enabled
+            ? DataManager.sharedManager.allFolders()
+                .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            : []
         selectedFolderUuids = filterToEdit.folderUuids.components(separatedBy: ",").filter { !$0.isEmpty }
 
         if filterToEdit.filterAllPodcasts {

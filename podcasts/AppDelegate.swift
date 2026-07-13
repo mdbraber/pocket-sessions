@@ -330,8 +330,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
             PlaylistManager.createDefaultPlaylists()
             UserDefaults.standard.set(true, forKey: "CreatedDefPlaylistsV2")
         }
-        SessionManager.shared.setup()
-        SessionManager.shared.healSessions()
+        if FeatureFlag.sessions.enabled {
+            SessionManager.shared.setup()
+            SessionManager.shared.healSessions()
+        }
         Task {
             await DownloadManager.shared.clearStuckDownloads()
         }

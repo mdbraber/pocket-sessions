@@ -467,6 +467,7 @@ class SessionManager {
     /// Smart playlists carrying a folder rule re-materialize the folder's podcasts
     /// into their synced podcast rule whenever folders change.
     @objc func refreshFolderRules() {
+        guard FeatureFlag.smartPlaylistFolderRules.enabled else { return }
         DispatchQueue.global(qos: .utility).async {
             let linked = DataManager.sharedManager.allSmartPlaylists(includeDeleted: false).filter { !$0.folderUuids.isEmpty }
             guard !linked.isEmpty else { return }

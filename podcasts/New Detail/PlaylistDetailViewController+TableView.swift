@@ -660,7 +660,7 @@ private extension PlaylistDetailViewController {
         // Per-state switches (they keep the sheet open): all on = everything shows;
         // switching one off hides that state. Grouped by axis, smart-rules style.
         let currentFilter = viewModel.episodesFilter
-        for section in EpisodeStateFilter.sheetSections {
+        for section in EpisodeStateFilter.visibleSheetSections {
             if let title = section.title {
                 optionPicker.addSectionTitle(title.localizedUppercase)
             }

@@ -103,7 +103,9 @@ class MainTabBarController: UITabBarController, NavigationProtocol, UIGestureRec
         fixTarBarTraitCollectionOnIpadForiOS18()
 
         // Fork: the global Inbox leads the tab bar; Discover lives under Profile.
-        pcTabs = [.inbox, .podcasts, .filter, .upNext, .profile]
+        pcTabs = FeatureFlag.globalInboxTab.enabled
+            ? [.inbox, .podcasts, .filter, .upNext, .profile]
+            : [.podcasts, .filter, .upNext, .profile]
 
         // Fork: long-pressing the Up Next/Session tab offers the Switch Session sheet.
         if FeatureFlag.playbackSessions.enabled {
@@ -115,8 +117,11 @@ class MainTabBarController: UITabBarController, NavigationProtocol, UIGestureRec
 
         var vcsInTab = [UIViewController]()
 
-        let inboxViewController = InboxViewController()
-        inboxViewController.tabBarItem = UITabBarItem(title: L10n.inboxTitle, image: UIImage(systemName: "tray"), tag: pcTabs.firstIndex(of: .inbox)!)
+        if let inboxIndex = pcTabs.firstIndex(of: .inbox) {
+            let inboxViewController = InboxViewController()
+            inboxViewController.tabBarItem = UITabBarItem(title: L10n.inboxTitle, image: UIImage(systemName: "tray"), tag: inboxIndex)
+            vcsInTab.append(inboxViewController)
+        }
 
         let podcastsController = PodcastListViewController()
         podcastsController.tabBarItem = UITabBarItem(title: L10n.podcastsPlural, image: UIImage(named: "podcasts_tab"), tag: pcTabs.firstIndex(of: .podcasts)!)
@@ -129,7 +134,7 @@ class MainTabBarController: UITabBarController, NavigationProtocol, UIGestureRec
 
         let upNextViewController = UpNextViewController(source: .tabBar, showingInTab: true)
         upNextViewController.tabBarItem = upNextTabBarItem
-        vcsInTab = [inboxViewController, podcastsController, filtersViewController, upNextViewController, profileViewController]
+        vcsInTab.append(contentsOf: [podcastsController, filtersViewController, upNextViewController, profileViewController])
 
         displayEndOfYearBadgeIfNeeded()
 
@@ -340,6 +345,7 @@ class MainTabBarController: UITabBarController, NavigationProtocol, UIGestureRec
     /// every unarchived episode and the observers fire on every play/archive/queue
     /// event — debounce and compute off the main thread so the UI never waits on it.
     @objc private func updateInboxBadge() {
+        guard FeatureFlag.globalInboxTab.enabled else { return }
         inboxBadgeDebounce.call {
             DispatchQueue.global(qos: .utility).async { [weak self] in
                 let global = SessionStore.shared.globalInbox

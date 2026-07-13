@@ -130,8 +130,10 @@ class PlaylistDetailViewModel: ObservableObject {
     }
 
     /// Fork: the session coordinating this playlist as its store, when there is one.
+    /// With the sessions flag off the store renders as a plain manual playlist.
     var session: Session? {
-        SessionStore.shared.session(forStore: playlist.uuid)
+        guard FeatureFlag.sessions.enabled else { return nil }
+        return SessionStore.shared.session(forStore: playlist.uuid)
     }
 
     /// Fork: kept as the UI's switch for the triage experience — now meaning "this
@@ -152,10 +154,11 @@ class PlaylistDetailViewModel: ObservableObject {
 
     /// Fork: smart playlist (lens) pages carry the same triage tabs — the lens itself
     /// is the feeder; its session's store lives elsewhere and may not exist yet.
-    var isLensPage: Bool { !isManualPlaylist }
+    var isLensPage: Bool { FeatureFlag.sessions.enabled && !isManualPlaylist }
 
     var lensSession: Session? {
-        SessionStore.shared.session(forSmartPlaylistFeeder: playlist.uuid)
+        guard FeatureFlag.sessions.enabled else { return nil }
+        return SessionStore.shared.session(forSmartPlaylistFeeder: playlist.uuid)
     }
 
     /// The feeder used to compute lens-page offers before a session exists.
