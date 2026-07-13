@@ -196,7 +196,10 @@ class EpisodeListSearchController: SimpleNotificationsViewController, UISearchBa
             nonDefault = TriageTabSort.isNonDefault(tab, pageUuid: podcast.uuid)
         }
         UIView.performWithoutAnimation {
-            sortButton.setImage(UIImage(systemName: "arrow.up.arrow.down", withConfiguration: UIImage.SymbolConfiguration(pointSize: 14, weight: .medium)), for: .normal)
+            // Button-level symbol config — system buttons override per-image configs,
+            // which made the glyph render at different sizes per surface.
+            sortButton.setPreferredSymbolConfiguration(UIImage.SymbolConfiguration(pointSize: 16, weight: .medium), forImageIn: .normal)
+            sortButton.setImage(UIImage(systemName: "arrow.up.arrow.down"), for: .normal)
             sortButton.tintColor = nonDefault ? ThemeColor.primaryInteractive01() : ThemeColor.primaryIcon02()
             sortButton.layoutIfNeeded()
         }

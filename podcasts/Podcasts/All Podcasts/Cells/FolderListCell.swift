@@ -31,7 +31,20 @@ class FolderListCell: ThemeableCollectionCell {
     override func awakeFromNib() {
         super.awakeFromNib()
         isAccessibilityElement = true
+        addFlexSpacer()
         updateSize()
+    }
+
+    /// The row's slack lives in this invisible flex view, so the badge and chevron
+    /// pin hard against the trailing edge instead of Auto Layout breaking an
+    /// arbitrary constraint to resolve the over-constrained stack.
+    private func addFlexSpacer() {
+        guard let stack = unplayedBadge.superview as? UIStackView,
+              let badgeIndex = stack.arrangedSubviews.firstIndex(of: unplayedBadge) else { return }
+        let flex = UIView()
+        flex.setContentHuggingPriority(UILayoutPriority(1), for: .horizontal)
+        flex.setContentCompressionResistancePriority(UILayoutPriority(1), for: .horizontal)
+        stack.insertArrangedSubview(flex, at: badgeIndex)
     }
 
     func populateFrom(folder: Folder, badgeType: BadgeType) {

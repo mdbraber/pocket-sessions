@@ -195,10 +195,14 @@ class PlaylistsViewController: PCViewController, FilterCreatedDelegate {
         }
     }
 
-    /// Only rows wearing a badge care about triage/play state.
+    /// Only rows wearing a badge care about triage/play state. Counts change
+    /// without row changes, so the diff reload alone would leave cells stale.
     @objc private func badgeStateChanged() {
         guard Settings.playlistsBadgeType() != .off else { return }
-        filtersUpdated()
+        debounce.call { [weak self] in
+            self?.filtersTable.reloadData()
+            self?.reloadFilters()
+        }
     }
 
     @IBAction func addNewFilter() {
@@ -266,6 +270,9 @@ class PlaylistsViewController: PCViewController, FilterCreatedDelegate {
         for type in orderedTypes {
             options.addAction(action: OptionAction(label: type.description, selected: current == type) { [weak self] in
                 Settings.setPlaylistsBadgeType(type)
+                // The row set is unchanged, so the diff reload won't reconfigure
+                // cells — force it so the new badge type renders immediately.
+                self?.filtersTable.reloadData()
                 self?.reloadFilters()
             })
         }

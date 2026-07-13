@@ -33,13 +33,17 @@ class PodcastListCell: ThemeableCollectionCell {
 
     override func awakeFromNib() {
         super.awakeFromNib()
-        // Reserve the folder rows' chevron slot so the numbers column doesn't shift
-        // between podcast rows (no chevron) and folder rows.
-        let spacer = UIView()
-        spacer.translatesAutoresizingMaskIntoConstraints = false
-        spacer.widthAnchor.constraint(equalToConstant: 14).isActive = true
-        spacer.setContentHuggingPriority(.required, for: .horizontal)
-        contentStackView.addArrangedSubview(spacer)
+
+        // The row's slack lives in this invisible flex view, so the badge pins hard
+        // against the trailing cluster instead of Auto Layout breaking an arbitrary
+        // constraint to resolve the over-constrained stack.
+        if let badgeIndex = contentStackView.arrangedSubviews.firstIndex(of: unplayedBadge) {
+            let flex = UIView()
+            flex.setContentHuggingPriority(UILayoutPriority(1), for: .horizontal)
+            flex.setContentCompressionResistancePriority(UILayoutPriority(1), for: .horizontal)
+            contentStackView.insertArrangedSubview(flex, at: badgeIndex)
+        }
+
     }
 
     func populateFrom(_ podcast: Podcast, badgeType: BadgeType) {

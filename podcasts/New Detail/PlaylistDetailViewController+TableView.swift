@@ -602,7 +602,8 @@ private extension PlaylistDetailViewController {
         if viewModel.usesTriageTabs {
             let sortKey = viewModel.selectedTriageTab.sortKey
             let sort = UIButton(type: .system)
-            sort.setImage(UIImage(systemName: "arrow.up.arrow.down", withConfiguration: UIImage.SymbolConfiguration(pointSize: 14, weight: .medium)), for: .normal)
+            sort.setPreferredSymbolConfiguration(UIImage.SymbolConfiguration(pointSize: 16, weight: .medium), forImageIn: .normal)
+            sort.setImage(UIImage(systemName: "arrow.up.arrow.down"), for: .normal)
             sort.tintColor = AppTheme.colorForStyle(TriageTabSort.isNonDefault(sortKey, pageUuid: viewModel.playlist.uuid) ? .primaryInteractive01 : .primaryIcon02)
             sort.accessibilityLabel = L10n.sortBy
             sort.addAction(UIAction { [weak self] _ in

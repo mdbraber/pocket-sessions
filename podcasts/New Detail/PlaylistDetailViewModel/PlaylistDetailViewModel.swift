@@ -441,7 +441,9 @@ class PlaylistDetailViewModel: ObservableObject {
     }
 
     func delete(episodes uuids: [String]) {
-        if let session {
+        if let session = session ?? lensSession {
+            // Store pages remove from their own session; lens pages from the fed one
+            // (removing from the lens playlist itself would be a lineup no-op).
             SessionManager.shared.removeFromLineup(episodeUuids: uuids, session: session)
         } else {
             dataManager.deleteEpisodes(uuids, from: playlist)

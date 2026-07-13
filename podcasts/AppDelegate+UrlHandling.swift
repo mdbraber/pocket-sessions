@@ -11,8 +11,15 @@ extension AppDelegate {
     }
 
     func handleShortcutItem(_ shortcutItem: UIApplicationShortcutItem) {
-        if let urlString = shortcutItem.userInfo?["url"] as? String, let url = URL(string: urlString) {
+        guard let urlString = shortcutItem.userInfo?["url"] as? String, let url = URL(string: urlString) else { return }
+        // A cold launch routes during scene connection, before playback state is
+        // restored — defer until the app is actually active so play actions land.
+        if UIApplication.shared.applicationState == .active {
             JLRoutes.routeURL(url)
+        } else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                JLRoutes.routeURL(url)
+            }
         }
     }
 
@@ -135,29 +142,14 @@ extension AppDelegate {
         JLRoutes.global().addRoute("/open") { _ -> Bool in
             true
         }
-        // Fork: the icon quick actions' two play options.
+        // Fork: the icon quick actions' two play options. Retried briefly — on a
+        // cold launch the queue restore can lag the route.
         JLRoutes.global().addRoute("/shortcuts/play-upnext") { _ -> Bool in
-            if Settings.playbackSession() != nil {
-                PlaybackManager.shared.endPlaybackSession()
-            }
-            if !PlaybackManager.shared.playing() {
-                if PlaybackManager.shared.currentEpisode() != nil {
-                    PlaybackManager.shared.play()
-                } else if let first = PlaybackManager.shared.queue.allEpisodes(includeNowPlaying: false).first {
-                    PlaybackManager.shared.load(episode: first, autoPlay: true, overrideUpNext: false)
-                }
-            }
+            AppDelegate.playUpNextShortcut()
             return true
         }
         JLRoutes.global().addRoute("/shortcuts/play-session") { _ -> Bool in
-            guard let session = Settings.playbackSession() else { return false }
-            if Settings.playbackSessionPaused() {
-                if let episode = session.nextEpisode(after: nil) {
-                    PlaybackManager.shared.play(sessionEpisode: episode)
-                }
-            } else if !PlaybackManager.shared.playing() {
-                PlaybackManager.shared.play()
-            }
+            AppDelegate.playSessionShortcut()
             return true
         }
 
@@ -631,6 +623,40 @@ extension AppDelegate {
             )
 
             return true
+        }
+    }
+
+    // MARK: - Fork: icon quick action playback
+
+    static func playUpNextShortcut(retriesLeft: Int = 4) {
+        if Settings.playbackSession() != nil {
+            PlaybackManager.shared.endPlaybackSession()
+        }
+        guard !PlaybackManager.shared.playing() else { return }
+        if PlaybackManager.shared.currentEpisode() != nil {
+            PlaybackManager.shared.play()
+        } else if let first = PlaybackManager.shared.queue.allEpisodes(includeNowPlaying: false).first {
+            PlaybackManager.shared.load(episode: first, autoPlay: true, overrideUpNext: false)
+        } else if retriesLeft > 0 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                playUpNextShortcut(retriesLeft: retriesLeft - 1)
+            }
+        }
+    }
+
+    static func playSessionShortcut(retriesLeft: Int = 4) {
+        guard let session = Settings.playbackSession() else { return }
+        guard !PlaybackManager.shared.playing() else { return }
+        if Settings.playbackSessionPaused() || PlaybackManager.shared.currentEpisode() == nil {
+            if let episode = PlaybackManager.shared.currentEpisode() ?? session.nextEpisode(after: nil) {
+                PlaybackManager.shared.play(sessionEpisode: episode)
+            } else if retriesLeft > 0 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    playSessionShortcut(retriesLeft: retriesLeft - 1)
+                }
+            }
+        } else {
+            PlaybackManager.shared.play()
         }
     }
 }

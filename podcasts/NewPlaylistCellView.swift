@@ -87,9 +87,6 @@ struct NewPlaylistCellView: View {
             }
             Spacer()
             accesoryView()
-                // Reserve the folder rows' chevron slot so the numbers column
-                // doesn't shift between playlist rows and folder rows.
-                .padding(.trailing, 24)
         }
         .accessibilityElement(children: .combine)
         .background(.clear)
@@ -104,10 +101,10 @@ struct NewPlaylistCellView: View {
 
     @ViewBuilder private func accesoryView() -> some View {
         switch viewModel.displayType {
-        case .count where viewModel.badgeType != .off:
-            // Fork: the chosen badge replaces the plain count — a dot for the
-            // presence types, otherwise just the number (no lozenge).
-            if viewModel.badgeCount > 0 {
+        case .count:
+            // Fork: the badge IS the trailing number — a dot for the presence
+            // types, the count otherwise, and nothing at all with badges off.
+            if viewModel.badgeType != .off, viewModel.badgeCount > 0 {
                 if viewModel.badgeType.showsDot {
                     Circle()
                         .fill(theme.primaryInteractive01)
@@ -119,7 +116,7 @@ struct NewPlaylistCellView: View {
             } else {
                 EmptyView()
             }
-        case .count, .upNext:
+        case .upNext:
             HStack(spacing: 5.0) {
                 subtitleView(text: "\(viewModel.episodesCount)")
                     .lineLimit(1)

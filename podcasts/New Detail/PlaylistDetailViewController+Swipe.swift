@@ -1,4 +1,5 @@
 import PocketCastsDataModel
+import PocketCastsUtils
 import SwipeCellKit
 
 extension PlaylistDetailViewController: SwipeTableViewCellDelegate, SwipeHandler {
@@ -39,7 +40,11 @@ extension PlaylistDetailViewController: SwipeTableViewCellDelegate, SwipeHandler
     private func lensLineupRightActions(for episode: BaseEpisode) -> [SwipeAction] {
         let remove = SwipeAction(style: .default, title: nil) { [weak self] action, _ in
             defer { action.fulfill(with: .reset) }
-            guard let self, let session = self.viewModel.lensSession else { return }
+            guard let self else { return }
+            guard let session = self.viewModel.lensSession ?? self.viewModel.session else {
+                FileLog.shared.addMessage("Lens lineup remove: no session resolved for \(self.viewModel.playlist.uuid)")
+                return
+            }
             SessionManager.shared.removeFromLineup(episodeUuids: [episode.uuid], session: session)
             self.viewModel.reloadEpisodeList(animated: true)
         }
