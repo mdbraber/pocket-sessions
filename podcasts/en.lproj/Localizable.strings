@@ -2449,6 +2449,9 @@
 /* Fork: title of the global Auto Add to Session settings screen. */
 "settings_auto_add_session" = "Auto Add to Session";
 
+/* Fork: title of the Settings section grouping Up Next and Session behavior. */
+"settings_up_next_and_session" = "Up Next & Session";
+
 /* A common string used throughout the app. Refers to the Auto Archive settings menu */
 "settings_auto_archive" = "Auto Archive";
 

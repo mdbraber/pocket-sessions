@@ -8,8 +8,7 @@ class SettingsViewController: PCViewController, UITableViewDataSource, UITableVi
     enum TableRow: String {
         case general, notifications, appearance, storageAndDataUse
         case inbox
-        case autoAddToSession
-        case autoArchive, autoDownload, autoAddToUpNext, siriShortcuts
+        case autoArchive, autoDownload, siriShortcuts
         case watch, customFiles, importSteps, opml
         case about, pocketCastsPlus, privacy
         case upNextHistory, foldersHistory
@@ -41,13 +40,9 @@ class SettingsViewController: PCViewController, UITableViewDataSource, UITableVi
             case .storageAndDataUse:
                 return (L10n.settingsStorage, UIImage(named: "settings_storage"))
             case .inbox:
-                return (L10n.inboxTitle, UIImage(systemName: "tray"))
-            case .autoAddToSession:
-                return (L10n.settingsAutoAddSession, UIImage(systemName: "rectangle.stack.badge.plus"))
+                return (L10n.settingsUpNextAndSession, UIImage(named: "upnext"))
             case .autoArchive:
                 return (L10n.settingsAutoArchive, UIImage(named: "settings_archive"))
-            case .autoAddToUpNext:
-                return (L10n.settingsAutoAdd, UIImage(named: "playlast"))
             case .autoDownload:
                 return (L10n.settingsAutoDownload, UIImage(named: "settings_autodownload"))
             case .importSteps:
@@ -94,7 +89,7 @@ class SettingsViewController: PCViewController, UITableViewDataSource, UITableVi
             developerSection,
             [.pocketCastsPlus],
             [.general, .notifications, .appearance],
-            [.inbox, .autoAddToSession, .autoArchive, .autoDownload, .autoAddToUpNext],
+            [.inbox, .autoArchive, .autoDownload],
             [.storageAndDataUse, .siriShortcuts, .headphoneControls, .watch, .customFiles],
             [.importSteps, .opml],
             [.upNextHistory, .foldersHistory],
@@ -176,10 +171,6 @@ class SettingsViewController: PCViewController, UITableViewDataSource, UITableVi
             navigationController?.pushViewController(StorageAndDataUseViewController(), animated: true)
         case .inbox:
             navigationController?.pushViewController(InboxSettingsViewController(), animated: true)
-        case .autoAddToSession:
-            navigationController?.pushViewController(AutoAddToSessionViewController(), animated: true)
-        case .autoAddToUpNext:
-            navigationController?.pushViewController(AutoAddToUpNextViewController(), animated: true)
         case .autoArchive:
             navigationController?.pushViewController(AutoArchiveViewController(), animated: true)
         case .autoDownload:
