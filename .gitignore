@@ -49,3 +49,6 @@ artifacts/*
 # Claude Code ignored personal preferences
 .claude/settings.local.json
 .claude/worktrees
+
+# Fork: local TestFlight archive/export output
+build/
