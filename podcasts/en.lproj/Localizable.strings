@@ -5189,15 +5189,6 @@
 /* Action in the New section header that moves every inbox episode into the lineup at once */
 "playlist_add_all_to_lineup" = "Add All to Session";
 
-/* Title of the picker shown when playing a playlist whose lineup is empty. %1$@ is the number of episodes in the New section */
-"playlist_empty_lineup_title" = "Your Session is empty · %1$@ in Episodes";
-
-/* Picker option: move all New episodes into the lineup, then start the session */
-"playlist_empty_lineup_add_all_and_play" = "Add All to Session & Play";
-
-/* Picker option: start the session over the episodes as currently shown, without triaging */
-"playlist_empty_lineup_play_as_is" = "Play as-is";
-
 /* Accessibility label of the eye toggle that hides queue episodes belonging to the active session */
 "up_next_hide_session_episodes" = "Hide episodes from current session";
 
@@ -5298,6 +5289,9 @@
 
 /* Group header action: the session's lineup becomes exactly this group, then plays */
 "session_replace_with" = "Replace as Session";
+
+/* Fork: toast when Play as Session is tapped on a session with an empty lineup. */
+"session_empty_toast" = "Session is empty — add episodes from the Inbox or Episodes tab";
 
 /* Episodes filter option (default): every episode that is not archived */
 "episode_filter_unarchived" = "Unarchived";

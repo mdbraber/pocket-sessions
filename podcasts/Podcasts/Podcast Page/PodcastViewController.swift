@@ -156,6 +156,7 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
         didSet {
             registerCells()
             registerLongPress()
+            registerSessionReorder()
             episodesTable.rowHeight = UITableView.automaticDimension
             episodesTable.estimatedRowHeight = 80.0
             episodesTable.allowsMultipleSelectionDuringEditing = true
@@ -523,6 +524,12 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
         if let pending = SessionManager.pendingSessionLanding, pending == podcast?.uuid {
             SessionManager.pendingSessionLanding = nil
             showSession()
+        } else if !hasAppearedAlready, let podcast,
+                  let session = SessionStore.shared.session(forPodcast: podcast.uuid),
+                  !SessionFeederEngine.storeMemberUuids(for: session).isEmpty {
+            // Opening a podcast lands on its Session; an empty (or absent) lineup
+            // lands on Episodes as before.
+            showSession()
         }
 
         if featuredPodcast, !hasAppearedAlready {
@@ -871,12 +878,7 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
         let searchTerm = searchController?.searchTextField?.text ?? ""
 
         let tintColor = AppTheme.appTintColor()
-        var episodes: [ListItem] = SessionFeederEngine.displayEpisodes(
-            for: inboxSession(for: podcast),
-            showArchived: false,
-            showPlayed: false,
-            showSeen: false
-        )
+        var episodes: [ListItem] = SessionFeederEngine.inboxEpisodes(for: inboxSession(for: podcast))
         .filter { episode in
             guard let uuidsToFilter else { return true }
             return uuidsToFilter.contains(episode.uuid) || (!searchTerm.isEmpty && episode.displayableTitle().localizedCaseInsensitiveContains(searchTerm))

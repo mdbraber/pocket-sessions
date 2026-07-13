@@ -349,23 +349,10 @@ class SessionManager {
         }
     }
 
-    /// Play as Session on a podcast: creates the session on first use, and reseeds a
-    /// drained store from the page's current order (minus decided/dismissed episodes)
-    /// so the button always starts something.
+    /// Play as Session on a podcast: plays the podcast's session lineup, nothing
+    /// else — the Inbox and Episodes tabs never leak in. Created empty on first use.
     func playPodcastSession(for podcast: Podcast) {
-        let pageOrder = EpisodesDataManager().episodes(for: podcast)
-            .flatMap { $0.elements.compactMap { ($0 as? ListEpisode)?.episode } }
-
-        let playableUuids = pageOrder
-            .filter { episode in
-                guard let episode = episode as? Episode else { return false }
-                return !episode.archived && !episode.played()
-            }
-            .map(\.uuid)
-
-        let session = SessionStore.shared.session(forPodcast: podcast.uuid)
-            ?? createSession(name: podcast.title ?? L10n.filtersDefaultNewFilter, feeder: .podcast(uuid: podcast.uuid), seedEpisodeUuids: playableUuids)
-        play(session: session, fallbackSeed: playableUuids)
+        play(session: findOrCreateSession(forPodcast: podcast))
     }
 
     /// The smart playlist's session — the playlist itself is the feeder; the store
@@ -381,20 +368,14 @@ class SessionManager {
         return createSession(name: folder.name, feeder: .folder(uuid: folder.uuid))
     }
 
-    /// Starts a session, refilling a drained store from its feeder's offers (or the
-    /// given seed) first — pressing play always starts something when anything exists.
-    func play(session: Session, fallbackSeed: [String] = []) {
-        if SessionFeederEngine.storeMemberUuids(for: session).isEmpty {
-            var refill = SessionFeederEngine.inboxEpisodes(for: session).map(\.uuid)
-            if refill.isEmpty {
-                let dismissed = Set(SessionStore.shared.dismissedUuids(sessionUuid: session.uuid))
-                refill = fallbackSeed.filter { !dismissed.contains($0) }
-            }
-            if !refill.isEmpty {
-                addToLineup(episodeUuids: refill, session: session)
-            }
-        }
+    /// Starts a session — the lineup only, never the Inbox or Episodes list. An
+    /// empty lineup is a no-op with a hint; filling it is triage's job.
+    func play(session: Session) {
         guard let storeUuid = session.storePlaylistUuid else { return }
+        guard !SessionFeederEngine.storeMemberUuids(for: session).isEmpty else {
+            Toast.show(L10n.sessionEmptyToast)
+            return
+        }
         // Recency for the Switch Session sheet.
         SessionStore.shared.markUsed(playbackUuid: storeUuid)
         PlaybackManager.shared.startPlaybackSession(PlaybackSession(type: .playlist, uuid: storeUuid))
