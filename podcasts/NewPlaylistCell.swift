@@ -35,7 +35,8 @@ class NewPlaylistCell: ThemeableCell {
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
 
-        accessoryType = .disclosureIndicator
+        // Fork: chevrons mark folders only — playlist rows go without.
+        accessoryType = .none
 
         self.style = .primaryUi02
         iconStyle = .primaryIcon02

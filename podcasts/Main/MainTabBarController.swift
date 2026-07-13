@@ -343,7 +343,7 @@ class MainTabBarController: UITabBarController, NavigationProtocol, UIGestureRec
         inboxBadgeDebounce.call {
             DispatchQueue.global(qos: .utility).async { [weak self] in
                 let global = SessionStore.shared.globalInbox
-                let count = SessionFeederEngine.inboxEpisodes(for: global).filter { global.showSeen || !$0.isSeen }.count
+                let count = SessionFeederEngine.inboxEpisodes(for: global).filter { !$0.isSeen }.count
                 DispatchQueue.main.async {
                     guard let self, let index = self.pcTabs.firstIndex(of: .inbox), let items = self.tabBar.items, let item = items[safe: index] else { return }
                     item.badgeValue = count > 0 ? "\(count)" : nil

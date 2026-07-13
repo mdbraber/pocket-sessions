@@ -232,7 +232,7 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
             guard let self else { return }
             let global = SessionStore.shared.globalInbox
             self.allEpisodes = SessionFeederEngine.inboxEpisodes(for: global)
-                .filter { global.showSeen || !$0.isSeen }
+                .filter { !$0.isSeen }
             self.rebuildGroups()
             self.refreshMultiSelectEpisodes()
             self.navigationItem.leftBarButtonItem?.isEnabled = self.isMultiSelectEnabled || !self.allEpisodes.isEmpty

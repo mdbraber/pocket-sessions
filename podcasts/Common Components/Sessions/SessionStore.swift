@@ -27,11 +27,6 @@ struct Session: Codable, Equatable, Identifiable {
     var lastInsertedUuid: String = ""
     var groupBy: Int = 0
     var groupLimit: Int = 0
-    var showSeen: Bool = false
-    var showPlayed: Bool = false
-    /// Episodes-tab funnel: include archived episodes. Optional so documents written
-    /// before this field existed still decode.
-    var showArchived: Bool? = nil
     /// When the session was last the active playback session — the Switch Session
     /// sheet orders by it, latest first.
     var lastUsed: Date? = nil

@@ -72,22 +72,6 @@ enum SessionFeederEngine {
         }
     }
 
-    /// The Inbox of a session page: the feeder's offers, widened by the given
-    /// filters. Unwindowed everywhere — every undecided episode is an offer.
-    static func displayEpisodes(for session: Session, showArchived: Bool, showPlayed: Bool, showSeen: Bool) -> [Episode] {
-        let members = allStoreMemberUuids()
-        let dismissed = Set(SessionStore.shared.dismissedUuids(sessionUuid: session.uuid))
-        let queued = Set(PlaybackManager.shared.queue.allEpisodes(includeNowPlaying: true).map(\.uuid))
-
-        return domainEpisodes(for: session, includeArchived: showArchived).filter { episode in
-            if episode.archived, !showArchived { return false }
-            if episode.played(), !showPlayed { return false }
-            if !showSeen, !episode.archived, !episode.played(), episode.isSeen { return false }
-            if members.contains(episode.uuid) || dismissed.contains(episode.uuid) || queued.contains(episode.uuid) { return false }
-            return true
-        }
-    }
-
     /// The union of every session's lineup — an episode in ANY lineup is decided,
     /// so no inbox offers it (the partition rule: Inbox holds only the undecided).
     static func allStoreMemberUuids() -> Set<String> {
@@ -131,8 +115,7 @@ enum SessionFeederEngine {
 
         var counts = [String: Int]()
         for episode in episodes {
-            // Mirrors displayEpisodes(showArchived:false, showPlayed:false,
-            // showSeen:false) for unarchived rows: undecided episodes only.
+            // Mirrors inboxEpisodes plus the callers' seen filter: undecided only.
             if episode.played() || episode.isSeen { continue }
             if queued.contains(episode.uuid) { continue }
             if members.contains(episode.uuid) { continue }

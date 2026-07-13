@@ -78,6 +78,11 @@ class FolderListCell: ThemeableCollectionCell {
         guard chevron == nil, let stack = unplayedBadge.superview as? UIStackView else { return }
         let imageView = UIImageView(image: UIImage(systemName: "chevron.right", withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold)))
         imageView.contentMode = .center
+        // Fixed and tightly hugging — otherwise the stack stretches the image view
+        // and the glyph floats away from the trailing edge.
+        imageView.setContentHuggingPriority(.required, for: .horizontal)
+        imageView.setContentCompressionResistancePriority(.required, for: .horizontal)
+        imageView.widthAnchor.constraint(equalToConstant: 14).isActive = true
         stack.addArrangedSubview(imageView)
         chevron = imageView
     }

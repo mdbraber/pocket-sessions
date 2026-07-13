@@ -70,7 +70,7 @@ class BadgeHelper {
             // The sweep reads every unarchived episode, so it stays off the main thread.
             DispatchQueue.global(qos: .utility).async { [weak self] in
                 let global = SessionStore.shared.globalInbox
-                let count = SessionFeederEngine.inboxEpisodes(for: global).filter { global.showSeen || !$0.isSeen }.count
+                let count = SessionFeederEngine.inboxEpisodes(for: global).filter { !$0.isSeen }.count
                 self?.setBadgeTo(count)
             }
         } else if badgeSetting == .filterCount {

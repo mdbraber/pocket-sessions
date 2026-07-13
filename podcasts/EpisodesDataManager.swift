@@ -66,7 +66,7 @@ class EpisodesDataManager: PlaybackSessionEpisodeSource {
         // funnel or no funnel.
         let inboxSession = SessionStore.shared.session(forPodcast: podcast.uuid)
             ?? Session(uuid: "podcast-inbox-preview", storePlaylistUuid: nil, feeder: .podcast(uuid: podcast.uuid))
-        let inboxUuids = Set(SessionFeederEngine.displayEpisodes(for: inboxSession, showArchived: false, showPlayed: false, showSeen: false).map(\.uuid))
+        let inboxUuids = Set(SessionFeederEngine.inboxEpisodes(for: inboxSession).map(\.uuid))
 
         // Groups whose rows all filter away disappear entirely — a grouping header
         // with nothing under it is noise. Group headers are ListHeader ELEMENTS

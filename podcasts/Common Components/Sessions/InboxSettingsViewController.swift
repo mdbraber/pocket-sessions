@@ -1,12 +1,12 @@
 import UIKit
 
 /// Fork: Settings → Inbox — how the triage verbs behave: where "Add to Session"
-/// lands (all matching sessions, the current one, or ask), and the global Auto Add
-/// to Session settings.
+/// lands (all matching sessions, the current one, or ask). Auto Add to Session
+/// lives as its own top-level Settings row.
 class InboxSettingsViewController: PCViewController, UITableViewDataSource, UITableViewDelegate {
     private static let cellId = "InboxSettingsCell"
 
-    private enum TableRow: CaseIterable { case addToSessionMode, autoAddToSession }
+    private enum TableRow: CaseIterable { case addToSessionMode }
 
     private let settingsTable = ThemeableTable(frame: .zero, style: .grouped)
 
@@ -42,9 +42,6 @@ class InboxSettingsViewController: PCViewController, UITableViewDataSource, UITa
         case .addToSessionMode:
             cell.textLabel?.text = L10n.playlistAddToLineup
             cell.detailTextLabel?.text = AddToSessionMode.current.title
-        case .autoAddToSession:
-            cell.textLabel?.text = L10n.settingsAutoAddSession
-            cell.detailTextLabel?.text = L10n.settingsEpisodeLimitFormat(Settings.sessionAutoAddLimit().localized())
         }
         cell.accessoryType = .disclosureIndicator
         return cell
@@ -64,8 +61,6 @@ class InboxSettingsViewController: PCViewController, UITableViewDataSource, UITa
             optionsController.saveOnChange = true
             optionsController.title = L10n.playlistAddToLineup
             navigationController?.pushViewController(optionsController, animated: true)
-        case .autoAddToSession:
-            navigationController?.pushViewController(AutoAddToSessionViewController(), animated: true)
         }
     }
 }

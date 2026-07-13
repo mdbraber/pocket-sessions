@@ -52,7 +52,7 @@ struct PodcastDetailsTabView: View {
         let session = SessionStore.shared.session(forPodcast: podcast.uuid)
         sessionCount = session.map { SessionFeederEngine.storeMemberUuids(for: $0).count } ?? 0
         let feeder = session ?? Session(uuid: "podcast-inbox-preview", storePlaylistUuid: nil, feeder: .podcast(uuid: podcast.uuid))
-        inboxCount = SessionFeederEngine.displayEpisodes(for: feeder, showArchived: false, showPlayed: false, showSeen: false).count
+        inboxCount = SessionFeederEngine.inboxEpisodes(for: feeder).count
         inboxHidden = session?.autoAdd == true
         if inboxHidden, selectedTab == .inbox {
             openSession()

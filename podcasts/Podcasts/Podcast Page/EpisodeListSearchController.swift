@@ -123,7 +123,7 @@ class EpisodeListSearchController: SimpleNotificationsViewController, UISearchBa
             } else {
                 let session = SessionStore.shared.session(forPodcast: podcast.uuid)
                     ?? Session(uuid: "podcast-inbox-preview", storePlaylistUuid: nil, feeder: .podcast(uuid: podcast.uuid))
-                count = SessionFeederEngine.displayEpisodes(for: session, showArchived: false, showPlayed: false, showSeen: false).count
+                count = SessionFeederEngine.inboxEpisodes(for: session).count
             }
             // An empty tab already says "No episodes" in the list — a "0 episodes"
             // line on top is noise.
