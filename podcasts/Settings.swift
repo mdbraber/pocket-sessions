@@ -435,6 +435,22 @@ class Settings: NSObject {
         UserDefaults.standard.set(limit, forKey: Settings.sessionAutoAddLimitKey)
     }
 
+    // Fork: collapsed episode-group headers per podcast (keyed by group title, which
+    // is stable within a grouping mode). Purely a per-podcast display preference.
+    private static func collapsedGroupsKey(_ podcastUuid: String) -> String {
+        "SJPodcastCollapsedGroups-\(podcastUuid)"
+    }
+
+    class func collapsedEpisodeGroups(podcastUuid: String) -> Set<String> {
+        Set(UserDefaults.standard.stringArray(forKey: collapsedGroupsKey(podcastUuid)) ?? [])
+    }
+
+    class func toggleEpisodeGroupCollapsed(podcastUuid: String, groupTitle: String) {
+        var set = collapsedEpisodeGroups(podcastUuid: podcastUuid)
+        if set.contains(groupTitle) { set.remove(groupTitle) } else { set.insert(groupTitle) }
+        UserDefaults.standard.set(Array(set), forKey: collapsedGroupsKey(podcastUuid))
+    }
+
     static let playbackSessionTypeKey = "SJPlaybackSessionType"
     static let playbackSessionUuidKey = "SJPlaybackSessionUuid"
 
@@ -898,7 +914,7 @@ class Settings: NSObject {
 
     private static let multiSelectActionsKey = "MultiSelectActions"
     class func multiSelectActions() -> [MultiSelectAction] {
-        let defaultActions: [MultiSelectAction] = [.addToSession, .removeFromSession, .markAsSeen, .playNext, .playLast, .removeFromUpNext, .addToPlaylist, .download, .archive, .share, .markAsPlayed, .star]
+        let defaultActions: [MultiSelectAction] = [.addToSession, .removeFromSession, .markAsSeen, .markAsUnseen, .playNext, .playLast, .removeFromUpNext, .addToPlaylist, .download, .archive, .share, .markAsPlayed, .star]
         guard let savedInts = UserDefaults.standard.object(forKey: Settings.multiSelectActionsKey) as? [Int32] else {
             return strippingSessionActions(defaultActions)
         }

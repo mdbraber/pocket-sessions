@@ -166,6 +166,13 @@ class PlaylistDetailViewModel: ObservableObject {
         lensSession ?? Session(uuid: "lens-inbox-preview", storePlaylistUuid: nil, feeder: .smartPlaylist(uuid: playlist.uuid))
     }
 
+    /// The seen-watermark key for this page's inbox tab — matches whichever session
+    /// makeSections computes the inbox from (feeder-based, stable per inbox).
+    var inboxFeederKey: String {
+        if isLensPage { return lensFeederSession.inboxKey }
+        return session?.inboxKey ?? SessionStore.globalInboxUuid
+    }
+
     /// Fork: pages showing the Inbox | Session | Episodes strip.
     var usesTriageTabs: Bool { session != nil || isLensPage }
 

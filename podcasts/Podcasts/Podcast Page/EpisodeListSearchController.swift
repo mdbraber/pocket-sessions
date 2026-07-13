@@ -134,10 +134,13 @@ class EpisodeListSearchController: SimpleNotificationsViewController, UISearchBa
                 episodeInfoLabel?.attributedText = nil
             }
             showHideArchiveBtn?.isHidden = true
+            // Nothing to sort in an empty tab — hide the control so it doesn't dangle.
+            sortButton.isHidden = count == 0
             updateSortButton()
             return
         }
         showHideArchiveBtn?.isHidden = false
+        sortButton.isHidden = false
 
         let episodeCount = delegate.episodeCount()
         let archivedCount = delegate.archivedEpisodeCount()

@@ -58,15 +58,18 @@ enum SessionFeederEngine {
         }
     }
 
-    /// The feeder's current offers: undecided and not already in the store, any age.
-    /// Seen filtering happens at the caller per settings.
+    /// The feeder's current offers: undecided, unseen, and not already in the store,
+    /// any age. Seen is universally hidden from every inbox (there's no Show Seen
+    /// toggle anymore), so it's excluded here — one source of truth for the inbox
+    /// sections and the playlist badge count alike.
     static func inboxEpisodes(for session: Session) -> [Episode] {
         let members = allStoreMemberUuids()
         let dismissed = Set(SessionStore.shared.dismissedUuids(sessionUuid: session.uuid))
         let queued = Set(PlaybackManager.shared.queue.allEpisodes(includeNowPlaying: true).map(\.uuid))
 
+        let inboxKey = session.inboxKey
         return domainEpisodes(for: session, includeArchived: false).filter { episode in
-            if episode.played() || episode.archived { return false }
+            if episode.played() || episode.archived || episode.isSeen(inFeeder: inboxKey) { return false }
             if members.contains(episode.uuid) || dismissed.contains(episode.uuid) || queued.contains(episode.uuid) { return false }
             return true
         }
@@ -115,8 +118,9 @@ enum SessionFeederEngine {
 
         var counts = [String: Int]()
         for episode in episodes {
-            // Mirrors inboxEpisodes plus the callers' seen filter: undecided only.
-            if episode.played() || episode.isSeen { continue }
+            // Mirrors inboxEpisodes: undecided and unseen only. Seen is per-inbox, so
+            // key by this podcast's inbox (the same key its Session tab would use).
+            if episode.played() || episode.isSeen(inFeeder: SessionFeeder.podcast(uuid: episode.podcastUuid).inboxKey) { continue }
             if queued.contains(episode.uuid) { continue }
             if members.contains(episode.uuid) { continue }
             if dismissedByPodcast[episode.podcastUuid]?.contains(episode.uuid) == true { continue }

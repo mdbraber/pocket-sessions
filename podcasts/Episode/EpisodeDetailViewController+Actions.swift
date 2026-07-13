@@ -13,7 +13,7 @@ extension EpisodeDetailViewController {
         if isInUpNext {
             let removeFromUpNextAction = OptionAction(label: L10n.removeFromUpNext, icon: "episode-removenext") { [weak self] in
                 guard let self else { return }
-                PlaybackManager.shared.removeIfPlayingOrQueued(episode: self.episode, fireNotification: true, userInitiated: true)
+                SessionLinking.removeFromUpNextAskingSession(episode: self.episode)
             }
             addPicker.addAction(action: removeFromUpNextAction)
         } else {

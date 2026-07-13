@@ -5368,6 +5368,15 @@
 /* Fork: toast when Play as Session is tapped on a session with an empty lineup. */
 "session_empty_toast" = "Session is empty — add episodes from the Inbox or Episodes tab";
 
+/* Fork: title of the sheet asking whether a Session keeps an episode being removed from Up Next. */
+"session_queue_remove_title" = "This episode is also in a Session";
+
+/* Fork: keeps the episode in its Session while removing it from Up Next. */
+"session_queue_remove_keep" = "No, keep in Session";
+
+/* Fork: also removes the episode from its Session when removing it from Up Next. */
+"session_queue_remove_also" = "Yes, remove from Session";
+
 /* Episodes filter option (default): every episode that is not archived */
 "episode_filter_unarchived" = "Unarchived";
 

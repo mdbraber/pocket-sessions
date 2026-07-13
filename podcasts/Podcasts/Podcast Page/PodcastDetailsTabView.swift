@@ -97,6 +97,14 @@ struct PodcastDetailsTabView: View {
         .onReceive(NotificationCenter.default.publisher(for: Constants.Notifications.episodeArchiveStatusChanged)) { _ in
             refreshSessionCount()
         }
+        // Bulk archive / mark played post manyEpisodesChanged; the sweep then posts
+        // playlistChanged. Refresh on both so the tab count never lags the lineup.
+        .onReceive(NotificationCenter.default.publisher(for: Constants.Notifications.manyEpisodesChanged)) { _ in
+            refreshSessionCount()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Constants.Notifications.playlistChanged)) { _ in
+            refreshSessionCount()
+        }
         .onAppear(perform: refreshSessionCount)
     }
 

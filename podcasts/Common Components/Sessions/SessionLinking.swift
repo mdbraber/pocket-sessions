@@ -25,6 +25,88 @@ enum SessionLinking {
         }
     }
 
+    /// A user-initiated Remove from Up Next: an episode that also sits in a session
+    /// lineup prompts for whether the session keeps it; otherwise the queue removal
+    /// happens straight away. `completion` runs after the removal (never when the
+    /// prompt is dismissed without choosing).
+    static func removeFromUpNextAskingSession(episode: BaseEpisode, completion: (() -> Void)? = nil) {
+        let removeFromQueue = {
+            PlaybackManager.shared.removeIfPlayingOrQueued(episode: episode, fireNotification: true, userInitiated: true)
+        }
+
+        let containing = FeatureFlag.sessions.enabled
+            ? SessionStore.shared.sessions.filter { SessionFeederEngine.storeMemberUuids(for: $0).contains(episode.uuid) }
+            : []
+        guard !containing.isEmpty else {
+            removeFromQueue()
+            completion?()
+            return
+        }
+
+        let picker = OptionsPicker(title: L10n.sessionQueueRemoveTitle.localizedUppercase)
+        picker.addAction(action: OptionAction(label: L10n.sessionQueueRemoveKeep, icon: nil) {
+            removeFromQueue()
+            completion?()
+        })
+        let removeBoth = OptionAction(label: L10n.sessionQueueRemoveAlso, icon: nil) {
+            removeFromQueue()
+            for session in containing {
+                SessionManager.shared.removeFromLineup(episodeUuids: [episode.uuid], session: session)
+            }
+            completion?()
+        }
+        removeBoth.destructive = true
+        picker.addAction(action: removeBoth)
+        // The remove verb can itself be chosen from another OptionsPicker (e.g. the
+        // episode detail add sheet), whose dismissal is still in flight — defer a
+        // runloop so this sheet presents from a settled top-most controller.
+        DispatchQueue.main.async { picker.present() }
+    }
+
+    /// Bulk Remove from Up Next: if any of the selected episodes also sit in a session
+    /// lineup, prompt once for whether the sessions keep them; the choice applies to
+    /// the whole selection. `completion` runs after the removal.
+    static func removeFromUpNextAskingSession(episodeUuids: [String], completion: (() -> Void)? = nil) {
+        let removeFromQueue = {
+            PlaybackManager.shared.bulkRemoveQueued(uuids: episodeUuids)
+        }
+
+        // sessionUuid -> the selected episodes it holds.
+        var membership = [String: [String]]()
+        if FeatureFlag.sessions.enabled {
+            let selected = Set(episodeUuids)
+            for session in SessionStore.shared.sessions {
+                let held = SessionFeederEngine.storeMemberUuids(for: session).filter { selected.contains($0) }
+                if !held.isEmpty { membership[session.uuid] = held }
+            }
+        }
+        guard !membership.isEmpty else {
+            removeFromQueue()
+            completion?()
+            return
+        }
+
+        let picker = OptionsPicker(title: L10n.sessionQueueRemoveTitle.localizedUppercase)
+        picker.addAction(action: OptionAction(label: L10n.sessionQueueRemoveKeep, icon: nil) {
+            removeFromQueue()
+            completion?()
+        })
+        let removeBoth = OptionAction(label: L10n.sessionQueueRemoveAlso, icon: nil) {
+            removeFromQueue()
+            for (sessionUuid, held) in membership {
+                guard let session = SessionStore.shared.session(uuid: sessionUuid) else { continue }
+                SessionManager.shared.removeFromLineup(episodeUuids: held, session: session)
+            }
+            completion?()
+        }
+        removeBoth.destructive = true
+        picker.addAction(action: removeBoth)
+        // The remove verb can itself be chosen from another OptionsPicker (e.g. the
+        // episode detail add sheet), whose dismissal is still in flight — defer a
+        // runloop so this sheet presents from a settled top-most controller.
+        DispatchQueue.main.async { picker.present() }
+    }
+
     /// After a user-initiated session add: mirror the episodes into Up Next at the
     /// podcast's queue position (bottom unless the podcast prefers top).
     static func mirrorSessionAdd(episodeUuids: [String]) {

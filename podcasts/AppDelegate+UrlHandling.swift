@@ -632,11 +632,13 @@ extension AppDelegate {
         if Settings.playbackSession() != nil {
             PlaybackManager.shared.endPlaybackSession()
         }
-        guard !PlaybackManager.shared.playing() else { return }
+        guard !PlaybackManager.shared.playing() else { openUpNextTab(); return }
         if PlaybackManager.shared.currentEpisode() != nil {
             PlaybackManager.shared.play()
+            openUpNextTab()
         } else if let first = PlaybackManager.shared.queue.allEpisodes(includeNowPlaying: false).first {
             PlaybackManager.shared.load(episode: first, autoPlay: true, overrideUpNext: false)
+            openUpNextTab()
         } else if retriesLeft > 0 {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 playUpNextShortcut(retriesLeft: retriesLeft - 1)
@@ -646,10 +648,11 @@ extension AppDelegate {
 
     static func playSessionShortcut(retriesLeft: Int = 4) {
         guard let session = Settings.playbackSession() else { return }
-        guard !PlaybackManager.shared.playing() else { return }
+        guard !PlaybackManager.shared.playing() else { openUpNextTab(); return }
         if Settings.playbackSessionPaused() || PlaybackManager.shared.currentEpisode() == nil {
             if let episode = PlaybackManager.shared.currentEpisode() ?? session.nextEpisode(after: nil) {
                 PlaybackManager.shared.play(sessionEpisode: episode)
+                openUpNextTab()
             } else if retriesLeft > 0 {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                     playSessionShortcut(retriesLeft: retriesLeft - 1)
@@ -657,6 +660,16 @@ extension AppDelegate {
             }
         } else {
             PlaybackManager.shared.play()
+            openUpNextTab()
+        }
+    }
+
+    /// Opens the Up Next tab after an icon quick action. The tab's world switcher
+    /// auto-follows playback ownership — a played session lands on the Session world,
+    /// Up Next playback on the Up Next world — so we just select the tab.
+    private static func openUpNextTab() {
+        DispatchQueue.main.async {
+            NavigationManager.sharedManager.navigateTo(NavigationManager.upNextPageKey)
         }
     }
 }

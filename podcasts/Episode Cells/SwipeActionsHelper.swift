@@ -73,8 +73,9 @@ enum SwipeActionsHelper {
         if PlaybackManager.shared.inUpNext(episode: episode) {
             let removeFromUpNextAction = TableSwipeAction(indexPath: indexPath, title: L10n.removeFromUpNext, removesFromList: false, backgroundColor: ThemeColor.support05(), icon: UIImage(named: "episode-removenext"), tableView: tableView, hidesWhenSelected: true, handler: { _ -> Bool in
                 if let loadedEpisode = DataManager.sharedManager.findBaseEpisode(uuid: storedUuid) {
-                    PlaybackManager.shared.removeIfPlayingOrQueued(episode: loadedEpisode, fireNotification: true, userInitiated: true)
-                    Self.performAction(.upNextRemove, handler: swipeHandler, willBeRemoved: false)
+                    SessionLinking.removeFromUpNextAskingSession(episode: loadedEpisode) {
+                        Self.performAction(.upNextRemove, handler: swipeHandler, willBeRemoved: false)
+                    }
                 }
 
                 return true

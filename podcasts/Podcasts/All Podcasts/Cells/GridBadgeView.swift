@@ -5,6 +5,9 @@ class GridBadgeView: UIView {
     private let badgeLabel = UILabel()
     private let simpleBadge = CircleView()
 
+    /// Fork: folder counts wear the accent color to stand out from per-podcast counts.
+    private var useAccentColor = false
+
     private var labelWidthConstraint: NSLayoutConstraint!
     private var labelHeightConstraint: NSLayoutConstraint!
 
@@ -25,10 +28,14 @@ class GridBadgeView: UIView {
     }
 
     func populateFrom(podcast: Podcast, badgeType: BadgeType) {
+        useAccentColor = false
+        updateBadgeColors()
         updateBadge(count: podcast.cachedUnreadCount, badgeType: badgeType)
     }
 
     func populateFrom(folder: Folder, badgeType: BadgeType) {
+        useAccentColor = true
+        updateBadgeColors()
         updateBadge(count: folder.cachedUnreadCount, badgeType: badgeType)
     }
 
@@ -92,9 +99,10 @@ class GridBadgeView: UIView {
     private func updateBadgeColors() {
         badgeLabel.clipsToBounds = true
         backgroundColor = .clear
-        // Counts are neutral — only the presence dot wears the accent.
+        // Counts are neutral — only the presence dot wears the accent — except folder
+        // counts, which are filled with the accent to stand out.
         badgeLabel.textColor = ThemeColor.primaryUi01()
-        badgeLabel.backgroundColor = ThemeColor.primaryIcon02()
+        badgeLabel.backgroundColor = useAccentColor ? ThemeColor.primaryInteractive01() : ThemeColor.primaryIcon02()
         badgeLabel.layer.borderColor = ThemeColor.primaryUi04().cgColor
 
         simpleBadge.borderColor = ThemeColor.primaryUi02()

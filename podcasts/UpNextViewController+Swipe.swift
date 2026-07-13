@@ -21,12 +21,14 @@ extension UpNextViewController: SwipeTableViewCellDelegate, SwipeHandler {
             // Up Next world: identical to the queue rows — remove and mark played.
             let removeAction = SwipeAction(style: .destructive, title: nil) { [weak self] _, _ in
                 guard let self else { return }
-                self.changedViaSwipeToRemove = true
-                PlaybackManager.shared.removeIfPlayingOrQueued(episode: episode, fireNotification: true, userInitiated: true)
                 Analytics.track(.episodeSwipeActionPerformed, properties: ["action": "delete", "source": "up_next"])
-                self.refreshUpNextFilterMatches()
-                self.reloadTable()
-                self.changedViaSwipeToRemove = false
+                SessionLinking.removeFromUpNextAskingSession(episode: episode) { [weak self] in
+                    guard let self else { return }
+                    self.changedViaSwipeToRemove = true
+                    self.refreshUpNextFilterMatches()
+                    self.reloadTable()
+                    self.changedViaSwipeToRemove = false
+                }
             }
             removeAction.image = UIImage(named: "episode-removenext")
             removeAction.backgroundColor = ThemeColor.support05(for: themeOverride)
@@ -92,28 +94,20 @@ extension UpNextViewController: SwipeTableViewCellDelegate, SwipeHandler {
             let deleteAction = SwipeAction(style: .destructive, title: nil) { [weak self] _, indexPath in
                 guard let self, let episode = PlaybackManager.shared.queue.episodeAt(index: self.queueIndex(forVisibleRow: indexPath.row)) else { return }
 
-                self.changedViaSwipeToRemove = true
-                PlaybackManager.shared.removeIfPlayingOrQueued(episode: episode, fireNotification: true, userInitiated: true)
                 Analytics.track(.episodeSwipeActionPerformed, properties: ["action": "delete", "source": "up_next"])
-                self.refreshUpNextFilterMatches()
-                let remainingEpisodes = PlaybackManager.shared.queue.upNextCount()
-                if remainingEpisodes > 0 {
-                    do {
-                        try SJCommonUtils.catchException {
-                            tableView.deleteRows(at: [indexPath], with: .automatic)
-                        }
-                    } catch {
-                        FileLog.shared.addMessage("Caught Objective-C exception while trying to remove an Up Next row by swiping, reloading table instead")
-                        tableView.reloadData()
+                // The removal may be deferred behind a "keep in Session?" prompt, so the
+                // table is refreshed in the completion rather than animating this row.
+                SessionLinking.removeFromUpNextAskingSession(episode: episode) { [weak self] in
+                    guard let self else { return }
+                    self.changedViaSwipeToRemove = true
+                    self.refreshUpNextFilterMatches()
+                    self.reloadTable()
+                    if PlaybackManager.shared.queue.upNextCount() == 0, FeatureFlag.upNextShuffle.enabled {
+                        self.isMultiSelectEnabled = false
+                        self.updateNavBarButtons()
                     }
-                } else {
-                    tableView.reloadData() // if they delete the very last episode, reload the table to get the empty up next cell
-                    if FeatureFlag.upNextShuffle.enabled {
-                        isMultiSelectEnabled = false
-                        updateNavBarButtons()
-                    }
+                    self.changedViaSwipeToRemove = false
                 }
-                self.changedViaSwipeToRemove = false
             }
 
             // customize the action appearance

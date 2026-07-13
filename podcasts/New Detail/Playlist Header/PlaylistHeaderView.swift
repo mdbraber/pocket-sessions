@@ -127,7 +127,7 @@ struct PlaylistHeaderView: View {
 
     /// Fork: the Inbox | Session | Episodes selector, exactly the podcast page's tab
     /// strip. Inbox and Episodes (the feeder's views) need a feeder; Session always
-    /// shows. Inbox and Session carry counts; Episodes doesn't.
+    /// shows. Inbox and Session carry counts (hidden when zero); Episodes doesn't.
     @ViewBuilder private var triageTabs: some View {
         let hasInboxTab = viewModel.hasInboxTab
         HStack(spacing: 12) {
@@ -142,7 +142,7 @@ struct PlaylistHeaderView: View {
                     }
             }
 
-            Text("\(L10n.playbackSessionTabSession) · \(viewModel.triageLineupCount.localized())")
+            Text(viewModel.triageLineupCount > 0 ? "\(L10n.playbackSessionTabSession) · \(viewModel.triageLineupCount.localized())" : L10n.playbackSessionTabSession)
                 .buttonize {
                     viewModel.selectTriageTab(.lineup)
                 } customize: { config in

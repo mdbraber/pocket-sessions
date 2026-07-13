@@ -294,10 +294,11 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
     @objc private func clearTapped() {
         let optionsPicker = OptionsPicker(title: L10n.clear.localizedUppercase)
 
-        // Mark All as Seen: the soft clear — synced attention marks, nothing else moves.
+        // Mark All as Seen: the soft clear — advances the global inbox watermark
+        // (one synced timestamp), nothing else moves.
         optionsPicker.addAction(action: OptionAction(label: L10n.inboxClearKeepAll, icon: "eye.slash") { [weak self] in
             guard let self else { return }
-            EpisodeSeenManager.setSeen(true, episodes: self.allEpisodes)
+            EpisodeSeenManager.clearInbox(self.allEpisodes, feederUuid: SessionStore.globalInboxUuid)
         })
 
         // Archive: archives every inbox episode (which also clears them).

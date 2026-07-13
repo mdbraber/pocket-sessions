@@ -91,7 +91,33 @@ class EpisodesDataManager: PlaybackSessionEpisodeSource {
         if filtered.isEmpty {
             filtered = [ArraySection(model: "episodes", elements: [])]
         }
-        return [headerSection] + filtered
+        return collapsingGroups([headerSection] + filtered, podcast: podcast)
+    }
+
+    /// Fork: hides the rows under collapsed group headers (the header itself stays,
+    /// with its chevron flipped). Runs last, after empty groups are already pruned,
+    /// so a collapsed-but-non-empty header is never mistaken for an orphan.
+    private func collapsingGroups(_ sections: [ArraySection<String, ListItem>], podcast: Podcast) -> [ArraySection<String, ListItem>] {
+        guard podcast.podcastGrouping() != .none else { return sections }
+        let collapsed = Settings.collapsedEpisodeGroups(podcastUuid: podcast.uuid)
+        guard !collapsed.isEmpty else { return sections }
+
+        return sections.map { section in
+            guard section.model == "episodes" else { return section }
+            var kept = [ListItem]()
+            var hiding = false
+            for element in section.elements {
+                if let header = element as? ListHeader, !header.isSectionHeader {
+                    hiding = collapsed.contains(header.headerTitle)
+                    kept.append(header)
+                } else if element is ListEpisode {
+                    if !hiding { kept.append(element) }
+                } else {
+                    kept.append(element)
+                }
+            }
+            return ArraySection(model: section.model, elements: kept)
+        }
     }
 
     func episodes(for podcast: Podcast, uuidsToFilter: [String]? = nil) -> [ArraySection<String, ListItem>] {

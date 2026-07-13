@@ -323,8 +323,9 @@ class MultiSelectHelper {
                 .filter { PlaybackManager.shared.inUpNext(episode: $0) }
                 .map(\.uuid)
         }
-        PlaybackManager.shared.bulkRemoveQueued(uuids: selectedUuids)
-        actionDelegate.multiSelectActionCompleted()
+        SessionLinking.removeFromUpNextAskingSession(episodeUuids: selectedUuids) {
+            actionDelegate.multiSelectActionCompleted()
+        }
     }
 
     private class func share(actionDelegate: MultiSelectActionDelegate, view: UIView?) {
@@ -406,7 +407,7 @@ class MultiSelectHelper {
         guard !episodes.isEmpty else { return }
         actionDelegate.multiSelectActionBegan(status: seen ? L10n.episodeMarkSeen : L10n.episodeMarkUnseen)
         Task.detached {
-            EpisodeSeenManager.setSeen(seen, episodes: episodes)
+            if seen { EpisodeSeenManager.markSeen(episodes) } else { EpisodeSeenManager.markUnseen(episodes) }
             await actionDelegate.multiSelectActionCompleted()
         }
     }

@@ -333,6 +333,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         if FeatureFlag.sessions.enabled {
             SessionManager.shared.setup()
             SessionManager.shared.healSessions()
+            SessionCloudSync.start()
+        }
+        DispatchQueue.main.async {
+            ForkSettingsSync.shared.start()
         }
         Task {
             await DownloadManager.shared.clearStuckDownloads()

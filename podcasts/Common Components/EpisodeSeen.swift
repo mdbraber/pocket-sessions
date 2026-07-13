@@ -1,29 +1,56 @@
 import Foundation
 import PocketCastsDataModel
 
-/// Fork: seen/unseen per episode. Seen = any playback progress, or a manual mark in
-/// the local SessionStore. Purely attention state — display filters only.
+/// Fork: seen/unseen per episode. "Seen" is a bounded hybrid — an explicit
+/// per-episode override, or playback progress, or a per-inbox "cleared-through"
+/// watermark (with the global inbox's line as a floor). Purely attention state:
+/// display filters only.
 extension BaseEpisode {
-    var isSeen: Bool {
-        playedUpTo > 0 || SessionStore.shared.isManuallySeen(episodeUuid: uuid)
+    /// Seen within a specific inbox (feeder). Explicit overrides win, then playback,
+    /// then the inbox's cleared-through watermark.
+    func isSeen(inFeeder feederUuid: String) -> Bool {
+        if SessionStore.shared.isUnseenMarked(episodeUuid: uuid) { return false }
+        if SessionStore.shared.isSeenMarked(episodeUuid: uuid) { return true }
+        if playedUpTo > 0 { return true }
+        guard let watermark = SessionStore.shared.effectiveWatermark(feederUuid: feederUuid),
+              let published = (self as? Episode)?.publishedDate else { return false }
+        return published <= watermark
     }
+
+    /// Account-wide seen, using the global inbox baseline — for surfaces without a
+    /// specific inbox context (badges, the Up Next filter).
+    var isSeen: Bool { isSeen(inFeeder: SessionStore.globalInboxUuid) }
 }
 
 enum EpisodeSeenManager {
-    static func setSeen(_ seen: Bool, episode: BaseEpisode) {
-        setSeen(seen, episodes: [episode])
+    /// Explicit per-episode seen — selective "clear this one".
+    static func markSeen(_ episodes: [BaseEpisode]) {
+        guard !episodes.isEmpty else { return }
+        SessionStore.shared.markSeen(episodeUuids: episodes.map(\.uuid))
     }
 
-    /// Batched: one store write, one dismissal sweep, and at most one notification
-    /// pair for the whole set — bulk selections stay fast.
-    static func setSeen(_ seen: Bool, episodes: [BaseEpisode]) {
+    /// Explicit per-episode unseen — "bring this back", fresh again.
+    static func markUnseen(_ episodes: [BaseEpisode]) {
         guard !episodes.isEmpty else { return }
-        SessionStore.shared.setSeen(seen, episodeUuids: episodes.map(\.uuid))
-        guard !seen else { return }
+        SessionStore.shared.markUnseen(episodeUuids: episodes.map(\.uuid))
+        freshenForUnseen(episodes)
+    }
 
-        // Unseen means "fresh again" — the episode must actually return to inboxes.
-        // Progress would keep isSeen true (seen = playedUpTo > 0 || manual mark), and
-        // archive state or an old dismissal would keep the feeder from offering it.
+    /// Bulk "Mark All as Seen" for one inbox — advances that inbox's watermark (O(1))
+    /// instead of writing a marker per episode, so the store never balloons.
+    static func clearInbox(_ episodes: [BaseEpisode], feederUuid: String) {
+        let watermark = episodes.compactMap { ($0 as? Episode)?.publishedDate }.max() ?? Date()
+        SessionStore.shared.clearThrough(feederUuid: feederUuid, date: watermark, episodeUuids: episodes.map(\.uuid))
+    }
+
+    static func toggleSeen(episode: BaseEpisode, inFeeder feederUuid: String = SessionStore.globalInboxUuid) {
+        if episode.isSeen(inFeeder: feederUuid) { markUnseen([episode]) } else { markSeen([episode]) }
+    }
+
+    /// Unseen means "fresh again" — the episode must actually return to inboxes.
+    /// Progress would keep it seen (playedUpTo > 0), and archive state or an old
+    /// dismissal would keep the feeder from offering it, so clear those too.
+    private static func freshenForUnseen(_ episodes: [BaseEpisode]) {
         var changedState = false
         for episode in episodes {
             if episode.playedUpTo > 0 || episode.played() || episode.inProgress() {
@@ -39,9 +66,5 @@ enum EpisodeSeenManager {
             NotificationCenter.postOnMainThread(notification: Constants.Notifications.episodePlayStatusChanged)
             NotificationCenter.postOnMainThread(notification: Constants.Notifications.episodeArchiveStatusChanged)
         }
-    }
-
-    static func toggleSeen(episode: BaseEpisode) {
-        setSeen(!episode.isSeen, episode: episode)
     }
 }

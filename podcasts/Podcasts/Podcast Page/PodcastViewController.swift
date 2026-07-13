@@ -508,6 +508,10 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
         addCustomObserver(Constants.Notifications.podcastColorsDownloaded, selector: #selector(colorsDidDownload(_:)))
         addCustomObserver(Constants.Notifications.episodeArchiveStatusChanged, selector: #selector(refreshEpisodes))
         addCustomObserver(Constants.Notifications.manyEpisodesChanged, selector: #selector(refreshEpisodes))
+        // Fork: the session sweep removes archived/played members from the store and
+        // posts playlistChanged — refresh so the Session tab reflects the removal
+        // immediately instead of lagging until the next tab switch.
+        addCustomObserver(Constants.Notifications.playlistChanged, selector: #selector(refreshEpisodes))
         addCustomObserver(Constants.Notifications.episodeStarredChanged, selector: #selector(refreshEpisodes))
         addCustomObserver(Constants.Notifications.playbackTrackChanged, selector: #selector(refreshEpisodes))
         addCustomObserver(Constants.Notifications.playbackStarted, selector: #selector(hideSearchKeyboard))
@@ -973,7 +977,7 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
 
     private func inboxMarkAllSeenTapped() {
         guard let podcast else { return }
-        EpisodeSeenManager.setSeen(true, episodes: inboxDisplayedEpisodes)
+        EpisodeSeenManager.clearInbox(inboxDisplayedEpisodes, feederUuid: inboxSession(for: podcast).inboxKey)
         loadLocalEpisodes(podcast: podcast, animated: true)
     }
 

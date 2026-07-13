@@ -190,7 +190,11 @@ extension PodcastViewController: UITableViewDataSource, UITableViewDelegate {
                 return cell
             } else if let heading = itemAtRow as? ListHeader {
                 let cell = tableView.dequeueReusableCell(withIdentifier: PodcastViewController.groupHeadingCellId, for: indexPath) as! HeadingCell
-                cell.heading.text = heading.headerTitle
+                // Fork: grouped headers collapse/expand — a leading chevron reflects
+                // state; tapping the row toggles it (the ⋯ button still opens the menu).
+                let collapsible = !heading.isSectionHeader && (podcast?.podcastGrouping() ?? .none) != .none
+                let collapsed = podcast.map { Settings.collapsedEpisodeGroups(podcastUuid: $0.uuid).contains(heading.headerTitle) } ?? false
+                cell.configure(title: heading.headerTitle, collapsible: collapsible, collapsed: collapsed)
                 // Fork: every grouped header carries the actions menu, not just seasons.
                 cell.button.isHidden = false
                 cell.button.isEnabled = !isMultiSelectEnabled
@@ -313,6 +317,15 @@ extension PodcastViewController: UITableViewDataSource, UITableViewDelegate {
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         switch currentViewMode {
         case .episodes:
+            // Fork: tapping a grouped header toggles collapse/expand.
+            if indexPath.section == PodcastViewController.allEpisodesSection,
+               let header = episodeInfo[safe: indexPath.section]?.elements[safe: indexPath.row] as? ListHeader,
+               !header.isSectionHeader, let podcast, podcast.podcastGrouping() != .none {
+                tableView.deselectRow(at: indexPath, animated: true)
+                Settings.toggleEpisodeGroupCollapsed(podcastUuid: podcast.uuid, groupTitle: header.headerTitle)
+                loadLocalEpisodes(podcast: podcast, animated: true)
+                return
+            }
             if isMultiSelectEnabled, indexPath.section == PodcastViewController.allEpisodesSection {
                 if let listEpisode = episodeInfo[indexPath.section].elements[indexPath.row] as? ListEpisode {
                     if !multiSelectGestureInProgress {

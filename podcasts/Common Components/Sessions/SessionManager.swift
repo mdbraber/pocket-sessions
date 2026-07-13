@@ -42,6 +42,8 @@ class SessionManager {
         NotificationCenter.default.addObserver(self, selector: #selector(refreshFolderRules), name: ServerNotifications.syncCompleted, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(episodeStateChanged), name: Constants.Notifications.episodeArchiveStatusChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(episodeStateChanged), name: Constants.Notifications.episodePlayStatusChanged, object: nil)
+        // Bulk operations announce without a uuid — those trigger a full sweep.
+        NotificationCenter.default.addObserver(self, selector: #selector(episodeStateChanged), name: Constants.Notifications.manyEpisodesChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(trackChanged), name: Constants.Notifications.playbackTrackChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(prune), name: ServerNotifications.podcastsRefreshed, object: nil)
     }
@@ -403,18 +405,34 @@ class SessionManager {
     /// always "what's left".
     @objc private func episodeStateChanged(_ notification: Notification) {
         DispatchQueue.main.async { [weak self] in
-            guard let self, let uuid = notification.object as? String,
-                  let episode = DataManager.sharedManager.findEpisode(uuid: uuid) else { return }
-            guard episode.played() || episode.archived else { return }
-            for session in SessionStore.shared.sessions {
-                guard let store = self.store(for: session) else { continue }
-                let members = DataManager.sharedManager.positionedEpisodeUuids(for: store)
-                if members.contains(uuid) {
-                    DataManager.sharedManager.deleteEpisodes([uuid], from: store)
-                    NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged, object: store)
-                    self.promptIfSessionFinished(session, store: store, remaining: members.count - 1)
-                }
+            guard let self else { return }
+            if let uuid = notification.object as? String {
+                guard let episode = DataManager.sharedManager.findEpisode(uuid: uuid),
+                      episode.played() || episode.archived else { return }
+                self.sweepLineups(decidedFilter: { $0 == uuid })
+            } else {
+                // No uuid (bulk archive / mark played) — sweep everything. A session
+                // NEVER holds archived or played episodes.
+                self.sweepLineups(decidedFilter: nil)
             }
+        }
+    }
+
+    /// Removes decided (played/archived) episodes from every lineup. A nil filter
+    /// checks every member; otherwise only matching uuids are considered.
+    private func sweepLineups(decidedFilter: ((String) -> Bool)?) {
+        for session in SessionStore.shared.sessions {
+            guard let store = store(for: session) else { continue }
+            let members = DataManager.sharedManager.positionedEpisodeUuids(for: store)
+            let decided = members.filter { uuid in
+                if let decidedFilter, !decidedFilter(uuid) { return false }
+                guard let episode = DataManager.sharedManager.findEpisode(uuid: uuid) else { return false }
+                return episode.played() || episode.archived
+            }
+            guard !decided.isEmpty else { continue }
+            DataManager.sharedManager.deleteEpisodes(decided, from: store)
+            NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged, object: store)
+            promptIfSessionFinished(session, store: store, remaining: members.count - decided.count)
         }
     }
 

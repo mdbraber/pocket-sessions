@@ -701,7 +701,7 @@ private extension PlaylistDetailViewController {
     }
 
     private func inboxMarkAllSeenTapped() {
-        EpisodeSeenManager.setSeen(true, episodes: viewModel.inboxEpisodes.map(\.episode))
+        EpisodeSeenManager.clearInbox(viewModel.inboxEpisodes.map(\.episode), feederUuid: viewModel.inboxFeederKey)
         viewModel.reloadEpisodeList(animated: true)
     }
 
