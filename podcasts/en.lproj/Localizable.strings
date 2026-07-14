@@ -1930,6 +1930,37 @@
 /* Fork: accessibility label for the Filter Preset control. %1$@ is the active preset's name. */
 "filter_preset_accessibility" = "Filter: %1$@";
 
+/* Fork: the top-level Settings entry for managing Filter Presets. */
+"settings_filter_presets" = "Filter Presets";
+/* Fork: opens the Filter Preset management list from inside the picker. */
+"filter_preset_edit" = "Edit Presets";
+/* Fork: title/label for creating a new Filter Preset. */
+"filter_preset_new" = "New Preset";
+/* Fork: placeholder in the Filter Preset name field. */
+"filter_preset_name_placeholder" = "Preset Name";
+/* Fork: the Unseen rule row in the preset editor. */
+"filter_preset_rule_unseen" = "Inbox";
+/* Fork: the In-Session rule row in the preset editor. */
+"filter_preset_rule_session" = "Session";
+/* Fork: preset rule value — episode is in a session. */
+"filter_preset_in_session" = "In a Session";
+/* Fork: preset rule value — episode is not in any session. */
+"filter_preset_not_in_session" = "Not in a Session";
+/* Fork: preset rule value — episode is not archived. */
+"filter_preset_not_archived" = "Not Archived";
+/* Fork: toggles the duration limit in the preset editor. */
+"filter_preset_duration_limit" = "Filter by Duration";
+/* Fork: the "longer than" duration bound in the preset editor. */
+"filter_preset_longer_than" = "Longer than";
+/* Fork: the "shorter than" duration bound in the preset editor. */
+"filter_preset_shorter_than" = "Shorter than";
+/* Fork: a minute count in the preset editor. %1$@ is the number. */
+"filter_preset_minutes" = "%1$@ min";
+/* Fork: preset rule value — episode is seen (not in the Inbox). */
+"episode_seen" = "Seen";
+/* Fork: preset rule value — episode is unseen (in the Inbox). */
+"episode_unseen" = "Unseen";
+
 /* Informational message informing the user that no episodes are being displayed because they're all archived. '%1$@' is a placeholder for the number of episodes. */
 "podcast_archived_msg" = "All %1$@ episodes of this podcast have been archived";
 

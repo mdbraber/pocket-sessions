@@ -63,12 +63,25 @@ enum FilterPresetPicker {
             })
         }
 
+        picker.addSectionTitle("")
+
+        // Managing presets is one hop deeper than picking one: a picker row is a single tap target
+        // that already means "apply this preset", so editing cannot ride on the same rows.
+        picker.addAction(action: OptionAction(label: L10n.filterPresetEdit, icon: "podcast-settings") { [weak controller] in
+            guard let controller else { return }
+            // The picker sheet auto-dismisses on this tap; presenting the list on the same runloop
+            // would race that dismissal, so defer one loop. (SessionLinking hits the same thing.)
+            DispatchQueue.main.async {
+                let list = FilterPresetsListViewController()
+                controller.present(SJUIUtils.navController(for: list), animated: true)
+            }
+        })
+
         // Fork: "Reset all filters" only appears when there is actually something to reset — a
         // narrowing preset, or an active search. On a clean list it is noise (selecting "All
         // Episodes" from the list above is the reset for the preset alone); its unique value is
         // clearing the search term at the same time, so it also shows when only search is active.
         if FilterPresets.isNarrowing || searchActive {
-            picker.addSectionTitle("")
             picker.addAction(action: OptionAction(label: L10n.filterPresetReset, icon: "close") {
                 FilterPresetStore.shared.activePresetUuid = nil
                 NotificationCenter.postOnMainThread(notification: FilterPresets.resetAll)
