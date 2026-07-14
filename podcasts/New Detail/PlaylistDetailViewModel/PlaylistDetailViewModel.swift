@@ -158,10 +158,6 @@ class PlaylistDetailViewModel: ObservableObject {
     /// (see `SessionMembership`) so it isn't re-queried on every reload.
     var inAnySessionUuids: Set<String> { SessionMembership.shared.inAnySession }
 
-    /// Which section the in-session marker applies to: the browse/Episodes tab on triage pages, or
-    /// the single episode section on a plain playlist. (Never the session's own lineup rows.)
-    var sessionIndicatorSection: Section { usesTriageTabs ? .browse : .episodes }
-
     /// The episode backing a table row, resilient to placeholder rows (empty states)
     /// sharing a section with episodes.
     func listEpisode(at indexPath: IndexPath) -> ListEpisode? {

@@ -170,9 +170,8 @@ extension PlaylistDetailViewController: UITableViewDataSource {
                 cell.populateFrom(episode: listEpisode.episode, tintColor: nil, playlistUuid: viewModel.playlist.uuid)
                 // The green in-this-session mini icon, on Episodes rows only (Session
                 // rows are all members; Inbox rows never are).
-                cell.setSessionIndicator(sectionModel(at: indexPath.section) == viewModel.sessionIndicatorSection
-                    ? viewModel.sessionIndicatorState(for: listEpisode.episode.uuid)
-                    : .none)
+                // Always show the session badge — including on a session's own lineup rows.
+                cell.setSessionIndicator(viewModel.sessionIndicatorState(for: listEpisode.episode.uuid))
                 // The unread dot: this episode is still in the Inbox.
                 cell.setUnseenIndicator(visible: viewModel.unseenUuidsForDisplay.contains(listEpisode.episode.uuid))
                 cell.shouldShowSelect = isMultiSelectEnabled

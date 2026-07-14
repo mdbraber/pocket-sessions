@@ -153,8 +153,8 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
             playerCell.delegate = self
             if let episode = sessionEpisodes?[safe: indexPath.row] {
                 playerCell.populateFrom(episode: episode)
-                // Session rows ARE the session — no badge on them.
-                playerCell.setSessionIndicator(.none)
+                // Show the session badge on session rows too.
+                playerCell.setSessionIndicator(SessionIndicatorState.resolve(episode.uuid, thisSession: sessionMemberUuidsForDisplay))
                 playerCell.setUpNextIndicator(visible: PlaybackManager.shared.inUpNext(episode: episode))
                 playerCell.setNowPlaying(PlaybackManager.shared.isNowPlayingEpisode(episodeUuid: episode.uuid))
                 playerCell.showTick = selectedEpisodesContains(uuid: episode.uuid)
