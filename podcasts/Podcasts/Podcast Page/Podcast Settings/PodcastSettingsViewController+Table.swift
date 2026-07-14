@@ -75,7 +75,7 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
             return cell
         case .upNext:
             let cell = tableView.dequeueReusableCell(withIdentifier: PodcastSettingsViewController.switchCellId, for: indexPath) as! SwitchCell
-            cell.cellLabel.text = L10n.addToUpNext
+            cell.cellLabel.text = L10n.settingsAutoAdd
             cell.cellSwitch.onTintColor = podcast.switchTintColor()
             cell.setImage(imageName: "upnext")
             cell.cellSwitch.isOn = podcast.autoAddToUpNextOn()
@@ -117,7 +117,7 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
             // Fork: auto-add new episodes to this podcast's Session, exactly the
             // Add to Up Next pattern one section up.
             let cell = tableView.dequeueReusableCell(withIdentifier: PodcastSettingsViewController.switchCellId, for: indexPath) as! SwitchCell
-            cell.cellLabel.text = L10n.playlistAddToLineup
+            cell.cellLabel.text = L10n.settingsAutoAddToSession
             cell.cellSwitch.onTintColor = podcast.switchTintColor()
             cell.setImage(image: TriageSwipes.sessionAddTemplateImage)
             cell.cellSwitch.isOn = SessionStore.shared.session(forPodcast: podcast.uuid)?.autoAdd ?? false
@@ -535,22 +535,22 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
             data[sessionSection].append(.globalSession)
         }
 
-        // Fork: linked-adds overrides — one per direction (mirroring is about manual
-        // adds, not auto-add).
-        if let upNextSection = data.firstIndex(where: { $0.first == .upNext }) {
-            data[upNextSection].append(.mirrorToSession)
-        }
-        if let sessionSection = data.firstIndex(where: { $0.first == .session }) {
-            data[sessionSection].append(.mirrorToUpNext)
-        }
-
-        if !playlistsPodcastCanAppearIn().isEmpty {
+        if canAppearInFilters {
             data.append([.inFilters])
         }
         data.append([.siriShortcut])
         data.append([.unsubscribe])
 
         return data
+    }
+
+    /// Cached (see `cachedCanAppearInFilters`): the underlying query hits the DB and `tableData()`
+    /// runs many times per reload.
+    private var canAppearInFilters: Bool {
+        if let cachedCanAppearInFilters { return cachedCanAppearInFilters }
+        let value = !playlistsPodcastCanAppearIn().isEmpty
+        cachedCanAppearInFilters = value
+        return value
     }
 
     private func playlistUuidsPodcastAppearsIn() -> [String] {

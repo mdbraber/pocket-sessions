@@ -13,6 +13,12 @@ class PodcastSettingsViewController: PCViewController {
 
     var existingShortcut: Any?
 
+    /// Cached because computing it hits the DB (allSmartPlaylists), and `tableData()` runs once per
+    /// section/row/cell query — recomputing it every call made this screen crawl. The set of filters
+    /// a podcast can appear in doesn't change while you flip switches here, so it's refreshed only on
+    /// appear.
+    var cachedCanAppearInFilters: Bool?
+
     @IBOutlet var settingsTable: UITableView! {
         didSet {
             registerCells()
@@ -46,6 +52,7 @@ class PodcastSettingsViewController: PCViewController {
         super.viewWillAppear(animated)
 
         changeNavTint(titleColor: nil, iconsColor: podcast.navIconTintColor(), backgroundColor: podcast.navigationBarTintColor())
+        cachedCanAppearInFilters = nil
         settingsTable.reloadData()
     }
 

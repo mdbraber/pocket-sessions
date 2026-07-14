@@ -2540,6 +2540,9 @@
 /* Fork: global switch — adding an episode to a Session also adds it to Up Next. */
 "settings_mirror_session_to_up_next" = "Session Adds to Up Next";
 
+/* Fork: per-podcast toggle — auto-add new episodes of this podcast to its Session (mirrors "Auto Add to Up Next"). */
+"settings_auto_add_to_session" = "Auto Add to Session";
+
 /* Fork: per-podcast override row — mirror this podcast's Up Next adds into its Session. */
 "settings_also_add_to_session" = "Also Add to Session";
 
