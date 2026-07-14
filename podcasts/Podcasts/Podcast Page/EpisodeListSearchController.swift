@@ -239,7 +239,7 @@ class EpisodeListSearchController: SimpleNotificationsViewController, UISearchBa
     /// display-filter sheet to own.
     @IBAction func showHideArchiveTapped(_ sender: Any) {
         guard let controller = podcastDelegate as? UIViewController else { return }
-        FilterPresetPicker.present(from: controller) { [weak self] in
+        FilterPresetPicker.present(from: controller, searchActive: !(searchTextField?.text ?? "").isEmpty) { [weak self] in
             self?.podcastDelegate?.episodesDidChange()
         }
     }

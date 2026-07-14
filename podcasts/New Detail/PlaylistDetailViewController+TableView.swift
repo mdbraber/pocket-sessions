@@ -546,7 +546,7 @@ private extension PlaylistDetailViewController {
         // including the Session lineup (where it sieves, and never reorders).
         var funnelButton: UIButton?
         if viewModel.usesTriageTabs {
-            let funnel = FilterPresetPicker.makeButton(target: self) { [weak self] in
+            let funnel = FilterPresetPicker.makeButton(target: self, searchActive: { [weak self] in self?.viewModel.isSearching ?? false }) { [weak self] in
                 self?.viewModel.reloadEpisodeList(animated: false)
             }
             funnel.translatesAutoresizingMaskIntoConstraints = false

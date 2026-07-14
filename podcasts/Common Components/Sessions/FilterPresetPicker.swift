@@ -15,7 +15,14 @@ import UIKit
 enum FilterPresetPicker {
 
     /// A button that always wears the name of the preset in force.
-    static func makeButton(target: UIViewController, onChange: @escaping () -> Void) -> UIButton {
+    ///
+    /// `searchActive` is evaluated each time the sheet opens — it decides whether the Reset row is
+    /// worth showing (see `present`), so it must reflect the search state *now*, not at build time.
+    static func makeButton(
+        target: UIViewController,
+        searchActive: @escaping () -> Bool = { false },
+        onChange: @escaping () -> Void
+    ) -> UIButton {
         let button = UIButton(type: .system)
         button.translatesAutoresizingMaskIntoConstraints = false
         button.titleLabel?.font = .preferredFont(forTextStyle: .subheadline)
@@ -24,7 +31,7 @@ enum FilterPresetPicker {
         button.setContentCompressionResistancePriority(.required, for: .horizontal)
         button.addAction(UIAction { [weak target] _ in
             guard let target else { return }
-            present(from: target, onChange: onChange)
+            present(from: target, searchActive: searchActive(), onChange: onChange)
         }, for: .touchUpInside)
         style(button)
         return button
@@ -45,7 +52,7 @@ enum FilterPresetPicker {
         button.accessibilityLabel = L10n.filterPresetAccessibility(preset.name)
     }
 
-    static func present(from controller: UIViewController, onChange: @escaping () -> Void) {
+    static func present(from controller: UIViewController, searchActive: Bool = false, onChange: @escaping () -> Void) {
         let picker = OptionsPicker(title: L10n.filters.localizedUppercase)
         let active = FilterPresets.active
 
@@ -56,14 +63,18 @@ enum FilterPresetPicker {
             })
         }
 
-        // Fork: the one-tap way back. Clears the preset AND the search term together — the two
-        // things that can be silently narrowing a list at the same time.
-        picker.addSectionTitle("")
-        picker.addAction(action: OptionAction(label: L10n.filterPresetReset, icon: "close") {
-            FilterPresetStore.shared.activePresetUuid = nil
-            NotificationCenter.postOnMainThread(notification: FilterPresets.resetAll)
-            onChange()
-        })
+        // Fork: "Reset all filters" only appears when there is actually something to reset — a
+        // narrowing preset, or an active search. On a clean list it is noise (selecting "All
+        // Episodes" from the list above is the reset for the preset alone); its unique value is
+        // clearing the search term at the same time, so it also shows when only search is active.
+        if FilterPresets.isNarrowing || searchActive {
+            picker.addSectionTitle("")
+            picker.addAction(action: OptionAction(label: L10n.filterPresetReset, icon: "close") {
+                FilterPresetStore.shared.activePresetUuid = nil
+                NotificationCenter.postOnMainThread(notification: FilterPresets.resetAll)
+                onChange()
+            })
+        }
 
         picker.present(from: controller)
     }
