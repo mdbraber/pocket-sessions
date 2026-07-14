@@ -149,6 +149,18 @@ class PlaylistDetailViewModel: ObservableObject {
     /// Fork: pages showing the Inbox | Session | Episodes strip.
     var usesTriageTabs: Bool { session != nil || isLensPage }
 
+    /// Every episode that belongs to any session's store. The green "in a session" marker uses this
+    /// on pages that aren't themselves a session (a smart playlist like All, or a plain manual
+    /// playlist) — a session's own page marks "in this session" instead.
+    var inAnySessionUuids: Set<String> {
+        let stores = SessionStore.shared.sessions.compactMap(\.storePlaylistUuid)
+        return stores.isEmpty ? [] : DataManager.sharedManager.playlistEpisodeUuids(forPlaylistUuids: stores)
+    }
+
+    /// Which section the in-session marker applies to: the browse/Episodes tab on triage pages, or
+    /// the single episode section on a plain playlist. (Never the session's own lineup rows.)
+    var sessionIndicatorSection: Section { usesTriageTabs ? .browse : .episodes }
+
     /// The episode backing a table row, resilient to placeholder rows (empty states)
     /// sharing a section with episodes.
     func listEpisode(at indexPath: IndexPath) -> ListEpisode? {
@@ -601,7 +613,9 @@ class PlaylistDetailViewModel: ObservableObject {
             }
             let browse = episodes
             allOverlayEpisodes = episodes
-            sessionMemberUuidsForDisplay = Set(lineup.map { $0.episode.uuid })
+            // A lens with its own session marks "in this session"; one without (e.g. All) marks
+            // "in any session" so its episodes still show the badge.
+            sessionMemberUuidsForDisplay = (lensSession != nil) ? Set(lineup.map { $0.episode.uuid }) : inAnySessionUuids
             unseenUuidsForDisplay = InboxManager.shared.unseenUuids()
 
             if !triageTabAutoSelected {
@@ -638,6 +652,9 @@ class PlaylistDetailViewModel: ObservableObject {
             sections.append(ArraySection(model: model, elements: elements))
             return sections
         }
+
+        // Plain playlists (and any non-triage page) still mark episodes that are in a session.
+        sessionMemberUuidsForDisplay = inAnySessionUuids
 
         let episodeElements: [ListItem]
         if episodes.isEmpty {

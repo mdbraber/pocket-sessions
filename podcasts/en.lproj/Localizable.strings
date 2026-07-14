@@ -2558,6 +2558,9 @@
 /* Fork: master toggle in per-podcast settings — enable to override the global Linking setting for this podcast. */
 "settings_linking_custom" = "Custom for This Podcast";
 
+/* Fork: podcast settings row / page title that opens the per-podcast Up Next & Session linking overrides. */
+"settings_linking_row" = "Up Next & Session Linking";
+
 /* Fork: footer under the per-podcast linked-adds overrides, clarifying these mirror a manual add (the action), not Auto Add, and Default follows the global Linking setting. */
 "settings_linking_podcast_msg" = "When you add an episode of this podcast to one list, also add it to the other. This mirrors the add action — it's separate from Auto Add above. Default follows your global Linking setting.";
 
