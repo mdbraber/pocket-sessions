@@ -305,13 +305,27 @@ class SessionManager {
         FileLog.shared.addMessage("Backfill: \(SessionStore.shared.sessions.count) sessions, \(episodes.count)/\(inSessionUuids.count) in-session episodes resolved")
         guard !episodes.isEmpty else { return 0 }
 
-        // Ensure a session exists for any smart playlist that would actually receive episodes —
-        // created here, on the explicit Backfill, not on plain open. (Empty-overlap smart filters
-        // used only for browsing don't get one.)
+        // Ensure a session exists for any feeder source that would actually receive episodes —
+        // created here, on the explicit Backfill (empty-overlap sources get nothing).
+        // Smart playlists:
         for playlist in DataManager.sharedManager.allSmartPlaylists(includeDeleted: false)
         where SessionStore.shared.session(forSmartPlaylistFeeder: playlist.uuid) == nil {
             if episodes.contains(where: { feeder(.smartPlaylist(uuid: playlist.uuid), coversPodcast: $0.podcastUuid) }) {
                 _ = findOrCreateSession(forSmartPlaylist: playlist)
+            }
+        }
+        // Folders:
+        for folder in DataManager.sharedManager.allFolders(includeDeleted: false)
+        where SessionStore.shared.session(forFolder: folder.uuid) == nil {
+            if episodes.contains(where: { feeder(.folder(uuid: folder.uuid), coversPodcast: $0.podcastUuid) }) {
+                _ = findOrCreateSession(forFolder: folder)
+            }
+        }
+        // Per podcast: every podcast that has an in-session episode gets its own session.
+        for podcastUuid in Set(episodes.map(\.podcastUuid))
+        where SessionStore.shared.session(forPodcast: podcastUuid) == nil {
+            if let podcast = DataManager.sharedManager.findPodcast(uuid: podcastUuid) {
+                _ = findOrCreateSession(forPodcast: podcast)
             }
         }
 
@@ -348,51 +362,60 @@ class SessionManager {
         let holding = sessionsHolding(episodeUuids: episodeUuids)
         guard !holding.isEmpty else { onRemoved?(); return }
 
-        let removeFrom: (Session) -> Void = { [weak self] session in
+        // Batched: delete from every target store, THEN one membership invalidation + one
+        // notification. Removing from K sessions used to post K playlistChanged (K full reloads);
+        // now it's one — the slow swipe.
+        let doRemove: ([Session]) -> Void = { [weak self] sessions in
             guard let self else { return }
-            let members = Set(SessionFeederEngine.storeMemberUuids(for: session))
-            let toRemove = episodeUuids.filter { members.contains($0) }
-            if !toRemove.isEmpty { self.removeFromLineup(episodeUuids: toRemove, session: session) }
+            var removedPlaying = false
+            for session in sessions {
+                guard let store = self.store(for: session) else { continue }
+                let members = Set(SessionFeederEngine.storeMemberUuids(for: session))
+                let toRemove = episodeUuids.filter { members.contains($0) }
+                guard !toRemove.isEmpty else { continue }
+                DataManager.sharedManager.deleteEpisodes(toRemove, from: store) // marks the store dirty
+                if let playing = PlaybackManager.shared.currentEpisode(), toRemove.contains(playing.uuid) { removedPlaying = true }
+            }
+            SessionMembership.shared.invalidate()
+            if removedPlaying, let playing = PlaybackManager.shared.currentEpisode() {
+                PlaybackManager.shared.removeIfPlayingOrQueued(episode: playing, fireNotification: true, userInitiated: true)
+            }
+            NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged)
+            onRemoved?()
         }
 
         switch RemoveFromSessionMode.current {
         case .all:
-            holding.forEach(removeFrom)
-            onRemoved?()
+            doRemove(holding)
         case .currentOnly:
             if let preferred, holding.contains(where: { $0.uuid == preferred.uuid }) {
-                removeFrom(preferred)
-                onRemoved?()
+                doRemove([preferred])
             } else if holding.count == 1 {
-                removeFrom(holding[0])
-                onRemoved?()
+                doRemove(holding)
             } else {
                 // No clear "current" session and it's in several — ask rather than guess.
-                presentRemovePicker(holding: holding, presenting: presenting, removeFrom: removeFrom, onRemoved: onRemoved)
+                presentRemovePicker(holding: holding, presenting: presenting, doRemove: doRemove)
             }
         case .ask:
             if holding.count == 1 {
-                removeFrom(holding[0])
-                onRemoved?()
+                doRemove(holding)
             } else {
-                presentRemovePicker(holding: holding, presenting: presenting, removeFrom: removeFrom, onRemoved: onRemoved)
+                presentRemovePicker(holding: holding, presenting: presenting, doRemove: doRemove)
             }
         }
     }
 
-    private func presentRemovePicker(holding: [Session], presenting: UIViewController?, removeFrom: @escaping (Session) -> Void, onRemoved: (() -> Void)?) {
-        guard let presenting else { holding.forEach(removeFrom); onRemoved?(); return }
+    private func presentRemovePicker(holding: [Session], presenting: UIViewController?, doRemove: @escaping ([Session]) -> Void) {
+        guard let presenting else { doRemove(holding); return }
         DispatchQueue.main.async {
             let picker = OptionsPicker(title: L10n.sessionRemoveFrom.localizedUppercase)
             picker.addAction(action: OptionAction(label: L10n.inboxAddAllSessions, icon: nil) {
-                holding.forEach(removeFrom)
-                onRemoved?()
+                doRemove(holding)
             })
             for session in holding {
                 let name = self.store(for: session)?.playlistName ?? ""
                 picker.addAction(action: OptionAction(label: name, icon: nil) {
-                    removeFrom(session)
-                    onRemoved?()
+                    doRemove([session])
                 })
             }
             picker.present(from: presenting)
