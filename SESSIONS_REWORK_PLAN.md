@@ -709,6 +709,16 @@ There was **almost nothing to build** — every knob the design imagined was eit
 The only fix: the opt-out toggle read **"Add to global Inbox"** — "global" is dead vocabulary from the old
 per-podcast-inboxes model. Now there's just *the* Inbox → **"Add new episodes to Inbox"**.
 
+### Post-plan addition — podcast/folder scope on Filter Presets ✅ **DONE**
+User asked to add a podcast/folder filter to presets, "like smart playlists (default all)". Added
+`podcastUuids`/`folderUuids` to `FilterPreset` (empty = all; folders resolve to members at query time).
+
+**The one axis that's inherently page-scoped**, so single-podcast surfaces (a podcast's own Episodes tab +
+its Session lineup) ignore it — scoping a one-podcast list is a no-op or a silent empty. Same "contextual,
+only where >1 podcast" rule as Group by Podcast. The builder stays pure (folders pre-expanded by the facade);
+an empty-resolved scope (empty folder) → `0 = 1`, never a broken `IN ()`. Editor gets a multi-select sheet.
+25 → 25 query tests (3 new for scope). Build green, app 424/424.
+
 ### Stage 11 — Hygiene ✅ **DONE**
 - `EpisodeFilter.newEpisodesAutoAdd` column removed from the model + round-trip (DB column stays in schema,
   like `showArchivedEpisodes`). Its lookalike `updatePlaylist(newEpisodesAutoAdd:)` **stays** — that param
