@@ -666,10 +666,16 @@ extension AppDelegate {
 
     /// Opens the Up Next tab after an icon quick action. The tab's world switcher
     /// auto-follows playback ownership — a played session lands on the Session world,
-    /// Up Next playback on the Up Next world — so we just select the tab.
+    /// Up Next playback on the Up Next world — so we just select the tab. When the user has
+    /// "open player automatically" on, the player opens too: the quick action usually just resumes
+    /// the current episode, so the normal load-triggered auto-open wouldn't fire.
     private static func openUpNextTab() {
         DispatchQueue.main.async {
             NavigationManager.sharedManager.navigateTo(NavigationManager.upNextPageKey)
+        }
+        guard UserDefaults.standard.bool(forKey: Constants.UserDefaults.openPlayerAutomatically) else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            NavigationManager.sharedManager.miniPlayer?.openFullScreenPlayer()
         }
     }
 }
