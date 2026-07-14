@@ -1,20 +1,30 @@
 import Foundation
 import PocketCastsDataModel
 
-/// Fork: a tab's sort order on the Inbox | Session | Episodes strip.
+/// Fork: a tab's sort order on the Episodes | Session strip.
+///
+/// The full episode-sort set, so every episode list sorts the same way — the podcast page's stock
+/// per-podcast sort already offers all of these, and the Session/playlist tabs now match it. `custom`
+/// (the hand-ordered lineup) is offered only on the Session tab. Season is a *grouping*, not a sort,
+/// so it stays out of here (and stays podcast-only, where seasons exist).
 enum TriageTabSortOrder: Int, CaseIterable {
     case custom = 0
     case newestToOldest = 1
     case oldestToNewest = 2
+    case shortestToLongest = 3
+    case longestToShortest = 4
+    case titleAtoZ = 5
+    case titleZtoA = 6
 
     var title: String {
         switch self {
-        case .custom:
-            return PlaylistSort.dragAndDrop.description
-        case .newestToOldest:
-            return PodcastEpisodeSortOrder.newestToOldest.description
-        case .oldestToNewest:
-            return PodcastEpisodeSortOrder.oldestToNewest.description
+        case .custom: return PlaylistSort.dragAndDrop.description
+        case .newestToOldest: return PodcastEpisodeSortOrder.newestToOldest.description
+        case .oldestToNewest: return PodcastEpisodeSortOrder.oldestToNewest.description
+        case .shortestToLongest: return PodcastEpisodeSortOrder.shortestToLongest.description
+        case .longestToShortest: return PodcastEpisodeSortOrder.longestToShortest.description
+        case .titleAtoZ: return PodcastEpisodeSortOrder.titleAtoZ.description
+        case .titleZtoA: return PodcastEpisodeSortOrder.titleZtoA.description
         }
     }
 }
@@ -36,7 +46,9 @@ enum TriageTabSort {
         }
 
         var options: [TriageTabSortOrder] {
-            self == .session ? [.custom, .newestToOldest, .oldestToNewest] : [.newestToOldest, .oldestToNewest]
+            // The full set; the Session tab additionally offers its hand-ordered `custom`.
+            let sorts: [TriageTabSortOrder] = [.newestToOldest, .oldestToNewest, .shortestToLongest, .longestToShortest, .titleAtoZ, .titleZtoA]
+            return self == .session ? [.custom] + sorts : sorts
         }
     }
 
@@ -66,7 +78,24 @@ enum TriageTabSort {
             return episodes.sorted { ($0.episode.publishedDate ?? .distantPast) > ($1.episode.publishedDate ?? .distantPast) }
         case .oldestToNewest:
             return episodes.sorted { ($0.episode.publishedDate ?? .distantPast) < ($1.episode.publishedDate ?? .distantPast) }
+        case .shortestToLongest:
+            return episodes.sorted { $0.episode.duration < $1.episode.duration }
+        case .longestToShortest:
+            return episodes.sorted { $0.episode.duration > $1.episode.duration }
+        case .titleAtoZ:
+            return episodes.sorted { sortableTitle($0.episode) < sortableTitle($1.episode) }
+        case .titleZtoA:
+            return episodes.sorted { sortableTitle($0.episode) > sortableTitle($1.episode) }
         }
+    }
+
+    /// Mirrors the podcast page's title sort: ignore a leading "The "/"A "/"An ", case-insensitively.
+    private static func sortableTitle(_ episode: BaseEpisode) -> String {
+        let title = episode.displayableTitle().uppercased()
+        for prefix in ["THE ", "A ", "AN "] where title.hasPrefix(prefix) {
+            return String(title.dropFirst(prefix.count))
+        }
+        return title
     }
 
     private static func key(_ tab: Tab, _ pageUuid: String) -> String {
