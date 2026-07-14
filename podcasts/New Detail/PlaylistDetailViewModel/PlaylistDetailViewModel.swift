@@ -149,13 +149,9 @@ class PlaylistDetailViewModel: ObservableObject {
     /// Fork: pages showing the Inbox | Session | Episodes strip.
     var usesTriageTabs: Bool { session != nil || isLensPage }
 
-    /// Every episode that belongs to any session's store. The green "in a session" marker uses this
-    /// on pages that aren't themselves a session (a smart playlist like All, or a plain manual
-    /// playlist) — a session's own page marks "in this session" instead.
-    var inAnySessionUuids: Set<String> {
-        let stores = SessionStore.shared.sessions.compactMap(\.storePlaylistUuid)
-        return stores.isEmpty ? [] : DataManager.sharedManager.playlistEpisodeUuids(forPlaylistUuids: stores)
-    }
+    /// Every episode that belongs to any session's store — the "in a session" badge set. Memoized
+    /// (see `SessionMembership`) so it isn't re-queried on every reload.
+    var inAnySessionUuids: Set<String> { SessionMembership.shared.inAnySession }
 
     /// Which section the in-session marker applies to: the browse/Episodes tab on triage pages, or
     /// the single episode section on a plain playlist. (Never the session's own lineup rows.)

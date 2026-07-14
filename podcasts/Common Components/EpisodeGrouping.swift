@@ -119,8 +119,7 @@ enum EpisodeGrouper {
             groups = bucketed([L10n.podcastArchived, L10n.filterPresetNotArchived]) { $0.archived ? 0 : 1 }
 
         case .session:
-            let stores = SessionStore.shared.sessions.compactMap(\.storePlaylistUuid)
-            let inSession = stores.isEmpty ? Set<String>() : DataManager.sharedManager.playlistEpisodeUuids(forPlaylistUuids: stores)
+            let inSession = SessionMembership.shared.inAnySession
             groups = bucketed([L10n.filterPresetInSession, L10n.filterPresetNotInSession]) { inSession.contains($0.uuid) ? 0 : 1 }
         }
 
