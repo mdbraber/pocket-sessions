@@ -1830,7 +1830,7 @@ struct UpNextFilter: Equatable {
             })
         case .smartPlaylist, .playlist:
             guard let playlist = DataManager.sharedManager.findPlaylist(uuid: uuid) else { return [] }
-            let query = PlaylistQueryBuilder.query(clause: .episode, for: playlist, episodeUuidToAdd: nil, limit: 0, shouldShowArchived: playlist.showArchivedEpisodes)
+            let query = PlaylistQueryBuilder.query(clause: .episode, for: playlist, episodeUuidToAdd: nil, limit: 0)
             let playlistUuids = Set(DataManager.sharedManager.findPlaylistEpisodesWhere(query: query, arguments: nil).map(\.uuid))
             return Set(episodes.map(\.uuid)).intersection(playlistUuids)
         }

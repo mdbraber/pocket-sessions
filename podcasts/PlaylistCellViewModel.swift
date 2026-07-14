@@ -165,7 +165,7 @@ class PlaylistCellViewModel: ObservableObject {
     private func loadListEpisodes() async -> [ListEpisode] {
         let playlist = self.playlist
         return await Task.detached(priority: .userInitiated) { [weak self] in
-            self?.episodesDataManager.playlistFirstDistinctEpisodes(for: playlist, shouldShowArchived: playlist.showArchivedEpisodes) ?? []
+            self?.episodesDataManager.playlistFirstDistinctEpisodes(for: playlist) ?? []
         }.value
     }
 

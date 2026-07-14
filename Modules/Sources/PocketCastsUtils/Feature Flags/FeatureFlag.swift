@@ -103,9 +103,6 @@ public enum FeatureFlag: String, CaseIterable {
     /// playlist-row badges (personal fork feature)
     case libraryBadges
 
-    /// The global episodes funnel replacing the stock Show Archived toggle
-    /// (personal fork feature)
-    case episodesFunnel
 
     /// The fork tab bar (Inbox first, Up Next tab, Discover under Profile);
     /// off restores the stock arrangement with a Discover tab (personal fork feature)
@@ -413,8 +410,6 @@ public enum FeatureFlag: String, CaseIterable {
         case .smartPlaylistFolderRules:
             true
         case .libraryBadges:
-            true
-        case .episodesFunnel:
             true
         case .customTabBar:
             true

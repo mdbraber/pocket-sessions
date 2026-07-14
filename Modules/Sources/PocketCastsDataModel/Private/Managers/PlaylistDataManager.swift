@@ -29,7 +29,6 @@ class PlaylistDataManager {
         "longerThan",
         "shorterThan",
         "manual",
-        "showArchivedEpisodes",
         "playlistUpdateDate",
         "folderUuids",
         "newEpisodesAutoAdd",
@@ -825,7 +824,6 @@ class PlaylistDataManager {
         playlist.longerThan = rs.int(forColumn: "longerThan")
         playlist.shorterThan = rs.int(forColumn: "shorterThan")
         playlist.manual = rs.bool(forColumn: "manual")
-        playlist.showArchivedEpisodes = rs.bool(forColumn: "showArchivedEpisodes")
         playlist.playlistUpdateDate = DBUtils.convertDate(value: rs.double(forColumn: "playlistUpdateDate"))
         playlist.folderUuids = DBUtils.nonNilStringFromColumn(resultSet: rs, columnName: "folderUuids")
         playlist.newEpisodesAutoAdd = rs.bool(forColumn: "newEpisodesAutoAdd")
@@ -861,7 +859,6 @@ class PlaylistDataManager {
         values.append(playlist.longerThan)
         values.append(playlist.shorterThan)
         values.append(playlist.manual)
-        values.append(playlist.showArchivedEpisodes)
         values.append(DBUtils.nullIfNil(value: updateDate ?? playlist.playlistUpdateDate))
         values.append(playlist.folderUuids)
         values.append(playlist.newEpisodesAutoAdd)

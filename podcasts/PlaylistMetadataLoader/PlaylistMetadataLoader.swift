@@ -364,8 +364,7 @@ actor PlaylistMetadataLoader {
         let episodesDataManager = self.episodesDataManager
         return await Task(priority: FeatureFlag.playlistDataCacheBeforeQuery.enabled ? .medium : .userInitiated) {
             episodesDataManager.playlistFirstDistinctEpisodes(
-                for: playlist,
-                shouldShowArchived: playlist.showArchivedEpisodes
+                for: playlist
             )
         }.value
     }

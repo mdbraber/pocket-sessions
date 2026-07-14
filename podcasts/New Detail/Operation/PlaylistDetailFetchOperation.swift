@@ -8,19 +8,16 @@ class PlaylistDetailFetchOperation: Operation, @unchecked Sendable {
     private let dataManager: DataManager
     private let playlist: EpisodeFilter
     private let completion: CompletionHandler
-    private let shouldShowArchived: Bool
 
     init(
         dataManager: DataManager = .sharedManager,
         episodesDataManager: EpisodesDataManager = .init(),
         playlist: EpisodeFilter,
-        shouldShowArchived: Bool = false,
         completion: @escaping CompletionHandler
     ) {
         self.dataManager = dataManager
         self.episodesDataManager = episodesDataManager
         self.playlist = playlist
-        self.shouldShowArchived = shouldShowArchived
         self.completion = completion
 
         super.init()
@@ -30,7 +27,7 @@ class PlaylistDetailFetchOperation: Operation, @unchecked Sendable {
         autoreleasepool {
             if self.isCancelled { return }
 
-            let newData = episodesDataManager.playlistEpisodes(for: playlist, shouldShowArchived: shouldShowArchived)
+            let newData = episodesDataManager.playlistEpisodes(for: playlist, preset: FilterPresets.active)
 
             let archivedEpisodesCount = dataManager.playlistArchivedEpisodeCount(
                 for: playlist,

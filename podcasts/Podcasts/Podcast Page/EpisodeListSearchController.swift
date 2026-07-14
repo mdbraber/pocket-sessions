@@ -70,6 +70,8 @@ class EpisodeListSearchController: SimpleNotificationsViewController, UISearchBa
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        NotificationCenter.default.addObserver(self, selector: #selector(filtersWereReset), name: FilterPresets.resetAll, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(presetChanged), name: FilterPresetStore.changed, object: nil)
         showHideArchiveBtn.titleLabel?.textAlignment = .center
         showHideArchiveBtn.titleLabel?.heightAnchor.constraint(equalTo: showHideArchiveBtn.heightAnchor).isActive = true
 
@@ -137,20 +139,17 @@ class EpisodeListSearchController: SimpleNotificationsViewController, UISearchBa
         sortButton.isHidden = false
 
         let episodeCount = delegate.episodeCount()
-        let archivedCount = delegate.archivedEpisodeCount()
         let hasEpisodeLimit = (podcast.autoArchiveEpisodeLimitCount > 0 && podcast.isAutoArchiveOverridden)
 
-        var infoText: String = ""
-        infoText = episodeCount == 1 ? L10n.podcastEpisodeCountSingular : L10n.podcastEpisodeCountPluralFormat(episodeCount.localized())
-        infoText += " • "
+        let infoText = episodeCount == 1 ? L10n.podcastEpisodeCountSingular : L10n.podcastEpisodeCountPluralFormat(episodeCount.localized())
         let attributedText = NSMutableAttributedString(string: infoText, attributes: [.foregroundColor: AppTheme.colorForStyle(.primaryText02)])
-        if !hasEpisodeLimit {
-            attributedText.append(NSAttributedString(string: L10n.podcastArchivedCountFormat(archivedCount.localized()), attributes: [.foregroundColor: AppTheme.colorForStyle(.primaryText02)]))
-        } else {
-            attributedText.append(NSAttributedString(string: L10n.podcastEpisodeLimitCountFormat(podcast.autoArchiveEpisodeLimitCount.localized()), attributes: [.foregroundColor: AppTheme.colorForStyle(.support08)]))
+        // Fork: the "• M archived" half is gone. It was the app telling you archived episodes were
+        // being withheld — the exact "silently lying" the preset picker's label now makes
+        // impossible: whether archived show is a visible, named rule. An episode LIMIT is different
+        // (it's an auto-archive setting, not a filter), so that note stays.
+        if hasEpisodeLimit {
+            attributedText.append(NSAttributedString(string: " • " + L10n.podcastEpisodeLimitCountFormat(podcast.autoArchiveEpisodeLimitCount.localized()), attributes: [.foregroundColor: AppTheme.colorForStyle(.support08)]))
         }
-        // Fork: the unread dot's summary. The archived count stays for now — it goes when
-        // the Filter Preset picker's label makes "what am I not seeing" explicit (Stage 8).
         let unseenCount = delegate.unseenEpisodeCount()
         if unseenCount > 0 {
             attributedText.append(NSAttributedString(
@@ -160,21 +159,13 @@ class EpisodeListSearchController: SimpleNotificationsViewController, UISearchBa
         }
         episodeInfoLabel?.attributedText = attributedText
 
-        // Fork: the archived toggle became the episode filter funnel. Its tint is the
-        // cue — neutral when everything is default, accent when filtering. With the
-        // funnel off, the stock Show/Hide Archived text button returns.
+        // Fork: the stock Show/Hide Archived button IS the Filter Preset control now — and it
+        // wears the active preset's NAME. That is the safety mechanism: a sticky filter you cannot
+        // see is how a list silently lies to you, and an icon (however tinted) does not say what it
+        // is filtering by.
         if let showHideBtn = showHideArchiveBtn {
             UIView.performWithoutAnimation {
-                if FeatureFlag.episodesFunnel.enabled {
-                    let funnelActive = EpisodeStateFilterSet.global.showsActiveCue
-                    showHideBtn.setTitle(nil, for: .normal)
-                    showHideBtn.setImage(UIImage(named: "podcast-filter"), for: .normal)
-                    showHideBtn.tintColor = funnelActive ? ThemeColor.primaryInteractive01() : ThemeColor.primaryIcon02()
-                } else {
-                    showHideBtn.setImage(nil, for: .normal)
-                    showHideBtn.setTitle(delegate.showingArchived() ? L10n.podcastHideArchived : L10n.podcastShowArchived, for: .normal)
-                    showHideBtn.tintColor = ThemeColor.primaryInteractive01()
-                }
+                FilterPresetPicker.style(showHideBtn)
                 showHideBtn.layoutIfNeeded()
             }
         }
@@ -243,40 +234,14 @@ class EpisodeListSearchController: SimpleNotificationsViewController, UISearchBa
         updateInfoView()
     }
 
-    /// Fork: the funnel — display filters as checkable rows, consistent with the
-    /// app's other sheets. Archived rides the stock per-podcast setting; played and
-    /// seen are fork-local per-podcast preferences.
+    /// Fork: the Filter Preset picker. It replaced the funnel sheet entirely — seen, archived and
+    /// session membership are ordinary preset rules now, so there is nothing left for a separate
+    /// display-filter sheet to own.
     @IBAction func showHideArchiveTapped(_ sender: Any) {
-        guard let delegate = podcastDelegate, let podcast = delegate.displayedPodcast() else { return }
-
-        // Funnel off: the button is the stock archived toggle.
-        guard FeatureFlag.episodesFunnel.enabled else {
-            delegate.toggleShowArchived()
-            return
+        guard let controller = podcastDelegate as? UIViewController else { return }
+        FilterPresetPicker.present(from: controller) { [weak self] in
+            self?.podcastDelegate?.episodesDidChange()
         }
-
-        let optionPicker = OptionsPicker(title: nil)
-
-        // Per-state switches (they keep the sheet open): all on = everything shows;
-        // switching one off hides that state. Grouped by axis, smart-rules style.
-        let current = EpisodeStateFilterSet.global
-        for section in EpisodeStateFilter.visibleSheetSections {
-            if let title = section.title {
-                optionPicker.addSectionTitle(title.localizedUppercase)
-            }
-            for option in section.options {
-                let action = OptionAction(label: option.title, icon: nil, selected: current.enabled.contains(option)) { [weak self] in
-                    var filter = EpisodeStateFilterSet.global
-                    filter.toggle(option)
-                    filter.saveGlobal()
-                    self?.podcastDelegate?.episodesDidChange()
-                }
-                action.onOffAction = true
-                optionPicker.addAction(action: action)
-            }
-        }
-
-        optionPicker.present(from: self)
     }
 
     @IBAction func overflowTapped(_ sender: Any) {
@@ -453,6 +418,19 @@ class EpisodeListSearchController: SimpleNotificationsViewController, UISearchBa
         optionPicker.addAction(action: starAction)
 
         return optionPicker
+    }
+
+    /// "Reset all filters" clears the search term too — the two things that can silently narrow
+    /// a list at once. The picker resets the preset; this clears the field.
+    @objc private func presetChanged() {
+        updateInfoView()
+        podcastDelegate?.episodesDidChange()
+    }
+
+    @objc func filtersWereReset() {
+        guard let field = searchTextField, !(field.text ?? "").isEmpty else { return }
+        field.text = ""
+        textFieldDidChange()
     }
 
     func hideKeyboard() {

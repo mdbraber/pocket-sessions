@@ -51,41 +51,6 @@ class EpisodesDataManager: PlaybackSessionEpisodeSource {
 
     /// Returns a podcasts episodes that are grouped by `PodcastGrouping`
     /// Use `uuidsToFilter` to filter the episode UUIDs to only those in the array
-    /// Fork: the Episodes funnel — one mutually exclusive view of the full set the
-    /// query loads; Unarchived (default) hides archived, All shows it interleaved.
-    private func applyDisplayFilters(_ sections: [ArraySection<String, ListItem>], podcast: Podcast) -> [ArraySection<String, ListItem>] {
-        guard let headerSection = sections.first else { return sections }
-        let filter = EpisodeStateFilterSet.global
-
-        var members = Set<String>()
-        if filter.needsSessionContext, let session = SessionStore.shared.session(forPodcast: podcast.uuid) {
-            members = Set(SessionFeederEngine.storeMemberUuids(for: session))
-        }
-
-        // Unseen episodes are NOT partitioned out of this list any more — they carry the
-        // unread dot instead. A partition and a dot are two encodings of the same bit, and
-        // running both is how they drift apart. The dot is the one that survives.
-
-        // Groups whose rows all filter away disappear entirely — a grouping header
-        // with nothing under it is noise. Group headers are ListHeader ELEMENTS
-        // interleaved with their rows, so orphaned ones are pruned per element run.
-        // One (possibly empty) episodes section always remains so the page's
-        // placeholder machinery keeps its shape.
-        var filtered = sections.dropFirst().map { section -> ArraySection<String, ListItem> in
-            let kept = section.elements.filter { item in
-                guard let listEpisode = item as? ListEpisode else { return true }
-                // Funnel off: the query's archived clause already decided visibility.
-                guard FeatureFlag.episodesFunnel.enabled else { return true }
-                return filter.isUnfiltered || filter.matches(listEpisode.episode, sessionMemberUuids: members)
-            }
-            return ArraySection(model: section.model, elements: droppingEmptyGroupHeaders(kept))
-        }.filter { !$0.elements.isEmpty }
-        if filtered.isEmpty {
-            filtered = [ArraySection(model: "episodes", elements: [])]
-        }
-        return collapsingGroups([headerSection] + filtered, podcast: podcast)
-    }
-
     /// Fork: hides the rows under collapsed group headers (the header itself stays,
     /// with its chevron flipped). Runs last, after empty groups are already pruned,
     /// so a collapsed-but-non-empty header is never mistaken for an orphan.
@@ -120,12 +85,14 @@ class EpisodesDataManager: PlaybackSessionEpisodeSource {
         let episodeSortOrder = podcast.podcastSortOrder
 
         let sortOrder = episodeSortOrder ?? .newestToOldest
+        let episodesQuery = createEpisodesQuery(podcast, uuidsToFilter: uuidsToFilter, preset: FilterPresets.active)
+
         switch podcast.podcastGrouping() {
         case .none:
-            let episodes = EpisodeTableHelper.loadEpisodes(query: createEpisodesQuery(podcast, uuidsToFilter: uuidsToFilter), arguments: nil)
+            let episodes = EpisodeTableHelper.loadEpisodes(query: episodesQuery.query, arguments: episodesQuery.arguments)
             newData.append(ArraySection(model: "episodes", elements: episodes))
         case .season:
-            let groupedEpisodes = EpisodeTableHelper.loadSortedSectionedEpisodes(query: createEpisodesQuery(podcast, uuidsToFilter: uuidsToFilter), arguments: nil, sectionComparator: { name1, name2 -> Bool in
+            let groupedEpisodes = EpisodeTableHelper.loadSortedSectionedEpisodes(query: episodesQuery.query, arguments: episodesQuery.arguments, sectionComparator: { name1, name2 -> Bool in
                 if sortOrder == .serial {
                     if name2 == L10n.podcastExtras {
                         return true
@@ -142,21 +109,21 @@ class EpisodesDataManager: PlaybackSessionEpisodeSource {
             })
             newData.append(contentsOf: groupedEpisodes)
         case .unplayed:
-            let groupedEpisodes = EpisodeTableHelper.loadSortedSectionedEpisodes(query: createEpisodesQuery(podcast, uuidsToFilter: uuidsToFilter), arguments: nil, sectionComparator: { name1, _ -> Bool in
+            let groupedEpisodes = EpisodeTableHelper.loadSortedSectionedEpisodes(query: episodesQuery.query, arguments: episodesQuery.arguments, sectionComparator: { name1, _ -> Bool in
                 name1 == L10n.statusUnplayed
             }, episodeShortKey: { episode -> String in
                 episode.played() ? L10n.statusPlayed : L10n.statusUnplayed
             })
             newData.append(contentsOf: groupedEpisodes)
         case .downloaded:
-            let groupedEpisodes = EpisodeTableHelper.loadSortedSectionedEpisodes(query: createEpisodesQuery(podcast, uuidsToFilter: uuidsToFilter), arguments: nil, sectionComparator: { name1, _ -> Bool in
+            let groupedEpisodes = EpisodeTableHelper.loadSortedSectionedEpisodes(query: episodesQuery.query, arguments: episodesQuery.arguments, sectionComparator: { name1, _ -> Bool in
                 name1 == L10n.statusDownloaded
             }, episodeShortKey: { (episode: Episode) -> String in
                 episode.downloaded(pathFinder: DownloadManager.shared) || episode.queued() || episode.downloading() ? L10n.statusDownloaded : L10n.statusNotDownloaded
             })
             newData.append(contentsOf: groupedEpisodes)
         case .starred:
-            let groupedEpisodes = EpisodeTableHelper.loadSortedSectionedEpisodes(query: createEpisodesQuery(podcast, uuidsToFilter: uuidsToFilter), arguments: nil, sectionComparator: { name1, _ -> Bool in
+            let groupedEpisodes = EpisodeTableHelper.loadSortedSectionedEpisodes(query: episodesQuery.query, arguments: episodesQuery.arguments, sectionComparator: { name1, _ -> Bool in
                 name1 == L10n.statusStarred
             }, episodeShortKey: { episode -> String in
                 episode.keepEpisode ? L10n.statusStarred : L10n.statusNotStarred
@@ -164,7 +131,9 @@ class EpisodesDataManager: PlaybackSessionEpisodeSource {
             newData.append(contentsOf: groupedEpisodes)
         }
 
-        return applyDisplayFilters(newData, podcast: podcast)
+        // Filtering happens in SQL now (the active Filter Preset), so there are no orphaned
+        // group headers to prune — a group with nothing in it is simply never built.
+        return collapsingGroups(newData, podcast: podcast)
     }
 
     /// A group header immediately followed by another header (or by nothing) lost
@@ -183,7 +152,10 @@ class EpisodesDataManager: PlaybackSessionEpisodeSource {
         return result
     }
 
-    func createEpisodesQuery(_ podcast: Podcast, uuidsToFilter: [String]? = nil) -> String {
+    /// The podcast page's episode query. `preset` narrows it in SQL — the old funnel filtered the
+    /// full result set in Swift, which meant loading every episode of the podcast to throw most of
+    /// them away.
+    func createEpisodesQuery(_ podcast: Podcast, uuidsToFilter: [String]? = nil, preset: FilterPreset? = nil) -> (query: String, arguments: [Any]) {
         let sortStr: String
 
         let episodeSortOrder = podcast.podcastSortOrder
@@ -220,33 +192,55 @@ class EpisodesDataManager: PlaybackSessionEpisodeSource {
             sortStr = "ORDER BY CASE WHEN seasonNumber < 1 THEN 9999 ELSE seasonNumber END, CASE WHEN episodeNumber < 1 THEN 9999 ELSE episodeNumber END ASC, publishedDate ASC"
         }
 
-        // Fork: load the full set; the single Episodes filter (applyDisplayFilters)
-        // decides archived visibility — hidden under No Filter, interleaved under All.
         var whereClauses = ["podcast_id = \(podcast.id)", "wasDeleted = 0"]
-        // Funnel off: the stock per-podcast archived clause owns visibility again.
-        if !FeatureFlag.episodesFunnel.enabled, !podcast.shouldShowArchived {
-            whereClauses.append("archived = 0")
+        var arguments = [Any]()
+
+        // The active Filter Preset. It owns archived visibility now (as an ordinary rule), which is
+        // why there is no separate shouldShowArchived clause here any more.
+        if let preset, let predicate = FilterPresetQuery.predicate(
+            for: preset,
+            sessionStoreUuids: SessionStore.shared.sessions.compactMap(\.storePlaylistUuid)
+        ) {
+            whereClauses.append(predicate.sql)
+            arguments.append(contentsOf: predicate.arguments)
         }
+
         if let uuids = uuidsToFilter { // ignore uuid filtering if uuid list is empty or nil
             whereClauses.append("uuid IN (\(uuids.map { "'\($0)'" }.joined(separator: ",")))")
         }
         let whereStr = whereClauses.joined(separator: " AND ")
 
-        return "\(whereStr) \(sortStr)"
+        return ("\(whereStr) \(sortStr)", arguments)
     }
 
     // MARK: - Playlists
 
+    /// `preset` narrows a playlist's own rules — the Filter Preset hook. It also owns archived
+    /// visibility now (as an ordinary rule), which is why the old `shouldShowArchived` is gone:
+    /// the query always loads archived, and the preset decides whether they show.
     func playlistEpisodes(
         for playlist: EpisodeFilter,
         limit: Int = Constants.Limits.maxFilterItems,
-        shouldShowArchived: Bool? = nil,
-        search: String? = nil
+        search: String? = nil,
+        preset: FilterPreset? = nil
     ) -> [ListEpisode] {
-        // Default to the playlist's own preference (the fork's archived toggle).
-        let shouldShowArchived = shouldShowArchived ?? playlist.showArchivedEpisodes
-        let query = PlaylistQueryBuilder.query(clause: .episode, for: playlist, episodeUuidToAdd: playlist.episodeUuidToAddToQueries(), searchTerm: search, limit: limit, shouldShowArchived: shouldShowArchived)
-        return EpisodeTableHelper.loadPlaylistEpisodes(query: query)
+        let predicate = preset.flatMap {
+            FilterPresetQuery.predicate(
+                for: $0,
+                sessionStoreUuids: SessionStore.shared.sessions.compactMap(\.storePlaylistUuid),
+                columns: .episodeAlias
+            )
+        }
+        let query = PlaylistQueryBuilder.query(
+            clause: .episode,
+            for: playlist,
+            episodeUuidToAdd: playlist.episodeUuidToAddToQueries(),
+            searchTerm: search,
+            limit: limit,
+            shouldShowArchived: true,
+            extraWhere: predicate?.sql
+        )
+        return EpisodeTableHelper.loadPlaylistEpisodes(query: query, arguments: predicate?.arguments)
     }
 
     func playlistFirstDistinctEpisodes(

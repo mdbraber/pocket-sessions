@@ -1129,35 +1129,21 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
         Analytics.track(.podcastScreenSearchCleared)
     }
 
+    /// Fork: archived visibility is a Filter Preset rule now, edited via the preset picker — this
+    /// stays only to satisfy the delegate protocol.
     func toggleShowArchived() {
         guard let podcast else { return }
-
-        // Funnel off: the stock per-podcast Show Archived toggle.
-        guard FeatureFlag.episodesFunnel.enabled else {
-            podcast.shouldShowArchived = !podcast.shouldShowArchived
-            DataManager.sharedManager.save(podcast: podcast)
-            loadLocalEpisodes(podcast: podcast, animated: true)
-            Analytics.track(.podcastScreenToggleArchived, properties: ["show_archived": podcast.shouldShowArchived])
-            return
-        }
-
-        // Fork: flips the (global) Episodes filter between Archived-only and default.
-        let current = EpisodeStateFilterSet.global
-        let showingArchivedOnly = current.enabled.contains(.archived) && !current.enabled.contains(.unarchived)
-        let newEnabled = showingArchivedOnly
-            ? EpisodeStateFilterSet.defaultEnabled
-            : EpisodeStateFilterSet.allOptions.subtracting([.unarchived])
-        EpisodeStateFilterSet(enabled: newEnabled).saveGlobal()
+        var preset = FilterPresets.active
+        preset.archived = (preset.archived == false) ? nil : false
+        FilterPresetStore.shared.upsert(preset)
         loadLocalEpisodes(podcast: podcast, animated: true)
-
-        Analytics.track(.podcastScreenToggleArchived, properties: ["show_archived": !showingArchivedOnly])
     }
 
+    /// Whether the active preset is surfacing archived episodes — drives the "all archived"
+    /// placeholder. nil ("don't care") and true ("archived only") both surface them; only an
+    /// explicit false hides them.
     func showingArchived() -> Bool {
-        guard FeatureFlag.episodesFunnel.enabled else { return podcast?.shouldShowArchived ?? false }
-        // Fork: any view other than the clean default can surface archived episodes,
-        // so only the default warrants the "all archived" placeholder.
-        return EpisodeStateFilterSet.global.showsActiveCue
+        FilterPresets.active.archived != false
     }
 
     /// Fork: display filters (played/seen) changed — rebuild the episode list.

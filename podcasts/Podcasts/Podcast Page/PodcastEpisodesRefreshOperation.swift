@@ -34,7 +34,9 @@ class PodcastEpisodesRefreshOperation: Operation, @unchecked Sendable {
         }
     }
 
+    /// Deliberately WITHOUT the active Filter Preset. This is CarPlay's query, and a preset chosen
+    /// on the phone must not silently narrow a list you cannot see the control for.
     func createEpisodesQuery() -> String {
-        episodesDataManager.createEpisodesQuery(podcast, uuidsToFilter: uuidsToFilter)
+        episodesDataManager.createEpisodesQuery(podcast, uuidsToFilter: uuidsToFilter).query
     }
 }

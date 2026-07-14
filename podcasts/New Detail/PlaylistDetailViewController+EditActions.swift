@@ -304,7 +304,7 @@ extension PlaylistDetailViewController {
     private func unarchiveAllPlaylistEpisodes() {
         Task { [weak self] in
             guard let self else { return }
-            let newData = self.viewModel.episodesDataManager.playlistEpisodes(for: self.viewModel.playlist, shouldShowArchived: true)
+            let newData = self.viewModel.episodesDataManager.playlistEpisodes(for: self.viewModel.playlist)
             let episodes = newData.map { $0.episode }
             EpisodeManager.bulkUnarchive(episodes: episodes)
         }

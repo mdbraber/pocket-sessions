@@ -76,7 +76,6 @@ final class EpisodeFilterColumnConsistencyTests: DataManagerTestCase {
             XCTAssertEqual(loaded.syncStatus, original.syncStatus, "\(implementationName): syncStatus should match")
             XCTAssertEqual(loaded.wasDeleted, original.wasDeleted, "\(implementationName): wasDeleted should match")
             XCTAssertEqual(loaded.manual, original.manual, "\(implementationName): manual should match")
-            XCTAssertEqual(loaded.showArchivedEpisodes, original.showArchivedEpisodes, "\(implementationName): showArchivedEpisodes should match")
         }
     }
 
@@ -161,7 +160,6 @@ final class EpisodeFilterColumnConsistencyTests: DataManagerTestCase {
         filter.syncStatus = SyncStatus.synced.rawValue
         filter.wasDeleted = false
         filter.manual = false
-        filter.showArchivedEpisodes = true
         filter.playlistUpdateDate = Date()
         return filter
     }

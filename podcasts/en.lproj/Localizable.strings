@@ -1925,6 +1925,11 @@
 /* Fork: built-in Filter Preset — starred episodes only. */
 "filter_preset_starred" = "Starred";
 
+/* Fork: the one-tap way back — clears the active Filter Preset and the search term. */
+"filter_preset_reset" = "Reset all filters";
+/* Fork: accessibility label for the Filter Preset control. %1$@ is the active preset's name. */
+"filter_preset_accessibility" = "Filter: %1$@";
+
 /* Informational message informing the user that no episodes are being displayed because they're all archived. '%1$@' is a placeholder for the number of episodes. */
 "podcast_archived_msg" = "All %1$@ episodes of this podcast have been archived";
 

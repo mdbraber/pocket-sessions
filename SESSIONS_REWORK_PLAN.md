@@ -646,9 +646,33 @@ and group only — it is already a filtered view (everything unseen), so a prese
 *(This widens the original spec, which only put the picker on the Episodes tab. On the Session tab the preset
 is a pure view lens over the lineup — it never reorders or rewrites it.)*
 
-### Stage 8 — Preset picker + delete the funnel  · ~250 LOC added, ~200 deleted · blast radius: 6 files
-The single labelled control. Delete `EpisodeStateFilter.swift` (155 LOC), its 8 call sites, the
-`episodesFunnel` flag, the `SJEpisodesFilterOn` key from `ForkSettingsSync`, and 8 L10n keys.
+### Stage 8 — Preset picker + delete the funnel ✅ **DONE**
+The active preset is applied **in SQL** on every episode list (podcast page, playlist, smart playlist), and
+as a **lineup sieve** on the Session tab (which can't be re-queried but can be filtered — one source of truth
+for what a rule means). `FilterPresets` is the live facade over the pure builder; `FilterPresetPicker` is the
+one labelled control. App 421/421, DataModel 473/475, Server 94/94, build green.
+
+**Deleted:** `EpisodeStateFilter.swift` (155 LOC) and all 8 call sites; the `episodesFunnel` flag; the
+`showArchivedEpisodes` **column** (model round-trip + 6 readers reverted to stock; the DB column itself stays
+in the schema, never dropped outside the migration chain); `applyDisplayFilters` (the SQL filters now, so
+there are no orphaned group headers to prune); and the podcast page's **`• M archived`** counts-line half —
+that was the app telling you archived episodes were withheld, which is exactly the "silently lying" the
+labelled picker makes impossible. (`newEpisodesAutoAdd` still awaits Stage 11.)
+
+**The control is LABELLED with the active preset**, not just tinted — the whole reason sticky is safe. On the
+podcast page it *is* the old Show/Hide Archived button, now wearing the preset's name.
+
+**"Reset all filters"** clears the preset *and* the search term together (both surfaces observe
+`FilterPresets.resetAll`).
+
+Two calls worth recording:
+- **CarPlay does NOT inherit the preset.** A filter chosen on the phone must not silently narrow a list whose
+  control you can't see there. `PodcastEpisodesRefreshOperation.createEpisodesQuery` drops it deliberately.
+- **The smart-playlist rule editor's live preview does NOT apply the preset** either — it must show the
+  playlist's *own* rules, not whatever lens you're currently looking through.
+
+⚠️ Housekeeping: a stray `.SESSIONS_REWORK_PLAN.md.swp` (vim) had been committed by `git add -A` back in
+Stage 2 — now untracked and `*.swp` added to `.gitignore`.
 
 ### Stage 9 — Preset editor  · **~1,200–1,500 LOC** · blast radius: new files only · **the main expense**
 Copy the SwiftUI rules layer (~719 LOC: `SmartPlaylistRulesView` 221, `SmartPlaylistRulesSectionView` 242,

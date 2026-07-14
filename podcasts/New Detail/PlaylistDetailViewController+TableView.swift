@@ -542,18 +542,13 @@ private extension PlaylistDetailViewController {
             countsLabel.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -16)
         ]
 
-        // Fork: the Episodes tab carries the filter funnel, exactly like the podcast
-        // page — Show Archived / Show Played as checkable rows.
+        // Fork: the Filter Preset control, on BOTH tabs — a preset applies to any episode list,
+        // including the Session lineup (where it sieves, and never reorders).
         var funnelButton: UIButton?
-        if viewModel.usesTriageTabs, viewModel.selectedTriageTab == .browse {
-            let funnel = UIButton(type: .system)
-            funnel.setImage(UIImage(named: "podcast-filter"), for: .normal)
-            // The cue: neutral when everything is default, accent when filtering.
-            funnel.tintColor = AppTheme.colorForStyle(viewModel.isEpisodesFunnelActive ? .primaryInteractive01 : .primaryIcon02)
-            funnel.accessibilityLabel = L10n.filters
-            funnel.addAction(UIAction { [weak self] _ in
-                self?.presentEpisodesFunnel()
-            }, for: .touchUpInside)
+        if viewModel.usesTriageTabs {
+            let funnel = FilterPresetPicker.makeButton(target: self) { [weak self] in
+                self?.viewModel.reloadEpisodeList(animated: false)
+            }
             funnel.translatesAutoresizingMaskIntoConstraints = false
             container.addSubview(funnel)
             constraints.append(contentsOf: [
@@ -619,29 +614,6 @@ private extension PlaylistDetailViewController {
         return container
     }
 
-    /// Fork: the Episodes-tab funnel, matching the podcast page's — display filters
-    /// as checkable rows, backed by the session's settings.
-    func presentEpisodesFunnel() {
-        let optionPicker = OptionsPicker(title: nil)
-
-        // Per-state switches (they keep the sheet open): all on = everything shows;
-        // switching one off hides that state. Grouped by axis, smart-rules style.
-        let currentFilter = viewModel.episodesFilter
-        for section in EpisodeStateFilter.visibleSheetSections {
-            if let title = section.title {
-                optionPicker.addSectionTitle(title.localizedUppercase)
-            }
-            for option in section.options {
-                let action = OptionAction(label: option.title, icon: nil, selected: currentFilter.enabled.contains(option)) { [weak self] in
-                    self?.viewModel.toggleEpisodesFilter(option)
-                }
-                action.onOffAction = true
-                optionPicker.addAction(action: action)
-            }
-        }
-
-        optionPicker.present(from: self)
-    }
 
     /// Builds a section header with a themed title, optionally stacking the search bar
     /// above it and an accent action button on the trailing edge.

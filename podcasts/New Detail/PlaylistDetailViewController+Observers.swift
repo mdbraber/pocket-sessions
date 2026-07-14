@@ -10,6 +10,14 @@ extension PlaylistDetailViewController {
     }
 
     /// Fork: folder membership shows in the header's folder icon — re-render it.
+    @objc private func filtersWereReset() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            if self.viewModel.isSearching { self.viewModel.clearSearch() }
+            self.viewModel.reloadEpisodeList(animated: false)
+        }
+    }
+
     @objc private func playlistFoldersChanged() {
         DispatchQueue.main.async { [weak self] in
             self?.viewModel.objectWillChange.send()
@@ -31,6 +39,10 @@ extension PlaylistDetailViewController {
         // Fork: seen marks and dismissals live in the session store — without this,
         // a mark-as-seen never refreshes the Inbox tab.
         addCustomObserver(SessionStore.changed, selector: #selector(refreshEpisodesFromNotification))
+        // Fork: the active Filter Preset drives both tabs; re-fetch when it changes, and clear the
+        // search term on "Reset all filters".
+        addCustomObserver(FilterPresetStore.changed, selector: #selector(refreshEpisodesFromNotification))
+        addCustomObserver(FilterPresets.resetAll, selector: #selector(filtersWereReset))
         addCustomObserver(UIResponder.keyboardWillShowNotification, selector: #selector(keyboardWillShow(_:)))
         addCustomObserver(UIResponder.keyboardWillHideNotification, selector: #selector(keyboardWillHide(_:)))
     }

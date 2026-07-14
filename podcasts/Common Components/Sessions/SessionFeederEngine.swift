@@ -31,16 +31,23 @@ enum SessionFeederEngine {
 
     // MARK: - Domains
 
-    /// Every episode the feeder could ever speak for. Newest first.
-    static func domainEpisodes(for session: Session, includeArchived: Bool) -> [Episode] {
-        let archivedClause = includeArchived ? "" : " AND archived = 0"
+    /// Every episode the feeder could ever speak for, narrowed by a Filter Preset. Newest first.
+    ///
+    /// The preset owns archived visibility now (it is an ordinary rule), so there is no separate
+    /// archived flag: pass nil to get the whole domain.
+    static func domainEpisodes(for session: Session, preset: FilterPreset? = nil) -> [Episode] {
+        let predicate = preset.flatMap {
+            FilterPresetQuery.predicate(for: $0, sessionStoreUuids: SessionStore.shared.sessions.compactMap(\.storePlaylistUuid))
+        }
+        let archivedClause = predicate.map { " AND \($0.sql)" } ?? ""
+        let presetArgs = predicate?.arguments ?? []
         switch session.feeder {
         case .none:
             return []
         case .podcast(let uuid):
             return DataManager.sharedManager.findEpisodesWhere(
                 customWhere: "podcastUuid = ?\(archivedClause) ORDER BY publishedDate DESC",
-                arguments: [uuid]
+                arguments: [uuid] + presetArgs
             )
         case .folder(let uuid):
             let podcastUuids = DataManager.sharedManager.allPodcasts(includeUnsubscribed: false)
@@ -50,17 +57,17 @@ enum SessionFeederEngine {
             let placeholders = podcastUuids.map { _ in "?" }.joined(separator: ",")
             return DataManager.sharedManager.findEpisodesWhere(
                 customWhere: "podcastUuid IN (\(placeholders))\(archivedClause) ORDER BY publishedDate DESC",
-                arguments: podcastUuids
+                arguments: podcastUuids + presetArgs
             )
         case .smartPlaylist(let uuid):
             guard let playlist = DataManager.sharedManager.findPlaylist(uuid: uuid) else { return [] }
-            return EpisodesDataManager().playlistEpisodes(for: playlist, limit: 0, shouldShowArchived: includeArchived)
+            return EpisodesDataManager().playlistEpisodes(for: playlist, limit: 0, preset: preset)
                 .compactMap { $0.episode as? Episode }
         case .allPodcasts:
             let optedOut = optOutPodcastUuids()
             return DataManager.sharedManager.findEpisodesWhere(
                 customWhere: "podcastUuid IN (SELECT uuid FROM \(DataManager.podcastTableName) WHERE subscribed = 1)\(archivedClause) ORDER BY publishedDate DESC",
-                arguments: []
+                arguments: presetArgs
             )
             .filter { !optedOut.contains($0.podcastUuid) }
         }
@@ -70,7 +77,7 @@ enum SessionFeederEngine {
     static func inboxEpisodes(for session: Session) -> [Episode] {
         let unseen = InboxManager.shared.unseenUuids()
         guard !unseen.isEmpty else { return [] }
-        return domainEpisodes(for: session, includeArchived: false).filter { unseen.contains($0.uuid) }
+        return domainEpisodes(for: session).filter { unseen.contains($0.uuid) && !$0.archived }
     }
 
     // MARK: - Session membership
