@@ -699,13 +699,26 @@ junk); edit mode saves live.
 ⚠️ **Needs a device pass.** This is SwiftUI UI that only compiles so far — the `Form` styling, the segmented
 controls, and the two navigation paths want a visual check on the next install.
 
-### Stage 10 — Inbox settings  · ~80 LOC · blast radius: 2 files
-Now much smaller: **no back-catalogue options at all** (decided — never fill a backlog into an Inbox).
-Just the per-podcast opt-out (§2.5) and the existing add-to-Session mode.
+### Stage 10 — Inbox settings ✅ **DONE** (already satisfied by earlier stages)
+There was **almost nothing to build** — every knob the design imagined was either cut or already placed:
+- Back-catalogue-on-subscribe: **cut** (never fill a backlog into the Inbox).
+- Per-podcast opt-out: already on the **podcast settings page** (its correct home — it's per-podcast), wired
+  to `InboxManager.setOptedOut` since Stage 5 (which also clears what the podcast already put there).
+- Add-to-Session mode: already in `InboxSettingsViewController`, predates this rework.
 
-### Stage 11 — Hygiene  · ~100 LOC deleted
-Drop `newEpisodesAutoAdd` (§2.1). Dead strings. `Session.groupBy`/`groupLimit`. Update `CLAUDE.md`'s stale
-module paths. (`showArchivedEpisodes` already went in Stage 2.)
+The only fix: the opt-out toggle read **"Add to global Inbox"** — "global" is dead vocabulary from the old
+per-podcast-inboxes model. Now there's just *the* Inbox → **"Add new episodes to Inbox"**.
+
+### Stage 11 — Hygiene ✅ **DONE**
+- `EpisodeFilter.newEpisodesAutoAdd` column removed from the model + round-trip (DB column stays in schema,
+  like `showArchivedEpisodes`). Its lookalike `updatePlaylist(newEpisodesAutoAdd:)` **stays** — that param
+  writes `session.autoAdd`, it just shares a name (the research false-positive).
+- `Session.groupBy` / `Session.groupLimit` deleted from the model. Their one live reader (the playlist
+  page's Group By) was session-backed only as a leftover; it now stores per-playlist in `UserDefaults`, which
+  is the right home — the Session tab never groups.
+- `UpNextViewController+Table.queueHeaderHeight` (orphaned by Stage 1) removed.
+- 8 dead L10n keys (the deleted funnel's `episodeFilter*`, the Dismissed screen's `sessionDismissed*`) removed.
+- `AGENTS.md` (which `CLAUDE.md` symlinks to) module paths corrected: `Modules/Sources/PocketCasts*`.
 
 ---
 

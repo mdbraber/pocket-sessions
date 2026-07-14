@@ -5351,7 +5351,7 @@
 "inbox_shelved_toast" = "Added to %1$@";
 
 /* Per-podcast toggle controlling whether new episodes enter the global Inbox */
-"inbox_podcast_toggle" = "Add to global Inbox";
+"inbox_podcast_toggle" = "Add new episodes to Inbox";
 
 /* Title of the smart playlist tab listing archived episodes */
 "playlist_archived_section_header" = "Archived";
@@ -5359,9 +5359,6 @@
 /* Subtitle on Session Playlist rows */
 "session_playlist_subtitle" = "Session Playlist";
 
-/* The session's dismissed-episodes screen: title, restore action, empty text */
-"session_dismissed_title" = "Dismissed Episodes";
-"session_dismissed_restore" = "Restore";
 "session_dismissed_empty" = "Nothing dismissed from this session.";
 
 /* Alert when an ephemeral session's lineup drains. %1$@ = playlist name */
@@ -5427,17 +5424,8 @@
 /* Fork: also removes the episode from its Session when removing it from Up Next. */
 "session_queue_remove_also" = "Yes, remove from Session";
 
-/* Episodes filter option (default): every episode that is not archived */
-"episode_filter_unarchived" = "Unarchived";
 
-/* Episodes filter sheet section headers */
-"episode_filter_session_status" = "Session Status";
-"episode_filter_playing_status" = "Playing Status";
-"episode_filter_starred_status" = "Starred Status";
 
-/* Episodes filter options: episodes in / not in this page's session */
-"episode_filter_in_session" = "In Session";
-"episode_filter_not_in_session" = "Not in Session";
 
 /* Playlist Folders: device-local folders grouping playlists, mirroring podcast folders */
 "playlist_folder_new" = "New Playlist Folder";

@@ -31,7 +31,6 @@ class PlaylistDataManager {
         "manual",
         "playlistUpdateDate",
         "folderUuids",
-        "newEpisodesAutoAdd",
         "customOrderInsertMode",
         "customOrderLastInsertedUuid"
     ]
@@ -826,7 +825,6 @@ class PlaylistDataManager {
         playlist.manual = rs.bool(forColumn: "manual")
         playlist.playlistUpdateDate = DBUtils.convertDate(value: rs.double(forColumn: "playlistUpdateDate"))
         playlist.folderUuids = DBUtils.nonNilStringFromColumn(resultSet: rs, columnName: "folderUuids")
-        playlist.newEpisodesAutoAdd = rs.bool(forColumn: "newEpisodesAutoAdd")
         playlist.customOrderInsertMode = rs.int(forColumn: "customOrderInsertMode")
         playlist.customOrderLastInsertedUuid = DBUtils.nonNilStringFromColumn(resultSet: rs, columnName: "customOrderLastInsertedUuid")
 
@@ -861,7 +859,6 @@ class PlaylistDataManager {
         values.append(playlist.manual)
         values.append(DBUtils.nullIfNil(value: updateDate ?? playlist.playlistUpdateDate))
         values.append(playlist.folderUuids)
-        values.append(playlist.newEpisodesAutoAdd)
         values.append(playlist.customOrderInsertMode)
         values.append(playlist.customOrderLastInsertedUuid)
 

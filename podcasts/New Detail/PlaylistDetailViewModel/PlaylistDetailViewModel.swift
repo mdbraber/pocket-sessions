@@ -182,19 +182,15 @@ class PlaylistDetailViewModel: ObservableObject {
         playlist.manual
     }
 
-    // Fork: Group By — session-backed for stores; per-playlist defaults for lenses.
+    // Fork: Group By — a per-playlist display preference for the Episodes tab. It is no longer
+    // session-backed: the Session tab renders its lineup in play order and never groups, so the
+    // Session model dropped groupBy/groupLimit entirely.
     var groupBy: EpisodeGroupBy {
         get {
-            if let session { return EpisodeGroupBy(rawValue: session.groupBy) ?? .none }
-            return EpisodeGroupBy(rawValue: UserDefaults.standard.integer(forKey: "SJPlaylistGroupBy-\(playlist.uuid)")) ?? .none
+            EpisodeGroupBy(rawValue: UserDefaults.standard.integer(forKey: "SJPlaylistGroupBy-\(playlist.uuid)")) ?? .none
         }
         set {
-            if var session {
-                session.groupBy = newValue.rawValue
-                SessionStore.shared.upsert(session)
-            } else {
-                UserDefaults.standard.set(newValue.rawValue, forKey: "SJPlaylistGroupBy-\(playlist.uuid)")
-            }
+            UserDefaults.standard.set(newValue.rawValue, forKey: "SJPlaylistGroupBy-\(playlist.uuid)")
             reloadEpisodeList(animated: false)
         }
     }
@@ -202,16 +198,10 @@ class PlaylistDetailViewModel: ObservableObject {
     /// Episodes per group; 0 means no limit.
     var groupLimit: Int {
         get {
-            if let session { return session.groupLimit }
-            return UserDefaults.standard.integer(forKey: "SJPlaylistGroupLimit-\(playlist.uuid)")
+            UserDefaults.standard.integer(forKey: "SJPlaylistGroupLimit-\(playlist.uuid)")
         }
         set {
-            if var session {
-                session.groupLimit = newValue
-                SessionStore.shared.upsert(session)
-            } else {
-                UserDefaults.standard.set(newValue, forKey: "SJPlaylistGroupLimit-\(playlist.uuid)")
-            }
+            UserDefaults.standard.set(newValue, forKey: "SJPlaylistGroupLimit-\(playlist.uuid)")
             reloadEpisodeList(animated: false)
         }
     }

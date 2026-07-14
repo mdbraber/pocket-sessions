@@ -40,10 +40,8 @@ public class EpisodeFilter: NSObject {
     @objc public var folderUuids = ""
 
     // Fork-only custom-order fields for smart playlists: when sortType is dragAndDrop,
-    // positioned episodes form the "Lineup" and unpositioned matches sit in the "New" inbox
-    // (unless newEpisodesAutoAdd absorbs them automatically). The insert marker state
-    // (mode + last-inserted uuid) decides where "Add to lineup" places episodes.
-    @objc public var newEpisodesAutoAdd = false
+    // positioned episodes form the "Lineup". The insert marker state (mode + last-inserted
+    // uuid) decides where "Add to lineup" places episodes.
     @objc public var customOrderInsertMode = 2 as Int32 // PlaylistInsertMode.afterLastInserted
     @objc public var customOrderLastInsertedUuid = ""
 
@@ -130,7 +128,6 @@ public class EpisodeFilter: NSObject {
     /// which rebuilds playlists from the server proto (which can't carry these fields).
     public func copyForkOnlyFields(from other: EpisodeFilter) {
         folderUuids = other.folderUuids
-        newEpisodesAutoAdd = other.newEpisodesAutoAdd
         customOrderInsertMode = other.customOrderInsertMode
         customOrderLastInsertedUuid = other.customOrderLastInsertedUuid
     }

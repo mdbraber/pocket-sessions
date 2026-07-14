@@ -25,8 +25,6 @@ struct Session: Codable, Equatable, Identifiable {
     var autoAdd: Bool = false
     var insertMode: Int32 = PlaylistInsertMode.afterLastInserted.rawValue
     var lastInsertedUuid: String = ""
-    var groupBy: Int = 0
-    var groupLimit: Int = 0
     /// When the session was last the active playback session — the Switch Session
     /// sheet orders by it, latest first.
     var lastUsed: Date? = nil
@@ -40,8 +38,6 @@ struct Session: Codable, Equatable, Identifiable {
         autoAdd: Bool = false,
         insertMode: Int32 = PlaylistInsertMode.afterLastInserted.rawValue,
         lastInsertedUuid: String = "",
-        groupBy: Int = 0,
-        groupLimit: Int = 0,
         lastUsed: Date? = nil
     ) {
         self.uuid = uuid
@@ -50,13 +46,11 @@ struct Session: Codable, Equatable, Identifiable {
         self.autoAdd = autoAdd
         self.insertMode = insertMode
         self.lastInsertedUuid = lastInsertedUuid
-        self.groupBy = groupBy
-        self.groupLimit = groupLimit
         self.lastUsed = lastUsed
     }
 
     enum CodingKeys: String, CodingKey {
-        case uuid, storePlaylistUuid, feeder, autoAdd, insertMode, lastInsertedUuid, groupBy, groupLimit, lastUsed
+        case uuid, storePlaylistUuid, feeder, autoAdd, insertMode, lastInsertedUuid, lastUsed
     }
 
     // CRITICAL: same rule as Document.init(from:) — decode every defaulted key with
@@ -74,8 +68,6 @@ struct Session: Codable, Equatable, Identifiable {
         autoAdd = try c.decodeIfPresent(Bool.self, forKey: .autoAdd) ?? false
         insertMode = try c.decodeIfPresent(Int32.self, forKey: .insertMode) ?? PlaylistInsertMode.afterLastInserted.rawValue
         lastInsertedUuid = try c.decodeIfPresent(String.self, forKey: .lastInsertedUuid) ?? ""
-        groupBy = try c.decodeIfPresent(Int.self, forKey: .groupBy) ?? 0
-        groupLimit = try c.decodeIfPresent(Int.self, forKey: .groupLimit) ?? 0
         lastUsed = try c.decodeIfPresent(Date.self, forKey: .lastUsed)
     }
 }
@@ -180,8 +172,7 @@ final class SessionStore {
 
     var globalInbox: Session {
         if let existing = session(uuid: Self.globalInboxUuid) { return existing }
-        var session = Session(uuid: Self.globalInboxUuid, storePlaylistUuid: nil, feeder: .allPodcasts)
-        session.groupBy = 1 // release date
+        let session = Session(uuid: Self.globalInboxUuid, storePlaylistUuid: nil, feeder: .allPodcasts)
         upsert(session)
         return session
     }

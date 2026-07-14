@@ -69,7 +69,7 @@ final class SessionStoreDecodeTests: XCTestCase {
     /// out of `Document.init(from:)` and reset the whole store.
     func testSessionMissingDefaultedKeysDecodesWithDefaults() throws {
         var session = try json(for: Session(uuid: "s1", feeder: .podcast(uuid: "p1")))
-        for key in ["storePlaylistUuid", "autoAdd", "insertMode", "lastInsertedUuid", "groupBy", "groupLimit", "lastUsed"] {
+        for key in ["storePlaylistUuid", "autoAdd", "insertMode", "lastInsertedUuid", "lastUsed"] {
             session.removeValue(forKey: key)
         }
         try write(["sessions": [session]])
@@ -128,8 +128,6 @@ final class SessionStoreDecodeTests: XCTestCase {
             autoAdd: true,
             insertMode: PlaylistInsertMode.top.rawValue,
             lastInsertedUuid: "e9",
-            groupBy: 2,
-            groupLimit: 5,
             lastUsed: Date(timeIntervalSince1970: 1_700_000_000)
         )
         try write(["sessions": [json(for: session)]])

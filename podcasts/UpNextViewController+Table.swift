@@ -99,14 +99,6 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         return height
     }
 
-    /// Queue header: the counts/controls row, plus the filter indicator line when a
-    /// filter is active.
-    var queueHeaderHeight: CGFloat {
-        let metrics = UIFontMetrics(forTextStyle: .footnote)
-        let filterRowVisible = FeatureFlag.upNextFilter.enabled && Settings.upNextFilter() != nil && PlaybackManager.shared.queue.upNextCount() > 0
-        return metrics.scaledValue(for: 48) + (filterRowVisible ? 26 : 0)
-    }
-
     func tableView(_ tableView: UITableView, heightForHeaderInSection section: Int) -> CGFloat {
         tableData[section] == .nowPlayingSection ? 8 : .leastNormalMagnitude
     }
