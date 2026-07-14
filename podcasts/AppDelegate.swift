@@ -332,6 +332,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         }
         SessionManager.shared.setup()
         SessionManager.shared.healSessions()
+        InboxManager.shared.setup()
         SessionCloudSync.start()
         DispatchQueue.main.async {
             ForkSettingsSync.shared.start()

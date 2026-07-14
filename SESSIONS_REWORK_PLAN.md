@@ -498,13 +498,34 @@ the Inbox needs the Inbox playlist to exist, so it lands with `InboxManager` in 
 unsubscribed podcast with Inbox members would keep itself alive (`deletePodcastIfUnused` bails on
 `playlistContainsPodcast`).
 
-### Stage 3 — `InboxStore` + the Inbox playlist + `offeredThrough`  · ~450 LOC · blast radius: new files + 1 line in `ServerSyncManager`
-`InboxStore { offeredThrough }` (hand-written decoders + tests from Stage 0's pattern). `InboxManager`:
-find-or-create the Inbox playlist at the constant uuid; first-run bootstrap; the after-sync drain (§1.1);
-batched add/remove primitives that call `markStoreChanged` (§1.6); the explicit ~900 cap with a visible
-warning (§1.2). Extend `SessionCloudSync` to carry `InboxStore` — **`offeredThrough` must sync or §1a is
-inert.** Delete the seen/unseen/watermark/dismissal record types.
-**Verifiable headlessly**: refresh brings a new episode → it's in the playlist; play it → it's gone.
+### Stage 3 — `InboxStore` + the Inbox playlist + `offeredThrough` ✅ **DONE**
+`InboxStore { offeredThrough }` (own file, own decode discipline) and `InboxManager` (the engine),
+`InboxManager.drain()` hooked into `ServerSyncManager.performActionsAfterSync()`, and `SessionCloudSync`
+extended with a `ForkOfferedThrough` record type — without which §1a is inert.
+20 new tests (8 decode, 12 engine). Build green; app 390/390, DataModel 473/475, Server 94/94.
+
+🟢 **The first-run bootstrap turned out to be unnecessary — the rule collapsed.** The plan had a special
+case for first launch (watermark every podcast, seed nothing). But once "never fill a backlog into the
+Inbox" was decided, *first run*, *full sync*, *OPML import* and *a brand-new subscription* are all the same
+situation: **a subscribed podcast with no `offeredThrough` entry**. One rule covers all four — draw the line
+at its newest episode, offer nothing. So there is no bootstrap flag, no first-run branch, and the
+"never hook episode-inserted" hazard is now structurally impossible rather than carefully avoided.
+
+Two things worth remembering:
+- **The watermark is monotonic.** It never retreats, including for values arriving from CloudKit. A lower
+  value can only mean a stale device or a stale record, and honouring it would re-offer episodes already
+  triaged away — the exact flood the whole mechanism exists to prevent. Two tests pin this.
+- **Mark-unseen unplays and unarchives**, and that is load-bearing, not a nicety: any playback progress
+  removes an episode from the Inbox, so re-adding one that still carries progress would be swept straight
+  back out. It is the only recovery path in the model. A test asserts the sweep cannot undo it.
+
+The **unsubscribe cascade** owed from Stage 2 landed here too: `podcastDeleted` clears the podcast's Inbox
+members (membership would otherwise pin it alive — `deletePodcastIfUnused` bails while any playlist contains
+it) and forgets its line, so a re-subscribe draws a fresh one rather than replaying history.
+
+⚠️ **Nothing renders it yet.** The Inbox playlist fills and empties correctly but is invisible: the old
+`EpisodeSeen`/`SessionFeederEngine` model still drives every surface. Both models run in parallel until
+Stage 4 switches the UI over and deletes the old one.
 
 ### Stage 4 — Seen becomes membership  · ~25 LOC added, ~700 deleted · blast radius: ~15 files
 `EpisodeCell.setUnseenIndicator` (§2.4). Fetch the member `Set` once per list load, never per row.

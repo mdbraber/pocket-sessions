@@ -79,6 +79,12 @@ class ServerSyncManager: ServerSyncDelegate {
         PodcastManager.shared.checkForExpiredPodcastsAndCleanup()
         PodcastManager.shared.checkForPendingAndAutoDownloads()
         #if !APPCLIP
+        // Fork: new episodes reach the Inbox HERE — after the refresh AND after the sync, never
+        // during the refresh. Editing the Inbox before the sync lands means editing a stale
+        // playlist, and the last-writer-wins push would clobber another device's triage.
+        // Stock auto-archive has already run by this point too, so an episode that arrives
+        // pre-archived never enters the Inbox at all.
+        InboxManager.shared.drain()
         PlaylistManager.checkForAutoDownloads()
         UserEpisodeManager.checkForPendingUploads()
         UserEpisodeManager.checkForPendingCloudDeletes()

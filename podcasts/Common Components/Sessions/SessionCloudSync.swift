@@ -38,6 +38,12 @@ final class SessionCloudSync {
             self?.enqueueDiff(old: old, new: new)
         }
 
+        // Fork: `offeredThrough` MUST sync, or a second device re-offers episodes the first
+        // has already triaged away. It lives in its own store, so it gets its own tap.
+        InboxStore.shared.cloudDiffHandler = { [weak self] old, new in
+            self?.enqueueInboxDiff(old: old, new: new)
+        }
+
         bootstrapIfNeeded()
     }
 
@@ -61,6 +67,10 @@ final class SessionCloudSync {
 
     private func recordID(dismissal sessionUuid: String, episodeUuid: String) -> CKRecord.ID {
         CKRecord.ID(recordName: "dismiss|\(sessionUuid)|\(episodeUuid)", zoneID: zoneID)
+    }
+
+    private func recordID(offeredThrough podcastUuid: String) -> CKRecord.ID {
+        CKRecord.ID(recordName: "offered|\(podcastUuid)", zoneID: zoneID)
     }
 
     // MARK: - Local → cloud
@@ -88,8 +98,27 @@ final class SessionCloudSync {
                 pending.append(.saveRecord(recordID(dismissal: sessionUuid, episodeUuid: episodeUuid)))
             }
         }
+        for podcastUuid in InboxStore.shared.snapshot.offeredThrough.keys {
+            pending.append(.saveRecord(recordID(offeredThrough: podcastUuid)))
+        }
         engine.state.add(pendingRecordZoneChanges: pending)
         UserDefaults.standard.set(true, forKey: Self.bootstrappedKey)
+    }
+
+    /// Every local `InboxStore` mutation lands here as an old/new snapshot.
+    private func enqueueInboxDiff(old: InboxStoreSnapshot, new: InboxStoreSnapshot) {
+        guard let engine else { return }
+        var pending = [CKSyncEngine.PendingRecordZoneChange]()
+
+        for uuid in new.offeredThrough.keys where old.offeredThrough[uuid] != new.offeredThrough[uuid] {
+            pending.append(.saveRecord(recordID(offeredThrough: uuid)))
+        }
+        for uuid in old.offeredThrough.keys where new.offeredThrough[uuid] == nil {
+            pending.append(.deleteRecord(recordID(offeredThrough: uuid)))
+        }
+
+        guard !pending.isEmpty else { return }
+        engine.state.add(pendingRecordZoneChanges: pending)
     }
 
     /// Every local mutation lands here (on the store queue) as an old/new snapshot.
@@ -173,6 +202,11 @@ final class SessionCloudSync {
             let record = CKRecord(recordType: "ForkDismissal", recordID: recordID)
             record["date"] = date as NSDate
             return record
+        case "offered":
+            guard parts.count == 2, let date = InboxStore.shared.offeredThrough(podcastUuid: parts[1]) else { return nil }
+            let record = CKRecord(recordType: "ForkOfferedThrough", recordID: recordID)
+            record["date"] = date as NSDate
+            return record
         default:
             return nil
         }
@@ -204,6 +238,12 @@ final class SessionCloudSync {
                 break
             }
         }
+
+        if parts.first == "offered", parts.count == 2 {
+            InboxStore.shared.applyRemote {
+                InboxStore.shared.applyRemoteOfferedThrough(podcastUuid: parts[1], date: record["date"] as? Date)
+            }
+        }
     }
 
     private func applyDeletion(recordID: CKRecord.ID) {
@@ -227,6 +267,12 @@ final class SessionCloudSync {
                 SessionStore.shared.setDismissed(false, episodeUuid: parts[2], sessionUuid: parts[1])
             default:
                 break
+            }
+        }
+
+        if parts.first == "offered", parts.count == 2 {
+            InboxStore.shared.applyRemote {
+                InboxStore.shared.applyRemoteOfferedThrough(podcastUuid: parts[1], date: nil)
             }
         }
     }
