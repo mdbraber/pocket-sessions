@@ -885,6 +885,12 @@ class EpisodeDataManager {
         dbQueue.write { db in
             do {
                 try db.executeUpdate("DELETE FROM \(DataManager.episodeTableName) WHERE uuid = ?", values: [episodeUuid])
+                // Fork: cascade to playlist membership. Deleting an episode used to leave its
+                // SJPlaylistEpisode rows behind forever — they can never join to anything, but
+                // they still occupy MAX(episodePosition) and count against the playlist's
+                // 1,000-member ceiling. Up Next rows (playlist_uuid IS NULL) are deliberately
+                // untouched: that queue has its own sync and its own ghost handling.
+                try db.executeUpdate("DELETE FROM \(DataManager.playlistEpisodeTableName) WHERE episodeUuid = ? AND playlist_uuid IS NOT NULL", values: [episodeUuid])
             } catch {
                 FileLog.shared.addMessage("EpisodeDataManager.delete error: \(error)")
             }
@@ -894,6 +900,8 @@ class EpisodeDataManager {
     func deleteAllEpisodesInPodcast(podcastId: Int64, dbQueue: PCDBQueue) {
         dbQueue.write { db in
             do {
+                // Fork: cascade to playlist membership — see `delete(episodeUuid:)`.
+                try db.executeUpdate("DELETE FROM \(DataManager.playlistEpisodeTableName) WHERE playlist_uuid IS NOT NULL AND episodeUuid IN (SELECT uuid FROM \(DataManager.episodeTableName) WHERE podcast_id = ?)", values: [podcastId])
                 try db.executeUpdate("DELETE FROM \(DataManager.episodeTableName) WHERE podcast_id = ?", values: [podcastId])
             } catch {
                 FileLog.shared.addMessage("EpisodeDataManager.deleteAllEpisodesInPodcast error: \(error)")

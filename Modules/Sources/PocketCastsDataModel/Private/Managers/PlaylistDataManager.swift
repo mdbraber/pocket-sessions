@@ -41,7 +41,9 @@ class PlaylistDataManager {
         var count = 0
         dbQueue.read { db in
             do {
-                let query = includeDeleted ? "SELECT COUNT(*) from \(DataManager.playlistsTableName)" : "SELECT COUNT(*) from \(DataManager.playlistsTableName) WHERE wasDeleted = 0"
+                let query = includeDeleted
+                    ? "SELECT COUNT(*) from \(DataManager.playlistsTableName) WHERE \(Self.visiblePlaylistClause)"
+                    : "SELECT COUNT(*) from \(DataManager.playlistsTableName) WHERE wasDeleted = 0 AND \(Self.visiblePlaylistClause)"
                 let resultSet = try db.executeQuery(query, values: nil)
                 defer { resultSet.close() }
 
@@ -91,18 +93,34 @@ class PlaylistDataManager {
         return exists
     }
 
+    /// Fork: the reserved Inbox playlist is hidden from every UI surface that enumerates
+    /// playlists (the Playlists tab, the add-to-playlist chooser, auto-download settings,
+    /// CarPlay, Siri, the Watch, the widget, playlist folders — around twenty of them).
+    ///
+    /// Filtering here rather than at each call site means surfaces upstream adds later are
+    /// covered for free. It is safe because sync does NOT enumerate through these APIs: it
+    /// uses `allUnsyncedPlaylists`, so the Inbox still syncs normally while being invisible.
+    /// `findBy(uuid:)` is likewise unfiltered, so the fork can always fetch the Inbox itself.
+    private static let visiblePlaylistClause = "uuid != '\(DataManager.inboxPlaylistUuid)'"
+
     func allPlaylists(includeDeleted: Bool, dbQueue: PCDBQueue) -> [EpisodeFilter] {
-        let query = includeDeleted ? "SELECT * from \(DataManager.playlistsTableName) ORDER BY sortPosition ASC" : "SELECT * from \(DataManager.playlistsTableName) WHERE wasDeleted = 0 ORDER BY sortPosition ASC"
+        let query = includeDeleted
+            ? "SELECT * from \(DataManager.playlistsTableName) WHERE \(Self.visiblePlaylistClause) ORDER BY sortPosition ASC"
+            : "SELECT * from \(DataManager.playlistsTableName) WHERE wasDeleted = 0 AND \(Self.visiblePlaylistClause) ORDER BY sortPosition ASC"
         return allPlaylists(query: query, values: nil, dbQueue: dbQueue)
     }
 
     func allSmartPlaylists(includeDeleted: Bool, dbQueue: PCDBQueue) -> [EpisodeFilter] {
-        let query = includeDeleted ? "SELECT * from \(DataManager.playlistsTableName) WHERE manual = 0 ORDER BY sortPosition ASC" : "SELECT * from \(DataManager.playlistsTableName) WHERE manual = 0 AND wasDeleted = 0 ORDER BY sortPosition ASC"
+        let query = includeDeleted
+            ? "SELECT * from \(DataManager.playlistsTableName) WHERE manual = 0 AND \(Self.visiblePlaylistClause) ORDER BY sortPosition ASC"
+            : "SELECT * from \(DataManager.playlistsTableName) WHERE manual = 0 AND wasDeleted = 0 AND \(Self.visiblePlaylistClause) ORDER BY sortPosition ASC"
         return allPlaylists(query: query, values: nil, dbQueue: dbQueue)
     }
 
     func allManualPlaylists(includeDeleted: Bool, dbQueue: PCDBQueue) -> [EpisodeFilter] {
-        let query = includeDeleted ? "SELECT * from \(DataManager.playlistsTableName) WHERE manual = 1 ORDER BY sortPosition ASC" : "SELECT * from \(DataManager.playlistsTableName) WHERE manual = 1 AND wasDeleted = 0 ORDER BY sortPosition ASC"
+        let query = includeDeleted
+            ? "SELECT * from \(DataManager.playlistsTableName) WHERE manual = 1 AND \(Self.visiblePlaylistClause) ORDER BY sortPosition ASC"
+            : "SELECT * from \(DataManager.playlistsTableName) WHERE manual = 1 AND wasDeleted = 0 AND \(Self.visiblePlaylistClause) ORDER BY sortPosition ASC"
         return allPlaylists(query: query, values: nil, dbQueue: dbQueue)
     }
 
@@ -523,6 +541,74 @@ class PlaylistDataManager {
     }
 
     // MARK: - Fork: smart playlist custom-order overlay
+
+    /// Fork: apply a whole episode order in ONE pass.
+    ///
+    /// Sync import used to call `moveEpisode` once per episode, and `moveEpisode` reloads the
+    /// playlist and rewrites EVERY row's position — so importing an n-member playlist cost
+    /// O(n²) updates (a 200-member playlist ≈ 40,000 UPDATEs on any sync where the order
+    /// changed). This does it in one transaction: read the rows once, sort, write each row's
+    /// position at most once — and write nothing at all if the order already matches.
+    ///
+    /// Rows the server didn't name keep their relative order, after the ones it did.
+    func applyEpisodeOrder(_ orderedUuids: [String], for playlist: EpisodeFilter, dbQueue: PCDBQueue) {
+        guard !orderedUuids.isEmpty else { return }
+
+        dbQueue.write { db in
+            do {
+                let rs = try db.executeQuery("SELECT id, episodeUuid FROM \(DataManager.playlistEpisodeTableName) WHERE playlist_uuid = ? ORDER BY episodePosition ASC", values: [playlist.uuid])
+                var rows = [(id: Int64, uuid: String)]()
+                while rs.next() {
+                    rows.append((id: rs.longLongInt(forColumn: "id"), uuid: DBUtils.nonNilStringFromColumn(resultSet: rs, columnName: "episodeUuid")))
+                }
+                rs.close()
+                guard !rows.isEmpty else { return }
+
+                var rank = [String: Int]()
+                for (index, uuid) in orderedUuids.enumerated() where rank[uuid] == nil {
+                    rank[uuid] = index
+                }
+
+                let sorted = rows.enumerated().sorted { lhs, rhs in
+                    switch (rank[lhs.element.uuid], rank[rhs.element.uuid]) {
+                    case let (left?, right?): return left < right
+                    case (nil, _?): return false // unranked rows sink below ranked ones
+                    case (_?, nil): return true
+                    case (nil, nil): return lhs.offset < rhs.offset // stable
+                    }
+                }
+
+                // Already in this order? Then the whole import is a no-op — don't churn the DB.
+                guard sorted.map(\.element.uuid) != rows.map(\.uuid) else { return }
+
+                for (position, row) in sorted.enumerated() {
+                    try db.executeUpdate("UPDATE \(DataManager.playlistEpisodeTableName) SET episodePosition = ? WHERE id = ?", values: [position, row.element.id])
+                }
+            } catch {
+                FileLog.shared.addMessage("PlaylistDataManager.applyEpisodeOrder error: \(error)")
+            }
+        }
+    }
+
+    /// Fork: just the membership of a manual playlist, as a Set — no `Episode` objects.
+    /// This is what the unseen dot reads: fetched ONCE per list load and checked per row.
+    /// `playlistEpisodes(for:)` hydrates full Episodes, which is pure waste when all you
+    /// want is "is this uuid a member". Hits the (playlist_uuid, episodeUuid) composite index.
+    func playlistEpisodeUuids(for playlistUuid: String, dbQueue: PCDBQueue) -> Set<String> {
+        var uuids = Set<String>()
+        dbQueue.read { db in
+            do {
+                let rs = try db.executeQuery("SELECT episodeUuid FROM \(DataManager.playlistEpisodeTableName) WHERE playlist_uuid = ?", values: [playlistUuid])
+                defer { rs.close() }
+                while rs.next() {
+                    uuids.insert(DBUtils.nonNilStringFromColumn(resultSet: rs, columnName: "episodeUuid"))
+                }
+            } catch {
+                FileLog.shared.addMessage("PlaylistDataManager.playlistEpisodeUuids error: \(error)")
+            }
+        }
+        return uuids
+    }
 
     /// Episode uuids that have a position row for this playlist — the "Lineup" — in order.
     func positionedEpisodeUuids(for playlist: EpisodeFilter, dbQueue: PCDBQueue) -> [String] {

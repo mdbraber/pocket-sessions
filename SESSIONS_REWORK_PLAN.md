@@ -468,16 +468,35 @@ Notable collapses (the OFF paths were resurrecting stock code, exactly as predic
 keeps the upstream diff smaller than deleting them would. `UpNextViewController+Table.queueHeaderHeight` is
 fork code and now dead; sweep it in Stage 11.
 
-### Stage 2 — DataModel foundations  · ~200 LOC · blast radius: DataModel + Server module
-1. `DataManager.playlistEpisodeUuids(for:) -> Set<String>` (template: `positionedEpisodeUuids`, `PlaylistDataManager:521`).
-2. `PlaylistQueryBuilder.query(extraWhere:)` (§2.2, mirrors `searchTerm` at `:274`).
-3. Reserved Inbox uuid constant + chokepoint exclusion in `allPlaylists`/`allManualPlaylists`/`allSmartPlaylists`/`count` (§1.3, §1.4).
-4. `updateEpisodePositionsIfNeeded`: O(n²) → one batch write, **and skip it for the Inbox** (see Status).
-5. Cascade: drop `SJPlaylistEpisode` rows on episode delete / podcast unsubscribe (§2.3).
-6. Delete `showArchivedEpisodes`, revert its 6 readers to stock `false` (§2.6).
-Verify with `DBTestCase` + the existing `PlaylistQueryBuilderTests` (879 LOC — extend it).
-**Highest-risk stage**: (4) and (5) touch shared sync/cleanup paths. Test hard.
-*Note:* fixes 4 and 5 from Part 1 (`add()` dirty-marking, decode landmine) are already done — see Status.
+### Stage 2 — DataModel foundations ✅ **DONE**
+1. ✅ `DataManager.playlistEpisodeUuids(for:) -> Set<String>` — membership without hydrating Episodes.
+2. ✅ `PlaylistQueryBuilder.query(extraWhere:)` + a **separate** `playlistEpisodes(for:matching:arguments:)`
+   overload. The stock 3-arg signature is left untouched on purpose: `SyncTaskPlaylistOrderingTests`
+   subclasses `DataManager` and overrides it, and every added parameter widens the upstream diff.
+3. ✅ `DataManager.inboxPlaylistUuid` (a fixed UUID constant) + the chokepoint in `PlaylistDataManager`:
+   `allPlaylists` / `allManualPlaylists` / `allSmartPlaylists` / `count` all exclude it. `allUnsyncedPlaylists`
+   and `findBy(uuid:)` deliberately do **not** — so the Inbox syncs and the fork can still fetch it.
+4. ✅ `applyEpisodeOrder(_:for:)` — one pass, writes nothing when the order already matches. Sync import now
+   calls it instead of `moveEpisode` per episode (O(n²) → O(n)), and **skips the Inbox entirely**.
+5. ✅ Cascade on episode delete + delete-all-in-podcast, scoped to `playlist_uuid IS NOT NULL` so the Up Next
+   queue (which shares the table and has its own sync) is untouched.
+6. ⏭️ **`showArchivedEpisodes` moved to Stage 8.** Deleting it now would leave manual playlists unable to
+   show archived episodes until the preset picker exists — the same regression window that made me defer
+   `episodesFunnel`. It is a display column; it should die *with* the funnel, not before it.
+
+12 new tests in `Modules/Tests/PocketCastsDataModelTests/InboxPlaylistFoundationsTests.swift`, each run
+against both the SQL and GRDB backends. DataModel 473/475 (the 2 pre-existing transcript failures),
+Server 94/94, app 370/370, build green.
+
+⚠️ **Gotcha found while testing:** a bare `EpisodeFilter()` is **not** a match-everything smart playlist.
+`filterDownloading` is `@GRDBIgnore`-hardcoded `true` while `filterDownloaded`/`filterNotDownloaded` default
+to `false`, so the builder emits a download-status clause that matches almost nothing. All three on (or all
+three off) is what leaves the block unconstrained. This will bite the preset query builder in Stage 7.
+
+**Still owed from this stage:** the *unsubscribe* half of the cascade. Removing a podcast's episodes from
+the Inbox needs the Inbox playlist to exist, so it lands with `InboxManager` in Stage 3. Until then, an
+unsubscribed podcast with Inbox members would keep itself alive (`deletePodcastIfUnused` bails on
+`playlistContainsPodcast`).
 
 ### Stage 3 — `InboxStore` + the Inbox playlist + `offeredThrough`  · ~450 LOC · blast radius: new files + 1 line in `ServerSyncManager`
 `InboxStore { offeredThrough }` (hand-written decoders + tests from Stage 0's pattern). `InboxManager`:

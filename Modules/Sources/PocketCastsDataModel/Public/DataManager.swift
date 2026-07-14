@@ -9,6 +9,13 @@ public class DataManager {
     public static let userEpisodeTableName = "SJUserEpisode"
     public static let playlistsTableName = "SJFilteredPlaylist"
     public static let playlistEpisodeTableName = "SJPlaylistEpisode"
+
+    /// Fork: the Inbox is a manual playlist whose membership means "unseen". Its uuid is a
+    /// compile-time constant rather than a stored value for two reasons: this module has to
+    /// know it in order to hide it from the playlist-enumeration APIs (below), and a constant
+    /// makes find-or-create idempotent — two devices creating the Inbox independently land on
+    /// the same uuid and sync converges, where a random uuid would leave two rival Inboxes.
+    public static let inboxPlaylistUuid = "6F2A9C3E-7B41-4D58-93A6-1E0C5B8D2F47"
     public static let upNextChangesTableName = "UpNextChanges"
     public static let folderTableName = "Folder"
 
@@ -992,6 +999,23 @@ public class DataManager {
         return episodeManager.findPlaylistEpisodesWhere(query: query, arguments: nil, dbQueue: dbQueue)
     }
 
+    /// Fork: the playlist's own rules AND an extra predicate — the Filter Preset hook. A
+    /// preset knows nothing about the page it renders on; the page ANDs the preset's
+    /// fragment onto its base query. Deliberately a separate overload so the stock
+    /// signature above stays untouched (it is overridden in tests, and every extra
+    /// parameter widens the upstream diff).
+    public func playlistEpisodes(for playlist: EpisodeFilter, matching extraWhere: String, arguments: [Any]? = nil, limit: Int? = nil, sortType: PlaylistSort? = nil) -> [Episode] {
+        let query = PlaylistQueryBuilder.query(
+            clause: .episode,
+            for: playlist,
+            episodeUuidToAdd: nil,
+            limit: limit ?? EpisodeDataManager.Constants.Limits.maxPlaylistItems,
+            sortType: sortType,
+            extraWhere: extraWhere
+        )
+        return episodeManager.findPlaylistEpisodesWhere(query: query, arguments: arguments, dbQueue: dbQueue)
+    }
+
     public func deleteDeletedPlaylists() {
         playlistManager.deleteDeletedPlaylists(dbQueue: dbQueue)
     }
@@ -1060,6 +1084,17 @@ public class DataManager {
 
     public func deleteAllEpisodes(in playlist: EpisodeFilter) {
         playlistManager.deleteAllEpisodes(in: playlist, dbQueue: dbQueue)
+    }
+
+    /// Fork: apply a whole episode order in one pass — see `PlaylistDataManager.applyEpisodeOrder`.
+    public func applyEpisodeOrder(_ orderedUuids: [String], for playlist: EpisodeFilter) {
+        playlistManager.applyEpisodeOrder(orderedUuids, for: playlist, dbQueue: dbQueue)
+    }
+
+    /// Fork: a manual playlist's membership as a Set, without hydrating Episode objects.
+    /// The unseen dot fetches this once per list load — never once per row.
+    public func playlistEpisodeUuids(for playlistUuid: String) -> Set<String> {
+        playlistManager.playlistEpisodeUuids(for: playlistUuid, dbQueue: dbQueue)
     }
 
     // Fork: smart playlist custom-order overlay (Lineup + New inbox)

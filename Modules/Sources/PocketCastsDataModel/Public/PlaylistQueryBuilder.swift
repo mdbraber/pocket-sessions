@@ -37,7 +37,8 @@ public class PlaylistQueryBuilder {
         searchTerm: String? = nil,
         limit: Int = 0,
         shouldShowArchived: Bool = false,
-        sortType: PlaylistSort? = nil
+        sortType: PlaylistSort? = nil,
+        extraWhere: String? = nil
     ) -> String {
 
         let sortType = sortType?.rawValue ?? playlist.sortType
@@ -270,6 +271,17 @@ public class PlaylistQueryBuilder {
         }
 
         PlaylistQueryBuilder.removeEmptyFilterGroups(from: &queryString)
+
+        // Fork: an extra predicate ANDed onto the playlist's own rules — this is how a
+        // Filter Preset composes with a smart playlist. The preset knows nothing about the
+        // page; the page ANDs the preset's fragment onto its base query. Applied after
+        // removeEmptyFilterGroups so its parens are never mistaken for an empty group, and
+        // before the search term, which must then read as AND rather than WHERE.
+        if let extraWhere, !extraWhere.isEmpty {
+            queryString += " \(mainQueryHasWhere ? "AND" : "WHERE") (\(extraWhere))"
+            mainQueryHasWhere = true
+        }
+
         if let searchTerm {
             let searchClause = mainQueryHasWhere ? "AND" : "WHERE"
             let safeSearchTerm = searchTerm.uppercased().replacingOccurrences(of: "'", with: "''")

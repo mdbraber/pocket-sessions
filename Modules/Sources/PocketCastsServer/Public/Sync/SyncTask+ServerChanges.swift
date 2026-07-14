@@ -393,16 +393,17 @@ extension SyncTask {
     private func updateEpisodePositionsIfNeeded(for playlistItem: Api_SyncUserPlaylist, playlist: EpisodeFilter) {
         guard playlist.manual else { return }
 
+        // Fork: the Inbox is a SET — membership means "unseen" and its stored order carries no
+        // meaning. It also goes dirty on nearly every refresh, so importing an order for it
+        // would be constant churn for nothing.
+        guard playlist.uuid != DataManager.inboxPlaylistUuid else { return }
+
         let orderedEpisodeUuids = playlistItem.episodeOrder.isEmpty ? playlistItem.episodes.map { $0.episode } : playlistItem.episodeOrder
         guard !orderedEpisodeUuids.isEmpty else { return }
 
-        var processedUuids = Set<String>()
-
-        for (index, episodeUuid) in orderedEpisodeUuids.enumerated() {
-            guard !episodeUuid.isEmpty, processedUuids.insert(episodeUuid).inserted else { continue }
-
-            DataManager.sharedManager.moveEpisode(episodeUuid, in: playlist, to: index)
-        }
+        // Fork: one batched pass. This was a `moveEpisode` per episode, and each of those
+        // rewrites every row's position — O(n²) per import.
+        DataManager.sharedManager.applyEpisodeOrder(orderedEpisodeUuids.filter { !$0.isEmpty }, for: playlist)
     }
 
     func isPlayerPlaying(episode: Episode) -> Bool {
