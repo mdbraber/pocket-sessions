@@ -610,9 +610,41 @@ dropping it now would just hide information. It goes with the funnel.
 *(Note: `MediaExporterResourceLoaderDelegateRetryTests` is flaky — it talks to `example.com` and fails
 intermittently. Unrelated; passes on retry.)*
 
-### Stage 7 — `FilterPreset` model + query builder  · ~350 LOC + ~200 test LOC · blast radius: new files only
-Pure function `(FilterPreset) -> (String, [Any])` in the **app target** (§2.2 — no module change).
-Correlated `EXISTS`/`NOT EXISTS`, never `NOT IN`. Genuinely unit-testable with zero UI.
+### Stage 7 — `FilterPreset` model + store + query builder ✅ **DONE**
+`FilterPreset` + `FilterPresetQuery` + `FilterPresetStore`, all new files, plus `FilterPresetStore` wired
+into `SessionCloudSync` (a `ForkFilterPreset` record) — so all three stores now sync. **28 new tests**
+(19 query, 9 store). App 421/421, DataModel 473/475, Server 94/94, build green.
+
+### 🔶 The rule model changed: tri-state, not paired bools
+The spec's field list (`starred`, `seen`/`unseen`, `includeArchived`, `audioVideo`) was inherited from
+`EpisodeFilter`, and it carried three different shapes for the same idea. Two problems, both real:
+
+1. **A lone `starred` bool cannot say "not starred".** It can only say "starred only" or "don't care".
+2. **A pair of bools with all-on/all-off = unconstrained has FOUR states for THREE meanings** — "any" gets
+   two different encodings. Two encodings of the same fact is exactly the drift hazard we removed elsewhere
+   (the partition *and* the dot).
+
+So: **binary axes are `Rule` = `Bool?`** — nil = any, true = must, false = must not. `starred`, `archived`,
+`unseen`, `inSession` all read the same way, and "archived only" / "not starred" / "seen only" become
+sayable. **Multi-value axes stay `Set`s** (playing status, download status) because "unplayed OR in-progress"
+is real and a tri-state cannot express it; empty *or* full means any, so "all switches on" in the editor
+reads as "I don't care".
+
+This also collapsed the query builder to two helpers with no special cases.
+
+**Also worth knowing:** the builder does need one parameter after all — a **column prefix**. It is mechanical,
+not page context: the podcast page runs `SELECT * FROM SJEpisode` (bare columns) while the smart-playlist
+builder runs `SELECT episode.* FROM SJEpisode episode LEFT JOIN SJPodcast podcast`, where a bare `uuid` is
+**ambiguous** (`SJPodcast` has one too) and the correlated subqueries would fail outright. The preset still
+knows nothing about the *page*.
+
+### 📌 Scope note for Stage 8 (from the user)
+**The preset picker belongs on EVERY episode list**: the podcast page's Episodes tab, a smart-playlist page,
+a manual playlist, **and the Session tab**. The one exception is the **global Inbox tab**, which gets sort
+and group only — it is already a filtered view (everything unseen), so a preset on top is redundant and
+"All Episodes" is a nonsense label there.
+*(This widens the original spec, which only put the picker on the Episodes tab. On the Session tab the preset
+is a pure view lens over the lineup — it never reorders or rewrites it.)*
 
 ### Stage 8 — Preset picker + delete the funnel  · ~250 LOC added, ~200 deleted · blast radius: 6 files
 The single labelled control. Delete `EpisodeStateFilter.swift` (155 LOC), its 8 call sites, the

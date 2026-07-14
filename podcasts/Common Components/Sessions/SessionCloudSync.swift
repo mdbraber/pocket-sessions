@@ -44,6 +44,10 @@ final class SessionCloudSync {
             self?.enqueueInboxDiff(old: old, new: new)
         }
 
+        FilterPresetStore.shared.cloudDiffHandler = { [weak self] old, new in
+            self?.enqueuePresetDiff(old: old, new: new)
+        }
+
         bootstrapIfNeeded()
     }
 
@@ -55,6 +59,10 @@ final class SessionCloudSync {
 
     private func recordID(offeredThrough podcastUuid: String) -> CKRecord.ID {
         CKRecord.ID(recordName: "offered|\(podcastUuid)", zoneID: zoneID)
+    }
+
+    private func recordID(preset uuid: String) -> CKRecord.ID {
+        CKRecord.ID(recordName: "preset|\(uuid)", zoneID: zoneID)
     }
 
     // MARK: - Local → cloud
@@ -70,6 +78,9 @@ final class SessionCloudSync {
         }
         for podcastUuid in InboxStore.shared.snapshot.offeredThrough.keys {
             pending.append(.saveRecord(recordID(offeredThrough: podcastUuid)))
+        }
+        for preset in FilterPresetStore.shared.snapshot.presets {
+            pending.append(.saveRecord(recordID(preset: preset.uuid)))
         }
         engine.state.add(pendingRecordZoneChanges: pending)
         UserDefaults.standard.set(true, forKey: Self.bootstrappedKey)
@@ -113,6 +124,24 @@ final class SessionCloudSync {
         engine.state.add(pendingRecordZoneChanges: pending)
     }
 
+    /// Every local `FilterPresetStore` mutation lands here as an old/new snapshot.
+    private func enqueuePresetDiff(old: FilterPresetStoreSnapshot, new: FilterPresetStoreSnapshot) {
+        guard let engine else { return }
+        var pending = [CKSyncEngine.PendingRecordZoneChange]()
+
+        let oldPresets = Dictionary(uniqueKeysWithValues: old.presets.map { ($0.uuid, $0) })
+        let newPresets = Dictionary(uniqueKeysWithValues: new.presets.map { ($0.uuid, $0) })
+        for (uuid, preset) in newPresets where oldPresets[uuid] != preset {
+            pending.append(.saveRecord(recordID(preset: uuid)))
+        }
+        for uuid in oldPresets.keys where newPresets[uuid] == nil {
+            pending.append(.deleteRecord(recordID(preset: uuid)))
+        }
+
+        guard !pending.isEmpty else { return }
+        engine.state.add(pendingRecordZoneChanges: pending)
+    }
+
     /// Builds the current record for a pending ID — nil if the item vanished since.
     private func record(for recordID: CKRecord.ID) -> CKRecord? {
         let parts = recordID.recordName.split(separator: "|", maxSplits: 2).map(String.init)
@@ -128,6 +157,12 @@ final class SessionCloudSync {
             guard parts.count == 2, let date = InboxStore.shared.offeredThrough(podcastUuid: parts[1]) else { return nil }
             let record = CKRecord(recordType: "ForkOfferedThrough", recordID: recordID)
             record["date"] = date as NSDate
+            return record
+        case "preset":
+            guard parts.count == 2, let preset = FilterPresetStore.shared.preset(uuid: parts[1]),
+                  let payload = try? JSONEncoder().encode(preset) else { return nil }
+            let record = CKRecord(recordType: "ForkFilterPreset", recordID: recordID)
+            record["payload"] = payload as NSData
             return record
         default:
             return nil
@@ -154,6 +189,14 @@ final class SessionCloudSync {
                 InboxStore.shared.applyRemoteOfferedThrough(podcastUuid: parts[1], date: record["date"] as? Date)
             }
         }
+
+        if parts.first == "preset", parts.count == 2,
+           let payload = record["payload"] as? Data,
+           let preset = try? JSONDecoder().decode(FilterPreset.self, from: payload) {
+            FilterPresetStore.shared.applyRemote {
+                FilterPresetStore.shared.upsert(preset)
+            }
+        }
     }
 
     private func applyDeletion(recordID: CKRecord.ID) {
@@ -171,6 +214,12 @@ final class SessionCloudSync {
         if parts.first == "offered", parts.count == 2 {
             InboxStore.shared.applyRemote {
                 InboxStore.shared.applyRemoteOfferedThrough(podcastUuid: parts[1], date: nil)
+            }
+        }
+
+        if parts.first == "preset", parts.count == 2 {
+            FilterPresetStore.shared.applyRemote {
+                FilterPresetStore.shared.delete(uuid: parts[1])
             }
         }
     }

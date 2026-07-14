@@ -1914,6 +1914,17 @@
 /* Fork: how many of the episodes on screen are still unseen (in the Inbox). %1$@ is the count. */
 "inbox_unseen_count_format" = "%1$@ unseen";
 
+/* Fork: the built-in Filter Presets — the unfiltered default. */
+"filter_preset_all_episodes" = "All Episodes";
+/* Fork: built-in Filter Preset — episodes still in the Inbox. */
+"filter_preset_unseen" = "Unseen";
+/* Fork: built-in Filter Preset — downloaded episodes only. */
+"filter_preset_downloaded" = "Downloaded";
+/* Fork: built-in Filter Preset — partially played episodes. */
+"filter_preset_in_progress" = "In Progress";
+/* Fork: built-in Filter Preset — starred episodes only. */
+"filter_preset_starred" = "Starred";
+
 /* Informational message informing the user that no episodes are being displayed because they're all archived. '%1$@' is a placeholder for the number of episodes. */
 "podcast_archived_msg" = "All %1$@ episodes of this podcast have been archived";
 
