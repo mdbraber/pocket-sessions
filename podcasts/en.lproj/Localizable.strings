@@ -5313,7 +5313,7 @@
 "up_next_filter_type_header" = "Type";
 
 /* Playlist header button that starts a playback session from the playlist (replaces 'Play All' while sessions are enabled) */
-"playlist_play_as_session" = "Play as Session";
+"playlist_play_as_session" = "Play Session";
 
 /* Second line of the session header in Up Next. %1$@ is the episode count, %2$@ the remaining time */
 "playback_session_meta" = "%1$@ episodes · %2$@ left";

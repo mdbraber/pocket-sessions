@@ -33,7 +33,11 @@ enum SessionLinking {
             PlaybackManager.shared.removeIfPlayingOrQueued(episode: episode, fireNotification: true, userInitiated: true)
         }
 
-        let containing = SessionStore.shared.sessions.filter { SessionFeederEngine.storeMemberUuids(for: $0).contains(episode.uuid) }
+        // ONE query for which playlists hold this episode, then map to sessions — the old
+        // `sessions.filter { storeMemberUuids(for:) … }` ran a DB query PER session on every remove
+        // swipe, which is what made the swipe feel slow.
+        let holdingPlaylists = Set(DataManager.sharedManager.manualPlaylistUUIDs(for: episode.uuid))
+        let containing = SessionStore.shared.sessions.filter { $0.storePlaylistUuid.map(holdingPlaylists.contains) ?? false }
         guard !containing.isEmpty else {
             removeFromQueue()
             completion?()
@@ -68,12 +72,18 @@ enum SessionLinking {
             PlaybackManager.shared.bulkRemoveQueued(uuids: episodeUuids)
         }
 
-        // sessionUuid -> the selected episodes it holds.
+        // sessionUuid -> the selected episodes it holds. One query per selected episode (mapping it
+        // to its playlists), not one per session — the latter was O(sessions) DB hits per swipe.
         var membership = [String: [String]]()
-        let selected = Set(episodeUuids)
-        for session in SessionStore.shared.sessions {
-            let held = SessionFeederEngine.storeMemberUuids(for: session).filter { selected.contains($0) }
-            if !held.isEmpty { membership[session.uuid] = held }
+        let storeToSession = Dictionary(
+            SessionStore.shared.sessions.compactMap { s in s.storePlaylistUuid.map { ($0, s.uuid) } },
+            uniquingKeysWith: { first, _ in first }
+        )
+        for episodeUuid in episodeUuids {
+            for playlistUuid in DataManager.sharedManager.manualPlaylistUUIDs(for: episodeUuid) {
+                guard let sessionUuid = storeToSession[playlistUuid] else { continue }
+                membership[sessionUuid, default: []].append(episodeUuid)
+            }
         }
         guard !membership.isEmpty else {
             removeFromQueue()

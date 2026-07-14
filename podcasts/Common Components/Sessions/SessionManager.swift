@@ -218,10 +218,19 @@ class SessionManager {
     /// This deliberately does NOT make the episode unseen again. You saw it and you decided
     /// about it; taking it back out of a lineup is not un-deciding. (Dismissals are gone — with
     /// membership as the only state, a removal leaves no record to recover from.)
+    ///
+    /// If the episode being removed is the one currently playing, playback advances off it —
+    /// otherwise deleting the store row does nothing visible and the episode keeps playing, which
+    /// reads as "remove didn't work". Every remove path funnels through here, so fixing it once
+    /// covers the Up Next card, the Session tabs, and multi-select alike.
     func removeFromLineup(episodeUuids: [String], session: Session) {
         guard let store = store(for: session) else { return }
-        DataManager.sharedManager.deleteEpisodes(episodeUuids, from: store)
+        DataManager.sharedManager.deleteEpisodes(episodeUuids, from: store) // already marks the playlist dirty
         NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged, object: store)
+
+        if let playing = PlaybackManager.shared.currentEpisode(), episodeUuids.contains(playing.uuid) {
+            PlaybackManager.shared.removeIfPlayingOrQueued(episode: playing, fireNotification: true, userInitiated: true)
+        }
     }
 
     /// Fork: the "Add to Session" verb. Where episodes land is governed by the
