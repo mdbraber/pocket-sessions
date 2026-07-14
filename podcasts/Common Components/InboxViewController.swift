@@ -209,8 +209,11 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
     /// uses, offered once the reader reaches the bottom of the stream.
     private func setupClearFooter() {
         let host = UIHostingController(rootView: AnyView(
-            InboxClearPill { [weak self] in self?.clearTapped() }
-                .environmentObject(Theme.sharedTheme)
+            InboxClearPill(
+                action: { [weak self] in self?.markAllSeen() },
+                longPress: { [weak self] in self?.clearTapped() }
+            )
+            .environmentObject(Theme.sharedTheme)
         ))
         host.view.backgroundColor = .clear
         addChild(host)
@@ -298,8 +301,14 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
 
     // MARK: - Nav actions
 
+    /// The primary Inbox action: mark every episode seen. Tapping the pill always does this — the
+    /// options (incl. Archive All) live behind a long press, so the common case is a single tap.
+    private func markAllSeen() {
+        InboxManager.shared.markSeen(episodeUuids: allEpisodes.map(\.uuid))
+    }
+
     @objc private func clearTapped() {
-        let optionsPicker = OptionsPicker(title: L10n.clear.localizedUppercase)
+        let optionsPicker = OptionsPicker(title: L10n.inboxClearKeepAll.localizedUppercase)
 
         // Mark All as Seen: the soft clear — one DELETE and one notification, however many
         // episodes. Nothing else about them moves.
@@ -718,16 +727,19 @@ extension InboxViewController: PCSearchBarDelegate {
 private struct InboxClearPill: View {
     @EnvironmentObject var theme: Theme
     let action: () -> Void
+    let longPress: () -> Void
 
     var body: some View {
         InboxPillButton(
             icon: Image(systemName: "eye.slash"),
-            title: L10n.clear,
+            title: L10n.inboxClearKeepAll,
             color: theme.primaryUi01,
             background: theme.primaryInteractive01,
             stroke: nil,
             action: action
         )
         .padding(16)
+        // Long-press surfaces the fuller set (Mark All as Seen / Archive All).
+        .onLongPressGesture { longPress() }
     }
 }

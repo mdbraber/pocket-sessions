@@ -136,26 +136,7 @@ enum TriageSwipes {
         }
 
         actions.append(seenToggle(for: episode, reload: reload))
-        actions.append(markPlayedAction(for: episode, reload: reload))
         return actions
-    }
-
-    /// Mark as Played — sits left of Mark as Seen on the right swipe. Marking played
-    /// is a decisive triage: it leaves every inbox (and any session lineup) at once.
-    static func markPlayedAction(for episode: BaseEpisode, reload: @escaping () -> Void) -> SwipeAction {
-        let uuid = episode.uuid
-        let action = SwipeAction(style: .default, title: nil) { action, _ in
-            if let fresh = DataManager.sharedManager.findBaseEpisode(uuid: uuid) {
-                EpisodeManager.markAsPlayed(episode: fresh, fireNotification: true)
-            }
-            reload()
-            action.fulfill(with: .reset)
-        }
-        action.image = UIImage(named: "episode-markasplayed")
-        action.backgroundColor = ThemeColor.support02()
-        action.accessibilityLabel = L10n.markPlayedShort
-        action.hidesWhenSelected = true
-        return action
     }
 
     static func seenToggle(for episode: BaseEpisode, reload: @escaping () -> Void) -> SwipeAction {
