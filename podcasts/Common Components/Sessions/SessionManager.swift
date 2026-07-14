@@ -304,6 +304,17 @@ class SessionManager {
         let episodes = inSessionUuids.compactMap { DataManager.sharedManager.findEpisode(uuid: $0) }
         FileLog.shared.addMessage("Backfill: \(SessionStore.shared.sessions.count) sessions, \(episodes.count)/\(inSessionUuids.count) in-session episodes resolved")
         guard !episodes.isEmpty else { return 0 }
+
+        // Ensure a session exists for any smart playlist that would actually receive episodes —
+        // created here, on the explicit Backfill, not on plain open. (Empty-overlap smart filters
+        // used only for browsing don't get one.)
+        for playlist in DataManager.sharedManager.allSmartPlaylists(includeDeleted: false)
+        where SessionStore.shared.session(forSmartPlaylistFeeder: playlist.uuid) == nil {
+            if episodes.contains(where: { feeder(.smartPlaylist(uuid: playlist.uuid), coversPodcast: $0.podcastUuid) }) {
+                _ = findOrCreateSession(forSmartPlaylist: playlist)
+            }
+        }
+
         var added = 0
         for session in SessionStore.shared.sessions where session.uuid != SessionStore.globalInboxUuid {
             guard let store = store(for: session) else {

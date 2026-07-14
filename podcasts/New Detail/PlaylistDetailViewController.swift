@@ -183,14 +183,6 @@ class PlaylistDetailViewController: PCViewController, UIScrollViewDelegate {
 
         super.viewDidLoad()
 
-        // Fork: a smart playlist always has a session, minted the first time it's opened (like a
-        // podcast gets one on first use). Guarantees its Session tab is backed by a real session so
-        // forward adds and Backfill have somewhere to land — the "All" session no longer silently
-        // doesn't exist.
-        if viewModel.isLensPage {
-            SessionManager.shared.findOrCreateSession(forSmartPlaylist: viewModel.playlist)
-        }
-
         setupContent()
         setupNavigation()
         setupRefreshControl()
