@@ -5454,6 +5454,15 @@
 /* Remove from Session behaviour: prompt which session(s) to remove from */
 "session_remove_mode_ask" = "Ask Every Time";
 
+/* Settings action that reconciles every session from current session membership */
+"session_backfill_now" = "Backfill Sessions Now";
+/* Footer explaining the Add/Remove routing and the Backfill action */
+"session_backfill_msg" = "“All matching” adds an episode to every session whose feeder covers it. Backfill catches up existing episodes — each session gains the in-session episodes its feeder covers.";
+/* Toast after a backfill: how many episodes were added across sessions. %1$@ is a number. */
+"session_backfill_done" = "Added %1$@ episodes across sessions";
+/* Toast after a backfill when nothing needed adding */
+"session_backfill_none" = "Sessions are already up to date";
+
 /* Option in the Add to Session picker that adds the episode to every matching session */
 "inbox_add_all_sessions" = "All Sessions";
 

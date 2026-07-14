@@ -293,6 +293,29 @@ class SessionManager {
         return SessionStore.shared.sessions.contains { $0.storePlaylistUuid.map(holding.contains) == true }
     }
 
+    /// Fork: one-time reconcile — every session gains the in-session episodes its feeder covers that
+    /// it doesn't already hold. Propagates existing membership across overlapping feeders (a podcast
+    /// in Comedy + Favorites lands in both sessions) and fills all-podcasts sessions when the setting
+    /// allows. Loosely maintained: forward "add to all matching" keeps it current going forward, this
+    /// catches up the episodes added before the invariant held.
+    @discardableResult
+    func backfillSessions() -> Int {
+        let inSessionUuids = SessionMembership.shared.inAnySession
+        guard !inSessionUuids.isEmpty else { return 0 }
+        let episodes = inSessionUuids.compactMap { DataManager.sharedManager.findEpisode(uuid: $0) }
+        var added = 0
+        for session in SessionStore.shared.sessions where session.uuid != SessionStore.globalInboxUuid {
+            guard let store = store(for: session) else { continue }
+            let existing = Set(SessionFeederEngine.storeMemberUuids(for: session))
+            let missing = episodes.filter { !existing.contains($0.uuid) && feeder(session.feeder, coversPodcast: $0.podcastUuid) }
+            guard !missing.isEmpty else { continue }
+            _ = DataManager.sharedManager.add(episodes: missing, to: store)
+            markStoreChanged(store)
+            added += missing.count
+        }
+        return added
+    }
+
     /// Every non-inbox session whose store currently holds any of these episodes.
     func sessionsHolding(episodeUuids: [String]) -> [Session] {
         let holders = Set(episodeUuids.flatMap { DataManager.sharedManager.manualPlaylistUUIDs(for: $0) })
@@ -472,14 +495,19 @@ class SessionManager {
 
     private func feeder(_ feeder: SessionFeeder, coversPodcast podcastUuid: String) -> Bool {
         switch feeder {
-        case .none, .allPodcasts:
+        case .none:
             return false
+        case .allPodcasts:
+            // An all-podcasts feeder covers every episode — uniform with any other feeder. Whether a
+            // given add reaches it is governed by the general Add mode (all matching / this / ask).
+            return true
         case .podcast(let uuid):
             return uuid == podcastUuid
         case .folder(let uuid):
             return DataManager.sharedManager.findPodcast(uuid: podcastUuid)?.folderUuid == uuid
         case .smartPlaylist(let uuid):
-            guard let playlist = DataManager.sharedManager.findPlaylist(uuid: uuid), !playlist.filterAllPodcasts else { return false }
+            guard let playlist = DataManager.sharedManager.findPlaylist(uuid: uuid) else { return false }
+            if playlist.filterAllPodcasts { return true }
             return playlist.podcastUuids.components(separatedBy: ",").contains(podcastUuid)
         }
     }
