@@ -62,9 +62,17 @@ struct FilterPresetEditorView: View {
 
     var body: some View {
         Form {
-            // Scope first: which podcasts/folders. A multi-select sheet; empty = all. (A sheet, not
-            // a push — this SwiftUI form is hosted inside a UIKit nav stack, so a NavigationLink has
-            // nothing to push onto.)
+            // Name leads the form — it's the one thing every preset has.
+            Section {
+                TextField(L10n.filterPresetNamePlaceholder, text: Binding(
+                    get: { model.preset.name },
+                    set: { model.preset.name = $0 }
+                ))
+            }
+
+            // Scope: which podcasts/folders. A multi-select sheet; empty = all. (A sheet, not a push
+            // — this SwiftUI form is hosted inside a UIKit nav stack, so a NavigationLink has nothing
+            // to push onto.)
             Section {
                 Button {
                     showingScope = true
@@ -80,23 +88,24 @@ struct FilterPresetEditorView: View {
                 .buttonStyle(.plain)
             }
 
-            Section {
-                TextField(L10n.filterPresetNamePlaceholder, text: Binding(
-                    get: { model.preset.name },
-                    set: { model.preset.name = $0 }
-                ))
-            }
+            // The old catch-all "Filters" block, split into logical groups. Binary axes are three-way
+            // segmented controls (All / yes / no).
 
-            // Binary axes: three-way segmented controls. The filters block leads the rules.
-            Section(header: Text(L10n.filters)) {
+            // Episode state.
+            Section(header: Text(L10n.filterPresetSectionStatus)) {
                 triStateRow(L10n.filterPresetRuleUnseen, positive: L10n.episodeUnseen, negative: L10n.episodeSeen, keyPath: \.unseen)
-                triStateRow(L10n.filterPresetRuleSession, positive: L10n.filterPresetInSession, negative: L10n.filterPresetNotInSession, keyPath: \.inSession)
                 triStateRow(L10n.statusStarred, positive: L10n.statusStarred, negative: L10n.statusNotStarred, keyPath: \.starred)
                 triStateRow(L10n.podcastArchived, positive: L10n.podcastArchived, negative: L10n.filterPresetNotArchived, keyPath: \.archived)
             }
 
+            // Queue membership — Session, then Up Next beneath it.
+            Section(header: Text(L10n.filterPresetSectionLists)) {
+                triStateRow(L10n.filterPresetRuleSession, positive: L10n.filterPresetInSession, negative: L10n.filterPresetNotInSession, keyPath: \.inSession)
+                triStateRow(L10n.upNext, positive: L10n.filterPresetInUpNext, negative: L10n.filterPresetNotInUpNext, keyPath: \.inUpNext)
+            }
+
             // Multi-value axes: a toggle per option. All-on or all-off = "any".
-            Section(header: Text(L10n.filterEpisodeStatus)) {
+            Section(header: Text(L10n.filterPresetSectionPlaying)) {
                 setToggle(L10n.statusUnplayed, .unplayed, keyPath: \.playingStatus)
                 setToggle(L10n.inProgress, .inProgress, keyPath: \.playingStatus)
                 setToggle(L10n.statusPlayed, .played, keyPath: \.playingStatus)

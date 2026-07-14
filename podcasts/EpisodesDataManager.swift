@@ -199,7 +199,8 @@ class EpisodesDataManager: PlaybackSessionEpisodeSource {
         // why there is no separate shouldShowArchived clause here any more.
         if let preset, let predicate = FilterPresetQuery.predicate(
             for: preset,
-            sessionStoreUuids: SessionStore.shared.sessions.compactMap(\.storePlaylistUuid)
+            sessionStoreUuids: SessionStore.shared.sessions.compactMap(\.storePlaylistUuid),
+            upNextEpisodeUuids: FilterPresets.upNextEpisodeUuids(for: preset)
         ) {
             whereClauses.append(predicate.sql)
             arguments.append(contentsOf: predicate.arguments)
@@ -228,6 +229,7 @@ class EpisodesDataManager: PlaybackSessionEpisodeSource {
             FilterPresetQuery.predicate(
                 for: $0,
                 sessionStoreUuids: SessionStore.shared.sessions.compactMap(\.storePlaylistUuid),
+                upNextEpisodeUuids: FilterPresets.upNextEpisodeUuids(for: $0),
                 scopePodcastUuids: FilterPresets.scopePodcastUuids(for: $0),
                 columns: .episodeAlias
             )

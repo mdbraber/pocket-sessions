@@ -6,13 +6,16 @@ import SwipeCellKit
 /// Left: Add to Session · Play Next · Play Last. Right: Archive/Unarchive ·
 /// Mark as (Un)Seen. All state-aware; seen wears the eye.
 enum TriageSwipes {
-    static func leftActions(for episode: BaseEpisode, addToSession: @escaping () -> Void) -> [SwipeAction] {
+    static func leftActions(for episode: BaseEpisode, addToSession: @escaping () -> Void, removeFromSession: @escaping () -> Void) -> [SwipeAction] {
+        // The leading action flips with membership: an episode already in a session offers
+        // Remove from Session instead of Add to Session.
+        let inSession = SessionManager.shared.isInAnySession(episodeUuid: episode.uuid)
         let add = SwipeAction(style: .default, title: nil) { _, _ in
-            addToSession()
+            inSession ? removeFromSession() : addToSession()
         }
-        add.image = sessionAddImage
-        add.backgroundColor = SwipeActionsHelper.addToPlaylistSwipeBackground
-        add.accessibilityLabel = L10n.playlistAddToLineup
+        add.image = inSession ? sessionRemoveImage()?.withTintColor(.white, renderingMode: .alwaysOriginal) : sessionAddImage
+        add.backgroundColor = inSession ? ThemeColor.support05() : SwipeActionsHelper.addToPlaylistSwipeBackground
+        add.accessibilityLabel = inSession ? L10n.sessionRemoveFrom : L10n.playlistAddToLineup
         add.hidesWhenSelected = true
 
         // The now-playing episode gets no left remove — the right swipe already

@@ -11,16 +11,11 @@ struct BookmarksEmptyStateView<Style: EmptyStateViewStyle>: View {
     var action: (() -> Void)? = nil
 
     var body: some View {
-        EmptyStateView(title: title, message: message, icon: { Image("bookmarks-profile") }, actions: [
-            .init(title: actionTitle, action: {
-                guard let action else {
-                    viewModel.openHeadphoneSettings()
-                    return
-                }
-
-                action()
-            })
-        ], style: style, maxContentWidth: .infinity)
+        // Only show a button when the caller supplies an action (e.g. "Clear Search"). The plain
+        // empty state no longer offers a "Headphone Settings" button.
+        EmptyStateView(title: title, message: message, icon: { Image("bookmarks-profile") },
+                       actions: action.map { [.init(title: actionTitle, action: $0)] } ?? [],
+                       style: style, maxContentWidth: .infinity)
     }
 }
 

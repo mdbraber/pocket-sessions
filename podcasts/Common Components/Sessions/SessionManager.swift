@@ -63,6 +63,7 @@ class SessionManager {
 
         if !seedEpisodeUuids.isEmpty {
             unarchiveIfNeeded(episodeUuids: seedEpisodeUuids)
+            unplayIfNeeded(episodeUuids: seedEpisodeUuids)
             let episodes = seedEpisodeUuids.compactMap { DataManager.sharedManager.findEpisode(uuid: $0) }
             _ = DataManager.sharedManager.add(episodes: episodes, to: store)
         }
@@ -156,12 +157,27 @@ class SessionManager {
         NotificationCenter.postOnMainThread(notification: Constants.Notifications.episodeArchiveStatusChanged)
     }
 
+    /// Marks any already-played episodes among the given uuids as unplayed, posting one play-status
+    /// notification at the end. Adding to a session is intent to play it again — same as Up Next,
+    /// which already unplays on add — so a finished episode shouldn't land in the lineup done.
+    private func unplayIfNeeded(episodeUuids: [String]) {
+        let played = episodeUuids
+            .compactMap { DataManager.sharedManager.findEpisode(uuid: $0) }
+            .filter { $0.played() }
+        guard !played.isEmpty else { return }
+        for episode in played {
+            EpisodeManager.markAsUnplayed(episode: episode, fireNotification: false, userInitiated: false)
+        }
+        NotificationCenter.postOnMainThread(notification: Constants.Notifications.episodePlayStatusChanged)
+    }
+
     /// Inserts episodes at the session's insert marker. Adding means intent to play,
     /// so archived episodes come back out of the archive on the way in (otherwise the
     /// decisive-action sweep would immediately remove them from the store again).
     func addToLineup(episodeUuids: [String], session: Session) {
         guard let store = store(for: session), !episodeUuids.isEmpty else { return }
         unarchiveIfNeeded(episodeUuids: episodeUuids)
+        unplayIfNeeded(episodeUuids: episodeUuids)
         var order = DataManager.sharedManager.positionedEpisodeUuids(for: store).filter { !episodeUuids.contains($0) }
         let index = insertMarkerIndex(for: session, inLineup: order)
         order.insert(contentsOf: episodeUuids, at: min(index, order.count))
@@ -195,6 +211,7 @@ class SessionManager {
             DataManager.sharedManager.deleteEpisodes(current, from: store)
         }
         unarchiveIfNeeded(episodeUuids: episodeUuids)
+        unplayIfNeeded(episodeUuids: episodeUuids)
         let episodes = episodeUuids.compactMap { DataManager.sharedManager.findEpisode(uuid: $0) }
         _ = DataManager.sharedManager.add(episodes: episodes, to: store)
         DataManager.sharedManager.setCustomOrder(episodeUuids: episodeUuids, for: store)
@@ -231,6 +248,25 @@ class SessionManager {
         if let playing = PlaybackManager.shared.currentEpisode(), episodeUuids.contains(playing.uuid) {
             PlaybackManager.shared.removeIfPlayingOrQueued(episode: playing, fireNotification: true, userInitiated: true)
         }
+    }
+
+    /// Removes each episode from every session whose store currently holds it — the inverse of the
+    /// "Add to Session" swipe when the episode is already in a session.
+    func removeFromAllSessions(episodeUuids: [String]) {
+        for uuid in episodeUuids {
+            let holding = Set(DataManager.sharedManager.manualPlaylistUUIDs(for: uuid))
+            guard !holding.isEmpty else { continue }
+            for session in SessionStore.shared.sessions where session.storePlaylistUuid.map(holding.contains) == true {
+                removeFromLineup(episodeUuids: [uuid], session: session)
+            }
+        }
+    }
+
+    /// Whether any session's store currently holds this episode.
+    func isInAnySession(episodeUuid: String) -> Bool {
+        let holding = Set(DataManager.sharedManager.manualPlaylistUUIDs(for: episodeUuid))
+        guard !holding.isEmpty else { return false }
+        return SessionStore.shared.sessions.contains { $0.storePlaylistUuid.map(holding.contains) == true }
     }
 
     /// Fork: the "Add to Session" verb. Where episodes land is governed by the

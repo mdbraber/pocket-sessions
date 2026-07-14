@@ -1954,6 +1954,21 @@
 "filter_preset_not_in_session" = "Not in a Session";
 /* Fork: preset rule value — episode is not archived. */
 "filter_preset_not_archived" = "Not Archived";
+
+/* Filter preset rule: episode is in the Up Next queue */
+"filter_preset_in_up_next" = "In Up Next";
+
+/* Filter preset rule: episode is not in the Up Next queue */
+"filter_preset_not_in_up_next" = "Not in Up Next";
+
+/* Filter preset editor section header grouping episode-state rules (unseen, starred, archived) */
+"filter_preset_section_status" = "Status";
+
+/* Filter preset editor section header grouping list-membership rules (session, up next) */
+"filter_preset_section_lists" = "In a List";
+
+/* Filter preset editor section header for the play-status rules */
+"filter_preset_section_playing" = "Playing";
 /* Fork: toggles the duration limit in the preset editor. */
 "filter_preset_duration_limit" = "Filter by Duration";
 /* Fork: the "longer than" duration bound in the preset editor. */

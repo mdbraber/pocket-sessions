@@ -44,6 +44,7 @@ enum SessionFeederEngine {
             FilterPresetQuery.predicate(
                 for: $0,
                 sessionStoreUuids: SessionStore.shared.sessions.compactMap(\.storePlaylistUuid),
+                upNextEpisodeUuids: FilterPresets.upNextEpisodeUuids(for: $0),
                 scopePodcastUuids: applyScope ? FilterPresets.scopePodcastUuids(for: $0) : nil
             )
         }

@@ -82,6 +82,9 @@ struct FilterPreset: Codable, Equatable, Identifiable {
     /// smart-playlist page. That is what lets a preset know nothing about the page it renders on,
     /// which is what makes it portable.
     var inSession: Rule
+    /// Against the current Up Next queue (now-playing included). Like `inSession`, a global bit:
+    /// an episode queued in Up Next reads the same from any page.
+    var inUpNext: Rule
 
     /// Scope: which podcasts the preset speaks for. Empty = all. `folderUuids` resolves to its
     /// member podcasts at query time. This is the ONE axis that is inherently about *which page you
@@ -122,6 +125,7 @@ struct FilterPreset: Codable, Equatable, Identifiable {
         archived: Rule = nil,
         unseen: Rule = nil,
         inSession: Rule = nil,
+        inUpNext: Rule = nil,
         podcastUuids: Set<String> = [],
         folderUuids: Set<String> = [],
         filterDuration: Bool = false,
@@ -144,6 +148,7 @@ struct FilterPreset: Codable, Equatable, Identifiable {
         self.archived = archived
         self.unseen = unseen
         self.inSession = inSession
+        self.inUpNext = inUpNext
         self.podcastUuids = podcastUuids
         self.folderUuids = folderUuids
         self.filterDuration = filterDuration
@@ -158,7 +163,7 @@ struct FilterPreset: Codable, Equatable, Identifiable {
 
     enum CodingKeys: String, CodingKey {
         case uuid, name, iconId, enabled, playingStatus, downloadStatus, starred, mediaType
-        case archived, unseen, inSession, podcastUuids, folderUuids
+        case archived, unseen, inSession, inUpNext, podcastUuids, folderUuids
         case filterDuration, longerThan, shorterThan, filterHours, sortOrder, groupBy, groupLimit, groupReversed
     }
 
@@ -183,6 +188,7 @@ struct FilterPreset: Codable, Equatable, Identifiable {
         archived = try c.decodeIfPresent(Bool.self, forKey: .archived)
         unseen = try c.decodeIfPresent(Bool.self, forKey: .unseen)
         inSession = try c.decodeIfPresent(Bool.self, forKey: .inSession)
+        inUpNext = try c.decodeIfPresent(Bool.self, forKey: .inUpNext)
         podcastUuids = try c.decodeIfPresent(Set<String>.self, forKey: .podcastUuids) ?? []
         folderUuids = try c.decodeIfPresent(Set<String>.self, forKey: .folderUuids) ?? []
         filterDuration = try c.decodeIfPresent(Bool.self, forKey: .filterDuration) ?? false

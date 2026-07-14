@@ -37,6 +37,7 @@ enum FilterPresetQuery {
     static func predicate(
         for preset: FilterPreset,
         sessionStoreUuids: [String],
+        upNextEpisodeUuids: [String] = [],
         scopePodcastUuids: [String]? = nil,
         inboxPlaylistUuid: String = DataManager.inboxPlaylistUuid,
         columns: Columns = .unaliased,
@@ -120,6 +121,11 @@ enum FilterPresetQuery {
         if let clause = membership(preset.inSession, in: sessionStoreUuids, episodeUuid: "\(e)uuid", arguments: &arguments) {
             blocks.append(clause)
         }
+        // Up Next isn't a playlist_uuid row, so it comes in as an explicit uuid snapshot (bounded by
+        // the queue limit) rather than a correlated subquery.
+        if let clause = uuidMembership(preset.inUpNext, uuids: upNextEpisodeUuids, episodeUuid: "\(e)uuid", arguments: &arguments) {
+            blocks.append(clause)
+        }
 
         guard !blocks.isEmpty else { return nil }
         return (blocks.joined(separator: " AND "), arguments)
@@ -140,6 +146,23 @@ enum FilterPresetQuery {
         guard !chosen.isEmpty, chosen.count < all.count else { return nil }
         let clauses = all.filter(chosen.contains).map(sql) // `all`'s order, so the SQL is stable
         return clauses.count == 1 ? clauses[0] : "(\(clauses.joined(separator: " OR ")))"
+    }
+
+    /// A membership rule against an explicit uuid list (Up Next). nil constrains nothing; an empty
+    /// list means "in it" matches nothing and "not in it" matches everything. Safe as a plain
+    /// IN/NOT IN here: the uuids are a small, non-NULL, explicit set (unlike open-ended playlist
+    /// membership, which uses EXISTS above).
+    private static func uuidMembership(
+        _ rule: Rule,
+        uuids: [String],
+        episodeUuid: String,
+        arguments: inout [Any]
+    ) -> String? {
+        guard let rule else { return nil }
+        guard !uuids.isEmpty else { return rule ? "0 = 1" : nil }
+        let placeholders = uuids.map { _ in "?" }.joined(separator: ",")
+        arguments.append(contentsOf: uuids)
+        return rule ? "\(episodeUuid) IN (\(placeholders))" : "\(episodeUuid) NOT IN (\(placeholders))"
     }
 
     /// A membership rule (`unseen`, `inSession`) as a correlated subquery. nil constrains nothing.

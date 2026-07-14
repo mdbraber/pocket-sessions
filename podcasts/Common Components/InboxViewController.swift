@@ -604,7 +604,7 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
 
         switch orientation {
         case .left:
-            return TriageSwipes.leftActions(for: episode) { [weak self] in
+            return TriageSwipes.leftActions(for: episode, addToSession: { [weak self] in
                 guard let self, let episode = episode as? Episode else { return }
                 SessionManager.shared.addToSessions(episodeUuids: [episode.uuid], preferred: nil, presenting: self) { landed in
                     guard !landed.isEmpty else { return }
@@ -613,7 +613,11 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
                     let names = landed.compactMap { SessionManager.shared.store(for: $0)?.playlistName }
                     Toast.show(L10n.inboxShelvedToast(names.joined(separator: ", ")))
                 }
-            }
+            }, removeFromSession: { [weak self] in
+                guard let self, let episode = episode as? Episode else { return }
+                SessionManager.shared.removeFromAllSessions(episodeUuids: [episode.uuid])
+                self.reloadData()
+            })
         case .right:
             return TriageSwipes.rightActions(for: episode) { [weak self] in
                 self?.reloadData()

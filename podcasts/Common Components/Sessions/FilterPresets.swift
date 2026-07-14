@@ -32,6 +32,14 @@ enum FilterPresets {
         SessionStore.shared.sessions.compactMap(\.storePlaylistUuid)
     }
 
+    /// The Up Next snapshot a preset needs (now-playing included) — what `inUpNext` resolves
+    /// against. Empty unless the preset actually filters on Up Next, so the common case never pays
+    /// to load and hydrate the whole queue on every list refresh.
+    static func upNextEpisodeUuids(for preset: FilterPreset) -> [String] {
+        guard preset.inUpNext != nil else { return [] }
+        return PlaybackManager.shared.queue.allEpisodes(includeNowPlaying: true).map(\.uuid)
+    }
+
     /// Resolves a preset's podcast/folder scope to a concrete podcast-uuid list — folders expanded
     /// to their current members. `nil` when the preset has no scope. A non-nil but empty result
     /// means the scope is set but matches no podcasts (e.g. an empty folder).
@@ -56,6 +64,7 @@ enum FilterPresets {
         return FilterPresetQuery.predicate(
             for: preset,
             sessionStoreUuids: sessionStoreUuids,
+            upNextEpisodeUuids: upNextEpisodeUuids(for: preset),
             scopePodcastUuids: applyScope ? scopePodcastUuids(for: preset) : nil,
             columns: columns
         )

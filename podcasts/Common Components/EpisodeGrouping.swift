@@ -28,7 +28,7 @@ enum EpisodeGroupBy: Int, CaseIterable {
 }
 
 enum EpisodeGrouper {
-    static let limitOptions = [3, 5, 10, 20]
+    static let limitOptions = [5, 10, 20, 50]
 
     /// Groups items in display order; a limit > 0 caps every group (and the ungrouped
     /// list) to its first N items. `reversed` flips the order the groups appear in (the
