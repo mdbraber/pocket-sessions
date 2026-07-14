@@ -17,7 +17,7 @@ extension PodcastViewController: SwipeTableViewCellDelegate, SwipeHandler {
                 let actions = SwipeActionsHelper.createLeftActionsForEpisode(episode, tableView: tableView, indexPath: indexPath, swipeHandler: self)
                 return actions.swipeKitActions()
             }
-            return TriageSwipes.leftActions(for: episode, addToSession: { [weak self] in
+            return TriageSwipes.leftActions(for: episode, inLocalSession: cachedSessionMemberUuids.contains(episode.uuid), addToSession: { [weak self] in
                 guard let self, let podcast = self.podcast else { return }
 
                 let session = SessionManager.shared.findOrCreateSession(forPodcast: podcast)
@@ -28,16 +28,21 @@ extension PodcastViewController: SwipeTableViewCellDelegate, SwipeHandler {
             })
         case .right:
             // Session rows: remove-at-edge like any lineup. Episodes rows: triage
-            // (Archive/Unarchive · Mark as (Un)Seen).
+            // (Remove from Session if local · Archive/Unarchive · Mark as (Un)Seen).
             if showingSession {
                 let actions = SwipeActionsHelper.createRightActionsForEpisode(episode, tableView: tableView, indexPath: indexPath, swipeHandler: self)
                 return actions.swipeKitActions()
             }
-            return TriageSwipes.rightActions(for: episode) { [weak self] in
+            return TriageSwipes.rightActions(for: episode, inLocalSession: cachedSessionMemberUuids.contains(episode.uuid), removeFromSession: { [weak self] in
                 guard let self, let podcast = self.podcast else { return }
-
+                SessionManager.shared.removeFromSessions(episodeUuids: [episode.uuid], preferred: SessionStore.shared.session(forPodcast: podcast.uuid), presenting: self) { [weak self] in
+                    guard let self, let podcast = self.podcast else { return }
+                    self.loadLocalEpisodes(podcast: podcast, animated: true)
+                }
+            }, reload: { [weak self] in
+                guard let self, let podcast = self.podcast else { return }
                 self.loadLocalEpisodes(podcast: podcast, animated: true)
-            }
+            })
         }
     }
 

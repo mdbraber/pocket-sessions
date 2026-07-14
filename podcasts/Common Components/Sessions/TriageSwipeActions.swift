@@ -6,20 +6,24 @@ import SwipeCellKit
 /// Left: Play Next · Play Last (or Remove from Up Next). Right: Add/Remove Session
 /// (green) · Archive · Mark as (Un)Seen (blue). All state-aware.
 enum TriageSwipes {
-    /// Left swipe: Add to Session (green) leads, then the queue verbs. Remove from Session is NOT
-    /// here — it lives only on a session's own screen. On a general list you can only add.
-    static func leftActions(for episode: BaseEpisode, addToSession: @escaping () -> Void) -> [SwipeAction] {
-        let add = SwipeAction(style: .default, title: nil) { _, _ in
-            addToSession()
+    /// Left swipe: Add to Session (green) — only when the episode is NOT in *this page's* session —
+    /// then the queue verbs. (Remove from Session is the right swipe, shown when it IS.)
+    static func leftActions(for episode: BaseEpisode, inLocalSession: Bool, addToSession: @escaping () -> Void) -> [SwipeAction] {
+        var leading = [SwipeAction]()
+        if !inLocalSession {
+            let add = SwipeAction(style: .default, title: nil) { _, _ in
+                addToSession()
+            }
+            add.image = sessionAddImage
+            add.backgroundColor = ThemeColor.support02() // session green
+            add.accessibilityLabel = L10n.playlistAddToLineup
+            add.hidesWhenSelected = true
+            leading.append(add)
         }
-        add.image = sessionAddImage
-        add.backgroundColor = ThemeColor.support02() // session green
-        add.accessibilityLabel = L10n.playlistAddToLineup
-        add.hidesWhenSelected = true
 
-        // The now-playing episode gets Add only (no queue swipe on the left).
+        // The now-playing episode gets no queue swipe on the left.
         if PlaybackManager.shared.isNowPlayingEpisode(episodeUuid: episode.uuid) {
-            return [add]
+            return leading
         }
 
         // State-aware, like the app-wide queue swipes: a queued episode offers
@@ -32,7 +36,7 @@ enum TriageSwipes {
             removeFromUpNext.backgroundColor = ThemeColor.support05()
             removeFromUpNext.accessibilityLabel = L10n.removeFromUpNext
             removeFromUpNext.hidesWhenSelected = true
-            return [add, removeFromUpNext]
+            return leading + [removeFromUpNext]
         }
 
         let addTop = SwipeAction(style: .default, title: nil) { _, _ in
@@ -55,9 +59,9 @@ enum TriageSwipes {
 
         // Honor the user's primary queue-swipe preference, like the stock helper.
         if Settings.primaryUpNextSwipeAction() == .playNext {
-            return [add, addTop, addBottom]
+            return leading + [addTop, addBottom]
         } else {
-            return [add, addBottom, addTop]
+            return leading + [addBottom, addTop]
         }
     }
 
@@ -98,8 +102,20 @@ enum TriageSwipes {
         return image.withRenderingMode(.alwaysTemplate)
     }
 
-    static func rightActions(for episode: BaseEpisode, reload: @escaping () -> Void) -> [SwipeAction] {
+    static func rightActions(for episode: BaseEpisode, inLocalSession: Bool = false, removeFromSession: @escaping () -> Void = {}, reload: @escaping () -> Void) -> [SwipeAction] {
         var actions = [SwipeAction]()
+
+        // Remove from Session (red) leads the trailing swipe when the episode is in this page's session.
+        if inLocalSession {
+            let remove = SwipeAction(style: .default, title: nil) { _, _ in
+                removeFromSession()
+            }
+            remove.image = sessionRemoveImage()?.withTintColor(.white, renderingMode: .alwaysOriginal)
+            remove.backgroundColor = ThemeColor.support05() // red
+            remove.accessibilityLabel = L10n.sessionRemoveFrom
+            remove.hidesWhenSelected = true
+            actions.append(remove)
+        }
 
         // Mutations always load a FRESH episode object: the table's cached one must
         // keep its old values so the diff-reload actually sees a change and redraws

@@ -604,7 +604,7 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
 
         switch orientation {
         case .left:
-            return TriageSwipes.leftActions(for: episode, addToSession: { [weak self] in
+            return TriageSwipes.leftActions(for: episode, inLocalSession: false, addToSession: { [weak self] in
                 guard let self, let episode = episode as? Episode else { return }
                 SessionManager.shared.addToSessions(episodeUuids: [episode.uuid], preferred: nil, presenting: self) { landed in
                     guard !landed.isEmpty else { return }

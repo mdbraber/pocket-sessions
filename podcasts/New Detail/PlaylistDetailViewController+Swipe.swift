@@ -14,7 +14,7 @@ extension PlaylistDetailViewController: SwipeTableViewCellDelegate, SwipeHandler
             // Episodes rows use the shared triage vocabulary (the dot lives there, so
             // swiping it away must clear it); Session lineup rows keep the queue actions.
             if rowSection == .browse {
-                return TriageSwipes.leftActions(for: episode, addToSession: { [weak self] in
+                return TriageSwipes.leftActions(for: episode, inLocalSession: viewModel.thisSessionMemberUuids.contains(episode.uuid), addToSession: { [weak self] in
                     guard let self else { return }
                     self.viewModel.addToSessionsPerSetting(episodeUuids: [episode.uuid], presenting: self)
                 })
@@ -23,9 +23,14 @@ extension PlaylistDetailViewController: SwipeTableViewCellDelegate, SwipeHandler
             return actions.swipeKitActions()
         case .right:
             if rowSection == .browse {
-                return TriageSwipes.rightActions(for: episode) { [weak self] in
+                return TriageSwipes.rightActions(for: episode, inLocalSession: viewModel.thisSessionMemberUuids.contains(episode.uuid), removeFromSession: { [weak self] in
+                    guard let self else { return }
+                    SessionManager.shared.removeFromSessions(episodeUuids: [episode.uuid], preferred: self.viewModel.session ?? self.viewModel.lensSession, presenting: self) { [weak self] in
+                        self?.viewModel.reloadEpisodeList(animated: true)
+                    }
+                }, reload: { [weak self] in
                     self?.viewModel.reloadEpisodeList(animated: true)
-                }
+                })
             }
             // Fork: lens-page Session rows — Remove from the session at the edge,
             // then the archive toggle (same shape as a store's lineup).
