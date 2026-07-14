@@ -301,13 +301,18 @@ class SessionManager {
     @discardableResult
     func backfillSessions() -> Int {
         let inSessionUuids = SessionMembership.shared.inAnySession
-        guard !inSessionUuids.isEmpty else { return 0 }
         let episodes = inSessionUuids.compactMap { DataManager.sharedManager.findEpisode(uuid: $0) }
+        FileLog.shared.addMessage("Backfill: \(SessionStore.shared.sessions.count) sessions, \(episodes.count)/\(inSessionUuids.count) in-session episodes resolved")
+        guard !episodes.isEmpty else { return 0 }
         var added = 0
         for session in SessionStore.shared.sessions where session.uuid != SessionStore.globalInboxUuid {
-            guard let store = store(for: session) else { continue }
+            guard let store = store(for: session) else {
+                FileLog.shared.addMessage("Backfill: session \(session.uuid) has no store — skipped")
+                continue
+            }
             let existing = Set(SessionFeederEngine.storeMemberUuids(for: session))
             let missing = episodes.filter { !existing.contains($0.uuid) && feeder(session.feeder, coversPodcast: $0.podcastUuid) }
+            FileLog.shared.addMessage("Backfill: '\(store.playlistName)' feeder=\(session.feeder) existing=\(existing.count) missing=\(missing.count)")
             guard !missing.isEmpty else { continue }
             _ = DataManager.sharedManager.add(episodes: missing, to: store)
             markStoreChanged(store)

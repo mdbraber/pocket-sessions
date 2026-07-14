@@ -7,15 +7,24 @@ import UIKit
 class InboxSettingsViewController: PCViewController, UITableViewDataSource, UITableViewDelegate {
     private static let cellId = "InboxSettingsCell"
 
-    private enum TableRow: CaseIterable { case addToSessionMode, removeFromSessionMode, backfillSessions, autoAddToUpNext, autoAddToSession, mirrorUpNextToSession, mirrorSessionToUpNext }
+    private enum TableRow: CaseIterable { case addToSessionMode, removeFromSessionMode, autoAddToUpNext, autoAddToSession, mirrorUpNextToSession, mirrorSessionToUpNext }
 
-    /// Grouped: the Add/Remove routing and the backfill catch-up stand apart from the Auto Add pages
-    /// and the linked-adds switches. With sessions off only stock Up Next remains.
+    /// Grouped: the Add/Remove routing stands apart from the Auto Add pages and the linked-adds
+    /// switches. With sessions off only stock Up Next remains.
     private var sections: [[TableRow]] {
-        [[.addToSessionMode, .removeFromSessionMode, .backfillSessions], [.autoAddToUpNext, .autoAddToSession], [.mirrorUpNextToSession, .mirrorSessionToUpNext]]
+        [[.addToSessionMode, .removeFromSessionMode], [.autoAddToUpNext, .autoAddToSession], [.mirrorUpNextToSession, .mirrorSessionToUpNext]]
     }
 
     private let settingsTable = ThemeableTable(frame: .zero, style: .grouped)
+
+    /// A plain, non-accented button pinned to the bottom of the screen (the table footer).
+    private lazy var backfillButton: UIButton = {
+        let button = UIButton(type: .system)
+        button.setTitle(L10n.sessionBackfillNow, for: .normal)
+        button.titleLabel?.font = UIFont.systemFont(ofSize: 16, weight: .medium)
+        button.addTarget(self, action: #selector(backfillTapped), for: .touchUpInside)
+        return button
+    }()
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -31,11 +40,27 @@ class InboxSettingsViewController: PCViewController, UITableViewDataSource, UITa
             settingsTable.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             settingsTable.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
+
+        let footer = UIView(frame: CGRect(x: 0, y: 0, width: view.bounds.width, height: 64))
+        backfillButton.translatesAutoresizingMaskIntoConstraints = false
+        footer.addSubview(backfillButton)
+        NSLayoutConstraint.activate([
+            backfillButton.centerXAnchor.constraint(equalTo: footer.centerXAnchor),
+            backfillButton.centerYAnchor.constraint(equalTo: footer.centerYAnchor)
+        ])
+        settingsTable.tableFooterView = footer
     }
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        // Non-accented: a neutral text colour, not the interactive/accent tint.
+        backfillButton.setTitleColor(AppTheme.colorForStyle(.primaryText01), for: .normal)
         settingsTable.reloadData()
+    }
+
+    @objc private func backfillTapped() {
+        let count = SessionManager.shared.backfillSessions()
+        Toast.show(count > 0 ? L10n.sessionBackfillDone(count.localized()) : L10n.sessionBackfillNone)
     }
 
     @objc private func mirrorUpNextToSessionChanged(_ sender: UISwitch) {
@@ -69,13 +94,6 @@ class InboxSettingsViewController: PCViewController, UITableViewDataSource, UITa
         case .removeFromSessionMode:
             cell.textLabel?.text = L10n.sessionRemoveFrom
             cell.detailTextLabel?.text = RemoveFromSessionMode.current.title
-        case .backfillSessions:
-            cell.textLabel?.text = L10n.sessionBackfillNow
-            cell.detailTextLabel?.text = nil
-            cell.accessoryView = nil
-            cell.accessoryType = .none
-            cell.selectionStyle = .default
-            return cell
         case .autoAddToUpNext:
             cell.textLabel?.text = L10n.settingsAutoAdd
             cell.detailTextLabel?.text = L10n.settingsEpisodeLimitFormat(ServerSettings.autoAddToUpNextLimit().localized())
@@ -124,9 +142,6 @@ class InboxSettingsViewController: PCViewController, UITableViewDataSource, UITa
             optionsController.saveOnChange = true
             optionsController.title = L10n.sessionRemoveFrom
             navigationController?.pushViewController(optionsController, animated: true)
-        case .backfillSessions:
-            let count = SessionManager.shared.backfillSessions()
-            Toast.show(count > 0 ? L10n.sessionBackfillDone(count.localized()) : L10n.sessionBackfillNone)
         case .autoAddToUpNext:
             navigationController?.pushViewController(AutoAddToUpNextViewController(), animated: true)
         case .autoAddToSession:
