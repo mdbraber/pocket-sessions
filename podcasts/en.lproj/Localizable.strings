@@ -5447,6 +5447,13 @@
 "inbox_add_mode_current" = "This Session Only";
 "inbox_add_mode_ask" = "Ask Every Time";
 
+/* Remove from Session behaviour: take the episode out of every session holding it */
+"session_remove_mode_all" = "All Sessions";
+/* Remove from Session behaviour: take it out of this page's session only */
+"session_remove_mode_current" = "This Session Only";
+/* Remove from Session behaviour: prompt which session(s) to remove from */
+"session_remove_mode_ask" = "Ask Every Time";
+
 /* Option in the Add to Session picker that adds the episode to every matching session */
 "inbox_add_all_sessions" = "All Sessions";
 

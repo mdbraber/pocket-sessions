@@ -27,8 +27,10 @@ extension PodcastViewController: SwipeTableViewCellDelegate, SwipeHandler {
                 }
             }, removeFromSession: { [weak self] in
                 guard let self, let podcast = self.podcast else { return }
-                SessionManager.shared.removeFromAllSessions(episodeUuids: [episode.uuid])
-                self.loadLocalEpisodes(podcast: podcast, animated: true)
+                SessionManager.shared.removeFromSessions(episodeUuids: [episode.uuid], preferred: SessionStore.shared.session(forPodcast: podcast.uuid), presenting: self) { [weak self] in
+                    guard let self, let podcast = self.podcast else { return }
+                    self.loadLocalEpisodes(podcast: podcast, animated: true)
+                }
             })
         case .right:
             // Session rows: remove-at-edge like any lineup. Episodes rows: triage

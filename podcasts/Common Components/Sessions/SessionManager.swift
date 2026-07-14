@@ -27,6 +27,30 @@ enum AddToSessionMode: String, CaseIterable {
     }
 }
 
+/// Fork: where the "Remove from Session" verb takes an episode out of — every session holding it,
+/// only this page's, or a prompt. The parallel of `AddToSessionMode` for the remove direction.
+enum RemoveFromSessionMode: String, CaseIterable {
+    case all
+    case currentOnly
+    case ask
+
+    static var current: RemoveFromSessionMode {
+        RemoveFromSessionMode(rawValue: UserDefaults.standard.string(forKey: "SJRemoveFromSessionMode") ?? "") ?? .all
+    }
+
+    func save() {
+        UserDefaults.standard.set(rawValue, forKey: "SJRemoveFromSessionMode")
+    }
+
+    var title: String {
+        switch self {
+        case .all: return L10n.sessionRemoveModeAll
+        case .currentOnly: return L10n.sessionRemoveModeCurrent
+        case .ask: return L10n.sessionRemoveModeAsk
+        }
+    }
+}
+
 /// Fork: session operations — creating sessions, mutating their stores (synced manual
 /// playlists), triage verbs, and the decisive-action sweeps that keep stores and the
 /// bookkeeping tables aligned with playback.
@@ -267,6 +291,73 @@ class SessionManager {
         let holding = Set(DataManager.sharedManager.manualPlaylistUUIDs(for: episodeUuid))
         guard !holding.isEmpty else { return false }
         return SessionStore.shared.sessions.contains { $0.storePlaylistUuid.map(holding.contains) == true }
+    }
+
+    /// Every non-inbox session whose store currently holds any of these episodes.
+    func sessionsHolding(episodeUuids: [String]) -> [Session] {
+        let holders = Set(episodeUuids.flatMap { DataManager.sharedManager.manualPlaylistUUIDs(for: $0) })
+        guard !holders.isEmpty else { return [] }
+        return SessionStore.shared.sessions.filter {
+            $0.uuid != SessionStore.globalInboxUuid && ($0.storePlaylistUuid.map(holders.contains) ?? false)
+        }
+    }
+
+    /// Fork: the "Remove from Session" verb, honoring `RemoveFromSessionMode`. `preferred` is the
+    /// page's own session (nil on generic lists). Only removes the episodes a given session holds.
+    func removeFromSessions(episodeUuids: [String], preferred: Session?, presenting: UIViewController?, onRemoved: (() -> Void)? = nil) {
+        guard !episodeUuids.isEmpty else { return }
+        let holding = sessionsHolding(episodeUuids: episodeUuids)
+        guard !holding.isEmpty else { onRemoved?(); return }
+
+        let removeFrom: (Session) -> Void = { [weak self] session in
+            guard let self else { return }
+            let members = Set(SessionFeederEngine.storeMemberUuids(for: session))
+            let toRemove = episodeUuids.filter { members.contains($0) }
+            if !toRemove.isEmpty { self.removeFromLineup(episodeUuids: toRemove, session: session) }
+        }
+
+        switch RemoveFromSessionMode.current {
+        case .all:
+            holding.forEach(removeFrom)
+            onRemoved?()
+        case .currentOnly:
+            if let preferred, holding.contains(where: { $0.uuid == preferred.uuid }) {
+                removeFrom(preferred)
+                onRemoved?()
+            } else if holding.count == 1 {
+                removeFrom(holding[0])
+                onRemoved?()
+            } else {
+                // No clear "current" session and it's in several — ask rather than guess.
+                presentRemovePicker(holding: holding, presenting: presenting, removeFrom: removeFrom, onRemoved: onRemoved)
+            }
+        case .ask:
+            if holding.count == 1 {
+                removeFrom(holding[0])
+                onRemoved?()
+            } else {
+                presentRemovePicker(holding: holding, presenting: presenting, removeFrom: removeFrom, onRemoved: onRemoved)
+            }
+        }
+    }
+
+    private func presentRemovePicker(holding: [Session], presenting: UIViewController?, removeFrom: @escaping (Session) -> Void, onRemoved: (() -> Void)?) {
+        guard let presenting else { holding.forEach(removeFrom); onRemoved?(); return }
+        DispatchQueue.main.async {
+            let picker = OptionsPicker(title: L10n.sessionRemoveFrom.localizedUppercase)
+            picker.addAction(action: OptionAction(label: L10n.inboxAddAllSessions, icon: nil) {
+                holding.forEach(removeFrom)
+                onRemoved?()
+            })
+            for session in holding {
+                let name = self.store(for: session)?.playlistName ?? ""
+                picker.addAction(action: OptionAction(label: name, icon: nil) {
+                    removeFrom(session)
+                    onRemoved?()
+                })
+            }
+            picker.present(from: presenting)
+        }
     }
 
     /// Fork: the "Add to Session" verb. Where episodes land is governed by the

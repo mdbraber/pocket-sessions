@@ -615,8 +615,9 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
                 }
             }, removeFromSession: { [weak self] in
                 guard let self, let episode = episode as? Episode else { return }
-                SessionManager.shared.removeFromAllSessions(episodeUuids: [episode.uuid])
-                self.reloadData()
+                SessionManager.shared.removeFromSessions(episodeUuids: [episode.uuid], preferred: nil, presenting: self) { [weak self] in
+                    self?.reloadData()
+                }
             })
         case .right:
             return TriageSwipes.rightActions(for: episode) { [weak self] in

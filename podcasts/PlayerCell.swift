@@ -306,8 +306,8 @@ class PlayerCell: ThemeableSwipeCell {
         episodeTitle.style = nowPlaying ? .primaryInteractive01 : .primaryText01
     }
 
-    func setSessionIndicator(visible: Bool) {
-        if visible, sessionIndicator.superview == nil {
+    func setSessionIndicator(_ state: SessionIndicatorState) {
+        if state.isVisible, sessionIndicator.superview == nil {
             if let stack = downloadedIndicator.superview as? UIStackView, let index = stack.arrangedSubviews.firstIndex(of: downloadedIndicator) {
                 stack.insertArrangedSubview(sessionIndicator, at: index)
             } else if let superview = downloadedIndicator.superview {
@@ -319,8 +319,8 @@ class PlayerCell: ThemeableSwipeCell {
                 ])
             }
         }
-        sessionIndicator.tintColor = ThemeColor.support02()
-        sessionIndicator.isHidden = !visible
+        sessionIndicator.tintColor = state.tint ?? ThemeColor.support02()
+        sessionIndicator.isHidden = !state.isVisible
     }
 
     override func prepareForReuse() {

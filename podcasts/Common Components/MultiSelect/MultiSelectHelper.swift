@@ -390,14 +390,14 @@ class MultiSelectHelper {
         }
     }
 
-    /// Fork: removes the selection from the page's session lineup (dismissals
-    /// recorded, so feeders don't re-offer). No session in context = no-op.
+    /// Fork: removes the selection from sessions, honoring the Remove from Session mode (all / this
+    /// session / ask). The page's own session, if any, is the "current" one.
     private class func removeFromSession(actionDelegate: MultiSelectActionDelegate) {
-        guard let session = actionDelegate.multiSelectCurrentSession() else { return }
         let uuids = actionDelegate.multiSelectedBaseEpisodes().map(\.uuid)
         guard !uuids.isEmpty else { return }
-        SessionManager.shared.removeFromLineup(episodeUuids: uuids, session: session)
-        actionDelegate.multiSelectActionCompleted()
+        SessionManager.shared.removeFromSessions(episodeUuids: uuids, preferred: actionDelegate.multiSelectCurrentSession(), presenting: actionDelegate.multiSelectPresentingViewController()) {
+            actionDelegate.multiSelectActionCompleted()
+        }
     }
 
     /// Fork: seen/unseen for a selection — batched and off the main thread, with the

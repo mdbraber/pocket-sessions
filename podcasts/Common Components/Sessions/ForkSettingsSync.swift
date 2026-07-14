@@ -19,6 +19,7 @@ final class ForkSettingsSync {
         Settings.playlistsBadgeKey,
         Settings.badgeKey,
         "SJInboxAddToSessionMode",
+        "SJRemoveFromSessionMode",
         "SJPlaylistsHideSessions",
         "SJPlaylistsSortOrder",
         "SJPlaylistsLibraryType",

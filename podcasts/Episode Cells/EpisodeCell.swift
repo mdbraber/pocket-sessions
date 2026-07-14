@@ -619,8 +619,8 @@ class EpisodeCell: ThemeableSwipeCell, MainEpisodeActionViewDelegate {
         return imageView
     }()
 
-    func setSessionIndicator(visible: Bool) {
-        if visible, sessionIndicator.superview == nil {
+    func setSessionIndicator(_ state: SessionIndicatorState) {
+        if state.isVisible, sessionIndicator.superview == nil {
             if let stack = upNextIndicator.superview as? UIStackView, let index = stack.arrangedSubviews.firstIndex(of: upNextIndicator) {
                 stack.insertArrangedSubview(sessionIndicator, at: index)
             } else if let superview = upNextIndicator.superview {
@@ -632,8 +632,8 @@ class EpisodeCell: ThemeableSwipeCell, MainEpisodeActionViewDelegate {
                 ])
             }
         }
-        sessionIndicator.tintColor = ThemeColor.support02()
-        sessionIndicator.isHidden = !visible
+        sessionIndicator.tintColor = state.tint ?? ThemeColor.support02()
+        sessionIndicator.isHidden = !state.isVisible
     }
 
     /// Fork: the unread dot — this episode is in the Inbox, i.e. you haven't looked at it yet.

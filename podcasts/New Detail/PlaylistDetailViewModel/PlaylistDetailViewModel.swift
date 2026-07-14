@@ -60,9 +60,14 @@ class PlaylistDetailViewModel: ObservableObject {
     /// always reflects the whole playlist.
     private(set) var allOverlayEpisodes: [ListEpisode] = []
 
-    /// Fork: the viewed session's store members — drives the little green
-    /// in-this-session indicator on Episodes rows.
-    private(set) var sessionMemberUuidsForDisplay: Set<String> = []
+    /// Fork: THIS page's own session store members (empty on pages with no session). The in-session
+    /// badge is full-brightness for these and half-brightness for episodes in *other* sessions.
+    private(set) var thisSessionMemberUuids: Set<String> = []
+
+    /// The badge state for an episode on this page: in-this-session / in-another-session / none.
+    func sessionIndicatorState(for episodeUuid: String) -> SessionIndicatorState {
+        SessionIndicatorState.resolve(episodeUuid, thisSession: thisSessionMemberUuids)
+    }
     /// Inbox membership — the unread dot. Fetched ONCE per section build; the cell reads the Set.
     private(set) var unseenUuidsForDisplay: Set<String> = []
 
@@ -550,8 +555,8 @@ class PlaylistDetailViewModel: ObservableObject {
             let tint = AppTheme.appTintColor()
             let lineup = episodes
             allOverlayEpisodes = episodes
-            // Global "in a session" membership — consistent on every list (see the lens branch).
-            sessionMemberUuidsForDisplay = inAnySessionUuids
+            // This page IS a session store; its members are "in this session" (full brightness).
+            thisSessionMemberUuids = Set(lineup.map { $0.episode.uuid })
             unseenUuidsForDisplay = InboxManager.shared.unseenUuids()
 
             if !triageTabAutoSelected {
@@ -610,9 +615,10 @@ class PlaylistDetailViewModel: ObservableObject {
             }
             let browse = episodes
             allOverlayEpisodes = episodes
-            // The badge means "in a session" globally — an episode in any session shows it on every
-            // list it appears in, even here where this lens's own session may be empty (e.g. All).
-            sessionMemberUuidsForDisplay = inAnySessionUuids
+            // This lens's own session (if any) is "this session"; everything else in a session shows
+            // dimmed. A lens with no/empty session (e.g. All) simply has no "this session" members,
+            // so its in-session episodes all render as "other session".
+            thisSessionMemberUuids = (lensSession != nil) ? Set(lineup.map { $0.episode.uuid }) : []
             unseenUuidsForDisplay = InboxManager.shared.unseenUuids()
 
             if !triageTabAutoSelected {
@@ -650,8 +656,8 @@ class PlaylistDetailViewModel: ObservableObject {
             return sections
         }
 
-        // Plain playlists (and any non-triage page) still mark episodes that are in a session.
-        sessionMemberUuidsForDisplay = inAnySessionUuids
+        // Plain playlists have no session of their own — in-session episodes all render dimmed.
+        thisSessionMemberUuids = []
 
         let episodeElements: [ListItem]
         if episodes.isEmpty {

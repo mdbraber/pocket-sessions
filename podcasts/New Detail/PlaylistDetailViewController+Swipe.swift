@@ -19,8 +19,9 @@ extension PlaylistDetailViewController: SwipeTableViewCellDelegate, SwipeHandler
                     self.viewModel.addToSessionsPerSetting(episodeUuids: [episode.uuid], presenting: self)
                 }, removeFromSession: { [weak self] in
                     guard let self else { return }
-                    SessionManager.shared.removeFromAllSessions(episodeUuids: [episode.uuid])
-                    self.viewModel.reloadEpisodeList(animated: true)
+                    SessionManager.shared.removeFromSessions(episodeUuids: [episode.uuid], preferred: self.viewModel.session ?? self.viewModel.lensSession, presenting: self) { [weak self] in
+                        self?.viewModel.reloadEpisodeList(animated: true)
+                    }
                 })
             }
             let actions = SwipeActionsHelper.createLeftActionsForEpisode(episode, tableView: tableView, indexPath: indexPath, swipeHandler: self)

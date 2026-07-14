@@ -7,12 +7,12 @@ import UIKit
 class InboxSettingsViewController: PCViewController, UITableViewDataSource, UITableViewDelegate {
     private static let cellId = "InboxSettingsCell"
 
-    private enum TableRow: CaseIterable { case addToSessionMode, autoAddToUpNext, autoAddToSession, mirrorUpNextToSession, mirrorSessionToUpNext }
+    private enum TableRow: CaseIterable { case addToSessionMode, removeFromSessionMode, autoAddToUpNext, autoAddToSession, mirrorUpNextToSession, mirrorSessionToUpNext }
 
-    /// Grouped: the Add to Session routing stands apart from the Auto Add pages and
+    /// Grouped: the Add/Remove routing stands apart from the Auto Add pages and
     /// the linked-adds switches. With sessions off only stock Up Next remains.
     private var sections: [[TableRow]] {
-        [[.addToSessionMode], [.autoAddToUpNext, .autoAddToSession], [.mirrorUpNextToSession, .mirrorSessionToUpNext]]
+        [[.addToSessionMode, .removeFromSessionMode], [.autoAddToUpNext, .autoAddToSession], [.mirrorUpNextToSession, .mirrorSessionToUpNext]]
     }
 
     private let settingsTable = ThemeableTable(frame: .zero, style: .grouped)
@@ -61,6 +61,9 @@ class InboxSettingsViewController: PCViewController, UITableViewDataSource, UITa
         case .addToSessionMode:
             cell.textLabel?.text = L10n.playlistAddToLineup
             cell.detailTextLabel?.text = AddToSessionMode.current.title
+        case .removeFromSessionMode:
+            cell.textLabel?.text = L10n.sessionRemoveFrom
+            cell.detailTextLabel?.text = RemoveFromSessionMode.current.title
         case .autoAddToUpNext:
             cell.textLabel?.text = L10n.settingsAutoAdd
             cell.detailTextLabel?.text = L10n.settingsEpisodeLimitFormat(ServerSettings.autoAddToUpNextLimit().localized())
@@ -98,6 +101,16 @@ class InboxSettingsViewController: PCViewController, UITableViewDataSource, UITa
             }
             optionsController.saveOnChange = true
             optionsController.title = L10n.playlistAddToLineup
+            navigationController?.pushViewController(optionsController, animated: true)
+        case .removeFromSessionMode:
+            let modes = RemoveFromSessionMode.allCases
+            let selectedIndex = modes.firstIndex(of: .current) ?? 0
+            let optionsController = SettingsOptionsViewController(items: modes.map(\.title), selectedValue: selectedIndex) { [weak self] index in
+                modes[index].save()
+                self?.settingsTable.reloadData()
+            }
+            optionsController.saveOnChange = true
+            optionsController.title = L10n.sessionRemoveFrom
             navigationController?.pushViewController(optionsController, animated: true)
         case .autoAddToUpNext:
             navigationController?.pushViewController(AutoAddToUpNextViewController(), animated: true)

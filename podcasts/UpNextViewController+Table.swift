@@ -153,8 +153,8 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
             playerCell.delegate = self
             if let episode = sessionEpisodes?[safe: indexPath.row] {
                 playerCell.populateFrom(episode: episode)
-                // Session rows ARE the session — but show when one is also queued.
-                playerCell.setSessionIndicator(visible: false)
+                // Session rows ARE the session — no badge on them.
+                playerCell.setSessionIndicator(.none)
                 playerCell.setUpNextIndicator(visible: PlaybackManager.shared.inUpNext(episode: episode))
                 playerCell.setNowPlaying(PlaybackManager.shared.isNowPlayingEpisode(episodeUuid: episode.uuid))
                 playerCell.showTick = selectedEpisodesContains(uuid: episode.uuid)
@@ -202,7 +202,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
 
         if let episode = PlaybackManager.shared.queue.episodeAt(index: queueIndex(forVisibleRow: indexPath.row)) {
             playerCell.populateFrom(episode: episode)
-            playerCell.setSessionIndicator(visible: sessionMemberUuidsForDisplay.contains(episode.uuid))
+            playerCell.setSessionIndicator(SessionIndicatorState.resolve(episode.uuid, thisSession: sessionMemberUuidsForDisplay))
             playerCell.setUpNextIndicator(visible: false)
             // Fork: session playback can leave the sounding episode sitting in the
             // queue — the equalizer bars + accent title mark it.
