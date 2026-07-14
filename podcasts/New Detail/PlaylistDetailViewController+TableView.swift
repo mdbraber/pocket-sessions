@@ -452,18 +452,16 @@ extension PlaylistDetailViewController {
 
     /// Fork: the tab's sort picker — Session offers its custom lineup order plus the
     /// date orders; Inbox and Episodes the date orders.
-    func presentTriageSortPicker() {
-        let tab = viewModel.selectedTriageTab.sortKey
-        let pageUuid = viewModel.playlist.uuid
-        let picker = OptionsPicker(title: L10n.sortBy.localizedUppercase)
-        let current = TriageTabSort.order(tab, pageUuid: pageUuid)
-        for option in tab.options {
-            picker.addAction(action: OptionAction(label: option.title, selected: current == option) { [weak self] in
-                TriageTabSort.setOrder(option, tab: tab, pageUuid: pageUuid)
-                self?.viewModel.reloadEpisodeList(animated: false)
-            })
+    /// Applies a preset's sort/group to this page when the preset is selected. The list's own sort
+    /// and group controls (in the ⋯ menu) then override these — the preset only seeds the defaults.
+    func applyPresetSortAndGroup(_ preset: FilterPreset) {
+        if let raw = preset.sortOrder, let order = TriageTabSortOrder(rawValue: raw) {
+            TriageTabSort.setOrder(order, tab: viewModel.selectedTriageTab.sortKey, pageUuid: viewModel.playlist.uuid)
         }
-        picker.present(from: self)
+        // Group applies to the Episodes tab only (the Session lineup never groups).
+        if viewModel.selectedTriageTab == .browse, let group = EpisodeGroupBy(rawValue: preset.groupBy) {
+            viewModel.groupBy = group
+        }
     }
 }
 
@@ -549,7 +547,12 @@ private extension PlaylistDetailViewController {
         // including the Session lineup (where it sieves, and never reorders).
         var funnelButton: UIButton?
         if viewModel.usesTriageTabs {
-            let funnel = FilterPresetPicker.makeButton(target: self, scope: viewModel.filterScope, searchActive: { [weak self] in self?.viewModel.isSearching ?? false }) { [weak self] in
+            let funnel = FilterPresetPicker.makeButton(
+                target: self,
+                scope: viewModel.filterScope,
+                searchActive: { [weak self] in self?.viewModel.isSearching ?? false },
+                onSelect: { [weak self] preset in self?.applyPresetSortAndGroup(preset) }
+            ) { [weak self] in
                 self?.viewModel.reloadEpisodeList(animated: false)
             }
             funnel.translatesAutoresizingMaskIntoConstraints = false
@@ -561,30 +564,9 @@ private extension PlaylistDetailViewController {
             funnelButton = funnel
         }
 
-        // Fork: the per-tab sort control, left of the funnel (or at its spot on tabs
-        // without one). Accented whenever the tab isn't in its natural order.
-        if viewModel.usesTriageTabs {
-            let sortKey = viewModel.selectedTriageTab.sortKey
-            let sort = UIButton(type: .system)
-            sort.setPreferredSymbolConfiguration(UIImage.SymbolConfiguration(pointSize: 16, weight: .medium), forImageIn: .normal)
-            sort.setImage(UIImage(systemName: "arrow.up.arrow.down"), for: .normal)
-            sort.tintColor = AppTheme.colorForStyle(TriageTabSort.isNonDefault(sortKey, pageUuid: viewModel.playlist.uuid) ? .primaryInteractive01 : .primaryIcon02)
-            sort.accessibilityLabel = L10n.sortBy
-            sort.addAction(UIAction { [weak self] _ in
-                self?.presentTriageSortPicker()
-            }, for: .touchUpInside)
-            sort.translatesAutoresizingMaskIntoConstraints = false
-            container.addSubview(sort)
-            if let funnelButton {
-                constraints.append(sort.trailingAnchor.constraint(equalTo: funnelButton.leadingAnchor, constant: -12))
-            } else {
-                constraints.append(sort.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16))
-            }
-            constraints.append(contentsOf: [
-                sort.centerYAnchor.constraint(equalTo: countsLabel.centerYAnchor),
-                countsLabel.trailingAnchor.constraint(lessThanOrEqualTo: sort.leadingAnchor, constant: -10)
-            ])
-        } else if let funnelButton {
+        // Fork: sort and group by are NOT on the counts line — they live in the ⋯ menu only. The
+        // counts line carries just the preset control.
+        if let funnelButton {
             constraints.append(countsLabel.trailingAnchor.constraint(lessThanOrEqualTo: funnelButton.leadingAnchor, constant: -10))
         }
 

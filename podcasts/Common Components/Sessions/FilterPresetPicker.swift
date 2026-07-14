@@ -22,6 +22,7 @@ enum FilterPresetPicker {
         target: UIViewController,
         scope: FilterScope = .episodes,
         searchActive: @escaping () -> Bool = { false },
+        onSelect: @escaping (FilterPreset) -> Void = { _ in },
         onChange: @escaping () -> Void
     ) -> UIButton {
         let button = UIButton(type: .system)
@@ -32,7 +33,7 @@ enum FilterPresetPicker {
         button.setContentCompressionResistancePriority(.required, for: .horizontal)
         button.addAction(UIAction { [weak target] _ in
             guard let target else { return }
-            present(from: target, scope: scope, searchActive: searchActive(), onChange: onChange)
+            present(from: target, scope: scope, searchActive: searchActive(), onSelect: onSelect, onChange: onChange)
         }, for: .touchUpInside)
         style(button, scope: scope)
         return button
@@ -45,6 +46,9 @@ enum FilterPresetPicker {
         button.setImage(UIImage(systemName: "chevron.down"), for: .normal)
         button.semanticContentAttribute = .forceRightToLeft // chevron trails the label
         button.configuration = nil
+        // The filter label sits hard against the right edge of its slot — the control is the
+        // rightmost thing on the info line, so it right-aligns.
+        button.contentHorizontalAlignment = .right
 
         // The cue is a bonus, not the mechanism — the label already says what is happening.
         let narrowing = FilterPresets.isNarrowing(scope)
@@ -53,13 +57,14 @@ enum FilterPresetPicker {
         button.accessibilityLabel = L10n.filterPresetAccessibility(preset.name)
     }
 
-    static func present(from controller: UIViewController, scope: FilterScope = .episodes, searchActive: Bool = false, onChange: @escaping () -> Void) {
+    static func present(from controller: UIViewController, scope: FilterScope = .episodes, searchActive: Bool = false, onSelect: @escaping (FilterPreset) -> Void = { _ in }, onChange: @escaping () -> Void) {
         let picker = OptionsPicker(title: L10n.filters.localizedUppercase)
         let active = FilterPresets.active(scope)
 
         for preset in FilterPresetStore.shared.enabledPresets {
             picker.addAction(action: OptionAction(label: preset.name, icon: nil, selected: preset.uuid == active.uuid) {
                 FilterPresetStore.shared.setActivePresetUuid(preset.uuid, for: scope)
+                onSelect(preset) // apply the preset's sort/group to the list (then overridable)
                 onChange()
             })
         }
@@ -78,18 +83,8 @@ enum FilterPresetPicker {
             }
         })
 
-        // Fork: "Reset all filters" only appears when there is actually something to reset — a
-        // narrowing preset, or an active search. On a clean list it is noise (selecting "All
-        // Episodes" from the list above is the reset for the preset alone); its unique value is
-        // clearing the search term at the same time, so it also shows when only search is active.
-        if FilterPresets.isNarrowing(scope) || searchActive {
-            picker.addAction(action: OptionAction(label: L10n.filterPresetReset, icon: "close") {
-                FilterPresetStore.shared.setActivePresetUuid(nil, for: scope)
-                NotificationCenter.postOnMainThread(notification: FilterPresets.resetAll)
-                onChange()
-            })
-        }
-
+        // No "Reset all filters" here — selecting "All Episodes" from the list resets the preset,
+        // and Reset lives in the management list's ⋯ menu. (Kept off the everyday picker.)
         picker.present(from: controller)
     }
 }

@@ -81,7 +81,7 @@ final class FilterPresetStoreTests: XCTestCase {
 
     func testAPresetMissingDefaultedKeysDecodesRatherThanWipingTheStore() throws {
         var preset = try json(for: FilterPreset(name: "Long Reads", starred: true))
-        for key in ["iconId", "playingStatus", "downloadStatus", "filterDuration", "longerThan", "shorterThan", "filterHours", "sortType"] {
+        for key in ["iconId", "playingStatus", "downloadStatus", "filterDuration", "longerThan", "shorterThan", "filterHours", "sortOrder", "groupBy"] {
             preset.removeValue(forKey: key)
         }
         try write(["presets": [preset], "seeded": true])
@@ -92,7 +92,7 @@ final class FilterPresetStoreTests: XCTestCase {
         let loaded = try XCTUnwrap(store.presets.first)
         XCTAssertEqual(loaded.starred, true)
         XCTAssertTrue(loaded.playingStatus.isEmpty)
-        XCTAssertEqual(loaded.sortType, PlaylistSort.newestToOldest.rawValue)
+        XCTAssertNil(loaded.sortOrder)
     }
 
     /// A nil rule means "don't care". It is written as an absent key, so it MUST read back as nil

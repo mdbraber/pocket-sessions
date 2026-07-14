@@ -98,7 +98,11 @@ struct FilterPreset: Codable, Equatable, Identifiable {
     /// Release window, in hours. 0 = any.
     var filterHours: Int32
 
-    var sortType: Int32
+    /// Applied to the list when the preset is selected, then overridable by the list's own sort
+    /// control. nil = "none" (leave the list's current sort). Raw value of `TriageTabSortOrder`.
+    var sortOrder: Int?
+    /// Group By, applied on selection and overridable. Raw value of `EpisodeGroupBy` (0 = none).
+    var groupBy: Int
 
     var id: String { uuid }
 
@@ -120,7 +124,8 @@ struct FilterPreset: Codable, Equatable, Identifiable {
         longerThan: Int32 = 0,
         shorterThan: Int32 = 0,
         filterHours: Int32 = 0,
-        sortType: Int32 = PlaylistSort.newestToOldest.rawValue
+        sortOrder: Int? = nil,
+        groupBy: Int = 0
     ) {
         self.uuid = uuid
         self.name = name
@@ -139,13 +144,14 @@ struct FilterPreset: Codable, Equatable, Identifiable {
         self.longerThan = longerThan
         self.shorterThan = shorterThan
         self.filterHours = filterHours
-        self.sortType = sortType
+        self.sortOrder = sortOrder
+        self.groupBy = groupBy
     }
 
     enum CodingKeys: String, CodingKey {
         case uuid, name, iconId, enabled, playingStatus, downloadStatus, starred, mediaType
         case archived, unseen, inSession, podcastUuids, folderUuids
-        case filterDuration, longerThan, shorterThan, filterHours, sortType
+        case filterDuration, longerThan, shorterThan, filterHours, sortOrder, groupBy
     }
 
     // CRITICAL: every key via decodeIfPresent. Synthesized Decodable throws keyNotFound on a
@@ -175,13 +181,14 @@ struct FilterPreset: Codable, Equatable, Identifiable {
         longerThan = try c.decodeIfPresent(Int32.self, forKey: .longerThan) ?? 0
         shorterThan = try c.decodeIfPresent(Int32.self, forKey: .shorterThan) ?? 0
         filterHours = try c.decodeIfPresent(Int32.self, forKey: .filterHours) ?? 0
-        sortType = try c.decodeIfPresent(Int32.self, forKey: .sortType) ?? PlaylistSort.newestToOldest.rawValue
+        sortOrder = try c.decodeIfPresent(Int.self, forKey: .sortOrder)
+        groupBy = try c.decodeIfPresent(Int.self, forKey: .groupBy) ?? 0
     }
 
     /// True when this preset narrows nothing beyond the default — i.e. it is "All Episodes" in all
     /// but name (archived included).
     var isDefault: Bool {
-        self == FilterPreset(uuid: uuid, name: name, iconId: iconId, enabled: enabled, sortType: sortType)
+        self == FilterPreset(uuid: uuid, name: name, iconId: iconId, enabled: enabled, sortOrder: sortOrder, groupBy: groupBy)
     }
 
     /// Whether a podcast/folder scope is set.

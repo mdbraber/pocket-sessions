@@ -211,15 +211,4 @@ final class FilterPresetQueryTests: XCTestCase {
         XCTAssertTrue(clause.contains("episode.playingStatus"), clause)
         XCTAssertTrue(clause.contains("pe.episodeUuid = episode.uuid"), clause)
     }
-
-    // MARK: - Sort
-
-    func testSortMapsToOrderBy() {
-        let oldest = FilterPreset(name: "x", sortType: PlaylistSort.oldestToNewest.rawValue)
-        XCTAssertEqual(FilterPresetQuery.orderBy(for: oldest), "ORDER BY publishedDate ASC, addedDate ASC")
-
-        // A preset has no hand-made order to honour, so drag-and-drop degrades to newest-first.
-        let dragged = FilterPreset(name: "x", sortType: PlaylistSort.dragAndDrop.rawValue)
-        XCTAssertEqual(FilterPresetQuery.orderBy(for: dragged), "ORDER BY publishedDate DESC, addedDate DESC")
-    }
 }

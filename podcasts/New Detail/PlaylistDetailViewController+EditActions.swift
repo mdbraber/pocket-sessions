@@ -20,51 +20,51 @@ extension PlaylistDetailViewController {
         let multiSelectAction = multiSelectAction()
         optionsPicker.addAction(action: multiSelectAction)
 
-        let sortAction = sortAction()
-        optionsPicker.addAction(action: sortAction)
+        // Sort and Group By. Triage pages use the fork's per-tab sort (TriageTabSort); plain
+        // playlists use the stock playlist sort. Sort on every tab; Group By only where episodes
+        // are browsed (the Session lineup renders in play order and never groups). No group-limit.
+        if viewModel.usesTriageTabs {
+            let sortTab = viewModel.selectedTriageTab.sortKey
+            let triageSort = OptionAction(label: L10n.sortBy, secondaryLabel: TriageTabSort.order(sortTab, pageUuid: viewModel.playlist.uuid).title, icon: "podcastlist_sort") {}
+            triageSort.submenu = { [weak self] in
+                guard let self else { return nil }
+                let picker = OptionsPicker(title: L10n.sortBy.localizedUppercase)
+                let current = TriageTabSort.order(sortTab, pageUuid: self.viewModel.playlist.uuid)
+                for option in sortTab.options {
+                    picker.addAction(action: OptionAction(label: option.title, selected: current == option) {
+                        TriageTabSort.setOrder(option, tab: sortTab, pageUuid: self.viewModel.playlist.uuid)
+                        self.viewModel.reloadEpisodeList(animated: false)
+                    })
+                }
+                return picker
+            }
+            optionsPicker.addAction(action: triageSort)
+
+            if viewModel.selectedTriageTab != .lineup {
+                let groupAction = OptionAction(label: L10n.inboxGroupBy, secondaryLabel: viewModel.groupBy.title, icon: "option-group") {}
+                groupAction.submenu = { [weak self] in
+                    guard let self else { return nil }
+                    let picker = OptionsPicker(title: L10n.inboxGroupBy.localizedUppercase)
+                    for option in EpisodeGroupBy.menuOrder {
+                        picker.addAction(action: OptionAction(label: option.title, selected: self.viewModel.groupBy == option) {
+                            self.viewModel.groupBy = option
+                        })
+                    }
+                    return picker
+                }
+                optionsPicker.addAction(action: groupAction)
+            }
+        } else {
+            optionsPicker.addAction(action: sortAction())
+        }
 
         if viewModel.usesCustomOrderOverlay {
             optionsPicker.addAction(action: newEpisodesAction())
-            optionsPicker.addAction(action: insertModeAction())
-        } else if viewModel.isLensPage {
-            // Fork: lens pages control the fed session's insert position too — it's
-            // the same value the store page and Podcast Settings edit.
-            optionsPicker.addAction(action: insertModeAction())
         }
 
-
-        // Fork: Group By and its limit, identical to the global Inbox's — it shapes
-        // the Inbox and Episodes views; the Session lineup never groups, so the
-        // options hide while that tab is up.
-        if viewModel.usesTriageTabs, viewModel.selectedTriageTab != .lineup {
-            let groupAction = OptionAction(label: L10n.inboxGroupBy, secondaryLabel: viewModel.groupBy.title, icon: "option-group") {}
-            groupAction.submenu = { [weak self] in
-                guard let self else { return nil }
-                let picker = OptionsPicker(title: L10n.inboxGroupBy.localizedUppercase)
-                for option in EpisodeGroupBy.menuOrder {
-                    picker.addAction(action: OptionAction(label: option.title, selected: self.viewModel.groupBy == option) {
-                        self.viewModel.groupBy = option
-                    })
-                }
-                return picker
-            }
-            optionsPicker.addAction(action: groupAction)
-
-            let limitAction = OptionAction(label: L10n.episodeGroupLimit, secondaryLabel: viewModel.groupLimit > 0 ? "\(viewModel.groupLimit)" : L10n.off, icon: "option-group") {}
-            limitAction.submenu = { [weak self] in
-                guard let self else { return nil }
-                let picker = OptionsPicker(title: L10n.episodeGroupLimit.localizedUppercase)
-                picker.addAction(action: OptionAction(label: L10n.off, selected: self.viewModel.groupLimit == 0) {
-                    self.viewModel.groupLimit = 0
-                })
-                for limit in EpisodeGrouper.limitOptions {
-                    picker.addAction(action: OptionAction(label: "\(limit)", selected: self.viewModel.groupLimit == limit) {
-                        self.viewModel.groupLimit = limit
-                    })
-                }
-                return picker
-            }
-            optionsPicker.addAction(action: limitAction)
+        // "Add to Session" (insert position) sits directly above Download All.
+        if viewModel.usesCustomOrderOverlay || viewModel.isLensPage {
+            optionsPicker.addAction(action: insertModeAction())
         }
 
         let downloadAllAction = downloadAllOption()

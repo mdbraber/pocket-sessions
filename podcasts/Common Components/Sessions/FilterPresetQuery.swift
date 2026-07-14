@@ -125,23 +125,6 @@ enum FilterPresetQuery {
         return (blocks.joined(separator: " AND "), arguments)
     }
 
-    /// `ORDER BY` for a preset. Separate from the predicate because the two compose at different
-    /// points in the surrounding query.
-    static func orderBy(for preset: FilterPreset, columns: Columns = .unaliased) -> String {
-        let e = columns.rawValue
-        switch PlaylistSort(rawValue: preset.sortType) {
-        case .oldestToNewest:
-            return "ORDER BY \(e)publishedDate ASC, \(e)addedDate ASC"
-        case .shortestToLongest:
-            return "ORDER BY \(e)duration ASC, \(e)addedDate ASC"
-        case .longestToShortest:
-            return "ORDER BY \(e)duration DESC, \(e)addedDate DESC"
-        case .newestToOldest, .dragAndDrop, nil:
-            // A preset has no hand-made order to honour, so drag-and-drop degrades to newest-first.
-            return "ORDER BY \(e)publishedDate DESC, \(e)addedDate DESC"
-        }
-    }
-
     // MARK: - Rule helpers
 
     /// A binary rule: nil constrains nothing.

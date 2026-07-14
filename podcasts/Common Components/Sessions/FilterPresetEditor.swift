@@ -62,28 +62,8 @@ struct FilterPresetEditorView: View {
 
     var body: some View {
         Form {
-            Section {
-                TextField(L10n.filterPresetNamePlaceholder, text: Binding(
-                    get: { model.preset.name },
-                    set: { model.preset.name = $0 }
-                ))
-            }
-
-            // Multi-value axes: a toggle per option. All-on or all-off = "any".
-            Section(header: Text(L10n.filterEpisodeStatus)) {
-                setToggle(L10n.statusUnplayed, .unplayed, keyPath: \.playingStatus)
-                setToggle(L10n.inProgress, .inProgress, keyPath: \.playingStatus)
-                setToggle(L10n.statusPlayed, .played, keyPath: \.playingStatus)
-            }
-
-            Section(header: Text(L10n.filterDownloadStatus)) {
-                setToggle(L10n.statusDownloaded, .downloaded, keyPath: \.downloadStatus)
-                setToggle(L10n.statusDownloading, .downloading, keyPath: \.downloadStatus)
-                setToggle(L10n.statusNotDownloaded, .notDownloaded, keyPath: \.downloadStatus)
-            }
-
-            // Scope: which podcasts/folders. A multi-select sheet; empty = all. (A sheet, not a
-            // push — this SwiftUI form is hosted inside a UIKit nav stack, so a NavigationLink has
+            // Scope first: which podcasts/folders. A multi-select sheet; empty = all. (A sheet, not
+            // a push — this SwiftUI form is hosted inside a UIKit nav stack, so a NavigationLink has
             // nothing to push onto.)
             Section {
                 Button {
@@ -100,12 +80,32 @@ struct FilterPresetEditorView: View {
                 .buttonStyle(.plain)
             }
 
-            // Binary axes: three-way segmented controls.
+            Section {
+                TextField(L10n.filterPresetNamePlaceholder, text: Binding(
+                    get: { model.preset.name },
+                    set: { model.preset.name = $0 }
+                ))
+            }
+
+            // Binary axes: three-way segmented controls. The filters block leads the rules.
             Section(header: Text(L10n.filters)) {
                 triStateRow(L10n.filterPresetRuleUnseen, positive: L10n.episodeUnseen, negative: L10n.episodeSeen, keyPath: \.unseen)
                 triStateRow(L10n.filterPresetRuleSession, positive: L10n.filterPresetInSession, negative: L10n.filterPresetNotInSession, keyPath: \.inSession)
                 triStateRow(L10n.statusStarred, positive: L10n.statusStarred, negative: L10n.statusNotStarred, keyPath: \.starred)
                 triStateRow(L10n.podcastArchived, positive: L10n.podcastArchived, negative: L10n.filterPresetNotArchived, keyPath: \.archived)
+            }
+
+            // Multi-value axes: a toggle per option. All-on or all-off = "any".
+            Section(header: Text(L10n.filterEpisodeStatus)) {
+                setToggle(L10n.statusUnplayed, .unplayed, keyPath: \.playingStatus)
+                setToggle(L10n.inProgress, .inProgress, keyPath: \.playingStatus)
+                setToggle(L10n.statusPlayed, .played, keyPath: \.playingStatus)
+            }
+
+            Section(header: Text(L10n.filterDownloadStatus)) {
+                setToggle(L10n.statusDownloaded, .downloaded, keyPath: \.downloadStatus)
+                setToggle(L10n.statusDownloading, .downloading, keyPath: \.downloadStatus)
+                setToggle(L10n.statusNotDownloaded, .notDownloaded, keyPath: \.downloadStatus)
             }
 
             Section(header: Text(L10n.filterMediaType)) {
@@ -141,15 +141,28 @@ struct FilterPresetEditorView: View {
                 }
             }
 
+            // Sort and Group are applied to the list when the preset is selected, and then the
+            // list's own controls override them. "None" leaves the list's current choice alone.
             Section(header: Text(L10n.sortBy)) {
                 Picker(L10n.sortBy, selection: Binding(
-                    get: { model.preset.sortType },
-                    set: { model.preset.sortType = $0 }
+                    get: { model.preset.sortOrder },
+                    set: { model.preset.sortOrder = $0 }
                 )) {
-                    Text(L10n.podcastsEpisodeSortNewestToOldest).tag(PlaylistSort.newestToOldest.rawValue)
-                    Text(L10n.podcastsEpisodeSortOldestToNewest).tag(PlaylistSort.oldestToNewest.rawValue)
-                    Text(L10n.podcastsEpisodeSortShortestToLongest).tag(PlaylistSort.shortestToLongest.rawValue)
-                    Text(L10n.podcastsEpisodeSortLongestToShortest).tag(PlaylistSort.longestToShortest.rawValue)
+                    Text(L10n.none).tag(Int?.none)
+                    ForEach([TriageTabSortOrder.newestToOldest, .oldestToNewest, .shortestToLongest, .longestToShortest, .titleAtoZ, .titleZtoA], id: \.rawValue) {
+                        Text($0.title).tag(Int?.some($0.rawValue))
+                    }
+                }
+            }
+
+            Section(header: Text(L10n.inboxGroupBy)) {
+                Picker(L10n.inboxGroupBy, selection: Binding(
+                    get: { model.preset.groupBy },
+                    set: { model.preset.groupBy = $0 }
+                )) {
+                    ForEach(EpisodeGroupBy.menuOrder, id: \.rawValue) {
+                        Text($0.title).tag($0.rawValue)
+                    }
                 }
             }
         }

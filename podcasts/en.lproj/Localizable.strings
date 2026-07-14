@@ -5287,13 +5287,13 @@
 "playlist_new_episodes_auto" = "Add to Session Automatically";
 
 /* Setting title: where 'Add to Lineup' inserts episodes */
-"playlist_insert_mode_setting" = "Add to Session At";
+"playlist_insert_mode_setting" = "Add to Session";
 
 /* Insert position option: pinned to the top of the lineup */
-"playlist_insert_mode_top" = "Top";
+"playlist_insert_mode_top" = "On Top";
 
 /* Insert position option: appended to the bottom of the lineup */
-"playlist_insert_mode_bottom" = "Bottom";
+"playlist_insert_mode_bottom" = "On Bottom";
 
 /* Insert position option: after the episode added most recently (preserves triage order) */
 "playlist_insert_mode_after_last" = "After Last Added";

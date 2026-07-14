@@ -130,13 +130,12 @@ class EpisodeListSearchController: SimpleNotificationsViewController, UISearchBa
                 episodeInfoLabel?.attributedText = nil
             }
             showHideArchiveBtn?.isHidden = true
-            // Nothing to sort in an empty tab — hide the control so it doesn't dangle.
-            sortButton.isHidden = count == 0
-            updateSortButton()
+            // Sort lives in the ⋯ menu now, not the counts line.
+            sortButton.isHidden = true
             return
         }
         showHideArchiveBtn?.isHidden = false
-        sortButton.isHidden = false
+        sortButton.isHidden = true
 
         let episodeCount = delegate.episodeCount()
         let hasEpisodeLimit = (podcast.autoArchiveEpisodeLimitCount > 0 && podcast.isAutoArchiveOverridden)
@@ -239,7 +238,11 @@ class EpisodeListSearchController: SimpleNotificationsViewController, UISearchBa
     /// display-filter sheet to own.
     @IBAction func showHideArchiveTapped(_ sender: Any) {
         guard let controller = podcastDelegate as? UIViewController else { return }
-        FilterPresetPicker.present(from: controller, searchActive: !(searchTextField?.text ?? "").isEmpty) { [weak self] in
+        FilterPresetPicker.present(
+            from: controller,
+            searchActive: !(searchTextField?.text ?? "").isEmpty,
+            onSelect: { [weak self] preset in self?.applyPresetSortAndGroup(preset) }
+        ) { [weak self] in
             self?.podcastDelegate?.episodesDidChange()
         }
     }
@@ -449,6 +452,23 @@ class EpisodeListSearchController: SimpleNotificationsViewController, UISearchBa
 
     func searchBarActive() -> Bool {
         searchTextField?.isFirstResponder ?? false
+    }
+
+    /// Applies a preset's sort when the preset is selected — then the podcast's own sort control
+    /// overrides it. The podcast page groups by its own taxonomy (season/status), which the preset's
+    /// Group By (none/date/podcast/folder) doesn't map to, so only sort is applied here.
+    func applyPresetSortAndGroup(_ preset: FilterPreset) {
+        guard let raw = preset.sortOrder, let order = TriageTabSortOrder(rawValue: raw) else { return }
+        let mapped: PodcastEpisodeSortOrder? = switch order {
+        case .newestToOldest: .newestToOldest
+        case .oldestToNewest: .oldestToNewest
+        case .shortestToLongest: .shortestToLongest
+        case .longestToShortest: .longestToShortest
+        case .titleAtoZ: .titleAtoZ
+        case .titleZtoA: .titleZtoA
+        case .custom: nil
+        }
+        if let mapped { setSortSetting(mapped) }
     }
 
     private func setSortSetting(_ setting: PodcastEpisodeSortOrder) {
