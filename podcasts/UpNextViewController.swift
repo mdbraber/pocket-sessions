@@ -466,9 +466,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         guard session.type == .playlist || session.type == .smartPlaylist,
               let storeSession = SessionStore.shared.session(forStore: session.uuid),
               storeSession.feeder != .none, !storeSession.autoAdd else { return 0 }
-        return SessionFeederEngine.inboxEpisodes(for: storeSession)
-            .filter { !$0.isSeen }
-            .count
+        return SessionFeederEngine.inboxEpisodes(for: storeSession).count
     }
 
 

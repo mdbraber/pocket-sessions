@@ -173,6 +173,13 @@ class SessionManager {
         DataManager.sharedManager.setCustomOrder(episodeUuids: order, for: store)
         markStoreChanged(store)
 
+        // Deciding to play something is deciding about it: it leaves the Inbox.
+        //
+        // This is a PRIMITIVE call, not a verb — nothing mirrors from an Inbox removal, so
+        // the Up Next <-> Session mirroring stays a two-party relationship with the Inbox as
+        // a leaf. Calling a verb here is what would make recursion possible.
+        InboxManager.shared.markSeen(episodeUuids: episodeUuids)
+
         var updated = session
         updated.lastInsertedUuid = episodeUuids.last ?? updated.lastInsertedUuid
         SessionStore.shared.upsert(updated)
@@ -192,6 +199,7 @@ class SessionManager {
         _ = DataManager.sharedManager.add(episodes: episodes, to: store)
         DataManager.sharedManager.setCustomOrder(episodeUuids: episodeUuids, for: store)
         markStoreChanged(store)
+        InboxManager.shared.markSeen(episodeUuids: episodeUuids)
 
         var updated = session
         updated.lastInsertedUuid = episodeUuids.last ?? ""
@@ -205,12 +213,14 @@ class SessionManager {
         markStoreChanged(store)
     }
 
-    /// Removes from the lineup and records the scoped dismissal so the feeder never
-    /// re-offers it. Recoverable via the Dismissed list.
+    /// Removes from the lineup.
+    ///
+    /// This deliberately does NOT make the episode unseen again. You saw it and you decided
+    /// about it; taking it back out of a lineup is not un-deciding. (Dismissals are gone — with
+    /// membership as the only state, a removal leaves no record to recover from.)
     func removeFromLineup(episodeUuids: [String], session: Session) {
         guard let store = store(for: session) else { return }
         DataManager.sharedManager.deleteEpisodes(episodeUuids, from: store)
-        SessionStore.shared.setDismissed(episodeUuids: episodeUuids, sessionUuid: session.uuid)
         NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged, object: store)
     }
 
@@ -461,8 +471,10 @@ class SessionManager {
         NotificationCenter.postOnMainThread(notification: SessionStore.changed)
     }
 
+    /// Nothing to prune anymore: seen marks, dismissals and watermarks are all gone —
+    /// membership of the Inbox playlist is the only state, and it is bounded by definition.
+    /// The hook survives because auto-add sessions still want to absorb new offers on refresh.
     @objc func prune() {
-        SessionStore.shared.prune()
         autoAddSweep()
     }
 

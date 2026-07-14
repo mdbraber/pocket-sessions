@@ -160,6 +160,8 @@ extension PlaylistDetailViewController: UITableViewDataSource {
                 // rows are all members; Inbox rows never are).
                 cell.setSessionIndicator(visible: sectionModel(at: indexPath.section) == .browse
                     && viewModel.sessionMemberUuidsForDisplay.contains(listEpisode.episode.uuid))
+                // The unread dot: this episode is still in the Inbox.
+                cell.setUnseenIndicator(visible: viewModel.unseenUuidsForDisplay.contains(listEpisode.episode.uuid))
                 cell.shouldShowSelect = isMultiSelectEnabled
                 if isMultiSelectEnabled {
                     cell.showTick = selectedEpisodesContains(uuid: listEpisode.episode.uuid)
@@ -701,7 +703,7 @@ private extension PlaylistDetailViewController {
     }
 
     private func inboxMarkAllSeenTapped() {
-        EpisodeSeenManager.clearInbox(viewModel.inboxEpisodes.map(\.episode), feederUuid: viewModel.inboxFeederKey)
+        InboxManager.shared.markSeen(episodeUuids: viewModel.inboxEpisodes.map(\.episode.uuid))
         viewModel.reloadEpisodeList(animated: true)
     }
 

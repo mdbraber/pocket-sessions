@@ -636,9 +636,44 @@ class EpisodeCell: ThemeableSwipeCell, MainEpisodeActionViewDelegate {
         sessionIndicator.isHidden = !visible
     }
 
+    /// Fork: the unread dot — this episode is in the Inbox, i.e. you haven't looked at it yet.
+    /// Accent-coloured, because a presence dot is the one badge that is allowed to be accent.
+    private lazy var unseenIndicator: UIView = {
+        let dot = UIView()
+        dot.backgroundColor = ThemeColor.primaryInteractive01()
+        dot.layer.cornerRadius = 4
+        dot.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            dot.widthAnchor.constraint(equalToConstant: 8),
+            dot.heightAnchor.constraint(equalToConstant: 8)
+        ])
+        dot.setContentHuggingPriority(.required, for: .horizontal)
+        dot.setContentCompressionResistancePriority(.required, for: .horizontal)
+        return dot
+    }()
+
+    /// Membership of the Inbox playlist is what this reflects — so callers must pass a value
+    /// read from a Set fetched ONCE per list load. Never query membership per row.
+    func setUnseenIndicator(visible: Bool) {
+        if visible, unseenIndicator.superview == nil {
+            if let stack = upNextIndicator.superview as? UIStackView, let index = stack.arrangedSubviews.firstIndex(of: upNextIndicator) {
+                stack.insertArrangedSubview(unseenIndicator, at: index)
+            } else if let superview = upNextIndicator.superview {
+                superview.addSubview(unseenIndicator)
+                NSLayoutConstraint.activate([
+                    unseenIndicator.trailingAnchor.constraint(equalTo: upNextIndicator.leadingAnchor, constant: -4),
+                    unseenIndicator.centerYAnchor.constraint(equalTo: upNextIndicator.centerYAnchor)
+                ])
+            }
+        }
+        unseenIndicator.backgroundColor = ThemeColor.primaryInteractive01()
+        unseenIndicator.isHidden = !visible
+    }
+
     override func prepareForReuse() {
         super.prepareForReuse()
 
+        unseenIndicator.isHidden = true
         sessionIndicator.isHidden = true
         starIndicator.isHidden = true
         upNextIndicator.layer.removeAllAnimations()

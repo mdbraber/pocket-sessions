@@ -62,10 +62,9 @@ class EpisodesDataManager: PlaybackSessionEpisodeSource {
             members = Set(SessionFeederEngine.storeMemberUuids(for: session))
         }
 
-        // Fresh offers live in the Inbox tab only — Episodes never shows them.
-        let inboxSession = SessionStore.shared.session(forPodcast: podcast.uuid)
-            ?? Session(uuid: "podcast-inbox-preview", storePlaylistUuid: nil, feeder: .podcast(uuid: podcast.uuid))
-        let inboxUuids = Set(SessionFeederEngine.inboxEpisodes(for: inboxSession).map(\.uuid))
+        // Unseen episodes are NOT partitioned out of this list any more — they carry the
+        // unread dot instead. A partition and a dot are two encodings of the same bit, and
+        // running both is how they drift apart. The dot is the one that survives.
 
         // Groups whose rows all filter away disappear entirely — a grouping header
         // with nothing under it is noise. Group headers are ListHeader ELEMENTS
@@ -75,7 +74,6 @@ class EpisodesDataManager: PlaybackSessionEpisodeSource {
         var filtered = sections.dropFirst().map { section -> ArraySection<String, ListItem> in
             let kept = section.elements.filter { item in
                 guard let listEpisode = item as? ListEpisode else { return true }
-                if inboxUuids.contains(listEpisode.episode.uuid) { return false }
                 // Funnel off: the query's archived clause already decided visibility.
                 guard FeatureFlag.episodesFunnel.enabled else { return true }
                 return filter.isUnfiltered || filter.matches(listEpisode.episode, sessionMemberUuids: members)

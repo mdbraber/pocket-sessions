@@ -77,6 +77,8 @@ class PlaylistDetailViewModel: ObservableObject {
     /// Fork: the viewed session's store members — drives the little green
     /// in-this-session indicator on Episodes rows.
     private(set) var sessionMemberUuidsForDisplay: Set<String> = []
+    /// Inbox membership — the unread dot. Fetched ONCE per section build; the cell reads the Set.
+    private(set) var unseenUuidsForDisplay: Set<String> = []
 
     /// The last fetch's episodes — lets tab switches rebuild sections instantly
     /// instead of waiting for the async fetch (which still follows for freshness).
@@ -161,13 +163,6 @@ class PlaylistDetailViewModel: ObservableObject {
     /// The feeder used to compute lens-page offers before a session exists.
     var lensFeederSession: Session {
         lensSession ?? Session(uuid: "lens-inbox-preview", storePlaylistUuid: nil, feeder: .smartPlaylist(uuid: playlist.uuid))
-    }
-
-    /// The seen-watermark key for this page's inbox tab — matches whichever session
-    /// makeSections computes the inbox from (feeder-based, stable per inbox).
-    var inboxFeederKey: String {
-        if isLensPage { return lensFeederSession.inboxKey }
-        return session?.inboxKey ?? SessionStore.globalInboxUuid
     }
 
     /// Fork: pages showing the Inbox | Session | Episodes strip.
@@ -598,6 +593,7 @@ class PlaylistDetailViewModel: ObservableObject {
             let lineup = episodes
             allOverlayEpisodes = episodes
             sessionMemberUuidsForDisplay = Set(lineup.map { $0.episode.uuid })
+            unseenUuidsForDisplay = InboxManager.shared.unseenUuids()
 
             if !triageTabAutoSelected {
                 triageTabAutoSelected = true
@@ -672,6 +668,7 @@ class PlaylistDetailViewModel: ObservableObject {
             let browse = episodes.filter { !lensInboxUuids.contains($0.episode.uuid) && episodesFilter.matches($0.episode, sessionMemberUuids: browseMembers) }
             allOverlayEpisodes = episodes
             sessionMemberUuidsForDisplay = Set(lineup.map { $0.episode.uuid })
+            unseenUuidsForDisplay = InboxManager.shared.unseenUuids()
 
             if !triageTabAutoSelected {
                 triageTabAutoSelected = true

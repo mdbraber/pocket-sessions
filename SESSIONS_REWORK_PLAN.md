@@ -527,11 +527,35 @@ it) and forgets its line, so a re-subscribe draws a fresh one rather than replay
 `EpisodeSeen`/`SessionFeederEngine` model still drives every surface. Both models run in parallel until
 Stage 4 switches the UI over and deletes the old one.
 
-### Stage 4 — Seen becomes membership  · ~25 LOC added, ~700 deleted · blast radius: ~15 files
-`EpisodeCell.setUnseenIndicator` (§2.4). Fetch the member `Set` once per list load, never per row.
-Remap the 9 `isSeen` sites incl. the Up Next filter (§2.5). Keep mark-unseen's unplay/unarchive (Q2 ⚠️).
-**Delete:** `EpisodeSeen.swift`, `seenMarks`/`unseenMarks`/`clearedThrough`/`dismissals` from `SessionStore`,
-`DismissedEpisodesView.swift`. Recompute badges from the single grouped query (Perf §3).
+### Stage 4 — Seen becomes membership ✅ **DONE**
+**−415 lines net** (21 files: +193 / −608). Build green; app 390/390, DataModel 473/475, Server 94/94.
+
+- ✅ `EpisodeCell.setUnseenIndicator` — an accent dot in the existing info stack, mirroring
+  `setSessionIndicator`. Both list surfaces fetch the member `Set` **once per load**
+  (`cachedUnseenUuids` / `unseenUuidsForDisplay`); no cell ever queries membership.
+- ✅ `SessionFeederEngine` re-pointed at Inbox membership. **This deletes the fork's worst hot path**:
+  `inboxEpisodes` was a full playlist query *per session* plus a Swift filter over every unarchived episode;
+  `allStoreMemberUuids` ran a query *per session* and the playlists list re-ran it *per row*. Both are now
+  single indexed queries (`playlistEpisodeUuids(forPlaylistUuids:)`, `playlistEpisodeCountsByPodcast`).
+- ✅ Add-to-Session clears the dot — as a **primitive** call (`InboxManager.markSeen`), not a verb, so the
+  Up Next ⇄ Session mirroring stays two-party with the Inbox as a leaf and recursion stays impossible.
+- ✅ **Deleted:** `EpisodeSeen.swift`, `DismissedEpisodesView.swift`, `SessionStore`'s `seenMarks` /
+  `unseenMarks` / `clearedThrough` / `dismissals` (the Document is now just `{ sessions }`), `prune()`,
+  `SessionFeeder.inboxKey`, and the `ForkSeenMark` / `ForkUnseenMark` / `ForkWatermark` / `ForkDismissal`
+  CloudKit record types. Removing an episode from a Session no longer makes it unseen.
+
+⚠️ **Also removed the Episodes-tab partition** (`EpisodesDataManager.applyDisplayFilters` no longer hides
+Inbox members). This was scheduled for Stage 6, but it had to move: the partition hid exactly the episodes
+the new dot marks, so the dot would have been invisible. Running a partition *and* a dot over the same bit
+is precisely the drift hazard in the UI research — the dot is the one that survives. The per-page Inbox tabs
+still exist until Stage 6 and now show the same (dotted) episodes; redundant for one stage, but not drifting,
+since both read the same membership set.
+
+🔶 **Behaviour change to confirm: queuing an episode no longer clears its dot.** The old model treated
+"in Up Next" as decided and hid it from every inbox. The new spec's removal list (progress / archived /
+added-to-Session / triage / deleted) does not include queuing. So an episode queued *without* Up Next ⇄
+Session mirroring keeps its dot until you play it. Coherent — the Inbox is about attention, Up Next is a
+lineup — and with mirroring on the chain still clears it. But it *is* a change, and it was not stated.
 
 ### Stage 5 — Global Inbox tab re-points at the playlist  · ~200 of 726 LOC changed · blast radius: 3 files
 `InboxViewController` reads the Inbox playlist directly. Bulk verbs (one DELETE, one notification).

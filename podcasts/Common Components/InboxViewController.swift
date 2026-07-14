@@ -232,7 +232,6 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
             guard let self else { return }
             let global = SessionStore.shared.globalInbox
             self.allEpisodes = SessionFeederEngine.inboxEpisodes(for: global)
-                .filter { !$0.isSeen }
             self.rebuildGroups()
             self.refreshMultiSelectEpisodes()
             self.navigationItem.leftBarButtonItem?.isEnabled = self.isMultiSelectEnabled || !self.allEpisodes.isEmpty
@@ -283,8 +282,13 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
               let episode = episode(at: indexPath) else { return }
 
         let optionsPicker = OptionsPicker(title: episode.displayableTitle().localizedUppercase)
-        optionsPicker.addAction(action: OptionAction(label: episode.isSeen ? L10n.episodeMarkUnseen : L10n.episodeMarkSeen, icon: nil) {
-            EpisodeSeenManager.toggleSeen(episode: episode)
+        let unseen = InboxManager.shared.isUnseen(episodeUuid: episode.uuid)
+        optionsPicker.addAction(action: OptionAction(label: unseen ? L10n.episodeMarkSeen : L10n.episodeMarkUnseen, icon: nil) {
+            if unseen {
+                InboxManager.shared.markSeen(episodeUuids: [episode.uuid])
+            } else {
+                InboxManager.shared.markUnseen(episodeUuids: [episode.uuid])
+            }
         })
         optionsPicker.present(from: self)
     }
@@ -294,11 +298,11 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
     @objc private func clearTapped() {
         let optionsPicker = OptionsPicker(title: L10n.clear.localizedUppercase)
 
-        // Mark All as Seen: the soft clear — advances the global inbox watermark
-        // (one synced timestamp), nothing else moves.
+        // Mark All as Seen: the soft clear — one DELETE and one notification, however many
+        // episodes. Nothing else about them moves.
         optionsPicker.addAction(action: OptionAction(label: L10n.inboxClearKeepAll, icon: "eye.slash") { [weak self] in
             guard let self else { return }
-            EpisodeSeenManager.clearInbox(self.allEpisodes, feederUuid: SessionStore.globalInboxUuid)
+            InboxManager.shared.markSeen(episodeUuids: self.allEpisodes.map(\.uuid))
         })
 
         // Archive: archives every inbox episode (which also clears them).

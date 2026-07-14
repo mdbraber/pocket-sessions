@@ -32,17 +32,6 @@ extension PlaylistDetailViewController {
             optionsPicker.addAction(action: insertModeAction())
         }
 
-        // Fork: the session's dismissed pile, restorable.
-        if let session = viewModel.session, !SessionStore.shared.dismissedUuids(sessionUuid: session.uuid).isEmpty {
-            optionsPicker.addAction(action: OptionAction(label: L10n.sessionDismissedTitle, icon: "episode-remove") { [weak self] in
-                guard let self else { return }
-                let view = DismissedEpisodesView(sessionUuid: session.uuid) { [weak self] in
-                    self?.dismiss(animated: true)
-                    self?.viewModel.reloadEpisodeList()
-                }
-                self.present(PCHostingController(rootView: view.environmentObject(Theme.sharedTheme)), animated: true)
-            })
-        }
 
         // Fork: Group By and its limit, identical to the global Inbox's — it shapes
         // the Inbox and Episodes views; the Session lineup never groups, so the

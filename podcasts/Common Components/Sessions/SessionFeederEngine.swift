@@ -1,9 +1,18 @@
 import Foundation
 import PocketCastsDataModel
 
-/// Fork: computes what a session's feeder offers. Inbox membership is derived, never
-/// stored: candidates − store members − dismissed − archived/played, with seen as a
-/// display filter on top.
+/// Fork: what a session's feeder speaks for, and the badge numbers derived from it.
+///
+/// **Unseen is Inbox playlist membership.** There is no seen flag, no watermark, no dismissal
+/// set, and no precedence chain — a session's "inbox" is simply its domain intersected with the
+/// one global Inbox playlist. Everything that used to make an episode disappear from an inbox
+/// (played, archived, added to a session, dismissed) now removes it from that playlist instead,
+/// which is a single source of truth that also syncs.
+///
+/// That also deletes the fork's worst hot path. `inboxEpisodes` used to run a full playlist query
+/// *per session* and then filter every unarchived episode of every subscribed podcast in Swift.
+/// The per-podcast badge version of it "made the whole app sluggish" (its own comment). Both are
+/// now indexed set lookups.
 enum SessionFeederEngine {
     private static let optOutKey = "SJGlobalInboxOptOutPodcasts"
 
@@ -22,8 +31,7 @@ enum SessionFeederEngine {
 
     // MARK: - Domains
 
-    /// Every episode the feeder could ever speak for (no recency window) — the basis
-    /// for the Archived tab. Newest first.
+    /// Every episode the feeder could ever speak for. Newest first.
     static func domainEpisodes(for session: Session, includeArchived: Bool) -> [Episode] {
         let archivedClause = includeArchived ? "" : " AND archived = 0"
         switch session.feeder {
@@ -58,79 +66,38 @@ enum SessionFeederEngine {
         }
     }
 
-    /// The feeder's current offers: undecided, unseen, and not already in the store,
-    /// any age. Seen is universally hidden from every inbox (there's no Show Seen
-    /// toggle anymore), so it's excluded here — one source of truth for the inbox
-    /// sections and the playlist badge count alike.
+    /// This feeder's unseen episodes: its domain ∩ the Inbox playlist.
     static func inboxEpisodes(for session: Session) -> [Episode] {
-        let members = allStoreMemberUuids()
-        let dismissed = Set(SessionStore.shared.dismissedUuids(sessionUuid: session.uuid))
-        let queued = Set(PlaybackManager.shared.queue.allEpisodes(includeNowPlaying: true).map(\.uuid))
-
-        let inboxKey = session.inboxKey
-        return domainEpisodes(for: session, includeArchived: false).filter { episode in
-            if episode.played() || episode.archived || episode.isSeen(inFeeder: inboxKey) { return false }
-            if members.contains(episode.uuid) || dismissed.contains(episode.uuid) || queued.contains(episode.uuid) { return false }
-            return true
-        }
+        let unseen = InboxManager.shared.unseenUuids()
+        guard !unseen.isEmpty else { return [] }
+        return domainEpisodes(for: session, includeArchived: false).filter { unseen.contains($0.uuid) }
     }
 
-    /// The union of every session's lineup — an episode in ANY lineup is decided,
-    /// so no inbox offers it (the partition rule: Inbox holds only the undecided).
+    // MARK: - Session membership
+
+    /// The union of every session's lineup — one query, not one per session.
     static func allStoreMemberUuids() -> Set<String> {
-        var members = Set<String>()
-        for session in SessionStore.shared.sessions {
-            members.formUnion(storeMemberUuids(for: session))
-        }
-        return members
+        let storeUuids = SessionStore.shared.sessions.compactMap(\.storePlaylistUuid)
+        return DataManager.sharedManager.playlistEpisodeUuids(forPlaylistUuids: storeUuids)
     }
 
     static func storeMemberUuids(for session: Session) -> [String] {
         guard let storeUuid = session.storePlaylistUuid,
               let store = DataManager.sharedManager.findPlaylist(uuid: storeUuid) else { return [] }
-        return EpisodesDataManager().playlistEpisodes(for: store, limit: 0).map { $0.episode.uuid }
+        return DataManager.sharedManager.positionedEpisodeUuids(for: store)
     }
 
     // MARK: - Grid badges
 
-    /// Bulk inbox counts for the grid badges — the podcast page's Inbox tab number
-    /// for every podcast, from ONE episode query. Grid refreshes fire on every
-    /// triage/queue event; per-podcast queries here made the whole app sluggish.
+    /// The unseen count for every podcast at once, from ONE grouped query.
     static func inboxBadgeCounts(forPodcasts podcasts: [Podcast]) -> [String: Int] {
         guard !podcasts.isEmpty else { return [:] }
-
-        let queued = Set(PlaybackManager.shared.queue.allEpisodes(includeNowPlaying: true).map(\.uuid))
-        let members = allStoreMemberUuids()
-
-        // Dismissals are scoped per podcast session — only podcasts with sessions
-        // have any.
-        var dismissedByPodcast = [String: Set<String>]()
-        for podcast in podcasts {
-            guard let session = SessionStore.shared.session(forPodcast: podcast.uuid) else { continue }
-            dismissedByPodcast[podcast.uuid] = Set(SessionStore.shared.dismissedUuids(sessionUuid: session.uuid))
-        }
-
-        let placeholders = podcasts.map { _ in "?" }.joined(separator: ",")
-        let episodes = DataManager.sharedManager.findEpisodesWhere(
-            customWhere: "podcastUuid IN (\(placeholders)) AND archived = 0",
-            arguments: podcasts.map(\.uuid)
-        )
-
-        var counts = [String: Int]()
-        for episode in episodes {
-            // Mirrors inboxEpisodes: undecided and unseen only. Seen is per-inbox, so
-            // key by this podcast's inbox (the same key its Session tab would use).
-            if episode.played() || episode.isSeen(inFeeder: SessionFeeder.podcast(uuid: episode.podcastUuid).inboxKey) { continue }
-            if queued.contains(episode.uuid) { continue }
-            if members.contains(episode.uuid) { continue }
-            if dismissedByPodcast[episode.podcastUuid]?.contains(episode.uuid) == true { continue }
-            counts[episode.podcastUuid, default: 0] += 1
-        }
-        return counts
+        let counts = DataManager.sharedManager.playlistEpisodeCountsByPodcast(for: DataManager.inboxPlaylistUuid)
+        let wanted = Set(podcasts.map(\.uuid))
+        return counts.filter { wanted.contains($0.key) }
     }
 
-    /// Bulk session-lineup counts — the podcast page's Session tab number. Only
-    /// podcasts with sessions cost a query.
+    /// Bulk session-lineup counts — the podcast page's Session tab number.
     static func sessionBadgeCounts(forPodcasts podcasts: [Podcast]) -> [String: Int] {
         var counts = [String: Int]()
         for podcast in podcasts {
@@ -140,14 +107,17 @@ enum SessionFeederEngine {
         return counts
     }
 
-    /// The playlist page's Inbox count — via its session (store or fed lens), or the
-    /// sessionless lens preview.
+    /// A smart playlist's unseen count: |Inbox ∩ that playlist's results|.
     static func inboxBadgeCount(forPlaylist playlist: EpisodeFilter) -> Int {
-        let session = SessionStore.shared.session(forStore: playlist.uuid)
-            ?? SessionStore.shared.session(forSmartPlaylistFeeder: playlist.uuid)
-            ?? (playlist.manual ? nil : Session(uuid: "lens-inbox-preview", storePlaylistUuid: nil, feeder: .smartPlaylist(uuid: playlist.uuid)))
-        guard let session else { return 0 }
-        return inboxEpisodes(for: session).count
+        let unseen = InboxManager.shared.unseenUuids()
+        guard !unseen.isEmpty else { return 0 }
+
+        if playlist.manual {
+            return DataManager.sharedManager.playlistEpisodeUuids(for: playlist.uuid).intersection(unseen).count
+        }
+        return EpisodesDataManager().playlistEpisodes(for: playlist, limit: 0)
+            .filter { unseen.contains($0.episode.uuid) }
+            .count
     }
 
     /// The playlist page's Session count — its session's lineup size.

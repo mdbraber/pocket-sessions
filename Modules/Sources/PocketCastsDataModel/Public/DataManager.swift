@@ -1097,6 +1097,16 @@ public class DataManager {
         playlistManager.playlistEpisodeUuids(for: playlistUuid, dbQueue: dbQueue)
     }
 
+    /// Fork: membership across several playlists at once — one query, not one per playlist.
+    public func playlistEpisodeUuids(forPlaylistUuids playlistUuids: [String]) -> Set<String> {
+        playlistManager.playlistEpisodeUuids(forPlaylistUuids: playlistUuids, dbQueue: dbQueue)
+    }
+
+    /// Fork: unarchived members of a playlist counted per podcast, in ONE grouped query.
+    public func playlistEpisodeCountsByPodcast(for playlistUuid: String) -> [String: Int] {
+        playlistManager.playlistEpisodeCountsByPodcast(for: playlistUuid, dbQueue: dbQueue)
+    }
+
     // Fork: smart playlist custom-order overlay (Lineup + New inbox)
     public func positionedEpisodeUuids(for playlist: EpisodeFilter) -> [String] {
         playlistManager.positionedEpisodeUuids(for: playlist, dbQueue: dbQueue)

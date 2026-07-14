@@ -407,7 +407,8 @@ class MultiSelectHelper {
         guard !episodes.isEmpty else { return }
         actionDelegate.multiSelectActionBegan(status: seen ? L10n.episodeMarkSeen : L10n.episodeMarkUnseen)
         Task.detached {
-            if seen { EpisodeSeenManager.markSeen(episodes) } else { EpisodeSeenManager.markUnseen(episodes) }
+            let uuids = episodes.map(\.uuid)
+            if seen { InboxManager.shared.markSeen(episodeUuids: uuids) } else { InboxManager.shared.markUnseen(episodeUuids: uuids) }
             await actionDelegate.multiSelectActionCompleted()
         }
     }

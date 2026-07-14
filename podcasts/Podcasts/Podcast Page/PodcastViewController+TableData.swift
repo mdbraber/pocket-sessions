@@ -162,6 +162,8 @@ extension PodcastViewController: UITableViewDataSource, UITableViewDelegate {
                 // The green in-this-session mini icon — Episodes and Inbox lists only
                 // (Session rows are all members by definition).
                 cell.setSessionIndicator(visible: !showingSession && cachedSessionMemberUuids.contains(listEpisode.episode.uuid))
+                // The unread dot: this episode is still in the Inbox.
+                cell.setUnseenIndicator(visible: cachedUnseenUuids.contains(listEpisode.episode.uuid))
                 cell.shouldShowSelect = isMultiSelectEnabled
                 if isMultiSelectEnabled {
                     cell.showTick = selectedEpisodesContains(uuid: listEpisode.episode.uuid)

@@ -160,16 +160,19 @@ enum TriageSwipes {
 
     static func seenToggle(for episode: BaseEpisode, reload: @escaping () -> Void) -> SwipeAction {
         let uuid = episode.uuid
+        let unseen = InboxManager.shared.isUnseen(episodeUuid: uuid)
         let seen = SwipeAction(style: .default, title: nil) { action, _ in
-            if let fresh = DataManager.sharedManager.findBaseEpisode(uuid: uuid) {
-                EpisodeSeenManager.toggleSeen(episode: fresh)
+            if unseen {
+                InboxManager.shared.markSeen(episodeUuids: [uuid])
+            } else {
+                InboxManager.shared.markUnseen(episodeUuids: [uuid])
             }
             reload()
             action.fulfill(with: .reset)
         }
         seen.image = seenImage(for: episode)
         seen.backgroundColor = ThemeColor.support05()
-        seen.accessibilityLabel = episode.isSeen ? L10n.episodeMarkUnseen : L10n.episodeMarkSeen
+        seen.accessibilityLabel = unseen ? L10n.episodeMarkSeen : L10n.episodeMarkUnseen
         seen.hidesWhenSelected = true
         return seen
     }
@@ -177,8 +180,9 @@ enum TriageSwipes {
     /// The seen iconography, everywhere — red, with the icon showing the action:
     /// a crossed-out eye marks seen (the soft no); an open eye marks unseen again.
     static func seenImage(for episode: BaseEpisode) -> UIImage? {
-        UIImage(systemName: episode.isSeen ? "eye" : "eye.slash",
-                withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .bold))?
+        let unseen = InboxManager.shared.isUnseen(episodeUuid: episode.uuid)
+        return UIImage(systemName: unseen ? "eye.slash" : "eye",
+                       withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .bold))?
             .withTintColor(.white, renderingMode: .alwaysOriginal)
     }
 }

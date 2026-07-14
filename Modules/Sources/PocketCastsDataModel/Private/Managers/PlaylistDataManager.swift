@@ -610,6 +610,54 @@ class PlaylistDataManager {
         return uuids
     }
 
+    /// Fork: membership across SEVERAL playlists at once, as one Set — one query, not one per
+    /// playlist. Used for "is this episode in any session", which the old code answered with a
+    /// full playlist query per session, on every list load.
+    func playlistEpisodeUuids(forPlaylistUuids playlistUuids: [String], dbQueue: PCDBQueue) -> Set<String> {
+        guard !playlistUuids.isEmpty else { return [] }
+        var uuids = Set<String>()
+        dbQueue.read { db in
+            do {
+                let placeholders = playlistUuids.map { _ in "?" }.joined(separator: ",")
+                let rs = try db.executeQuery("SELECT episodeUuid FROM \(DataManager.playlistEpisodeTableName) WHERE playlist_uuid IN (\(placeholders))", values: playlistUuids)
+                defer { rs.close() }
+                while rs.next() {
+                    uuids.insert(DBUtils.nonNilStringFromColumn(resultSet: rs, columnName: "episodeUuid"))
+                }
+            } catch {
+                FileLog.shared.addMessage("PlaylistDataManager.playlistEpisodeUuids(forPlaylistUuids:) error: \(error)")
+            }
+        }
+        return uuids
+    }
+
+    /// Fork: how many unarchived members this playlist holds, per podcast — in ONE grouped
+    /// query. This is the unseen badge for every podcast at once. The per-podcast version of
+    /// this made the whole app sluggish once; the grid recomputes badges on every triage event.
+    func playlistEpisodeCountsByPodcast(for playlistUuid: String, dbQueue: PCDBQueue) -> [String: Int] {
+        var counts = [String: Int]()
+        dbQueue.read { db in
+            do {
+                let query = """
+                SELECT e.podcastUuid AS podcastUuid, COUNT(*) AS total
+                FROM \(DataManager.episodeTableName) e
+                JOIN \(DataManager.playlistEpisodeTableName) pe
+                  ON pe.episodeUuid = e.uuid AND pe.playlist_uuid = ?
+                WHERE e.archived = 0
+                GROUP BY e.podcastUuid
+                """
+                let rs = try db.executeQuery(query, values: [playlistUuid])
+                defer { rs.close() }
+                while rs.next() {
+                    counts[DBUtils.nonNilStringFromColumn(resultSet: rs, columnName: "podcastUuid")] = rs.long(forColumn: "total")
+                }
+            } catch {
+                FileLog.shared.addMessage("PlaylistDataManager.playlistEpisodeCountsByPodcast error: \(error)")
+            }
+        }
+        return counts
+    }
+
     /// Episode uuids that have a position row for this playlist — the "Lineup" — in order.
     func positionedEpisodeUuids(for playlist: EpisodeFilter, dbQueue: PCDBQueue) -> [String] {
         var uuids = [String]()

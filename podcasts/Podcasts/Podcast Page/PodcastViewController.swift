@@ -101,6 +101,8 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
     /// Fork: the podcast session's store members, cached per reload — drives the
     /// little green in-this-session indicator on Episodes rows.
     var cachedSessionMemberUuids: Set<String> = []
+    /// Inbox membership — the unread dot. Fetched ONCE per list load; the cell reads the Set.
+    var cachedUnseenUuids: Set<String> = []
     /// Fork: the Episodes tab's last sections — switching back restores them
     /// instantly while the async refresh runs, instead of showing the old tab's rows.
     private var cachedEpisodesTabData: [ArraySection<String, ListItem>]?
@@ -707,6 +709,7 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
     func loadLocalEpisodes(podcast: Podcast, animated: Bool) {
         cachedSessionMemberUuids = SessionStore.shared.session(forPodcast: podcast.uuid)
             .map { Set(SessionFeederEngine.storeMemberUuids(for: $0)) } ?? []
+        cachedUnseenUuids = InboxManager.shared.unseenUuids()
 
         switch episodesListMode {
         case .session:
@@ -975,7 +978,7 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
 
     private func inboxMarkAllSeenTapped() {
         guard let podcast else { return }
-        EpisodeSeenManager.clearInbox(inboxDisplayedEpisodes, feederUuid: inboxSession(for: podcast).inboxKey)
+        InboxManager.shared.markSeen(episodeUuids: inboxDisplayedEpisodes.map(\.uuid))
         loadLocalEpisodes(podcast: podcast, animated: true)
     }
 

@@ -53,22 +53,6 @@ final class SessionCloudSync {
         CKRecord.ID(recordName: "session|\(uuid)", zoneID: zoneID)
     }
 
-    private func recordID(seenMark episodeUuid: String) -> CKRecord.ID {
-        CKRecord.ID(recordName: "seenmark|\(episodeUuid)", zoneID: zoneID)
-    }
-
-    private func recordID(unseenMark episodeUuid: String) -> CKRecord.ID {
-        CKRecord.ID(recordName: "unseenmark|\(episodeUuid)", zoneID: zoneID)
-    }
-
-    private func recordID(watermark feederUuid: String) -> CKRecord.ID {
-        CKRecord.ID(recordName: "watermark|\(feederUuid)", zoneID: zoneID)
-    }
-
-    private func recordID(dismissal sessionUuid: String, episodeUuid: String) -> CKRecord.ID {
-        CKRecord.ID(recordName: "dismiss|\(sessionUuid)|\(episodeUuid)", zoneID: zoneID)
-    }
-
     private func recordID(offeredThrough podcastUuid: String) -> CKRecord.ID {
         CKRecord.ID(recordName: "offered|\(podcastUuid)", zoneID: zoneID)
     }
@@ -83,20 +67,6 @@ final class SessionCloudSync {
         var pending = [CKSyncEngine.PendingRecordZoneChange]()
         for session in snapshot.sessions {
             pending.append(.saveRecord(recordID(session: session.uuid)))
-        }
-        for episodeUuid in snapshot.seenMarks.keys {
-            pending.append(.saveRecord(recordID(seenMark: episodeUuid)))
-        }
-        for episodeUuid in snapshot.unseenMarks.keys {
-            pending.append(.saveRecord(recordID(unseenMark: episodeUuid)))
-        }
-        for feederUuid in snapshot.clearedThrough.keys {
-            pending.append(.saveRecord(recordID(watermark: feederUuid)))
-        }
-        for (sessionUuid, dismissals) in snapshot.dismissals {
-            for episodeUuid in dismissals.keys {
-                pending.append(.saveRecord(recordID(dismissal: sessionUuid, episodeUuid: episodeUuid)))
-            }
         }
         for podcastUuid in InboxStore.shared.snapshot.offeredThrough.keys {
             pending.append(.saveRecord(recordID(offeredThrough: podcastUuid)))
@@ -135,37 +105,9 @@ final class SessionCloudSync {
             pending.append(.deleteRecord(recordID(session: uuid)))
         }
 
-        for uuid in new.seenMarks.keys where old.seenMarks[uuid] == nil {
-            pending.append(.saveRecord(recordID(seenMark: uuid)))
-        }
-        for uuid in old.seenMarks.keys where new.seenMarks[uuid] == nil {
-            pending.append(.deleteRecord(recordID(seenMark: uuid)))
-        }
 
-        for uuid in new.unseenMarks.keys where old.unseenMarks[uuid] == nil {
-            pending.append(.saveRecord(recordID(unseenMark: uuid)))
-        }
-        for uuid in old.unseenMarks.keys where new.unseenMarks[uuid] == nil {
-            pending.append(.deleteRecord(recordID(unseenMark: uuid)))
-        }
 
-        for uuid in new.clearedThrough.keys where old.clearedThrough[uuid] != new.clearedThrough[uuid] {
-            pending.append(.saveRecord(recordID(watermark: uuid)))
-        }
-        for uuid in old.clearedThrough.keys where new.clearedThrough[uuid] == nil {
-            pending.append(.deleteRecord(recordID(watermark: uuid)))
-        }
 
-        let oldDismissKeys = Set(old.dismissals.flatMap { session, byEpisode in byEpisode.keys.map { "\(session)|\($0)" } })
-        let newDismissKeys = Set(new.dismissals.flatMap { session, byEpisode in byEpisode.keys.map { "\(session)|\($0)" } })
-        for key in newDismissKeys.subtracting(oldDismissKeys) {
-            let parts = key.split(separator: "|", maxSplits: 1).map(String.init)
-            pending.append(.saveRecord(recordID(dismissal: parts[0], episodeUuid: parts[1])))
-        }
-        for key in oldDismissKeys.subtracting(newDismissKeys) {
-            let parts = key.split(separator: "|", maxSplits: 1).map(String.init)
-            pending.append(.deleteRecord(recordID(dismissal: parts[0], episodeUuid: parts[1])))
-        }
 
         guard !pending.isEmpty else { return }
         engine.state.add(pendingRecordZoneChanges: pending)
@@ -181,26 +123,6 @@ final class SessionCloudSync {
                   let payload = try? JSONEncoder().encode(session) else { return nil }
             let record = CKRecord(recordType: "ForkSession", recordID: recordID)
             record["payload"] = payload as NSData
-            return record
-        case "seenmark":
-            guard parts.count == 2, let date = snapshot.seenMarks[parts[1]] else { return nil }
-            let record = CKRecord(recordType: "ForkSeenMark", recordID: recordID)
-            record["date"] = date as NSDate
-            return record
-        case "unseenmark":
-            guard parts.count == 2, let date = snapshot.unseenMarks[parts[1]] else { return nil }
-            let record = CKRecord(recordType: "ForkUnseenMark", recordID: recordID)
-            record["date"] = date as NSDate
-            return record
-        case "watermark":
-            guard parts.count == 2, let date = snapshot.clearedThrough[parts[1]] else { return nil }
-            let record = CKRecord(recordType: "ForkWatermark", recordID: recordID)
-            record["date"] = date as NSDate
-            return record
-        case "dismiss":
-            guard parts.count == 3, let date = snapshot.dismissals[parts[1]]?[parts[2]] else { return nil }
-            let record = CKRecord(recordType: "ForkDismissal", recordID: recordID)
-            record["date"] = date as NSDate
             return record
         case "offered":
             guard parts.count == 2, let date = InboxStore.shared.offeredThrough(podcastUuid: parts[1]) else { return nil }
@@ -222,18 +144,6 @@ final class SessionCloudSync {
                 guard let payload = record["payload"] as? Data,
                       let session = try? JSONDecoder().decode(Session.self, from: payload) else { return }
                 SessionStore.shared.upsert(session)
-            case "seenmark":
-                guard parts.count == 2 else { return }
-                SessionStore.shared.applyRemoteSeenMark(episodeUuid: parts[1], date: (record["date"] as? Date) ?? Date())
-            case "unseenmark":
-                guard parts.count == 2 else { return }
-                SessionStore.shared.applyRemoteUnseenMark(episodeUuid: parts[1], date: (record["date"] as? Date) ?? Date())
-            case "watermark":
-                guard parts.count == 2 else { return }
-                SessionStore.shared.applyRemoteWatermark(feederUuid: parts[1], date: (record["date"] as? Date) ?? Date())
-            case "dismiss":
-                guard parts.count == 3 else { return }
-                SessionStore.shared.setDismissed(episodeUuids: [parts[2]], sessionUuid: parts[1])
             default:
                 break
             }
@@ -253,18 +163,6 @@ final class SessionCloudSync {
             case "session":
                 guard parts.count == 2 else { return }
                 SessionStore.shared.delete(sessionUuid: parts[1])
-            case "seenmark":
-                guard parts.count == 2 else { return }
-                SessionStore.shared.applyRemoteSeenMark(episodeUuid: parts[1], date: nil)
-            case "unseenmark":
-                guard parts.count == 2 else { return }
-                SessionStore.shared.applyRemoteUnseenMark(episodeUuid: parts[1], date: nil)
-            case "watermark":
-                guard parts.count == 2 else { return }
-                SessionStore.shared.applyRemoteWatermark(feederUuid: parts[1], date: nil)
-            case "dismiss":
-                guard parts.count == 3 else { return }
-                SessionStore.shared.setDismissed(false, episodeUuid: parts[2], sessionUuid: parts[1])
             default:
                 break
             }
