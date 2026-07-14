@@ -53,6 +53,30 @@ extension PlaylistDetailViewController {
                     return picker
                 }
                 optionsPicker.addAction(action: groupAction)
+
+                if viewModel.groupBy != .none {
+                    let limitAction = OptionAction(label: L10n.episodeGroupLimit, secondaryLabel: viewModel.groupLimit > 0 ? "\(viewModel.groupLimit)" : L10n.off, icon: "option-group") {}
+                    limitAction.submenu = { [weak self] in
+                        guard let self else { return nil }
+                        let picker = OptionsPicker(title: L10n.episodeGroupLimit.localizedUppercase)
+                        picker.addAction(action: OptionAction(label: L10n.off, selected: self.viewModel.groupLimit == 0) {
+                            self.viewModel.groupLimit = 0
+                        })
+                        for limit in EpisodeGrouper.limitOptions {
+                            picker.addAction(action: OptionAction(label: "\(limit)", selected: self.viewModel.groupLimit == limit) {
+                                self.viewModel.groupLimit = limit
+                            })
+                        }
+                        return picker
+                    }
+                    optionsPicker.addAction(action: limitAction)
+
+                    let reverseAction = OptionAction(label: L10n.inboxGroupReverse, selected: viewModel.reverseGroup) { [weak self] in
+                        guard let self else { return }
+                        self.viewModel.reverseGroup.toggle()
+                    }
+                    optionsPicker.addAction(action: reverseAction)
+                }
             }
         } else {
             optionsPicker.addAction(action: sortAction())

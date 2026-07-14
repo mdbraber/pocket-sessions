@@ -43,8 +43,8 @@ enum FilterPresetPicker {
     static func style(_ button: UIButton, scope: FilterScope = .episodes) {
         let preset = FilterPresets.active(scope)
         button.setTitle(preset.name, for: .normal)
-        button.setImage(UIImage(systemName: "chevron.down"), for: .normal)
-        button.semanticContentAttribute = .forceRightToLeft // chevron trails the label
+        // No glyph beside the name — the label alone is the control. (Any XIB image is cleared.)
+        button.setImage(nil, for: .normal)
         button.configuration = nil
         // The filter label sits hard against the right edge of its slot — the control is the
         // rightmost thing on the info line, so it right-aligns.

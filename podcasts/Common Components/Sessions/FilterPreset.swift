@@ -103,6 +103,10 @@ struct FilterPreset: Codable, Equatable, Identifiable {
     var sortOrder: Int?
     /// Group By, applied on selection and overridable. Raw value of `EpisodeGroupBy` (0 = none).
     var groupBy: Int
+    /// Episodes shown per group, applied on selection and overridable. 0 = no limit.
+    var groupLimit: Int
+    /// Reverse the order the groups appear in, applied on selection and overridable.
+    var groupReversed: Bool
 
     var id: String { uuid }
 
@@ -125,7 +129,9 @@ struct FilterPreset: Codable, Equatable, Identifiable {
         shorterThan: Int32 = 0,
         filterHours: Int32 = 0,
         sortOrder: Int? = nil,
-        groupBy: Int = 0
+        groupBy: Int = 0,
+        groupLimit: Int = 0,
+        groupReversed: Bool = false
     ) {
         self.uuid = uuid
         self.name = name
@@ -146,12 +152,14 @@ struct FilterPreset: Codable, Equatable, Identifiable {
         self.filterHours = filterHours
         self.sortOrder = sortOrder
         self.groupBy = groupBy
+        self.groupLimit = groupLimit
+        self.groupReversed = groupReversed
     }
 
     enum CodingKeys: String, CodingKey {
         case uuid, name, iconId, enabled, playingStatus, downloadStatus, starred, mediaType
         case archived, unseen, inSession, podcastUuids, folderUuids
-        case filterDuration, longerThan, shorterThan, filterHours, sortOrder, groupBy
+        case filterDuration, longerThan, shorterThan, filterHours, sortOrder, groupBy, groupLimit, groupReversed
     }
 
     // CRITICAL: every key via decodeIfPresent. Synthesized Decodable throws keyNotFound on a
@@ -183,12 +191,14 @@ struct FilterPreset: Codable, Equatable, Identifiable {
         filterHours = try c.decodeIfPresent(Int32.self, forKey: .filterHours) ?? 0
         sortOrder = try c.decodeIfPresent(Int.self, forKey: .sortOrder)
         groupBy = try c.decodeIfPresent(Int.self, forKey: .groupBy) ?? 0
+        groupLimit = try c.decodeIfPresent(Int.self, forKey: .groupLimit) ?? 0
+        groupReversed = try c.decodeIfPresent(Bool.self, forKey: .groupReversed) ?? false
     }
 
     /// True when this preset narrows nothing beyond the default — i.e. it is "All Episodes" in all
     /// but name (archived included).
     var isDefault: Bool {
-        self == FilterPreset(uuid: uuid, name: name, iconId: iconId, enabled: enabled, sortOrder: sortOrder, groupBy: groupBy)
+        self == FilterPreset(uuid: uuid, name: name, iconId: iconId, enabled: enabled, sortOrder: sortOrder, groupBy: groupBy, groupLimit: groupLimit, groupReversed: groupReversed)
     }
 
     /// Whether a podcast/folder scope is set.

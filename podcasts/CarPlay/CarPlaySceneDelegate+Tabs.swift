@@ -52,9 +52,20 @@ extension CarPlaySceneDelegate {
 // MARK: - Filters
 
 extension CarPlaySceneDelegate {
+    /// Playlists that are really sessions (their stores and feeder lenses) plus the Inbox — the
+    /// Playlists tab is for plain, browsable playlists, so these get filtered out. Sessions have
+    /// their own tab.
+    private var sessionRelatedPlaylistUuids: Set<String> {
+        var uuids = SessionStore.shared.feederPlaylistUuids
+        uuids.formUnion(SessionStore.shared.sessions.compactMap(\.storePlaylistUuid))
+        uuids.insert(DataManager.inboxPlaylistUuid)
+        return uuids
+    }
+
     private var filterTabSections: [CPListSection] {
         var filterItems = [CPListItem]()
-        for filter in DataManager.sharedManager.allPlaylists(includeDeleted: false) {
+        let sessionRelated = sessionRelatedPlaylistUuids
+        for filter in DataManager.sharedManager.allPlaylists(includeDeleted: false) where !sessionRelated.contains(filter.uuid) {
             var detail: String? = nil
             if filter.manual == false {
                 detail = L10n.smartPlaylist
@@ -82,30 +93,19 @@ extension CarPlaySceneDelegate {
     }
 }
 
-// MARK: - Downloads
-
-extension CarPlaySceneDelegate {
-    private var downloadTabSections: [CPListSection] {
-        let downloadedEpisodes = DataManager.sharedManager.findEpisodesWhere(customWhere: "episodeStatus == \(DownloadStatus.downloaded.rawValue) ORDER BY lastDownloadAttemptDate DESC LIMIT \(Constants.Limits.maxCarplayItems)", arguments: nil)
-        let items = convertToListItems(episodes: downloadedEpisodes, showArtwork: true, playlist: .downloads)
-
-        return [CPListSection(items: items)]
-    }
-
-    func createDownloadsTab() -> CPListTemplate {
-        return CarPlayListData.template(title: L10n.downloads, emptyTitle: L10n.downloadsNoDownloadsTitle, image: UIImage(named: "car_tab_downloads")) { [weak self] in
-            guard let self else { return nil }
-
-            return self.downloadTabSections
-        }
-    }
-}
-
 // MARK: - More
 
 extension CarPlaySceneDelegate {
     func createMoreTab() -> CPListTemplate {
         return CarPlayListData.staticTemplate(title: L10n.carplayMore, image: UIImage(named: "car_tab_more")) {
+            // Downloads now lives here rather than as its own tab (the Sessions tab took its slot).
+            let downloadsItem = CPListItem(text: L10n.downloads, detailText: nil, image: UIImage(named: "car_tab_downloads"))
+            downloadsItem.accessoryType = .disclosureIndicator
+            downloadsItem.handler = { [weak self] _, completion in
+                self?.downloadsTapped()
+                completion()
+            }
+
             let listeningHistoryItem = CPListItem(text: L10n.listeningHistory, detailText: nil, image: UIImage(named: "car_more_listening_history"))
             listeningHistoryItem.accessoryType = .disclosureIndicator
             listeningHistoryItem.handler = { [weak self] _, completion in
@@ -120,7 +120,7 @@ extension CarPlaySceneDelegate {
                 completion()
             }
 
-            return [CPListSection(items: [listeningHistoryItem, filesItem])]
+            return [CPListSection(items: [downloadsItem, listeningHistoryItem, filesItem])]
         }
     }
 }

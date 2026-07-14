@@ -55,6 +55,12 @@ extension CarPlaySceneDelegate {
         AutoplayHelper.shared.playedFrom(playlist: playlist)
     }
 
+    func downloadsTapped() {
+        pushEpisodeList(title: L10n.downloads, emptyTitle: L10n.downloadsNoDownloadsTitle, showArtwork: true, playlist: .downloads) { () -> [BaseEpisode] in
+            DataManager.sharedManager.findEpisodesWhere(customWhere: "episodeStatus == \(DownloadStatus.downloaded.rawValue) ORDER BY lastDownloadAttemptDate DESC LIMIT \(Constants.Limits.maxCarplayItems)", arguments: nil)
+        }
+    }
+
     func listeningHistoryTapped() {
         pushEpisodeList(title: L10n.listeningHistory, emptyTitle: L10n.watchNoPodcasts, showArtwork: true, playlist: nil) { () -> [BaseEpisode] in
             let query = "lastPlaybackInteractionDate IS NOT NULL AND lastPlaybackInteractionDate > 0 ORDER BY lastPlaybackInteractionDate DESC LIMIT \(Constants.Limits.maxCarplayItems)"

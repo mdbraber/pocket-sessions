@@ -4,7 +4,7 @@ import PocketCastsDataModel
 import CoreMedia
 
 extension CarPlaySceneDelegate {
-    func convertToListItems(episodes: [BaseEpisode], showArtwork: Bool, playlist: AutoplayHelper.Playlist?) -> [CPListItem] {
+    func convertToListItems(episodes: [BaseEpisode], showArtwork: Bool, playlist: AutoplayHelper.Playlist?, session: Session? = nil) -> [CPListItem] {
         var items = [CPListItem]()
         for episode in episodes {
             let artwork = showArtwork ? CarPlayImageHelper.imageForEpisode(episode) : nil
@@ -44,7 +44,11 @@ extension CarPlaySceneDelegate {
             item.isPlaying = PlaybackManager.shared.isNowPlayingEpisode(episodeUuid: episode.uuid)
 
             item.handler = { [weak self] _, completion in
-                self?.episodeTapped(episode, playlist: playlist)
+                if let session {
+                    self?.playEpisodeInSession(episode, session: session)
+                } else {
+                    self?.episodeTapped(episode, playlist: playlist)
+                }
                 completion()
             }
 

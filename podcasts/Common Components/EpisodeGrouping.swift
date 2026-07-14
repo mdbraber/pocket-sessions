@@ -5,6 +5,7 @@ import PocketCastsDataModel
 /// playlists share it so the groups (and their limits) come out identical everywhere.
 enum EpisodeGroupBy: Int, CaseIterable {
     case none = 0, releaseDate = 1, podcast = 2, folder = 3
+    case archived = 4, session = 5, starred = 6, playing = 7, duration = 8
 
     var title: String {
         switch self {
@@ -12,20 +13,37 @@ enum EpisodeGroupBy: Int, CaseIterable {
         case .releaseDate: return L10n.inboxGroupDate
         case .podcast: return L10n.inboxGroupPodcast
         case .folder: return L10n.inboxGroupFolder
+        case .archived: return L10n.inboxGroupArchived
+        case .session: return L10n.inboxGroupSession
+        case .starred: return L10n.inboxGroupStarred
+        case .playing: return L10n.inboxGroupPlaying
+        case .duration: return L10n.inboxGroupDuration
         }
     }
 
     /// Menu order: the useful groupings first, None last.
-    static var menuOrder: [EpisodeGroupBy] { [.releaseDate, .podcast, .folder, .none] }
+    static var menuOrder: [EpisodeGroupBy] {
+        [.releaseDate, .podcast, .folder, .playing, .duration, .starred, .archived, .session, .none]
+    }
 }
 
 enum EpisodeGrouper {
     static let limitOptions = [3, 5, 10, 20]
 
     /// Groups items in display order; a limit > 0 caps every group (and the ungrouped
-    /// list) to its first N items.
-    static func group<T>(_ items: [T], by groupBy: EpisodeGroupBy, limit: Int, episode: (T) -> BaseEpisode) -> [(title: String?, items: [T])] {
+    /// list) to its first N items. `reversed` flips the order the groups appear in (the
+    /// items inside each group keep the list's sort order).
+    static func group<T>(_ items: [T], by groupBy: EpisodeGroupBy, limit: Int, reversed: Bool = false, episode: (T) -> BaseEpisode) -> [(title: String?, items: [T])] {
         let capped: ([T]) -> [T] = { limit > 0 ? Array($0.prefix(limit)) : $0 }
+
+        /// Splits into a fixed sequence of named buckets by an index function; drops empties.
+        func bucketed(_ titles: [String], index: (BaseEpisode) -> Int) -> [(title: String?, items: [T])] {
+            var buckets: [[T]] = Array(repeating: [], count: titles.count)
+            for item in items { buckets[index(episode(item))].append(item) }
+            return zip(titles, buckets).filter { !$0.1.isEmpty }.map { ($0.0, capped($0.1)) }
+        }
+
+        let groups: [(title: String?, items: [T])]
 
         switch groupBy {
         case .none:
@@ -37,7 +55,7 @@ enum EpisodeGrouper {
                 let name = (episode(item) as? Episode)?.parentPodcast()?.title ?? ""
                 byPodcast[name, default: []].append(item)
             }
-            return byPodcast.keys.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+            groups = byPodcast.keys.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
                 .map { ($0, capped(byPodcast[$0] ?? [])) }
 
         case .folder:
@@ -53,38 +71,59 @@ enum EpisodeGrouper {
                     unfoldered.append(item)
                 }
             }
-            var groups: [(title: String?, items: [T])] = byFolder.keys
+            var folderGroups: [(title: String?, items: [T])] = byFolder.keys
                 .sorted { (folderNames[$0] ?? "").localizedCaseInsensitiveCompare(folderNames[$1] ?? "") == .orderedAscending }
                 .map { (folderNames[$0], capped(byFolder[$0] ?? [])) }
             if !unfoldered.isEmpty {
-                groups.append((L10n.inboxGroupNoFolder, capped(unfoldered)))
+                folderGroups.append((L10n.inboxGroupNoFolder, capped(unfoldered)))
             }
-            return groups
+            groups = folderGroups
 
         case .releaseDate:
             let calendar = Calendar.current
             let now = Date()
-            var buckets: [(String, [T])] = [
-                (L10n.inboxGroupToday, []), (L10n.inboxGroupYesterday, []), (L10n.inboxGroupThisWeek, []),
-                (L10n.inboxGroupThisMonth, []), (L10n.inboxGroupOlder, [])
-            ]
-            for item in items {
-                let published = episode(item).publishedDate ?? Date.distantPast
-                let index: Int
-                if calendar.isDateInToday(published) {
-                    index = 0
-                } else if calendar.isDateInYesterday(published) {
-                    index = 1
-                } else if calendar.isDate(published, equalTo: now, toGranularity: .weekOfYear) {
-                    index = 2
-                } else if calendar.isDate(published, equalTo: now, toGranularity: .month) {
-                    index = 3
-                } else {
-                    index = 4
-                }
-                buckets[index].1.append(item)
+            // Cumulative age buckets: today, then within a week, a month, a year, else older.
+            groups = bucketed([L10n.inboxGroupToday, L10n.inboxGroupLast7Days, L10n.inboxGroupLastMonth, L10n.inboxGroupLastYear, L10n.inboxGroupOlder]) { ep in
+                let published = ep.publishedDate ?? Date.distantPast
+                if calendar.isDateInToday(published) { return 0 }
+                let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: published), to: calendar.startOfDay(for: now)).day ?? .max
+                if days < 0 { return 0 } // future-dated → today
+                if days <= 7 { return 1 }
+                if days <= 31 { return 2 }
+                if days <= 365 { return 3 }
+                return 4
             }
-            return buckets.filter { !$0.1.isEmpty }.map { ($0.0, capped($0.1)) }
+
+        case .duration:
+            // Cumulative length buckets: <10, <30, <60, <120, else longer.
+            groups = bucketed([L10n.inboxGroupDurationUnder10, L10n.inboxGroupDuration10to30, L10n.inboxGroupDuration30to60, L10n.inboxGroupDuration60to120, L10n.inboxGroupDurationOver120]) { ep in
+                let minutes = ep.duration / 60
+                if minutes < 10 { return 0 }
+                if minutes < 30 { return 1 }
+                if minutes < 60 { return 2 }
+                if minutes < 120 { return 3 }
+                return 4
+            }
+
+        case .playing:
+            groups = bucketed([L10n.statusUnplayed, L10n.inProgress, L10n.statusPlayed]) { ep in
+                if ep.played() { return 2 }
+                if ep.inProgress() { return 1 }
+                return 0
+            }
+
+        case .starred:
+            groups = bucketed([L10n.statusStarred, L10n.statusNotStarred]) { $0.keepEpisode ? 0 : 1 }
+
+        case .archived:
+            groups = bucketed([L10n.podcastArchived, L10n.filterPresetNotArchived]) { $0.archived ? 0 : 1 }
+
+        case .session:
+            let stores = SessionStore.shared.sessions.compactMap(\.storePlaylistUuid)
+            let inSession = stores.isEmpty ? Set<String>() : DataManager.sharedManager.playlistEpisodeUuids(forPlaylistUuids: stores)
+            groups = bucketed([L10n.filterPresetInSession, L10n.filterPresetNotInSession]) { inSession.contains($0.uuid) ? 0 : 1 }
         }
+
+        return reversed ? groups.reversed() : groups
     }
 }

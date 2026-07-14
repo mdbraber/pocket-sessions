@@ -15,6 +15,7 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
     private static let episodeCellId = "EpisodeCell"
     private static let groupByKey = "SJInboxGroupBy"
     private static let groupLimitKey = "SJInboxGroupLimit"
+    private static let reverseGroupKey = "SJInboxReverseGroup"
 
     private struct Group {
         let title: String?
@@ -86,6 +87,15 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
         get { UserDefaults.standard.integer(forKey: Self.groupLimitKey) }
         set {
             UserDefaults.standard.set(newValue, forKey: Self.groupLimitKey)
+            reloadData()
+        }
+    }
+
+    /// Reverses the order the groups appear in (items inside each group keep their sort).
+    private var reverseGroup: Bool {
+        get { UserDefaults.standard.bool(forKey: Self.reverseGroupKey) }
+        set {
+            UserDefaults.standard.set(newValue, forKey: Self.reverseGroupKey)
             reloadData()
         }
     }
@@ -258,7 +268,7 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
     }
 
     private func rebuildGroups() {
-        groups = EpisodeGrouper.group(visibleEpisodes, by: groupBy, limit: groupLimit) { $0 }
+        groups = EpisodeGrouper.group(visibleEpisodes, by: groupBy, limit: groupLimit, reversed: reverseGroup) { $0 }
             .map { Group(title: $0.title, episodes: $0.items) }
         if groups.isEmpty {
             groups = [Group(title: nil, episodes: [])]
@@ -352,6 +362,14 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
             return picker
         }
         optionsPicker.addAction(action: groupAction)
+
+        if groupBy != .none {
+            let reverseAction = OptionAction(label: L10n.inboxGroupReverse, selected: reverseGroup) { [weak self] in
+                guard let self else { return }
+                self.reverseGroup.toggle()
+            }
+            optionsPicker.addAction(action: reverseAction)
+        }
 
         let limitAction = OptionAction(label: L10n.episodeGroupLimit, secondaryLabel: groupLimit > 0 ? "\(groupLimit)" : L10n.off, icon: "option-group") {}
         limitAction.submenu = { [weak self] in

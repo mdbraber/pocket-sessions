@@ -123,6 +123,15 @@ extension PlaylistDetailViewController: UITableViewDataSource {
                 // "No episodes match this filter" when something is narrowing; plain "No episodes"
                 // when the list is genuinely empty.
                 let narrowed = viewModel.isPresetNarrowing || viewModel.isSearching
+                // On the Session tab with a genuinely empty lineup, tell the user how to fill it.
+                if viewModel.usesTriageTabs, viewModel.selectedTriageTab == .lineup, viewModel.triageLineupCount == 0, !narrowed {
+                    return configuredEmptyCell(
+                        for: tableView,
+                        at: indexPath,
+                        title: L10n.sessionEmptyTitle.sentenceCased,
+                        message: L10n.sessionEmptyMessage
+                    )
+                }
                 return configuredEmptyCell(
                     for: tableView,
                     at: indexPath,
@@ -458,9 +467,12 @@ extension PlaylistDetailViewController {
         if let raw = preset.sortOrder, let order = TriageTabSortOrder(rawValue: raw) {
             TriageTabSort.setOrder(order, tab: viewModel.selectedTriageTab.sortKey, pageUuid: viewModel.playlist.uuid)
         }
-        // Group applies to the Episodes tab only (the Session lineup never groups).
+        // Group (with its limit and reverse) applies to the Episodes tab only — the Session
+        // lineup never groups.
         if viewModel.selectedTriageTab == .browse, let group = EpisodeGroupBy(rawValue: preset.groupBy) {
             viewModel.groupBy = group
+            viewModel.groupLimit = preset.groupLimit
+            viewModel.reverseGroup = preset.groupReversed
         }
     }
 }

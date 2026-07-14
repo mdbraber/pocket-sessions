@@ -164,6 +164,24 @@ struct FilterPresetEditorView: View {
                         Text($0.title).tag($0.rawValue)
                     }
                 }
+
+                // Limit and reverse only bite once something is grouped.
+                if model.preset.groupBy != EpisodeGroupBy.none.rawValue {
+                    Picker(L10n.episodeGroupLimit, selection: Binding(
+                        get: { model.preset.groupLimit },
+                        set: { model.preset.groupLimit = $0 }
+                    )) {
+                        Text(L10n.off).tag(0)
+                        ForEach(EpisodeGrouper.limitOptions, id: \.self) {
+                            Text("\($0)").tag($0)
+                        }
+                    }
+
+                    Toggle(L10n.inboxGroupReverse, isOn: Binding(
+                        get: { model.preset.groupReversed },
+                        set: { model.preset.groupReversed = $0 }
+                    ))
+                }
             }
         }
         .navigationTitle(model.mode == .create ? L10n.filterPresetNew : model.preset.name)

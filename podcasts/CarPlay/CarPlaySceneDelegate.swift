@@ -18,7 +18,7 @@ class CarPlaySceneDelegate: CustomObserver, CPTemplateApplicationSceneDelegate, 
         self.interfaceController = interfaceController
         interfaceController.delegate = self
 
-        let tabTemplate = CPTabBarTemplate(templates: [createPodcastsTab(), createFiltersTab(), createDownloadsTab(), createMoreTab()])
+        let tabTemplate = CPTabBarTemplate(templates: [createPodcastsTab(), createSessionsTab(), createFiltersTab(), createMoreTab()])
         interfaceController.setRootTemplate(tabTemplate)
 
         self.visibleTemplate = tabTemplate.selectedTemplate
@@ -82,7 +82,9 @@ class CarPlaySceneDelegate: CustomObserver, CPTemplateApplicationSceneDelegate, 
             Constants.Notifications.playbackEnded,
             Constants.Notifications.podcastChaptersDidUpdate,
             Constants.Notifications.playbackStarted,
-            Constants.Notifications.episodeStarredChanged
+            Constants.Notifications.episodeStarredChanged,
+            // Fork: the Up Next ↔ Session world changed — refresh the Sessions tab's "Now Playing" marker.
+            Constants.Notifications.playbackSessionChanged
         ]
 
         for notification in playbackNotifications {

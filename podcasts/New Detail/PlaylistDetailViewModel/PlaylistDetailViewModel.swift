@@ -212,10 +212,21 @@ class PlaylistDetailViewModel: ObservableObject {
         }
     }
 
+    /// Reverses the order the groups appear in (items inside each group keep their sort).
+    var reverseGroup: Bool {
+        get {
+            UserDefaults.standard.bool(forKey: "SJPlaylistReverseGroup-\(playlist.uuid)")
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "SJPlaylistReverseGroup-\(playlist.uuid)")
+            reloadEpisodeList(animated: false)
+        }
+    }
+
     /// Interleaves Group By heading rows (and applies the group limit) in display order.
     private func groupedElements(_ episodes: [ListEpisode]) -> [ListItem] {
         guard groupBy != .none || groupLimit > 0 else { return episodes }
-        return EpisodeGrouper.group(episodes, by: groupBy, limit: groupLimit) { $0.episode }
+        return EpisodeGrouper.group(episodes, by: groupBy, limit: groupLimit, reversed: reverseGroup) { $0.episode }
             .flatMap { group -> [ListItem] in
                 (group.title.map { [PlaylistGroupHeaderPlaceholder(title: $0)] } ?? []) + group.items
             }

@@ -331,6 +331,12 @@
 /* Provides a link to the menu to present more options. */
 "carplay_more" = "More";
 
+/* CarPlay tab that lists playback sessions to switch between. */
+"carplay_sessions_tab" = "Sessions";
+
+/* CarPlay empty state when there are no sessions to show. */
+"carplay_no_sessions" = "No sessions — create one in the app";
+
 /* CarPlay option to modify the playback speed. */
 "carplay_playback_speed" = "Playback Speed";
 
@@ -5420,6 +5426,12 @@
 /* Multi-select action removing the selected episodes from the current session */
 "session_remove_from" = "Remove from Session";
 
+/* Title shown on the Session tab when the session has no episodes yet */
+"session_empty_title" = "Session is empty";
+
+/* Guidance shown on the Session tab when the session has no episodes yet, telling the user how to add some */
+"session_empty_message" = "Add episodes from the Inbox or the Episodes tab, or swipe any episode and choose Add to Session.";
+
 /* Group header action: the session's lineup becomes exactly this group, then plays */
 "session_replace_with" = "Replace as Session";
 
@@ -5465,6 +5477,24 @@
 "inbox_group_this_week" = "This Week";
 "inbox_group_this_month" = "This Month";
 "inbox_group_older" = "Older";
+"inbox_group_last7_days" = "Last 7 Days";
+"inbox_group_last_month" = "Last Month";
+"inbox_group_last_year" = "Last Year";
+
+/* Group By modes added by the fork */
+"inbox_group_archived" = "Archived";
+"inbox_group_session" = "Session";
+"inbox_group_starred" = "Starred";
+"inbox_group_playing" = "Playing Status";
+"inbox_group_duration" = "Duration";
+"inbox_group_reverse" = "Reverse Order";
+
+/* Duration group headers */
+"inbox_group_duration_under10" = "Under 10 min";
+"inbox_group_duration10to30" = "10–30 min";
+"inbox_group_duration30to60" = "30–60 min";
+"inbox_group_duration60to120" = "1–2 hours";
+"inbox_group_duration_over120" = "Over 2 hours";
 
 /* Settings row: how many recent sessions the Switch Session picker offers */
 "settings_recent_sessions" = "Recent Sessions";
