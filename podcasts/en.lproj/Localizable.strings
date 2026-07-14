@@ -2555,6 +2555,12 @@
 /* Fork: header of the settings group holding the linked-adds switches. */
 "settings_linking" = "Linking";
 
+/* Fork: master toggle in per-podcast settings — enable to override the global Linking setting for this podcast. */
+"settings_linking_custom" = "Custom for This Podcast";
+
+/* Fork: footer under the per-podcast linked-adds overrides, clarifying these mirror a manual add (the action), not Auto Add, and Default follows the global Linking setting. */
+"settings_linking_podcast_msg" = "When you add an episode of this podcast to one list, also add it to the other. This mirrors the add action — it's separate from Auto Add above. Default follows your global Linking setting.";
+
 /* A common string used throughout the app. Refers to the Auto Archive settings menu */
 "settings_auto_archive" = "Auto Archive";
 
@@ -5386,7 +5392,7 @@
 "inbox_shelved_toast" = "Added to %1$@";
 
 /* Per-podcast toggle controlling whether new episodes enter the global Inbox */
-"inbox_podcast_toggle" = "Add new episodes to Inbox";
+"inbox_podcast_toggle" = "Add New Episodes to Inbox";
 
 /* Title of the smart playlist tab listing archived episodes */
 "playlist_archived_section_header" = "Archived";

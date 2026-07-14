@@ -68,7 +68,8 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
             let cell = tableView.dequeueReusableCell(withIdentifier: PodcastSettingsViewController.switchCellId, for: indexPath) as! SwitchCell
             cell.cellLabel.text = L10n.inboxPodcastToggle
             cell.cellSwitch.onTintColor = podcast.switchTintColor()
-            cell.setImage(imageName: "upnext")
+            // The Inbox wears the eye (unseen) throughout the fork.
+            cell.setImage(image: UIImage(systemName: "eye", withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .regular)))
             cell.cellSwitch.isOn = !SessionFeederEngine.optOutPodcastUuids().contains(podcast.uuid)
             cell.cellSwitch.removeTarget(self, action: #selector(globalInboxChanged(_:)), for: UIControl.Event.valueChanged)
             cell.cellSwitch.addTarget(self, action: #selector(globalInboxChanged(_:)), for: UIControl.Event.valueChanged)
@@ -101,17 +102,29 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
             cell.cellSecondaryLabel.text = L10n.settingsEpisodeLimitFormat(ServerSettings.autoAddToUpNextLimit().localized())
 
             return cell
+        case .mirrorCustom:
+            // Fork: master toggle — enable to override the global Linking setting for this podcast,
+            // revealing a per-direction switch for each (like Auto Add revealing its position).
+            let cell = tableView.dequeueReusableCell(withIdentifier: PodcastSettingsViewController.switchCellId, for: indexPath) as! SwitchCell
+            cell.cellLabel.text = L10n.settingsLinkingCustom
+            cell.cellSwitch.onTintColor = podcast.switchTintColor()
+            cell.setImage(image: UIImage(systemName: "arrow.left.arrow.right", withConfiguration: UIImage.SymbolConfiguration(pointSize: 16, weight: .regular)))
+            cell.cellSwitch.isOn = mirrorCustomEnabled
+            cell.cellSwitch.removeTarget(self, action: #selector(mirrorCustomChanged(_:)), for: .valueChanged)
+            cell.cellSwitch.addTarget(self, action: #selector(mirrorCustomChanged(_:)), for: .valueChanged)
+            return cell
         case .mirrorToSession, .mirrorToUpNext:
-            // Fork: linked-adds override — Default tracks the global switch live.
-            let cell = tableView.dequeueReusableCell(withIdentifier: PodcastSettingsViewController.disclosureCellId, for: indexPath) as! DisclosureCell
+            // Fork: the per-direction override, revealed while Custom Linking is on. Same wording as
+            // the global Linking toggles — this mirrors a manual *add action*, not Auto Add.
+            let cell = tableView.dequeueReusableCell(withIdentifier: PodcastSettingsViewController.switchCellId, for: indexPath) as! SwitchCell
             let isToSession = row == .mirrorToSession
-            cell.cellLabel.text = isToSession ? L10n.settingsAlsoAddToSession : L10n.settingsAlsoAddToUpNext
-            cell.setImage(imageName: nil)
-            cell.showSecondaryLabel = true
-            cell.cellSecondaryLabel.text = mirrorOverrideTitle(
-                Settings.mirrorOverride(key: isToSession ? Settings.mirrorUpNextToSessionKey : Settings.mirrorSessionToUpNextKey, podcastUuid: podcast.uuid),
-                globalOn: isToSession ? Settings.mirrorUpNextToSession() : Settings.mirrorSessionToUpNext()
-            )
+            cell.cellLabel.text = isToSession ? L10n.settingsMirrorUpNextToSession : L10n.settingsMirrorSessionToUpNext
+            cell.cellSwitch.onTintColor = podcast.switchTintColor()
+            cell.setNoImage()
+            cell.cellSwitch.isOn = isToSession ? Settings.resolvedMirrorUpNextToSession(podcastUuid: podcast.uuid) : Settings.resolvedMirrorSessionToUpNext(podcastUuid: podcast.uuid)
+            let selector = isToSession ? #selector(mirrorToSessionChanged(_:)) : #selector(mirrorToUpNextChanged(_:))
+            cell.cellSwitch.removeTarget(self, action: selector, for: .valueChanged)
+            cell.cellSwitch.addTarget(self, action: selector, for: .valueChanged)
             return cell
         case .session:
             // Fork: auto-add new episodes to this podcast's Session, exactly the
@@ -132,7 +145,8 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
             cell.setImage(imageName: nil)
             cell.showSecondaryLabel = true
             let mode = SessionStore.shared.session(forPodcast: podcast.uuid).flatMap { PlaylistInsertMode(rawValue: $0.insertMode) } ?? .afterLastInserted
-            cell.cellSecondaryLabel.text = mode.description
+            // Auto-add position is Up Next-style Top/Bottom (not the lineup's insert-marker modes).
+            cell.cellSecondaryLabel.text = (mode == .top) ? L10n.top : L10n.bottom
 
             return cell
         case .globalSession:
@@ -285,8 +299,6 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
         } else if row == .globalUpNext {
             let globalSettings = AutoAddToUpNextViewController()
             navigationController?.pushViewController(globalSettings, animated: true)
-        } else if row == .mirrorToSession || row == .mirrorToUpNext {
-            showMirrorOverridePicker(toSession: row == .mirrorToSession)
         } else if row == .sessionPosition {
             showSessionAutoAddPositionSettings()
         } else if row == .globalSession {
@@ -358,6 +370,8 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
             }
         } else if firstRow == .session {
             return L10n.settingsSessionLimit(Settings.sessionAutoAddLimit().localized())
+        } else if firstRow == .mirrorCustom {
+            return L10n.settingsLinkingPodcastMsg
         } else if firstRow == .feedError {
             return L10n.settingsFeedErrorMsg
         } else if firstRow == .autoArchive {
@@ -406,27 +420,32 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
 
     // MARK: - Fork: linked-adds override
 
-    private func mirrorOverrideTitle(_ override: MirrorOverride, globalOn: Bool) -> String {
-        switch override {
-        case .followGlobal: return L10n.settingsMirrorDefaultFormat(globalOn ? L10n.on : L10n.off)
-        case .on: return L10n.on
-        case .off: return L10n.off
-        }
+    /// This podcast has an explicit Linking override (isn't following the global setting).
+    var mirrorCustomEnabled: Bool {
+        Settings.mirrorOverride(key: Settings.mirrorUpNextToSessionKey, podcastUuid: podcast.uuid) != .followGlobal
+            || Settings.mirrorOverride(key: Settings.mirrorSessionToUpNextKey, podcastUuid: podcast.uuid) != .followGlobal
     }
 
-    private func showMirrorOverridePicker(toSession: Bool) {
-        let key = toSession ? Settings.mirrorUpNextToSessionKey : Settings.mirrorSessionToUpNextKey
-        let globalOn = toSession ? Settings.mirrorUpNextToSession() : Settings.mirrorSessionToUpNext()
-        let current = Settings.mirrorOverride(key: key, podcastUuid: podcast.uuid)
-        let picker = OptionsPicker(title: (toSession ? L10n.settingsAlsoAddToSession : L10n.settingsAlsoAddToUpNext).localizedUppercase)
-        for option in MirrorOverride.allCases {
-            picker.addAction(action: OptionAction(label: mirrorOverrideTitle(option, globalOn: globalOn), selected: current == option) { [weak self] in
-                guard let self else { return }
-                Settings.setMirrorOverride(option, key: key, podcastUuid: self.podcast.uuid)
-                self.settingsTable.reloadData()
-            })
+    @objc private func mirrorCustomChanged(_ sender: UISwitch) {
+        if sender.isOn {
+            // Seed each direction's explicit value from what the global setting currently resolves to,
+            // so flipping Custom on is a no-op until the user changes a direction.
+            Settings.setMirrorOverride(Settings.mirrorUpNextToSession() ? .on : .off, key: Settings.mirrorUpNextToSessionKey, podcastUuid: podcast.uuid)
+            Settings.setMirrorOverride(Settings.mirrorSessionToUpNext() ? .on : .off, key: Settings.mirrorSessionToUpNextKey, podcastUuid: podcast.uuid)
+        } else {
+            // Back to following the global Linking setting.
+            Settings.setMirrorOverride(.followGlobal, key: Settings.mirrorUpNextToSessionKey, podcastUuid: podcast.uuid)
+            Settings.setMirrorOverride(.followGlobal, key: Settings.mirrorSessionToUpNextKey, podcastUuid: podcast.uuid)
         }
-        picker.present(from: self)
+        settingsTable.reloadData()
+    }
+
+    @objc private func mirrorToSessionChanged(_ sender: UISwitch) {
+        Settings.setMirrorOverride(sender.isOn ? .on : .off, key: Settings.mirrorUpNextToSessionKey, podcastUuid: podcast.uuid)
+    }
+
+    @objc private func mirrorToUpNextChanged(_ sender: UISwitch) {
+        Settings.setMirrorOverride(sender.isOn ? .on : .off, key: Settings.mirrorSessionToUpNextKey, podcastUuid: podcast.uuid)
     }
 
     // MARK: - Auto Add To Session
@@ -438,8 +457,12 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
         let positionPicker = OptionsPicker(title: L10n.playlistInsertModeSetting.localizedUppercase)
         let currentMode = PlaylistInsertMode(rawValue: session.insertMode) ?? .afterLastInserted
 
-        for mode in PlaylistInsertMode.allCases {
-            positionPicker.addAction(action: OptionAction(label: mode.description, icon: nil, selected: currentMode == mode) { [weak self] in
+        // Auto-add position is Up Next-style: just Top or Bottom (labelled plainly, not the lineup's
+        // "On Top / After Last …" insert-marker modes).
+        for mode in [PlaylistInsertMode.top, .bottom] {
+            let label = (mode == .top) ? L10n.top : L10n.bottom
+            let selected = (mode == .top) ? (currentMode == .top) : (currentMode != .top)
+            positionPicker.addAction(action: OptionAction(label: label, icon: nil, selected: selected) { [weak self] in
                 guard let self, var session = SessionStore.shared.session(forPodcast: self.podcast.uuid) else { return }
                 session.insertMode = mode.rawValue
                 SessionStore.shared.upsert(session)
@@ -516,7 +539,7 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
     }
 
     private func tableData() -> [[TableRow]] {
-        var data: [[TableRow]] = [[.autoDownload, .notifications, .globalInbox], [.upNext], [.session], [.playbackEffects, .skipFirst, .skipLast], [.autoArchive]]
+        var data: [[TableRow]] = [[.autoDownload, .notifications, .globalInbox], [.upNext], [.session], [.mirrorCustom], [.autoArchive], [.playbackEffects, .skipFirst, .skipLast]]
 
         if podcast.refreshAvailable {
             data.insert([.feedError], at: 0)
@@ -533,6 +556,13 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
            let sessionSection = data.firstIndex(where: { $0.first == .session }) {
             data[sessionSection].append(.sessionPosition)
             data[sessionSection].append(.globalSession)
+        }
+
+        // Custom Linking overrides for this podcast: enable the master toggle to reveal a per-
+        // direction switch for each (exactly like Auto Add revealing its position row).
+        if mirrorCustomEnabled, let linkingSection = data.firstIndex(where: { $0.first == .mirrorCustom }) {
+            data[linkingSection].append(.mirrorToSession)
+            data[linkingSection].append(.mirrorToUpNext)
         }
 
         if canAppearInFilters {
