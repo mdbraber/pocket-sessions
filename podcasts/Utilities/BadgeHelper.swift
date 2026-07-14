@@ -66,12 +66,10 @@ class BadgeHelper {
             let newCount = DataManager.sharedManager.count(query: "SELECT COUNT(e.id) FROM SJEpisode e LEFT JOIN SJPodcast p ON p.id = e.podcast_id WHERE p.subscribed = 1 AND e.playingStatus == 1 AND e.archived = 0 AND e.addedDate > ?", values: [lastClosedDate])
             setBadgeTo(newCount)
         } else if badgeSetting == .inboxCount {
-            // Fork: the global Inbox count — the same number the Inbox tab wears. It is now
-            // an indexed membership count rather than a sweep over every unarchived episode,
-            // but the badge observers fire often, so keep it off the main thread.
+            // Fork: the global Inbox count — the same number the Inbox tab wears. A count
+            // query now, but the badge observers fire often, so keep it off the main thread.
             DispatchQueue.global(qos: .utility).async { [weak self] in
-                let global = SessionStore.shared.globalInbox
-                self?.setBadgeTo(SessionFeederEngine.inboxEpisodes(for: global).count)
+                self?.setBadgeTo(InboxManager.shared.unseenCount())
             }
         } else if badgeSetting == .filterCount {
             guard let playlistId = Settings.appBadgeFilterUuid else {

@@ -557,13 +557,31 @@ added-to-Session / triage / deleted) does not include queuing. So an episode que
 Session mirroring keeps its dot until you play it. Coherent — the Inbox is about attention, Up Next is a
 lineup — and with mirroring on the chain still clears it. But it *is* a change, and it was not stated.
 
-### Stage 5 — Global Inbox tab re-points at the playlist  · ~200 of 726 LOC changed · blast radius: 3 files
-`InboxViewController` reads the Inbox playlist directly. Bulk verbs (one DELETE, one notification).
-Sort + group lenses (incl. Group by Podcast) as pure view concerns. Badge via the grouped query.
-**Deletes the worst hot path**: `SessionFeederEngine.inboxEpisodes` and `allStoreMemberUuids` — which is
-worse than you documented: `badgeCount(forPlaylist:)` re-runs `allStoreMemberUuids()` (a query *per session*)
-for **every playlist row** (`NewPlaylistCell:151`). The podcast grid was batched after it "made the whole app
-sluggish"; the playlists list never was.
+### Stage 5 — Global Inbox tab re-points at the playlist ✅ **DONE**
+`InboxViewController.allEpisodes` is now `InboxManager.unseenEpisodes()` — one indexed read of the Inbox
+playlist, newest first, instead of a domain sweep over every unarchived episode of every subscribed podcast.
+The tab badge and app badge are `unseenCount()`, a **count query** that never materialises the episodes.
+Both surfaces now observe `playlistChanged` (membership *is* the list). Bulk verbs were already batched
+(`markSeen` = one DELETE + one notification; `bulkArchive` + the sweep). Group-by-Podcast already existed
+on this tab, so §1's grouping requirement was already met. Opting a podcast out now also **clears what it
+already put there** — otherwise the switch reads as "stop offering" but leaves a pile nothing will refill.
+App 393/393, DataModel 473/475, Server 94/94, build green.
+
+### 🔶 Queuing: DECIDED, and subtler than it looked
+**Queuing an episode clears its dot — but as an EVENT, not a STATE.** The distinction is load-bearing.
+
+The obvious implementation (the sweep treats "is in Up Next" as decided) is **wrong**, and it breaks the
+thing you actually want: a podcast set to **auto-add-to-Up-Next** delivers episodes that are *already queued*
+when they arrive. You want those to still come through the Inbox — it is the complete record of what turned
+up, and Mark All as Seen is how you clear it once you've watched it go past. A stateless "is it queued" check
+in the sweep would strip their dots the next time anything at all changed.
+
+So: the drain does **not** exclude queued episodes, the sweep does **not** look at the queue, and a
+`upNextEpisodeAdded` observer clears the dot for the episode you just queued. The ordering makes it work by
+construction — auto-add runs at `RefreshOperation:97`, *before* the drain at `:99`, so an auto-added episode
+isn't in the Inbox yet when its notification fires (no-op), and the drain offers it moments later.
+One-directional, like every other decision: taking an episode back out of Up Next does not make it unseen.
+Three tests pin all three cases.
 
 ### Stage 6 — Two tabs  · ~250 LOC deleted · blast radius: 5 files
 Drop the Inbox tab from `PodcastDetailsTabView:113-122` and `PlaylistHeaderView:134-143`; remove

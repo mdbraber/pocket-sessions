@@ -70,6 +70,33 @@ final class InboxManager {
         unseenUuids().contains(episodeUuid)
     }
 
+    /// The Inbox itself — every unseen episode, newest first.
+    ///
+    /// The stored playlist order is meaningless: the Inbox is a *set*, and its order is whatever
+    /// episodes happened to arrive in. Newest-first is the default *view*; sort and grouping are
+    /// display lenses and never rewrite the playlist.
+    func unseenEpisodes() -> [Episode] {
+        DataManager.sharedManager.playlistEpisodes(for: inboxPlaylist(), limit: 0, sortType: .newestToOldest)
+    }
+
+    /// The badge number. A count query — it never materialises the episodes.
+    func unseenCount() -> Int {
+        DataManager.sharedManager.playlistEpisodeCount(for: inboxPlaylist(), episodeUuidToAdd: nil)
+    }
+
+    /// Opting a podcast out of the Inbox also clears what it already put there — otherwise the
+    /// switch reads as "stop offering" but leaves a pile behind that nothing will ever refill.
+    func setOptedOut(_ optedOut: Bool, podcastUuid: String) {
+        SessionFeederEngine.setOptedOut(optedOut, podcastUuid: podcastUuid)
+        guard optedOut else { return }
+
+        let members = DataManager.sharedManager.findEpisodesWhere(
+            customWhere: "uuid IN (SELECT episodeUuid FROM \(DataManager.playlistEpisodeTableName) WHERE playlist_uuid = ?) AND podcastUuid = ?",
+            arguments: [DataManager.inboxPlaylistUuid, podcastUuid]
+        )
+        markSeen(episodeUuids: members.map(\.uuid))
+    }
+
     // MARK: - Setup
 
     func setup() {
@@ -77,6 +104,7 @@ final class InboxManager {
         center.addObserver(self, selector: #selector(episodeStateChanged), name: Constants.Notifications.episodePlayStatusChanged, object: nil)
         center.addObserver(self, selector: #selector(episodeStateChanged), name: Constants.Notifications.episodeArchiveStatusChanged, object: nil)
         center.addObserver(self, selector: #selector(episodeStateChanged), name: Constants.Notifications.manyEpisodesChanged, object: nil)
+        center.addObserver(self, selector: #selector(episodeQueued(_:)), name: Constants.Notifications.upNextEpisodeAdded, object: nil)
         center.addObserver(self, selector: #selector(podcastDeleted(_:)), name: Constants.Notifications.podcastDeleted, object: nil)
     }
 
@@ -141,6 +169,11 @@ final class InboxManager {
 
         // Anything already archived or already touched is not "new" to triage — the sync ran
         // before us, so a decision made on another device is already reflected here.
+        //
+        // Being QUEUED is deliberately not disqualifying. A podcast set to auto-add-to-Up-Next
+        // delivers episodes already in the queue, and those must still come through the Inbox:
+        // the Inbox is the record of everything that arrived, and Mark All as Seen is how you
+        // clear it once you've watched it go past.
         let query = """
         (\(clauses.joined(separator: " OR "))) \
         AND archived = 0 AND wasDeleted = 0 AND playedUpTo = 0 AND playingStatus = \(PlayingStatus.notPlayed.rawValue) \
@@ -219,8 +252,14 @@ final class InboxManager {
         }
     }
 
-    /// Removes anything in the Inbox that has since been decided: archived, or touched at all.
-    /// "Any playback progress" is deliberate — a few seconds in is still a decision.
+    /// Removes anything in the Inbox that has since been decided: any playback progress (a few
+    /// seconds in is still a decision), archived, or deleted.
+    ///
+    /// Note what is NOT here: **being queued**. Queuing clears the dot as an *event*
+    /// (`episodeQueued` below), not as a *state*. The difference matters — a podcast set to
+    /// auto-add-to-Up-Next delivers episodes that are already queued, and those must still come
+    /// through the Inbox. If the sweep treated "is in Up Next" as decided, it would strip their
+    /// dots the next time anything at all changed.
     func sweep() {
         let decided = DataManager.sharedManager.findEpisodesWhere(
             customWhere: """
@@ -231,6 +270,21 @@ final class InboxManager {
         )
         guard !decided.isEmpty else { return }
         markSeen(episodeUuids: decided.map(\.uuid))
+    }
+
+    /// Queuing an episode is deciding to listen to it, so the dot goes.
+    ///
+    /// This is an event, not a state (see `sweep`). Auto-add-to-Up-Next fires this during the
+    /// refresh — *before* the drain runs — so an auto-added episode isn't in the Inbox yet, this
+    /// is a no-op for it, and it still gets its dot when the drain offers it moments later.
+    /// Exactly the intent: everything comes through the Inbox, however it got queued.
+    ///
+    /// One-directional, like every other decision here: taking an episode back out of Up Next
+    /// does not make it unseen again.
+    @objc private func episodeQueued(_ notification: Notification) {
+        guard let episodeUuid = notification.object as? String else { return }
+        guard isUnseen(episodeUuid: episodeUuid) else { return }
+        markSeen(episodeUuids: [episodeUuid])
     }
 
     @objc private func podcastDeleted(_ notification: Notification) {

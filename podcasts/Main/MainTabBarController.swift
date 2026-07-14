@@ -158,6 +158,8 @@ class MainTabBarController: UITabBarController, NavigationProtocol, UIGestureRec
         trackTabOpened(pcTabs[selectedIndex], isInitial: true)
 
         NavigationManager.sharedManager.mainViewControllerDidLoad(controller: self)
+        // Membership of the Inbox playlist IS the badge number.
+        NotificationCenter.default.addObserver(self, selector: #selector(updateInboxBadge), name: Constants.Notifications.playlistChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(updateInboxBadge), name: SessionStore.changed, object: nil)
         // The inbox count also moves with episode state, the queue, and refreshes —
         // without these the badge goes stale (e.g. showing a number at inbox zero).
@@ -358,8 +360,7 @@ class MainTabBarController: UITabBarController, NavigationProtocol, UIGestureRec
     @objc private func updateInboxBadge() {
         inboxBadgeDebounce.call {
             DispatchQueue.global(qos: .utility).async { [weak self] in
-                let global = SessionStore.shared.globalInbox
-                let count = SessionFeederEngine.inboxEpisodes(for: global).count
+                let count = InboxManager.shared.unseenCount()
                 DispatchQueue.main.async {
                     guard let self, let index = self.pcTabs.firstIndex(of: .inbox), let items = self.tabBar.items, let item = items[safe: index] else { return }
                     item.badgeValue = count > 0 ? "\(count)" : nil

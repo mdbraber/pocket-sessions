@@ -453,7 +453,7 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
     // MARK: - Settings changes
 
     @objc private func globalInboxChanged(_ sender: UISwitch) {
-        SessionFeederEngine.setOptedOut(!sender.isOn, podcastUuid: podcast.uuid)
+        InboxManager.shared.setOptedOut(!sender.isOn, podcastUuid: podcast.uuid)
     }
 
     @objc private func autoDownloadChanged(_ sender: UISwitch) {

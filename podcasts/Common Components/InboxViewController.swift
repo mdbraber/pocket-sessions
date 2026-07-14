@@ -161,6 +161,8 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
         let longPress = UILongPressGestureRecognizer(target: self, action: #selector(rowLongPressed(_:)))
         table.addGestureRecognizer(longPress)
 
+        // Membership of the Inbox playlist IS the list, so playlistChanged is the primary signal.
+        NotificationCenter.default.addObserver(self, selector: #selector(reloadData), name: Constants.Notifications.playlistChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(reloadData), name: SessionStore.changed, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(reloadData), name: Constants.Notifications.episodeDownloadStatusChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(reloadData), name: Constants.Notifications.episodePlayStatusChanged, object: nil)
@@ -230,8 +232,9 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
     @objc private func reloadData() {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            let global = SessionStore.shared.globalInbox
-            self.allEpisodes = SessionFeederEngine.inboxEpisodes(for: global)
+            // The Inbox tab IS the Inbox playlist. One indexed read, newest first — no
+            // sweep over every unarchived episode of every subscribed podcast.
+            self.allEpisodes = InboxManager.shared.unseenEpisodes()
             self.rebuildGroups()
             self.refreshMultiSelectEpisodes()
             self.navigationItem.leftBarButtonItem?.isEnabled = self.isMultiSelectEnabled || !self.allEpisodes.isEmpty

@@ -69,6 +69,15 @@ final class InboxManagerTests: DBTestCase {
         return episode
     }
 
+    /// Up Next lives in the same table as playlist membership, with a NULL playlist_uuid.
+    private func queue(_ episodeUuid: String, podcastUuid: String) {
+        let playlistEpisode = PlaylistEpisode()
+        playlistEpisode.episodeUuid = episodeUuid
+        playlistEpisode.podcastUuid = podcastUuid
+        playlistEpisode.episodePosition = dataManager.positionForPlaylistEpisode(bottomOfList: true)
+        dataManager.save(playlistEpisode: playlistEpisode)
+    }
+
     private func date(_ daysAgo: Int) -> Date {
         Date(timeIntervalSince1970: 1_700_000_000).addingTimeInterval(TimeInterval(-daysAgo * 86_400))
     }
@@ -180,6 +189,62 @@ final class InboxManagerTests: DBTestCase {
         inbox.drain()
 
         XCTAssertTrue(inbox.unseenUuids().isEmpty)
+    }
+
+    /// Auto-add-to-Up-Next must NOT keep an episode out of the Inbox. Everything that arrives
+    /// comes through the Inbox — that is what makes it a complete record of what turned up —
+    /// and Mark All as Seen is how you clear it once you have watched it go past. So being
+    /// queued is not a disqualifying *state*.
+    func testAnEpisodeThatArrivesAlreadyQueuedIsStillOffered() {
+        let podcast = makePodcast(latestEpisodeDate: date(5))
+        makeEpisode(uuid: "old", podcast: podcast, publishedDate: date(10))
+        inbox.drain()
+
+        makeEpisode(uuid: "auto-queued", podcast: podcast, publishedDate: date(1))
+        queue("auto-queued", podcastUuid: podcast.uuid)
+        podcast.latestEpisodeDate = date(1)
+        dataManager.save(podcast: podcast)
+
+        inbox.drain()
+
+        XCTAssertEqual(inbox.unseenUuids(), ["auto-queued"], "auto-added episodes must still come through the Inbox")
+    }
+
+    /// ...and the sweep must not undo that. This is why "queued" is an EVENT and not a STATE:
+    /// a stateless "is it in Up Next" check here would strip the dot off every auto-added
+    /// episode the next time anything at all changed.
+    func testTheSweepDoesNotRemoveAQueuedEpisode() {
+        let podcast = makePodcast(latestEpisodeDate: date(5))
+        makeEpisode(uuid: "old", podcast: podcast, publishedDate: date(10))
+        inbox.drain()
+        makeEpisode(uuid: "auto-queued", podcast: podcast, publishedDate: date(1))
+        queue("auto-queued", podcastUuid: podcast.uuid)
+        podcast.latestEpisodeDate = date(1)
+        dataManager.save(podcast: podcast)
+        inbox.drain()
+
+        inbox.sweep()
+
+        XCTAssertEqual(inbox.unseenUuids(), ["auto-queued"])
+    }
+
+    /// But queuing an episode YOURSELF is deciding to listen to it, so the dot goes.
+    func testQueuingAnUnseenEpisodeClearsItsDot() {
+        let podcast = makePodcast(latestEpisodeDate: date(5))
+        makeEpisode(uuid: "old", podcast: podcast, publishedDate: date(10))
+        inbox.drain()
+        makeEpisode(uuid: "queue-me", podcast: podcast, publishedDate: date(2))
+        makeEpisode(uuid: "leave-me", podcast: podcast, publishedDate: date(1))
+        podcast.latestEpisodeDate = date(1)
+        dataManager.save(podcast: podcast)
+        inbox.drain()
+        XCTAssertEqual(inbox.unseenUuids(), ["queue-me", "leave-me"])
+
+        inbox.setup()
+        queue("queue-me", podcastUuid: podcast.uuid)
+        NotificationCenter.default.post(name: Constants.Notifications.upNextEpisodeAdded, object: "queue-me")
+
+        XCTAssertEqual(inbox.unseenUuids(), ["leave-me"], "queuing it yourself is a decision")
     }
 
     func testAnOptedOutPodcastIsNeverOffered() {
