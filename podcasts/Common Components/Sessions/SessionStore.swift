@@ -11,6 +11,12 @@ enum SessionFeeder: Codable, Equatable {
     case folder(uuid: String)
     case smartPlaylist(uuid: String)
     case allPodcasts
+
+    /// A single podcast's own list — the surfaces that ignore a preset's podcast/folder scope.
+    var isSinglePodcast: Bool {
+        if case .podcast = self { return true }
+        return false
+    }
 }
 
 /// Fork: a Session — a thin local coordinator. The lineup itself lives in a synced

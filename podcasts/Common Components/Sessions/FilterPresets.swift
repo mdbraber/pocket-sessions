@@ -25,9 +25,32 @@ enum FilterPresets {
         SessionStore.shared.sessions.compactMap(\.storePlaylistUuid)
     }
 
+    /// Resolves a preset's podcast/folder scope to a concrete podcast-uuid list — folders expanded
+    /// to their current members. `nil` when the preset has no scope. A non-nil but empty result
+    /// means the scope is set but matches no podcasts (e.g. an empty folder).
+    static func scopePodcastUuids(for preset: FilterPreset) -> [String]? {
+        guard preset.isScoped else { return nil }
+        var uuids = preset.podcastUuids
+        if !preset.folderUuids.isEmpty {
+            let members = DataManager.sharedManager.allPodcasts(includeUnsubscribed: false)
+                .filter { preset.folderUuids.contains($0.folderUuid ?? "") }
+                .map(\.uuid)
+            uuids.formUnion(members)
+        }
+        return Array(uuids)
+    }
+
     /// The active preset as a WHERE fragment. Nil when it constrains nothing.
-    static func predicate(columns: FilterPresetQuery.Columns = .unaliased) -> (sql: String, arguments: [Any])? {
-        FilterPresetQuery.predicate(for: active, sessionStoreUuids: sessionStoreUuids, columns: columns)
+    ///
+    /// `applyScope` is false on single-podcast surfaces (a podcast's own Episodes/Session list),
+    /// which ignore the podcast/folder rule — see `FilterPreset.podcastUuids`.
+    static func predicate(columns: FilterPresetQuery.Columns = .unaliased, applyScope: Bool = true) -> (sql: String, arguments: [Any])? {
+        FilterPresetQuery.predicate(
+            for: active,
+            sessionStoreUuids: sessionStoreUuids,
+            scopePodcastUuids: applyScope ? scopePodcastUuids(for: active) : nil,
+            columns: columns
+        )
     }
 
     /// Filters an **ordered** uuid list through the active preset, preserving its order.
@@ -35,8 +58,8 @@ enum FilterPresets {
     /// This is how the Session tab applies a preset: a lineup is a hand-made order, so it can't be
     /// re-queried — but it can be sieved. Going back through the same SQL keeps one source of truth
     /// for what a rule *means*, rather than growing a second, in-memory matcher that drifts from it.
-    static func filtering(_ orderedUuids: [String]) -> [String] {
-        guard !orderedUuids.isEmpty, let predicate = predicate() else { return orderedUuids }
+    static func filtering(_ orderedUuids: [String], applyScope: Bool = true) -> [String] {
+        guard !orderedUuids.isEmpty, let predicate = predicate(applyScope: applyScope) else { return orderedUuids }
 
         let placeholders = orderedUuids.map { _ in "?" }.joined(separator: ",")
         let matching = Set(

@@ -103,7 +103,10 @@ class PlaylistDetailViewModel: ObservableObject {
     /// on the Session tab, where the lineup cannot be re-queried but can be sieved.
     private func sieved(_ episodes: [ListEpisode]) -> [ListEpisode] {
         guard FilterPresets.isNarrowing else { return episodes }
-        let kept = Set(FilterPresets.filtering(episodes.map(\.episode.uuid)))
+        // A podcast session's lineup is single-podcast, so it ignores the preset's podcast/folder
+        // scope — same exemption as the podcast page (see FilterPreset.podcastUuids).
+        let applyScope = !(session?.feeder.isSinglePodcast ?? false)
+        let kept = Set(FilterPresets.filtering(episodes.map(\.episode.uuid), applyScope: applyScope))
         return episodes.filter { kept.contains($0.episode.uuid) }
     }
 

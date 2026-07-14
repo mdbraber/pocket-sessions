@@ -29,9 +29,15 @@ enum FilterPresetQuery {
     ///   from `SessionStore` so this stays a pure function.
     /// - Returns: nil when the preset constrains nothing — the caller then adds no clause at all,
     ///   rather than ANDing on a vacuous `(1 = 1)`.
+    /// - Parameter scopePodcastUuids: the podcasts the preset's podcast/folder scope resolves to
+    ///   (folders already expanded to their members by the caller — this stays a pure function).
+    ///   **nil = don't apply scope**: either the preset has no scope, or this is a single-podcast
+    ///   surface that ignores it. A non-nil but *empty* set means "scope is set but resolves to no
+    ///   podcasts" (e.g. an empty folder) → matches nothing.
     static func predicate(
         for preset: FilterPreset,
         sessionStoreUuids: [String],
+        scopePodcastUuids: [String]? = nil,
         inboxPlaylistUuid: String = DataManager.inboxPlaylistUuid,
         columns: Columns = .unaliased,
         now: Date = Date()
@@ -39,6 +45,16 @@ enum FilterPresetQuery {
         let e = columns.rawValue
         var blocks = [String]()
         var arguments = [Any]()
+
+        if let scopePodcastUuids {
+            if scopePodcastUuids.isEmpty {
+                blocks.append("0 = 1")
+            } else {
+                let placeholders = scopePodcastUuids.map { _ in "?" }.joined(separator: ",")
+                blocks.append("\(e)podcastUuid IN (\(placeholders))")
+                arguments.append(contentsOf: scopePodcastUuids)
+            }
+        }
 
         // --- Column rules: a Bool? (nil = any), or a Set ORed together ---
 

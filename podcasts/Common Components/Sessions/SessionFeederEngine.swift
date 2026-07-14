@@ -36,8 +36,16 @@ enum SessionFeederEngine {
     /// The preset owns archived visibility now (it is an ordinary rule), so there is no separate
     /// archived flag: pass nil to get the whole domain.
     static func domainEpisodes(for session: Session, preset: FilterPreset? = nil) -> [Episode] {
+        // A .podcast feeder is a single podcast's own list, so it ignores the preset's
+        // podcast/folder scope — scoping a one-podcast list only empties it. Every other feeder is
+        // multi-podcast and applies scope.
+        let applyScope: Bool = { if case .podcast = session.feeder { return false } else { return true } }()
         let predicate = preset.flatMap {
-            FilterPresetQuery.predicate(for: $0, sessionStoreUuids: SessionStore.shared.sessions.compactMap(\.storePlaylistUuid))
+            FilterPresetQuery.predicate(
+                for: $0,
+                sessionStoreUuids: SessionStore.shared.sessions.compactMap(\.storePlaylistUuid),
+                scopePodcastUuids: applyScope ? FilterPresets.scopePodcastUuids(for: $0) : nil
+            )
         }
         let archivedClause = predicate.map { " AND \($0.sql)" } ?? ""
         let presetArgs = predicate?.arguments ?? []

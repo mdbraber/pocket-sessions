@@ -58,6 +58,7 @@ private enum TriState: Hashable {
 struct FilterPresetEditorView: View {
     @EnvironmentObject var theme: Theme
     @ObservedObject var model: FilterPresetEditorModel
+    @State private var showingScope = false
 
     var body: some View {
         Form {
@@ -79,6 +80,24 @@ struct FilterPresetEditorView: View {
                 setToggle(L10n.statusDownloaded, .downloaded, keyPath: \.downloadStatus)
                 setToggle(L10n.statusDownloading, .downloading, keyPath: \.downloadStatus)
                 setToggle(L10n.statusNotDownloaded, .notDownloaded, keyPath: \.downloadStatus)
+            }
+
+            // Scope: which podcasts/folders. A multi-select sheet; empty = all. (A sheet, not a
+            // push — this SwiftUI form is hosted inside a UIKit nav stack, so a NavigationLink has
+            // nothing to push onto.)
+            Section {
+                Button {
+                    showingScope = true
+                } label: {
+                    HStack {
+                        Text(L10n.filterPresetRuleScope).foregroundStyle(theme.primaryText01)
+                        Spacer()
+                        Text(model.preset.scopeSummary).foregroundStyle(theme.primaryText02)
+                        Image("cs-chevron").renderingMode(.template).foregroundStyle(theme.primaryIcon02)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             }
 
             // Binary axes: three-way segmented controls.
@@ -135,6 +154,17 @@ struct FilterPresetEditorView: View {
             }
         }
         .navigationTitle(model.mode == .create ? L10n.filterPresetNew : model.preset.name)
+        .sheet(isPresented: $showingScope) {
+            NavigationStack {
+                FilterPresetScopePicker(model: model)
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button(L10n.done) { showingScope = false }
+                        }
+                    }
+            }
+            .setupDefaultEnvironment()
+        }
     }
 
     // MARK: - Row builders

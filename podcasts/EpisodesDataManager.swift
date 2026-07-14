@@ -228,6 +228,7 @@ class EpisodesDataManager: PlaybackSessionEpisodeSource {
             FilterPresetQuery.predicate(
                 for: $0,
                 sessionStoreUuids: SessionStore.shared.sessions.compactMap(\.storePlaylistUuid),
+                scopePodcastUuids: FilterPresets.scopePodcastUuids(for: $0),
                 columns: .episodeAlias
             )
         }

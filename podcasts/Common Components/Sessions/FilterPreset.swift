@@ -79,6 +79,14 @@ struct FilterPreset: Codable, Equatable, Identifiable {
     /// which is what makes it portable.
     var inSession: Rule
 
+    /// Scope: which podcasts the preset speaks for. Empty = all. `folderUuids` resolves to its
+    /// member podcasts at query time. This is the ONE axis that is inherently about *which page you
+    /// are on* rather than a property of an episode — so a single-podcast page (a podcast's own
+    /// Episodes/Session list) deliberately ignores it, since scoping a one-podcast list is either a
+    /// no-op or a silent empty. Everywhere with more than one podcast in play, it applies.
+    var podcastUuids: Set<String>
+    var folderUuids: Set<String>
+
     // Ranges. Genuinely not membership, so genuinely not rules.
     var filterDuration: Bool
     var longerThan: Int32 // minutes
@@ -101,6 +109,8 @@ struct FilterPreset: Codable, Equatable, Identifiable {
         archived: Rule = false,
         unseen: Rule = nil,
         inSession: Rule = nil,
+        podcastUuids: Set<String> = [],
+        folderUuids: Set<String> = [],
         filterDuration: Bool = false,
         longerThan: Int32 = 0,
         shorterThan: Int32 = 0,
@@ -117,6 +127,8 @@ struct FilterPreset: Codable, Equatable, Identifiable {
         self.archived = archived
         self.unseen = unseen
         self.inSession = inSession
+        self.podcastUuids = podcastUuids
+        self.folderUuids = folderUuids
         self.filterDuration = filterDuration
         self.longerThan = longerThan
         self.shorterThan = shorterThan
@@ -126,7 +138,7 @@ struct FilterPreset: Codable, Equatable, Identifiable {
 
     enum CodingKeys: String, CodingKey {
         case uuid, name, iconId, playingStatus, downloadStatus, starred, mediaType
-        case archived, unseen, inSession
+        case archived, unseen, inSession, podcastUuids, folderUuids
         case filterDuration, longerThan, shorterThan, filterHours, sortType
     }
 
@@ -150,6 +162,8 @@ struct FilterPreset: Codable, Equatable, Identifiable {
         archived = try c.decodeIfPresent(Bool.self, forKey: .archived)
         unseen = try c.decodeIfPresent(Bool.self, forKey: .unseen)
         inSession = try c.decodeIfPresent(Bool.self, forKey: .inSession)
+        podcastUuids = try c.decodeIfPresent(Set<String>.self, forKey: .podcastUuids) ?? []
+        folderUuids = try c.decodeIfPresent(Set<String>.self, forKey: .folderUuids) ?? []
         filterDuration = try c.decodeIfPresent(Bool.self, forKey: .filterDuration) ?? false
         longerThan = try c.decodeIfPresent(Int32.self, forKey: .longerThan) ?? 0
         shorterThan = try c.decodeIfPresent(Int32.self, forKey: .shorterThan) ?? 0
@@ -161,6 +175,11 @@ struct FilterPreset: Codable, Equatable, Identifiable {
     /// is "All Episodes" in all but name.
     var isDefault: Bool {
         self == FilterPreset(uuid: uuid, name: name, iconId: iconId, sortType: sortType)
+    }
+
+    /// Whether a podcast/folder scope is set.
+    var isScoped: Bool {
+        !podcastUuids.isEmpty || !folderUuids.isEmpty
     }
 }
 

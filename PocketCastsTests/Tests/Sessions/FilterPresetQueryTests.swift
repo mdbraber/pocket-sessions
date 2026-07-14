@@ -149,6 +149,35 @@ final class FilterPresetQueryTests: XCTestCase {
         XCTAssertNil(notInClause, "everything is 'not in a session' when there are none — no clause needed")
     }
 
+    // MARK: - Podcast/folder scope
+
+    /// Scope is passed in resolved (folders already expanded), because the builder is pure. A
+    /// non-empty set becomes an IN clause.
+    func testScopeBecomesAPodcastInClause() throws {
+        let preset = FilterPreset(name: "News", archived: nil)
+        let result = FilterPresetQuery.predicate(for: preset, sessionStoreUuids: stores, scopePodcastUuids: ["pod-a", "pod-b"])
+
+        XCTAssertEqual(result?.sql, "podcastUuid IN (?,?)")
+        XCTAssertEqual(result?.arguments as? [String], ["pod-a", "pod-b"])
+    }
+
+    /// The single-podcast-page exemption: nil scope emits no clause even when the preset is scoped.
+    func testNilScopeEmitsNoClause() {
+        // A preset that IS scoped, but rendered on a surface that ignores scope (nil passed).
+        let preset = FilterPreset(name: "News", archived: nil, podcastUuids: ["pod-a"])
+
+        XCTAssertNil(sql(preset), "a single-podcast surface passes nil scope and must emit nothing")
+    }
+
+    /// Scope set but resolving to no podcasts (an empty folder) must match nothing, not emit a
+    /// syntactically broken empty IN ().
+    func testEmptyResolvedScopeMatchesNothing() {
+        let preset = FilterPreset(name: "Empty Folder", archived: nil)
+        let result = FilterPresetQuery.predicate(for: preset, sessionStoreUuids: stores, scopePodcastUuids: [])
+
+        XCTAssertEqual(result?.sql, "0 = 1")
+    }
+
     // MARK: - Ranges
 
     func testDurationRangeIsBoundAndInclusiveOfTheFinalMinute() {
