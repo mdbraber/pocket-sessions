@@ -32,6 +32,64 @@ struct Session: Codable, Equatable, Identifiable {
     var lastUsed: Date? = nil
 
     var id: String { uuid }
+
+    init(
+        uuid: String,
+        storePlaylistUuid: String? = nil,
+        feeder: SessionFeeder,
+        autoAdd: Bool = false,
+        insertMode: Int32 = PlaylistInsertMode.afterLastInserted.rawValue,
+        lastInsertedUuid: String = "",
+        groupBy: Int = 0,
+        groupLimit: Int = 0,
+        lastUsed: Date? = nil
+    ) {
+        self.uuid = uuid
+        self.storePlaylistUuid = storePlaylistUuid
+        self.feeder = feeder
+        self.autoAdd = autoAdd
+        self.insertMode = insertMode
+        self.lastInsertedUuid = lastInsertedUuid
+        self.groupBy = groupBy
+        self.groupLimit = groupLimit
+        self.lastUsed = lastUsed
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case uuid, storePlaylistUuid, feeder, autoAdd, insertMode, lastInsertedUuid, groupBy, groupLimit, lastUsed
+    }
+
+    // CRITICAL: same rule as Document.init(from:) — decode every defaulted key with
+    // decodeIfPresent. Synthesized Decodable does NOT fall back to a property's default
+    // value; it throws keyNotFound. Document decodes [Session], and decodeIfPresent only
+    // returns nil for an ABSENT key — a present-but-undecodable element rethrows. So a
+    // single Session missing one key used to throw all the way out of Document.init,
+    // where load()'s `try?` swallowed it and reset the whole store to empty. That is the
+    // bug that once wiped every session. Only uuid and feeder are genuinely required.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        uuid = try c.decode(String.self, forKey: .uuid)
+        feeder = try c.decode(SessionFeeder.self, forKey: .feeder)
+        storePlaylistUuid = try c.decodeIfPresent(String.self, forKey: .storePlaylistUuid)
+        autoAdd = try c.decodeIfPresent(Bool.self, forKey: .autoAdd) ?? false
+        insertMode = try c.decodeIfPresent(Int32.self, forKey: .insertMode) ?? PlaylistInsertMode.afterLastInserted.rawValue
+        lastInsertedUuid = try c.decodeIfPresent(String.self, forKey: .lastInsertedUuid) ?? ""
+        groupBy = try c.decodeIfPresent(Int.self, forKey: .groupBy) ?? 0
+        groupLimit = try c.decodeIfPresent(Int.self, forKey: .groupLimit) ?? 0
+        lastUsed = try c.decodeIfPresent(Date.self, forKey: .lastUsed)
+    }
+}
+
+/// Fork: decodes `T` if it can, and yields nil instead of throwing if it can't. Wrapping
+/// array elements in this means ONE corrupt row drops ONE row — it can never propagate out
+/// and take the whole document with it. Belt to `Session.init(from:)`'s braces: that keeps
+/// *known* schema drift lossless; this bounds the blast radius of everything else.
+struct LenientlyDecoded<T: Decodable>: Decodable {
+    let value: T?
+
+    init(from decoder: Decoder) throws {
+        value = try? T(from: decoder)
+    }
 }
 
 extension SessionFeeder {
@@ -103,7 +161,9 @@ final class SessionStore {
         // missing key even when the property has a default; that once wiped sessions.
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
-            sessions = try c.decodeIfPresent([Session].self, forKey: .sessions) ?? []
+            // Element-wise lenient: a single unreadable session drops that session, not the store.
+            sessions = (try c.decodeIfPresent([LenientlyDecoded<Session>].self, forKey: .sessions) ?? [])
+                .compactMap(\.value)
             clearedThrough = try c.decodeIfPresent([String: Date].self, forKey: .clearedThrough) ?? [:]
             seenMarks = try c.decodeIfPresent([String: Date].self, forKey: .seenMarks) ?? [:]
             unseenMarks = try c.decodeIfPresent([String: Date].self, forKey: .unseenMarks) ?? [:]
@@ -113,12 +173,16 @@ final class SessionStore {
 
     private var document = Document()
     private let queue = DispatchQueue(label: "au.com.pocketcasts.sessionstore")
-    private lazy var fileURL: URL = {
+    private let fileURL: URL
+
+    static var defaultFileURL: URL {
         let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         return documents.appendingPathComponent("sessions.json")
-    }()
+    }
 
-    init() {
+    /// `fileURL` is injectable so the decode-safety tests can point a store at a temp file.
+    init(fileURL: URL = SessionStore.defaultFileURL) {
+        self.fileURL = fileURL
         load()
     }
 

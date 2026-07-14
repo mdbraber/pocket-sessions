@@ -27,13 +27,18 @@ extension SyncTask {
             let matchedEpisodeUuids = Set(DataManager.sharedManager.playlistEpisodes(for: playlist).map { $0.uuid })
             addedEpisodes = serverEpisodes.filter { !matchedEpisodeUuids.contains($0.uuid) }
 
-            playlist.syncStatus = SyncStatus.synced.rawValue
-            DataManager.sharedManager.save(playlist: playlist)
             let didAdd = DataManager.sharedManager.add(episodes: addedEpisodes, to: playlist)
             if !didAdd {
                 let playlistCount = DataManager.sharedManager.allPlaylistEpisodeCount(for: playlist, episodeUuidToAdd: nil, includingArchivedEpisodes: true)
                 FileLog.shared.addMessage("SyncTask: Tried to add too many episodes from server playlist \(playlist.playlistName) episodeCount: \(addedEpisodes) playlistCount: \(playlistCount)")
             }
+
+            // Fork: mark synced AFTER the add. `add` now marks the playlist dirty (as every
+            // other membership mutation does), so setting `synced` first would leave a
+            // freshly-imported playlist dirty and re-upload it. ServerChanges already
+            // ordered it this way; this matches it.
+            playlist.syncStatus = SyncStatus.synced.rawValue
+            DataManager.sharedManager.save(playlist: playlist)
         }
     }
 

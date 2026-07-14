@@ -507,6 +507,13 @@ class PlaylistDataManager {
 
                     try db.executeUpdate("INSERT INTO \(DataManager.playlistEpisodeTableName) (\(insertColumns)) VALUES (?,?,?,?,?,?,?)", values: values)
                 }
+
+                // Fork: membership changes must mark the playlist dirty, exactly as
+                // deleteEpisodes/moveEpisode already do. Upstream left this to the caller,
+                // so an add that forgot it never reached the server. Sync-originated adds
+                // set `synced` after calling this, so they are unaffected.
+                playlist.syncStatus = SyncStatus.notSynced.rawValue
+                try db.executeUpdate("UPDATE \(DataManager.playlistsTableName) SET syncStatus = ?, playlistUpdateDate = ? WHERE uuid = ?", values: [playlist.syncStatus, Date.now, playlist.uuid])
             } catch {
                 FileLog.shared.addMessage("EpisodeFilterDataManager.addEpisodes error: \(error)")
             }
