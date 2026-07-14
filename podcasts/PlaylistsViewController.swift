@@ -215,13 +215,11 @@ class PlaylistsViewController: PCViewController, FilterCreatedDelegate {
         let optionsPicker = OptionsPicker(title: nil)
 
         // Fork: every manual playlist is a session — one switch hides them all.
-        if FeatureFlag.sessions.enabled {
-            let hideSessions = UserDefaults.standard.bool(forKey: "SJPlaylistsHideSessions")
-            optionsPicker.addAction(action: OptionAction(label: L10n.playlistsHideSessions, icon: "option-multiselect", selected: hideSessions) { [weak self] in
-                UserDefaults.standard.set(!hideSessions, forKey: "SJPlaylistsHideSessions")
-                self?.reloadFilters()
-            })
-        }
+        let hideSessions = UserDefaults.standard.bool(forKey: "SJPlaylistsHideSessions")
+        optionsPicker.addAction(action: OptionAction(label: L10n.playlistsHideSessions, icon: "option-multiselect", selected: hideSessions) { [weak self] in
+            UserDefaults.standard.set(!hideSessions, forKey: "SJPlaylistsHideSessions")
+            self?.reloadFilters()
+        })
 
         let sortAction = OptionAction(label: L10n.sortBy, secondaryLabel: playlistsSortOrder.description, icon: "podcast-sort") {}
         sortAction.submenu = { [weak self] in self?.makeSortOptionsPicker() }

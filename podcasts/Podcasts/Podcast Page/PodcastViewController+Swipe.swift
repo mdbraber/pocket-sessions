@@ -13,7 +13,7 @@ extension PodcastViewController: SwipeTableViewCellDelegate, SwipeHandler {
         case .left:
             // Session (lineup) rows keep the queue actions; Episodes rows speak the
             // shared triage vocabulary (Add to Session · Play Next · Play Last).
-            if showingSession || !FeatureFlag.sessions.enabled {
+            if showingSession {
                 let actions = SwipeActionsHelper.createLeftActionsForEpisode(episode, tableView: tableView, indexPath: indexPath, swipeHandler: self)
                 return actions.swipeKitActions()
             }
@@ -26,7 +26,7 @@ extension PodcastViewController: SwipeTableViewCellDelegate, SwipeHandler {
         case .right:
             // Session rows: remove-at-edge like any lineup. Episodes rows: triage
             // (Archive/Unarchive · Mark as (Un)Seen).
-            if showingSession || !FeatureFlag.sessions.enabled {
+            if showingSession {
                 let actions = SwipeActionsHelper.createRightActionsForEpisode(episode, tableView: tableView, indexPath: indexPath, swipeHandler: self)
                 return actions.swipeKitActions()
             }

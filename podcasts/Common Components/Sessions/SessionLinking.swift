@@ -12,7 +12,6 @@ enum SessionLinking {
     /// After a user-initiated Up Next add: mirror the episodes into their podcasts'
     /// sessions (created on demand), at each session's insert position.
     static func mirrorQueueAdd(episodes: [BaseEpisode]) {
-        guard FeatureFlag.sessions.enabled else { return }
         let grouped = Dictionary(grouping: episodes.compactMap { $0 as? Episode }, by: \.podcastUuid)
         for (podcastUuid, podcastEpisodes) in grouped {
             guard Settings.resolvedMirrorUpNextToSession(podcastUuid: podcastUuid),
@@ -34,9 +33,7 @@ enum SessionLinking {
             PlaybackManager.shared.removeIfPlayingOrQueued(episode: episode, fireNotification: true, userInitiated: true)
         }
 
-        let containing = FeatureFlag.sessions.enabled
-            ? SessionStore.shared.sessions.filter { SessionFeederEngine.storeMemberUuids(for: $0).contains(episode.uuid) }
-            : []
+        let containing = SessionStore.shared.sessions.filter { SessionFeederEngine.storeMemberUuids(for: $0).contains(episode.uuid) }
         guard !containing.isEmpty else {
             removeFromQueue()
             completion?()
@@ -73,12 +70,10 @@ enum SessionLinking {
 
         // sessionUuid -> the selected episodes it holds.
         var membership = [String: [String]]()
-        if FeatureFlag.sessions.enabled {
-            let selected = Set(episodeUuids)
-            for session in SessionStore.shared.sessions {
-                let held = SessionFeederEngine.storeMemberUuids(for: session).filter { selected.contains($0) }
-                if !held.isEmpty { membership[session.uuid] = held }
-            }
+        let selected = Set(episodeUuids)
+        for session in SessionStore.shared.sessions {
+            let held = SessionFeederEngine.storeMemberUuids(for: session).filter { selected.contains($0) }
+            if !held.isEmpty { membership[session.uuid] = held }
         }
         guard !membership.isEmpty else {
             removeFromQueue()
@@ -110,7 +105,6 @@ enum SessionLinking {
     /// After a user-initiated session add: mirror the episodes into Up Next at the
     /// podcast's queue position (bottom unless the podcast prefers top).
     static func mirrorSessionAdd(episodeUuids: [String]) {
-        guard FeatureFlag.sessions.enabled else { return }
         for uuid in episodeUuids {
             guard let episode = DataManager.sharedManager.findEpisode(uuid: uuid),
                   Settings.resolvedMirrorSessionToUpNext(podcastUuid: episode.podcastUuid),

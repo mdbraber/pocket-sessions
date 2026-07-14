@@ -108,18 +108,14 @@ class MainTabBarController: UITabBarController, NavigationProtocol, UIGestureRec
         var tabs: [Tab] = FeatureFlag.customTabBar.enabled
             ? [.podcasts, .filter, .upNext, .profile]
             : [.podcasts, .filter, .discover, .upNext, .profile]
-        if FeatureFlag.globalInboxTab.enabled {
-            tabs.insert(.inbox, at: 0)
-        }
+        tabs.insert(.inbox, at: 0)
         pcTabs = tabs
 
         // Fork: long-pressing the Up Next/Session tab offers the Switch Session sheet.
-        if FeatureFlag.playbackSessions.enabled {
-            let longPress = UILongPressGestureRecognizer(target: self, action: #selector(upNextTabLongPressed(_:)))
-            longPress.cancelsTouchesInView = false
-            longPress.delegate = self
-            tabBar.addGestureRecognizer(longPress)
-        }
+        let longPress = UILongPressGestureRecognizer(target: self, action: #selector(upNextTabLongPressed(_:)))
+        longPress.cancelsTouchesInView = false
+        longPress.delegate = self
+        tabBar.addGestureRecognizer(longPress)
 
         var vcsInTab = [UIViewController]()
 
@@ -191,12 +187,10 @@ class MainTabBarController: UITabBarController, NavigationProtocol, UIGestureRec
         NotificationCenter.default.addObserver(self, selector: #selector(refreshUpNextTabBadge), name: Constants.Notifications.upNextEpisodeRemoved, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(refreshUpNextTabBadge), name: Constants.Notifications.playbackTrackChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(refreshUpNextTabBadge), name: Constants.Notifications.upNextFilterChanged, object: nil)
-        if FeatureFlag.playbackSessions.enabled {
-            // The tab mirrors the active session (title + count), so session and playlist
-            // changes both redraw it.
-            NotificationCenter.default.addObserver(self, selector: #selector(refreshUpNextTabBadge), name: Constants.Notifications.playbackSessionChanged, object: nil)
-            NotificationCenter.default.addObserver(self, selector: #selector(refreshUpNextTabBadge), name: Constants.Notifications.playlistChanged, object: nil)
-        }
+        // The tab mirrors the active session (title + count), so session and playlist
+        // changes both redraw it.
+        NotificationCenter.default.addObserver(self, selector: #selector(refreshUpNextTabBadge), name: Constants.Notifications.playbackSessionChanged, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(refreshUpNextTabBadge), name: Constants.Notifications.playlistChanged, object: nil)
         // `upNextEpisodeAdded` refreshes the badge via the genie animation's tail, not here.
         NotificationCenter.default.addObserver(self, selector: #selector(animateEpisodeAddedToUpNext(_:)), name: Constants.Notifications.upNextEpisodeAdded, object: nil)
         refreshUpNextTabBadge()
@@ -362,7 +356,6 @@ class MainTabBarController: UITabBarController, NavigationProtocol, UIGestureRec
     /// every unarchived episode and the observers fire on every play/archive/queue
     /// event — debounce and compute off the main thread so the UI never waits on it.
     @objc private func updateInboxBadge() {
-        guard FeatureFlag.globalInboxTab.enabled else { return }
         inboxBadgeDebounce.call {
             DispatchQueue.global(qos: .utility).async { [weak self] in
                 let global = SessionStore.shared.globalInbox
@@ -1351,7 +1344,7 @@ extension MainTabBarController {
     @objc func refreshUpNextTabBadge() {
         // While a session plays, the tab represents it: "Session" with the session's
         // episode count instead of the queue's.
-        let activeSession = FeatureFlag.playbackSessions.enabled ? Settings.playbackSession() : nil
+        let activeSession = Settings.playbackSession()
         upNextTabBarItem.title = activeSession != nil ? L10n.playbackSessionTabSession : L10n.upNext
 
         guard #available(iOS 26.0, *) else { return }

@@ -35,8 +35,7 @@ enum EpisodeStateFilter: String, CaseIterable {
     /// What the funnel sheet actually offers — the session axis only exists while
     /// sessions do. (The model keeps the full set so stored values stay stable.)
     static var visibleSheetSections: [(title: String?, options: [EpisodeStateFilter])] {
-        guard !FeatureFlag.sessions.enabled else { return sheetSections }
-        return sheetSections.filter { $0.options != [.inSession, .notInSession] }
+        sheetSections
     }
 
     var title: String {
@@ -143,7 +142,6 @@ struct EpisodeStateFilterSet: Equatable {
         for section in EpisodeStateFilter.sheetSections {
             // No sessions, no session axis — a stored In Session choice must not
             // silently hide everything.
-            if !FeatureFlag.sessions.enabled, section.options == [.inSession, .notInSession] { continue }
             let on = section.options.filter { enabled.contains($0) }
             if on.count == section.options.count { continue }
             if !on.contains(where: { $0.matches(episode, sessionMemberUuids: sessionMemberUuids) }) {

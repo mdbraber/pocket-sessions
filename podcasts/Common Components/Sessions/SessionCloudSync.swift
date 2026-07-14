@@ -19,7 +19,7 @@ final class SessionCloudSync {
     private var engine: CKSyncEngine?
 
     static func start() {
-        guard FeatureFlag.sessions.enabled, shared == nil else { return }
+        guard shared == nil else { return }
         // No entitlement (or no account) → containerIdentifier lookup/engine setup
         // throws at the CK layer; the catch keeps the app fully functional offline.
         shared = SessionCloudSync()

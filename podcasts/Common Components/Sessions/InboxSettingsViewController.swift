@@ -12,9 +12,7 @@ class InboxSettingsViewController: PCViewController, UITableViewDataSource, UITa
     /// Grouped: the Add to Session routing stands apart from the Auto Add pages and
     /// the linked-adds switches. With sessions off only stock Up Next remains.
     private var sections: [[TableRow]] {
-        FeatureFlag.sessions.enabled
-            ? [[.addToSessionMode], [.autoAddToUpNext, .autoAddToSession], [.mirrorUpNextToSession, .mirrorSessionToUpNext]]
-            : [[.autoAddToUpNext]]
+        [[.addToSessionMode], [.autoAddToUpNext, .autoAddToSession], [.mirrorUpNextToSession, .mirrorSessionToUpNext]]
     }
 
     private let settingsTable = ThemeableTable(frame: .zero, style: .grouped)

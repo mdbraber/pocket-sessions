@@ -58,20 +58,14 @@ class EpisodesDataManager: PlaybackSessionEpisodeSource {
         let filter = EpisodeStateFilterSet.global
 
         var members = Set<String>()
-        if FeatureFlag.sessions.enabled, filter.needsSessionContext, let session = SessionStore.shared.session(forPodcast: podcast.uuid) {
+        if filter.needsSessionContext, let session = SessionStore.shared.session(forPodcast: podcast.uuid) {
             members = Set(SessionFeederEngine.storeMemberUuids(for: session))
         }
 
-        // Fresh offers live in the Inbox tab only — Episodes never shows them,
-        // funnel or no funnel. With sessions off there is no Inbox, so nothing hides.
-        let inboxUuids: Set<String>
-        if FeatureFlag.sessions.enabled {
-            let inboxSession = SessionStore.shared.session(forPodcast: podcast.uuid)
-                ?? Session(uuid: "podcast-inbox-preview", storePlaylistUuid: nil, feeder: .podcast(uuid: podcast.uuid))
-            inboxUuids = Set(SessionFeederEngine.inboxEpisodes(for: inboxSession).map(\.uuid))
-        } else {
-            inboxUuids = []
-        }
+        // Fresh offers live in the Inbox tab only — Episodes never shows them.
+        let inboxSession = SessionStore.shared.session(forPodcast: podcast.uuid)
+            ?? Session(uuid: "podcast-inbox-preview", storePlaylistUuid: nil, feeder: .podcast(uuid: podcast.uuid))
+        let inboxUuids = Set(SessionFeederEngine.inboxEpisodes(for: inboxSession).map(\.uuid))
 
         // Groups whose rows all filter away disappear entirely — a grouping header
         // with nothing under it is noise. Group headers are ListHeader ELEMENTS

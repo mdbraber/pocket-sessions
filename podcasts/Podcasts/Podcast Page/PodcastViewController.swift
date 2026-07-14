@@ -528,7 +528,7 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
         if let pending = SessionManager.pendingSessionLanding, pending == podcast?.uuid {
             SessionManager.pendingSessionLanding = nil
             showSession()
-        } else if FeatureFlag.sessions.enabled, !hasAppearedAlready, let podcast,
+        } else if !hasAppearedAlready, let podcast,
                   let session = SessionStore.shared.session(forPodcast: podcast.uuid),
                   !SessionFeederEngine.storeMemberUuids(for: session).isEmpty {
             // Opening a podcast lands on its Session; an empty (or absent) lineup
@@ -705,10 +705,8 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
     }
 
     func loadLocalEpisodes(podcast: Podcast, animated: Bool) {
-        cachedSessionMemberUuids = FeatureFlag.sessions.enabled
-            ? SessionStore.shared.session(forPodcast: podcast.uuid)
-                .map { Set(SessionFeederEngine.storeMemberUuids(for: $0)) } ?? []
-            : []
+        cachedSessionMemberUuids = SessionStore.shared.session(forPodcast: podcast.uuid)
+            .map { Set(SessionFeederEngine.storeMemberUuids(for: $0)) } ?? []
 
         switch episodesListMode {
         case .session:
@@ -1343,19 +1341,17 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
 
         let optionPicker = OptionsPicker(title: nil)
 
-        if FeatureFlag.sessions.enabled {
-            optionPicker.addActions([
-                .init(label: L10n.playlistPlayAsSession, icon: "filter_play") { [weak self] in
-                    self?.playGroupAsSession(group)
-                },
-                .init(label: L10n.playlistAddToLineup, icon: "rectangle.stack.badge.plus") { [weak self] in
-                    self?.addGroupToSession(group)
-                },
-                .init(label: L10n.sessionReplaceWith, icon: "rectangle.stack") { [weak self] in
-                    self?.replaceSessionWithGroup(group)
-                }
-            ])
-        }
+        optionPicker.addActions([
+            .init(label: L10n.playlistPlayAsSession, icon: "filter_play") { [weak self] in
+                self?.playGroupAsSession(group)
+            },
+            .init(label: L10n.playlistAddToLineup, icon: "rectangle.stack.badge.plus") { [weak self] in
+                self?.addGroupToSession(group)
+            },
+            .init(label: L10n.sessionReplaceWith, icon: "rectangle.stack") { [weak self] in
+                self?.replaceSessionWithGroup(group)
+            }
+        ])
         optionPicker.addActions([
             .init(label: L10n.selectAll, icon: "option-multiselect") { [weak self] in
                 self?.selectGroup(group)

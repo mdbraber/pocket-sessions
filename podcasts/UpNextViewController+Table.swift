@@ -14,12 +14,12 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
     /// session while it plays, the queue otherwise. Peeking at the other world via the
     /// pill shows that world's list without the card.
     var sessionOwnsCard: Bool {
-        FeatureFlag.playbackSessions.enabled && Settings.playbackSession() != nil
+        Settings.playbackSession() != nil
             && !Settings.playbackSessionPaused() && PlaybackManager.shared.currentEpisode() != nil
     }
 
     var queueOwnsCard: Bool {
-        FeatureFlag.playbackSessions.enabled && PlaybackManager.shared.currentEpisode() != nil && !sessionOwnsCard
+        PlaybackManager.shared.currentEpisode() != nil && !sessionOwnsCard
     }
 
     /// Flag-on: the top section holds the optional Now Playing card plus the world's
@@ -37,7 +37,6 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         let section = tableData[section]
         switch section {
         case .nowPlayingSection:
-            if !FeatureFlag.playbackSessions.enabled { return 1 }
             return (topBlockHasCard ? 1 : 0) + (topBlockHasControls ? 1 : 0)
         case .sessionSection:
             if Settings.playbackSession() == nil { return 1 } // empty state cell
@@ -52,14 +51,9 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
     // MARK: - Section Headers
 
     func tableView(_ tableView: UITableView, viewForHeaderInSection section: Int) -> UIView? {
-        // Flag-on: nothing pins — the title is the table's header view and the top
-        // block is made of rows.
-        if FeatureFlag.playbackSessions.enabled { return nil }
-        if tableData[section] == .upNextSection {
-            guard tableData.count > 1 else { return nil }
-            return preparedQueueHeader()
-        }
-        return nil
+        // Nothing pins — the title is the table's header view and the top block is
+        // made of rows.
+        nil
     }
 
     func preparedQueueHeader() -> UIView {
@@ -114,18 +108,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
     }
 
     func tableView(_ tableView: UITableView, heightForHeaderInSection section: Int) -> CGFloat {
-        if FeatureFlag.playbackSessions.enabled {
-            return tableData[section] == .nowPlayingSection ? 8 : .leastNormalMagnitude
-        }
-        let section = tableData[section]
-        switch section {
-        case .nowPlayingSection:
-            return 16
-        case .sessionSection:
-            return .leastNormalMagnitude
-        case .upNextSection:
-            return queueHeaderHeight
-        }
+        tableData[section] == .nowPlayingSection ? 8 : .leastNormalMagnitude
     }
 
     // MARK: - Cell Population
@@ -133,7 +116,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let section = tableData[indexPath.section]
         if section == .nowPlayingSection {
-            if FeatureFlag.playbackSessions.enabled, !(topBlockHasCard && indexPath.row == 0) {
+            if !(topBlockHasCard && indexPath.row == 0) {
                 // The counts/controls line as a scrolling row.
                 let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
                 cell.selectionStyle = .none
@@ -248,7 +231,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
 
     func tableView(_ tableView: UITableView, willSelectRowAt indexPath: IndexPath) -> IndexPath? {
         if tableData[indexPath.section] == .nowPlayingSection {
-            if FeatureFlag.playbackSessions.enabled, !(topBlockHasCard && indexPath.row == 0) { return nil }
+            if !(topBlockHasCard && indexPath.row == 0) { return nil }
             return indexPath
         }
         if tableData[indexPath.section] == .sessionSection {
@@ -316,7 +299,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
             // Tapping the Now Playing card opens the full-screen player — unless it's
             // sitting paused and tap-to-play is on, in which case it resumes.
             if section == .nowPlayingSection {
-                guard !FeatureFlag.playbackSessions.enabled || (topBlockHasCard && indexPath.row == 0) else { return }
+                guard topBlockHasCard, indexPath.row == 0 else { return }
                 if Settings.playUpNextOnTap(), !PlaybackManager.shared.playing() {
                     PlaybackManager.shared.play()
                     return
@@ -478,7 +461,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
     private func rowHeight(at indexPath: IndexPath) -> CGFloat {
         let section = tableData[indexPath.section]
         if section == .nowPlayingSection {
-            if FeatureFlag.playbackSessions.enabled, !(topBlockHasCard && indexPath.row == 0) {
+            if !(topBlockHasCard && indexPath.row == 0) {
                 let metrics = UIFontMetrics(forTextStyle: .footnote)
                 // A touch of air below the card: the label sits low in the row
                 // (top-heavy padding), keeping the tight gap to the episode below.
@@ -526,17 +509,10 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
     func refreshSections() {
         var sections: [sections]
 
-        if FeatureFlag.playbackSessions.enabled {
-            // One world at a time, chosen by the pill switcher. Each world gets the stock
-            // layout: the Now Playing card floats on top only when that world owns it.
-            // Top block (card + controls line) scrolls with the list.
-            sections = [.nowPlayingSection, displayedWorld == .session ? .sessionSection : .upNextSection]
-        } else {
-            sections = [.upNextSection]
-            if PlaybackManager.shared.currentEpisode() != nil {
-                sections.insert(.nowPlayingSection, at: 0)
-            }
-        }
+        // One world at a time, chosen by the pill switcher. Each world gets the stock
+        // layout: the Now Playing card floats on top only when that world owns it.
+        // Top block (card + controls line) scrolls with the list.
+        sections = [.nowPlayingSection, displayedWorld == .session ? .sessionSection : .upNextSection]
 
         if PlaybackManager.shared.currentEpisode() != nil {
             upNextTable.themeStyle = .primaryUi04
@@ -552,9 +528,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
     private static var cachedSessionMemberUuids: Set<String> = []
 
     func refreshSessionMembership() {
-        Self.cachedSessionMemberUuids = FeatureFlag.sessions.enabled
-            ? Set(SessionStore.shared.sessions.flatMap { SessionFeederEngine.storeMemberUuids(for: $0) })
-            : []
+        Self.cachedSessionMemberUuids = Set(SessionStore.shared.sessions.flatMap { SessionFeederEngine.storeMemberUuids(for: $0) })
     }
 
     var sessionMemberUuidsForDisplay: Set<String> { Self.cachedSessionMemberUuids }
@@ -565,7 +539,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         refreshSections()
         // The title (and tab bar item) follows who owns playback: "Session" while the
         // session is playing, "Up Next" while the queue is (or nothing is).
-        let sessionIsActiveWorld = FeatureFlag.playbackSessions.enabled && Settings.playbackSession() != nil && !Settings.playbackSessionPaused()
+        let sessionIsActiveWorld = Settings.playbackSession() != nil && !Settings.playbackSessionPaused()
         title = sessionIsActiveWorld ? L10n.playbackSessionTabSession : L10n.upNext
         // The bottom tab bar button names the playing world too.
         navigationController?.tabBarItem.title = title

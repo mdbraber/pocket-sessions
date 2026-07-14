@@ -92,18 +92,6 @@ public enum FeatureFlag: String, CaseIterable {
     /// Filter Up Next playback to a folder or smart playlist (personal fork feature)
     case upNextFilter
 
-    /// Temporary playback sessions from a playlist or podcast that play instead of the
-    /// Up Next queue, returning to it when done (personal fork feature)
-    case playbackSessions
-
-    /// The whole session/triage architecture: Session entities, Inbox | Session |
-    /// Episodes tabs, triage verbs, seen marks, auto-add (personal fork feature).
-    /// Off restores the stock surfaces; session stores show as plain manual playlists.
-    case sessions
-
-    /// The global Inbox tab in the tab bar (personal fork feature; rides sessions)
-    case globalInboxTab
-
     /// Playlist folders in the Playlists overview (personal fork feature)
     case playlistFolders
 
@@ -420,12 +408,6 @@ public enum FeatureFlag: String, CaseIterable {
             true
         case .upNextFilter:
             true
-        case .playbackSessions:
-            FeatureFlag.sessions.enabled
-        case .sessions:
-            true
-        case .globalInboxTab:
-            FeatureFlag.sessions.enabled
         case .playlistFolders:
             true
         case .smartPlaylistFolderRules:

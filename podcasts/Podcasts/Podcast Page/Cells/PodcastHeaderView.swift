@@ -79,10 +79,8 @@ struct PodcastHeaderView: View {
                 .frame(maxHeight: viewModel.isExpanded ? .infinity : 0)
                 .opacity(viewModel.isExpanded ? 1 : 0)
                 .clipped()
-            if FeatureFlag.playbackSessions.enabled {
-                playAsSessionButton
-                Spacer().frame(height: itemMargin)
-            }
+            playAsSessionButton
+            Spacer().frame(height: itemMargin)
             PodcastDetailsTabView(delegate: viewModel.delegate)
         }
         .padding(.horizontal, 16)

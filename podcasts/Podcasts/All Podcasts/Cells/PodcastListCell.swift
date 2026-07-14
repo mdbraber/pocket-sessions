@@ -43,7 +43,6 @@ class PodcastListCell: ThemeableCollectionCell {
             flex.setContentCompressionResistancePriority(UILayoutPriority(1), for: .horizontal)
             contentStackView.insertArrangedSubview(flex, at: badgeIndex)
         }
-
     }
 
     func populateFrom(_ podcast: Podcast, badgeType: BadgeType) {

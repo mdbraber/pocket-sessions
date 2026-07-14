@@ -44,7 +44,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
             } else {
                 // The action bar offers the active world's actions: session rows aren't
                 // queue rows, so they get the episode actions the session swipes offer.
-                if FeatureFlag.playbackSessions.enabled, displayedWorld == .session {
+                if displayedWorld == .session {
                     multiSelectActionBar.getActionsFunc = Settings.sessionMultiSelectActions
                     multiSelectActionBar.setActionsFunc = Settings.updateSessionMultiSelectActions
                 } else {
@@ -126,7 +126,6 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     /// counts line, and rows — scrolls as one. The title rides along as the table's
     /// header view (which, unlike section headers, never pins).
     func updateStickyChrome() {
-        guard FeatureFlag.playbackSessions.enabled else { return }
         stickyChrome.backgroundColor = AppTheme.colorForStyle(.primaryUi04, themeOverride: themeOverride)
         stickyChromeBackground.backgroundColor = stickyChrome.backgroundColor
 
@@ -169,7 +168,6 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     /// Pill titles carry each world's episode count (including the playing episode)
     /// so the parked world stays visible in the periphery while peeking.
     func updateWorldSwitcher() {
-        guard FeatureFlag.playbackSessions.enabled else { return }
         let textColor = AppTheme.colorForStyle(.primaryText01, themeOverride: themeOverride)
         worldSwitcher.setTitleTextAttributes([.font: Self.worldSwitcherFont, .foregroundColor: textColor], for: .normal)
         worldSwitcher.setTitleTextAttributes([.font: Self.worldSwitcherFont, .foregroundColor: textColor], for: .selected)
@@ -379,7 +377,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
 
     /// Ticks the under-card "… left" line while a session episode plays.
     @objc func sessionPlaybackProgressed() {
-        guard FeatureFlag.playbackSessions.enabled, Settings.playbackSession() != nil, !Settings.playbackSessionPaused() else { return }
+        guard Settings.playbackSession() != nil, !Settings.playbackSessionPaused() else { return }
         sessionMetaLabel.text = sessionMetaText()
     }
 
@@ -523,7 +521,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
             controlsRow.leadingAnchor.constraint(equalTo: headerView.leadingAnchor),
             controlsRow.trailingAnchor.constraint(equalTo: headerView.trailingAnchor),
             // Fork layout: a touch of air between the card above and this line.
-            controlsRow.topAnchor.constraint(equalTo: headerView.topAnchor, constant: FeatureFlag.playbackSessions.enabled ? 8 : 0),
+            controlsRow.topAnchor.constraint(equalTo: headerView.topAnchor, constant: 8),
             controlsRow.heightAnchor.constraint(equalToConstant: 48)
         ])
 
@@ -696,7 +694,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         NotificationCenter.default.addObserver(self, selector: #selector(appDidBecomeActive), name: UIApplication.didBecomeActiveNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(reorderingDidBegin), name: .tableViewReorderWillBegin, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(reorderingDidEnd), name: .tableViewReorderDidEnd, object: nil)
-        if FeatureFlag.playbackSessions.enabled, showingInTab {
+        if showingInTab {
             NotificationCenter.default.addObserver(self, selector: #selector(upNextTabActivated), name: Constants.Notifications.upNextTabActivated, object: nil)
         }
 
@@ -717,43 +715,41 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
 
         contentInseter.setupInsetAdjustmentsForMiniPlayer(scrollView: upNextTable)
 
-        if FeatureFlag.playbackSessions.enabled {
-            // Sticky chrome pinned above the table: pill switcher on top, then the
-            // active world's header. Content scrolls beneath it (via contentInset).
-            let pillContainer = UIView()
-            worldSwitcher.translatesAutoresizingMaskIntoConstraints = false
-            worldSwitcher.addTarget(self, action: #selector(worldSwitcherChanged), for: .valueChanged)
-            // Long-pressing the Session pill opens the Switch Session sheet.
-            worldSwitcher.addGestureRecognizer(UILongPressGestureRecognizer(target: self, action: #selector(pillLongPressed(_:))))
-            pillContainer.addSubview(worldSwitcher)
-            NSLayoutConstraint.activate([
-                pillContainer.heightAnchor.constraint(equalToConstant: 52),
-                worldSwitcher.leadingAnchor.constraint(equalTo: pillContainer.leadingAnchor, constant: 20),
-                worldSwitcher.trailingAnchor.constraint(equalTo: pillContainer.trailingAnchor, constant: -20),
-                worldSwitcher.centerYAnchor.constraint(equalTo: pillContainer.centerYAnchor)
-            ])
+        // Sticky chrome pinned above the table: pill switcher on top, then the
+        // active world's header. Content scrolls beneath it (via contentInset).
+        let pillContainer = UIView()
+        worldSwitcher.translatesAutoresizingMaskIntoConstraints = false
+        worldSwitcher.addTarget(self, action: #selector(worldSwitcherChanged), for: .valueChanged)
+        // Long-pressing the Session pill opens the Switch Session sheet.
+        worldSwitcher.addGestureRecognizer(UILongPressGestureRecognizer(target: self, action: #selector(pillLongPressed(_:))))
+        pillContainer.addSubview(worldSwitcher)
+        NSLayoutConstraint.activate([
+            pillContainer.heightAnchor.constraint(equalToConstant: 52),
+            worldSwitcher.leadingAnchor.constraint(equalTo: pillContainer.leadingAnchor, constant: 20),
+            worldSwitcher.trailingAnchor.constraint(equalTo: pillContainer.trailingAnchor, constant: -20),
+            worldSwitcher.centerYAnchor.constraint(equalTo: pillContainer.centerYAnchor)
+        ])
 
-            stickyChrome.axis = .vertical
-            stickyChrome.addArrangedSubview(pillContainer)
+        stickyChrome.axis = .vertical
+        stickyChrome.addArrangedSubview(pillContainer)
 
-            stickyChrome.translatesAutoresizingMaskIntoConstraints = false
-            // Opaque backing that also covers the status/nav area above the pill, so
-            // scrolling rows never show through above the chrome.
-            stickyChromeBackground.translatesAutoresizingMaskIntoConstraints = false
-            view.addSubview(stickyChromeBackground)
-            view.addSubview(stickyChrome)
-            NSLayoutConstraint.activate([
-                // Below the navigation bar — the table's safe-area inset starts there too.
-                stickyChrome.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
-                stickyChrome.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-                stickyChrome.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+        stickyChrome.translatesAutoresizingMaskIntoConstraints = false
+        // Opaque backing that also covers the status/nav area above the pill, so
+        // scrolling rows never show through above the chrome.
+        stickyChromeBackground.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(stickyChromeBackground)
+        view.addSubview(stickyChrome)
+        NSLayoutConstraint.activate([
+            // Below the navigation bar — the table's safe-area inset starts there too.
+            stickyChrome.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            stickyChrome.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            stickyChrome.trailingAnchor.constraint(equalTo: view.trailingAnchor),
 
-                stickyChromeBackground.topAnchor.constraint(equalTo: view.topAnchor),
-                stickyChromeBackground.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-                stickyChromeBackground.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-                stickyChromeBackground.bottomAnchor.constraint(equalTo: stickyChrome.bottomAnchor)
-            ])
-        }
+            stickyChromeBackground.topAnchor.constraint(equalTo: view.topAnchor),
+            stickyChromeBackground.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            stickyChromeBackground.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            stickyChromeBackground.bottomAnchor.constraint(equalTo: stickyChrome.bottomAnchor)
+        ])
 
         refreshSections()
     }
@@ -902,13 +898,11 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         filterIndicatorButton.addTarget(self, action: #selector(filterButtonTapped), for: .touchUpInside)
         clearFilterButton.addTarget(self, action: #selector(clearFilterButtonTapped), for: .touchUpInside)
 
-        if FeatureFlag.playbackSessions.enabled {
-            sessionSortButton.addTarget(self, action: #selector(sessionSortTapped), for: .touchUpInside)
-            // The session mirrors its playlist live — reflect order/content changes made
-            // on the playlist's own screens.
-            NotificationCenter.default.addObserver(self, selector: #selector(upNextFilterDidChange), name: Constants.Notifications.playlistChanged, object: nil)
-            NotificationCenter.default.addObserver(self, selector: #selector(sessionPlaybackProgressed), name: Constants.Notifications.playbackProgress, object: nil)
-        }
+        sessionSortButton.addTarget(self, action: #selector(sessionSortTapped), for: .touchUpInside)
+        // The session mirrors its playlist live — reflect order/content changes made
+        // on the playlist's own screens.
+        NotificationCenter.default.addObserver(self, selector: #selector(upNextFilterDidChange), name: Constants.Notifications.playlistChanged, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(sessionPlaybackProgressed), name: Constants.Notifications.playbackProgress, object: nil)
     }
 
     @objc private func sessionSortTapped() {
@@ -1072,7 +1066,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     /// which queue indices are visible when the compact "hide skipped" view is on, and the
     /// active session's remaining episodes.
     func refreshUpNextFilterMatches() {
-        if FeatureFlag.playbackSessions.enabled, let session = Settings.playbackSession() {
+        if let session = Settings.playbackSession() {
             let paused = Settings.playbackSessionPaused()
 
             // The pill auto-follows playback ownership: it snaps to whichever world is
@@ -1341,7 +1335,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     }
 
     @objc func selectAllTapped() {
-        if FeatureFlag.playbackSessions.enabled, displayedWorld == .session {
+        if displayedWorld == .session {
             guard let sectionIndex = tableData.firstIndex(of: .sessionSection), (sessionEpisodes?.count ?? 0) > 0 else { return }
             upNextTable.selectAllBelow(fromIndexPath: IndexPath(row: 0, section: sectionIndex))
         } else {
@@ -1368,7 +1362,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         let leftButton: UIBarButtonItem?
         let rightButton: UIBarButtonItem?
 
-        let inSession = FeatureFlag.playbackSessions.enabled && displayedWorld == .session
+        let inSession = displayedWorld == .session
         let selectedCount = inSession ? selectedSessionEpisodes.count : selectedPlayListEpisodes.count
         let worldCount = inSession ? (sessionEpisodes?.count ?? 0) : PlaybackManager.shared.queue.upNextCount()
 

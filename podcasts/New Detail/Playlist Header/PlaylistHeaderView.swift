@@ -92,7 +92,7 @@ struct PlaylistHeaderView: View {
                         type: .playAll,
                         color: viewModel.isSearching ? theme.primaryText01 : theme.primaryUi01,
                         image: Image("filter_play"),
-                        title: FeatureFlag.playbackSessions.enabled ? L10n.playlistPlayAsSession : L10n.playlistsPlayAll,
+                        title: L10n.playlistPlayAsSession,
                         background: viewModel.isSearching ? .clear : theme.primaryInteractive01,
                         stroke: viewModel.isSearching ? theme.primaryUi05 : nil) { type in
                             viewModel.onButtonTapped(type)

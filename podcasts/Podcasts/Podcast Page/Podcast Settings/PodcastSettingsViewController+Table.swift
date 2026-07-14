@@ -516,9 +516,7 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
     }
 
     private func tableData() -> [[TableRow]] {
-        var data: [[TableRow]] = FeatureFlag.sessions.enabled
-            ? [[.autoDownload, .notifications, .globalInbox], [.upNext], [.session], [.playbackEffects, .skipFirst, .skipLast], [.autoArchive]]
-            : [[.autoDownload, .notifications], [.upNext], [.playbackEffects, .skipFirst, .skipLast], [.autoArchive]]
+        var data: [[TableRow]] = [[.autoDownload, .notifications, .globalInbox], [.upNext], [.session], [.playbackEffects, .skipFirst, .skipLast], [.autoArchive]]
 
         if podcast.refreshAvailable {
             data.insert([.feedError], at: 0)
@@ -537,15 +535,13 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
             data[sessionSection].append(.globalSession)
         }
 
-        // Fork: linked-adds overrides — one per direction, always present with
-        // sessions on (mirroring is about manual adds, not auto-add).
-        if FeatureFlag.sessions.enabled {
-            if let upNextSection = data.firstIndex(where: { $0.first == .upNext }) {
-                data[upNextSection].append(.mirrorToSession)
-            }
-            if let sessionSection = data.firstIndex(where: { $0.first == .session }) {
-                data[sessionSection].append(.mirrorToUpNext)
-            }
+        // Fork: linked-adds overrides — one per direction (mirroring is about manual
+        // adds, not auto-add).
+        if let upNextSection = data.firstIndex(where: { $0.first == .upNext }) {
+            data[upNextSection].append(.mirrorToSession)
+        }
+        if let sessionSection = data.firstIndex(where: { $0.first == .session }) {
+            data[sessionSection].append(.mirrorToUpNext)
         }
 
         if !playlistsPodcastCanAppearIn().isEmpty {
