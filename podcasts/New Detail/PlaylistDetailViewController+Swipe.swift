@@ -49,7 +49,7 @@ extension PlaylistDetailViewController: SwipeTableViewCellDelegate, SwipeHandler
             self.viewModel.reloadEpisodeList(animated: true)
         }
         remove.image = TriageSwipes.sessionRemoveImage()?.withTintColor(.white, renderingMode: .alwaysOriginal)
-        remove.backgroundColor = ThemeColor.support02() // session green, matching Add
+        remove.backgroundColor = ThemeColor.support05() // red — Remove from Session
         remove.accessibilityLabel = L10n.sessionRemoveFrom
         remove.hidesWhenSelected = true
 
