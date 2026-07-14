@@ -518,18 +518,10 @@ class PlaylistDetailViewModel: ObservableObject {
         ]
 
         if isManualPlaylist, session == nil {
-            // Keep the .archive section alive even while searching so the search bar
-            // (rendered as this section's header view) stays anchored. Hide the
-            // Show Archived row by emptying the section's elements during search.
-            let archiveElements: [ListItem] = isSearching ? [] : [
-                PlaylistArchiveViewCellPlaceholder(
-                    archived: archivedEpisodesCount,
-                    showArchived: shouldShowArchived
-                )
-            ]
-            sections.append(
-                ArraySection(model: .archive, elements: archiveElements)
-            )
+            // The .archive section survives only to anchor the search bar (rendered as its header
+            // view). The Show Archived toggle is gone — archived visibility is a Filter Preset rule
+            // now, and "All Episodes" includes archived by default.
+            sections.append(ArraySection(model: .archive, elements: []))
         }
 
         // Fork: a session's store splits by tab — Session (the store itself) and Episodes
@@ -638,20 +630,9 @@ class PlaylistDetailViewModel: ObservableObject {
 
         let episodeElements: [ListItem]
         if episodes.isEmpty {
-            if isSearching {
-                episodeElements = [NoSearchResultsPlaceholder()]
-            } else if isManualPlaylist, !shouldShowArchived {
-                episodeElements = [
-                    AllArchivedPlaceholder(
-                        archived: archivedEpisodesCount,
-                        message: archivedEpisodesCount == 1
-                            ? L10n.playlistManualArchivedEpisodePlaceholder
-                            : L10n.playlistManualArchivedEpisodesPlaceholder(archivedEpisodesCount)
-                    )
-                ]
-            } else {
-                episodeElements = []
-            }
+            // One placeholder, context-aware in the cell: "no episodes match this filter" when a
+            // preset or search is narrowing, plain "no episodes" when the list is genuinely empty.
+            episodeElements = [PlaylistTabEmptyPlaceholder()]
         } else {
             episodeElements = groupedElements(episodes)
         }

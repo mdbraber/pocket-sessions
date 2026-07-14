@@ -30,9 +30,10 @@ final class FilterPresetQueryTests: XCTestCase {
         XCTAssertNil(sql(preset), "a preset with no rules must produce NO clause, not a vacuous one")
     }
 
-    /// The default preset ("All Episodes") isn't literally unconstrained — it hides archived.
-    func testTheDefaultPresetHidesArchivedAndNothingElse() {
-        XCTAssertEqual(sql(FilterPreset(name: "All Episodes")), "archived = 0")
+    /// "All Episodes" now includes archived (archived defaults to nil = any), so it constrains
+    /// nothing at all.
+    func testTheDefaultPresetConstrainsNothing() {
+        XCTAssertNil(sql(FilterPreset(name: "All Episodes")))
     }
 
     /// An empty set means "any", so it emits nothing.

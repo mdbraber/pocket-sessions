@@ -67,7 +67,8 @@ struct FilterPreset: Codable, Equatable, Identifiable {
     /// nil = any. Audio and video are the only two kinds, so this is a choice, not a set.
     var mediaType: MediaTypeRule?
 
-    /// nil = any, false = hide archived (**the default**), true = archived only.
+    /// nil = any (**the default** — "All Episodes" includes archived), false = hide archived,
+    /// true = archived only.
     ///
     /// As a rule rather than a scope flag, "archived only" is sayable — which the stock
     /// `showArchivedEpisodes` bool could not do.
@@ -110,7 +111,7 @@ struct FilterPreset: Codable, Equatable, Identifiable {
         downloadStatus: Set<DownloadStatusRule> = [],
         starred: Rule = nil,
         mediaType: MediaTypeRule? = nil,
-        archived: Rule = false,
+        archived: Rule = nil,
         unseen: Rule = nil,
         inSession: Rule = nil,
         podcastUuids: Set<String> = [],
@@ -177,8 +178,8 @@ struct FilterPreset: Codable, Equatable, Identifiable {
         sortType = try c.decodeIfPresent(Int32.self, forKey: .sortType) ?? PlaylistSort.newestToOldest.rawValue
     }
 
-    /// True when this preset narrows nothing beyond the default (archived stays hidden) — i.e. it
-    /// is "All Episodes" in all but name.
+    /// True when this preset narrows nothing beyond the default — i.e. it is "All Episodes" in all
+    /// but name (archived included).
     var isDefault: Bool {
         self == FilterPreset(uuid: uuid, name: name, iconId: iconId, enabled: enabled, sortType: sortType)
     }

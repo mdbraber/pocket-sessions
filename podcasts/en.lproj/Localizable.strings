@@ -1969,6 +1969,8 @@
 "filter_preset_scope_count" = "%1$@ selected";
 /* Fork: enters reorder mode in the Filter Preset list. */
 "filter_preset_reorder" = "Reorder Presets";
+/* Fork: empty-list text when a filter/search is hiding everything. */
+"playlist_no_episodes_match_filter" = "No episodes match this filter";
 
 /* Informational message informing the user that no episodes are being displayed because they're all archived. '%1$@' is a placeholder for the number of episodes. */
 "podcast_archived_msg" = "All %1$@ episodes of this podcast have been archived";

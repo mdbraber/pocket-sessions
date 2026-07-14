@@ -120,10 +120,13 @@ extension PlaylistDetailViewController: UITableViewDataSource {
             }
 
             if itemAtRow is PlaylistTabEmptyPlaceholder {
+                // "No episodes match this filter" when something is narrowing; plain "No episodes"
+                // when the list is genuinely empty.
+                let narrowed = viewModel.isPresetNarrowing || viewModel.isSearching
                 return configuredEmptyCell(
                     for: tableView,
                     at: indexPath,
-                    title: L10n.episodeFilterNoEpisodesTitle.sentenceCased,
+                    title: (narrowed ? L10n.playlistNoEpisodesMatchFilter : L10n.episodeFilterNoEpisodesTitle).sentenceCased,
                     message: ""
                 )
             }
