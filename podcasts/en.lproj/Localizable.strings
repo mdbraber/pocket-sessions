@@ -6115,6 +6115,13 @@
 /* A common string used throughout the app. Often refers to the Playlists screen. */
 "playlists" = "Playlists";
 
+/* Section header for the session add/remove rows in the episode Add picker */
+"sessions" = "Sessions";
+/* Row: add this episode to a session. %1$@ is the session name. */
+"session_add_to_format" = "Add to %1$@";
+/* Row: remove this episode from a session. %1$@ is the session name. */
+"session_remove_from_format" = "Remove from %1$@";
+
 /* An accessibility label used for the playlist image */
 "accessibility_playlist_image" = "Playlist image";
 

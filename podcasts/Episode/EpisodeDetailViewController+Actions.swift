@@ -8,8 +8,18 @@ extension EpisodeDetailViewController {
     @IBAction func addTapped(_ sender: UIButton) {
         let addPicker = OptionsPicker(title: nil)
 
-        let isInUpNext = PlaybackManager.shared.inUpNext(episode: episode) || PlaybackManager.shared.isNowPlayingEpisode(episodeUuid: episode.uuid)
+        // Add to Playlist (manual) — kept as a standalone action.
+        let addToPlaylistAction = OptionAction(label: L10n.playlistManualEpisodeAddToPlaylist, icon: "plus-circle") { [weak self] in
+            guard let self else { return }
+            let chooser = ManualPlaylistsChooserViewController(episode: self.episode, analyticsSource: "episode_details")
+            let navVC = SJUIUtils.navController(for: chooser)
+            self.present(navVC, animated: true, completion: nil)
+        }
+        addPicker.addAction(action: addToPlaylistAction)
 
+        // Block 1 — Up Next.
+        addPicker.addSectionTitle(L10n.upNext)
+        let isInUpNext = PlaybackManager.shared.inUpNext(episode: episode) || PlaybackManager.shared.isNowPlayingEpisode(episodeUuid: episode.uuid)
         if isInUpNext {
             let removeFromUpNextAction = OptionAction(label: L10n.removeFromUpNext, icon: "episode-removenext") { [weak self] in
                 guard let self else { return }
@@ -32,13 +42,29 @@ extension EpisodeDetailViewController {
             addPicker.addAction(action: playLastAction)
         }
 
-        let addToPlaylistAction = OptionAction(label: L10n.playlistManualEpisodeAddToPlaylist, icon: "plus-circle") { [weak self] in
-            guard let self else { return }
-            let chooser = ManualPlaylistsChooserViewController(episode: self.episode, analyticsSource: "episode_details")
-            let navVC = SJUIUtils.navController(for: chooser)
-            self.present(navVC, animated: true, completion: nil)
+        // Block 2 — Sessions: add/remove THIS episode from sessions. "Add to X" for sessions whose
+        // feeder covers it (not yet a member); "Remove from X" for its current memberships.
+        if let episode = episode as? Episode {
+            let members = SessionManager.shared.sessionsHolding(episodeUuids: [episode.uuid])
+            let memberUuids = Set(members.map(\.uuid))
+            let candidates = SessionManager.shared.sessionsCovering(podcastUuid: episode.podcastUuid)
+                .filter { !memberUuids.contains($0.uuid) }
+            if !members.isEmpty || !candidates.isEmpty {
+                addPicker.addSectionTitle(L10n.sessions)
+                for session in candidates {
+                    let name = SessionManager.shared.store(for: session)?.playlistName ?? ""
+                    addPicker.addAction(action: OptionAction(label: L10n.sessionAddToFormat(name), icon: "playlist-add-episode") {
+                        SessionManager.shared.addToLineup(episodeUuids: [episode.uuid], session: session)
+                    })
+                }
+                for session in members {
+                    let name = SessionManager.shared.store(for: session)?.playlistName ?? ""
+                    addPicker.addAction(action: OptionAction(label: L10n.sessionRemoveFromFormat(name), icon: "list_remove") {
+                        SessionManager.shared.removeFromLineup(episodeUuids: [episode.uuid], session: session)
+                    })
+                }
+            }
         }
-        addPicker.addAction(action: addToPlaylistAction)
 
         addPicker.present(from: self)
     }
