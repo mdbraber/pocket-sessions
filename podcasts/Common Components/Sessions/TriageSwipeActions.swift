@@ -3,25 +3,28 @@ import PocketCastsDataModel
 import SwipeCellKit
 
 /// Fork: the one triage swipe vocabulary, used by every inbox surface.
-/// Left: Add to Session · Play Next · Play Last. Right: Archive/Unarchive ·
-/// Mark as (Un)Seen. All state-aware; seen wears the eye.
+/// Left: Play Next · Play Last (or Remove from Up Next). Right: Add/Remove Session
+/// (green) · Archive · Mark as (Un)Seen (blue). All state-aware.
 enum TriageSwipes {
-    static func leftActions(for episode: BaseEpisode, addToSession: @escaping () -> Void, removeFromSession: @escaping () -> Void) -> [SwipeAction] {
-        // The leading action flips with membership: an episode already in a session offers
-        // Remove from Session instead of Add to Session.
+    /// The Add/Remove Session action — green for both directions, lives on the trailing (right)
+    /// swipe. Flips with membership: an episode already in a session offers Remove from Session.
+    static func sessionAction(for episode: BaseEpisode, addToSession: @escaping () -> Void, removeFromSession: @escaping () -> Void) -> SwipeAction {
         let inSession = SessionManager.shared.isInAnySession(episodeUuid: episode.uuid)
-        let add = SwipeAction(style: .default, title: nil) { _, _ in
+        let action = SwipeAction(style: .default, title: nil) { _, _ in
             inSession ? removeFromSession() : addToSession()
         }
-        add.image = inSession ? sessionRemoveImage()?.withTintColor(.white, renderingMode: .alwaysOriginal) : sessionAddImage
-        add.backgroundColor = inSession ? ThemeColor.support05() : SwipeActionsHelper.addToPlaylistSwipeBackground
-        add.accessibilityLabel = inSession ? L10n.sessionRemoveFrom : L10n.playlistAddToLineup
-        add.hidesWhenSelected = true
+        action.image = inSession ? sessionRemoveImage()?.withTintColor(.white, renderingMode: .alwaysOriginal) : sessionAddImage
+        action.backgroundColor = ThemeColor.support02() // session green, both add and remove
+        action.accessibilityLabel = inSession ? L10n.sessionRemoveFrom : L10n.playlistAddToLineup
+        action.hidesWhenSelected = true
+        return action
+    }
 
-        // The now-playing episode gets no left remove — the right swipe already
-        // carries the remove verb, and two removes on one row is one too many.
+    /// Left swipe: the queue verbs only (session moved to the right).
+    static func leftActions(for episode: BaseEpisode) -> [SwipeAction] {
+        // The now-playing episode gets no left queue swipe.
         if PlaybackManager.shared.isNowPlayingEpisode(episodeUuid: episode.uuid) {
-            return [add]
+            return []
         }
 
         // State-aware, like the app-wide queue swipes: a queued episode offers
@@ -34,7 +37,7 @@ enum TriageSwipes {
             removeFromUpNext.backgroundColor = ThemeColor.support05()
             removeFromUpNext.accessibilityLabel = L10n.removeFromUpNext
             removeFromUpNext.hidesWhenSelected = true
-            return [add, removeFromUpNext]
+            return [removeFromUpNext]
         }
 
         let addTop = SwipeAction(style: .default, title: nil) { _, _ in
@@ -57,9 +60,9 @@ enum TriageSwipes {
 
         // Honor the user's primary queue-swipe preference, like the stock helper.
         if Settings.primaryUpNextSwipeAction() == .playNext {
-            return [add, addTop, addBottom]
+            return [addTop, addBottom]
         } else {
-            return [add, addBottom, addTop]
+            return [addBottom, addTop]
         }
     }
 
@@ -100,8 +103,9 @@ enum TriageSwipes {
         return image.withRenderingMode(.alwaysTemplate)
     }
 
-    static func rightActions(for episode: BaseEpisode, reload: @escaping () -> Void) -> [SwipeAction] {
-        var actions = [SwipeAction]()
+    static func rightActions(for episode: BaseEpisode, addToSession: @escaping () -> Void, removeFromSession: @escaping () -> Void, reload: @escaping () -> Void) -> [SwipeAction] {
+        // Session add/remove leads the trailing swipe (green), then archive, then seen (blue).
+        var actions = [sessionAction(for: episode, addToSession: addToSession, removeFromSession: removeFromSession)]
 
         // Mutations always load a FRESH episode object: the table's cached one must
         // keep its old values so the diff-reload actually sees a change and redraws
@@ -155,17 +159,17 @@ enum TriageSwipes {
             action.fulfill(with: .reset)
         }
         seen.image = seenImage(for: episode)
-        seen.backgroundColor = ThemeColor.support05()
+        seen.backgroundColor = ThemeColor.support01() // blue, echoing the unread dot
         seen.accessibilityLabel = unseen ? L10n.episodeMarkSeen : L10n.episodeMarkUnseen
         seen.hidesWhenSelected = true
         return seen
     }
 
-    /// The seen iconography, everywhere — red, with the icon showing the action:
-    /// a crossed-out eye marks seen (the soft no); an open eye marks unseen again.
+    /// The seen iconography, everywhere — blue, a circle echoing the unread dot: a filled circle when
+    /// unseen (the dot you're clearing), a hollow one when seen (the dot you'd add back).
     static func seenImage(for episode: BaseEpisode) -> UIImage? {
         let unseen = InboxManager.shared.isUnseen(episodeUuid: episode.uuid)
-        return UIImage(systemName: unseen ? "eye.slash" : "eye",
+        return UIImage(systemName: unseen ? "circle.fill" : "circle",
                        withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .bold))?
             .withTintColor(.white, renderingMode: .alwaysOriginal)
     }
