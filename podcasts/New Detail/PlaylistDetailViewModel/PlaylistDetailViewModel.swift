@@ -554,7 +554,8 @@ class PlaylistDetailViewModel: ObservableObject {
             let tint = AppTheme.appTintColor()
             let lineup = episodes
             allOverlayEpisodes = episodes
-            sessionMemberUuidsForDisplay = Set(lineup.map { $0.episode.uuid })
+            // Global "in a session" membership — consistent on every list (see the lens branch).
+            sessionMemberUuidsForDisplay = inAnySessionUuids
             unseenUuidsForDisplay = InboxManager.shared.unseenUuids()
 
             if !triageTabAutoSelected {
@@ -613,9 +614,9 @@ class PlaylistDetailViewModel: ObservableObject {
             }
             let browse = episodes
             allOverlayEpisodes = episodes
-            // A lens with its own session marks "in this session"; one without (e.g. All) marks
-            // "in any session" so its episodes still show the badge.
-            sessionMemberUuidsForDisplay = (lensSession != nil) ? Set(lineup.map { $0.episode.uuid }) : inAnySessionUuids
+            // The badge means "in a session" globally — an episode in any session shows it on every
+            // list it appears in, even here where this lens's own session may be empty (e.g. All).
+            sessionMemberUuidsForDisplay = inAnySessionUuids
             unseenUuidsForDisplay = InboxManager.shared.unseenUuids()
 
             if !triageTabAutoSelected {
