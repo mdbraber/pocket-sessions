@@ -14,23 +14,18 @@ extension PlaylistDetailViewController: SwipeTableViewCellDelegate, SwipeHandler
             // Episodes rows use the shared triage vocabulary (the dot lives there, so
             // swiping it away must clear it); Session lineup rows keep the queue actions.
             if rowSection == .browse {
-                return TriageSwipes.leftActions(for: episode)
+                return TriageSwipes.leftActions(for: episode, addToSession: { [weak self] in
+                    guard let self else { return }
+                    self.viewModel.addToSessionsPerSetting(episodeUuids: [episode.uuid], presenting: self)
+                })
             }
             let actions = SwipeActionsHelper.createLeftActionsForEpisode(episode, tableView: tableView, indexPath: indexPath, swipeHandler: self)
             return actions.swipeKitActions()
         case .right:
             if rowSection == .browse {
-                return TriageSwipes.rightActions(for: episode, addToSession: { [weak self] in
-                    guard let self else { return }
-                    self.viewModel.addToSessionsPerSetting(episodeUuids: [episode.uuid], presenting: self)
-                }, removeFromSession: { [weak self] in
-                    guard let self else { return }
-                    SessionManager.shared.removeFromSessions(episodeUuids: [episode.uuid], preferred: self.viewModel.session ?? self.viewModel.lensSession, presenting: self) { [weak self] in
-                        self?.viewModel.reloadEpisodeList(animated: true)
-                    }
-                }, reload: { [weak self] in
+                return TriageSwipes.rightActions(for: episode) { [weak self] in
                     self?.viewModel.reloadEpisodeList(animated: true)
-                })
+                }
             }
             // Fork: lens-page Session rows — Remove from the session at the edge,
             // then the archive toggle (same shape as a store's lineup).
@@ -54,7 +49,7 @@ extension PlaylistDetailViewController: SwipeTableViewCellDelegate, SwipeHandler
             self.viewModel.reloadEpisodeList(animated: true)
         }
         remove.image = TriageSwipes.sessionRemoveImage()?.withTintColor(.white, renderingMode: .alwaysOriginal)
-        remove.backgroundColor = ThemeColor.support05()
+        remove.backgroundColor = ThemeColor.support02() // session green, matching Add
         remove.accessibilityLabel = L10n.sessionRemoveFrom
         remove.hidesWhenSelected = true
 
