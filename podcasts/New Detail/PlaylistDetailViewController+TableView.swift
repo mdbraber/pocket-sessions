@@ -105,7 +105,7 @@ extension PlaylistDetailViewController: UITableViewDataSource {
             cell.configure(archivedEpisodesCount: placeholder.archived, isSelected: isSelected)
             return cell
 
-        case .inbox, .episodes, .browse:
+        case .episodes, .browse:
             guard let itemAtRow = viewModel.dataSource[safe: indexPath.section]?.elements[safe: indexPath.row] as? ListItem else {
                 FileLog.shared.addMessage("Playlist Detail tableView: missing ListItem in section \(indexPath.section), row \(indexPath.row)")
                 return UITableViewCell()
@@ -227,21 +227,6 @@ extension PlaylistDetailViewController: UITableViewDelegate {
         // Grouped tables treat a literal 0 as "use the default section spacing" —
         // leastNormalMagnitude actually collapses it.
         return total > 0 ? total : .leastNormalMagnitude
-    }
-
-    func tableView(_ tableView: UITableView, heightForFooterInSection section: Int) -> CGFloat {
-        showsInboxActionsFooter(at: section) ? PlaylistDetailViewController.inboxActionsFooterHeight : .leastNormalMagnitude
-    }
-
-    func tableView(_ tableView: UITableView, viewForFooterInSection section: Int) -> UIView? {
-        showsInboxActionsFooter(at: section) ? inboxActionsFooter() : UIView()
-    }
-
-    /// Fork: the Inbox tab closes with two action buttons — Add All to Session and
-    /// Clear All (the same rounded style as the global Inbox's Clear).
-    private func showsInboxActionsFooter(at section: Int) -> Bool {
-        sectionModel(at: section) == .inbox && viewModel.usesTriageTabs
-            && viewModel.selectedTriageTab == .new && viewModel.triageNewCount > 0 && !isMultiSelectEnabled
     }
 
     // MARK: - Selection
@@ -414,21 +399,6 @@ extension PlaylistDetailViewController: UITableViewDragDelegate, UITableViewDrop
 
         let destinationElementCount = viewModel.dataSource[safe: destination.section]?.elements.count ?? 0
 
-        // Triage by drag: a New (inbox) episode dropped into the lineup gets a position there.
-        if viewModel.section(at: source.section) == .inbox {
-            guard viewModel.listEpisode(at: source) != nil else { return }
-            destination.row = min(destination.row, destinationElementCount)
-            viewModel.moveInboxElementToLineup(fromInboxRow: source.row, toEpisodesRow: destination.row)
-            tableView.performBatchUpdates {
-                tableView.moveRow(at: source, to: destination)
-            }
-            coordinator.drop(item.dragItem, toRowAt: destination)
-            viewModel.commitLineupOrder()
-            NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged, object: viewModel.playlist)
-            track(.filterManualEpisodesRearranged)
-            return
-        }
-
         guard viewModel.section(at: source.section) == .episodes else { return }
         destination.row = min(destination.row, max(destinationElementCount - 1, 0))
         guard source != destination else { return }
@@ -456,9 +426,6 @@ extension PlaylistDetailViewController {
         let duration: TimeInterval
         if viewModel.usesTriageTabs {
             switch viewModel.selectedTriageTab {
-            case .new:
-                count = viewModel.triageNewCount
-                duration = viewModel.triageNewDuration
             case .lineup:
                 count = viewModel.triageLineupCount
                 duration = viewModel.triageLineupDuration
@@ -508,7 +475,7 @@ private extension PlaylistDetailViewController {
 
     func isEpisodeSection(at index: Int) -> Bool {
         let model = sectionModel(at: index)
-        return model == .episodes || model == .inbox || model == .browse
+        return model == .episodes || model == .browse
     }
 
     var searchHeaderSection: PlaylistDetailViewModel.Section {
@@ -516,12 +483,11 @@ private extension PlaylistDetailViewController {
         // Fork: the search bar anchors above whichever tab section is visible.
         if viewModel.usesTriageTabs {
             switch viewModel.selectedTriageTab {
-            case .new: return viewModel.hasInboxSection ? .inbox : .episodes
             case .lineup: return .episodes
             case .browse: return .browse
             }
         }
-        return viewModel.hasInboxSection ? .inbox : .episodes
+        return .episodes
     }
 
     /// Fork: marks the sections that carry the counts/controls header — the overlay's
@@ -531,8 +497,6 @@ private extension PlaylistDetailViewController {
         guard !viewModel.isSearching else { return nil }
         if viewModel.usesTriageTabs {
             switch model {
-            case .inbox:
-                return L10n.inboxTitle
             case .episodes:
                 return L10n.playbackSessionTabSession
             case .browse:
@@ -677,34 +641,6 @@ private extension PlaylistDetailViewController {
         }
 
         optionPicker.present(from: self)
-    }
-
-    /// Fork: the Inbox tab's closing action buttons — pills matching the header's
-    /// Play-as-Session button.
-    private func inboxActionsFooter() -> UIView {
-        if inboxActionsFooterHost == nil {
-            let host = UIHostingController(rootView: AnyView(
-                InboxActionsFooterView(
-                    addAll: { [weak self] in self?.inboxAddAllTapped() },
-                    markAllSeen: { [weak self] in self?.inboxMarkAllSeenTapped() }
-                )
-                .environmentObject(Theme.sharedTheme)
-            ))
-            host.view.backgroundColor = .clear
-            addChild(host)
-            host.didMove(toParent: self)
-            inboxActionsFooterHost = host
-        }
-        return inboxActionsFooterHost!.view
-    }
-
-    private func inboxAddAllTapped() {
-        viewModel.addToSessionsPerSetting(episodeUuids: viewModel.inboxEpisodes.map { $0.episode.uuid }, presenting: self)
-    }
-
-    private func inboxMarkAllSeenTapped() {
-        InboxManager.shared.markSeen(episodeUuids: viewModel.inboxEpisodes.map(\.episode.uuid))
-        viewModel.reloadEpisodeList(animated: true)
     }
 
     /// Builds a section header with a themed title, optionally stacking the search bar

@@ -10,8 +10,6 @@ class PlaylistDetailViewController: PCViewController, UIScrollViewDelegate {
     static let searchRowHeight: CGFloat = 56
 
     /// Fork: the Inbox tab's Add All / Mark All as Seen footer.
-    static let inboxActionsFooterHeight: CGFloat = InboxActionsFooterView.height
-    var inboxActionsFooterHost: UIHostingController<AnyView>?
 
     /// Fork: the counts line inside the section header. Row diffs never rebuild
     /// section headers, so data reloads refresh this label in place.

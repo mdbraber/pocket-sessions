@@ -114,17 +114,11 @@ class EpisodeListSearchController: SimpleNotificationsViewController, UISearchBa
     private func updateInfoView() {
         guard let delegate = podcastDelegate, let podcast = delegate.displayedPodcast() else { return }
 
-        // Fork: on the inline Session and Inbox tabs the counts line describes that
-        // list, and the funnel hides — its filters shape the Episodes list only.
-        if delegate.isShowingSession() || delegate.isShowingInbox() {
-            let count: Int
-            if delegate.isShowingSession() {
-                count = SessionStore.shared.session(forPodcast: podcast.uuid).map { SessionFeederEngine.storeMemberUuids(for: $0).count } ?? 0
-            } else {
-                let session = SessionStore.shared.session(forPodcast: podcast.uuid)
-                    ?? Session(uuid: "podcast-inbox-preview", storePlaylistUuid: nil, feeder: .podcast(uuid: podcast.uuid))
-                count = SessionFeederEngine.inboxEpisodes(for: session).count
-            }
+        // Fork: on the inline Session tab the counts line describes the lineup, and the
+        // funnel hides — its filters shape the Episodes list only.
+        if delegate.isShowingSession() {
+            let count = SessionStore.shared.session(forPodcast: podcast.uuid)
+                .map { SessionFeederEngine.storeMemberUuids(for: $0).count } ?? 0
             // An empty tab already says "No episodes" in the list — a "0 episodes"
             // line on top is noise.
             if count > 0 {
@@ -155,6 +149,15 @@ class EpisodeListSearchController: SimpleNotificationsViewController, UISearchBa
         } else {
             attributedText.append(NSAttributedString(string: L10n.podcastEpisodeLimitCountFormat(podcast.autoArchiveEpisodeLimitCount.localized()), attributes: [.foregroundColor: AppTheme.colorForStyle(.support08)]))
         }
+        // Fork: the unread dot's summary. The archived count stays for now — it goes when
+        // the Filter Preset picker's label makes "what am I not seeing" explicit (Stage 8).
+        let unseenCount = delegate.unseenEpisodeCount()
+        if unseenCount > 0 {
+            attributedText.append(NSAttributedString(
+                string: " • \(L10n.inboxUnseenCountFormat(unseenCount.localized()))",
+                attributes: [.foregroundColor: AppTheme.colorForStyle(.primaryText02)]
+            ))
+        }
         episodeInfoLabel?.attributedText = attributedText
 
         // Fork: the archived toggle became the episode filter funnel. Its tint is the
@@ -181,9 +184,7 @@ class EpisodeListSearchController: SimpleNotificationsViewController, UISearchBa
     /// The current tab's sort key on the podcast page.
     private var currentSortTab: TriageTabSort.Tab {
         guard let delegate = podcastDelegate else { return .episodes }
-        if delegate.isShowingInbox() { return .inbox }
-        if delegate.isShowingSession() { return .session }
-        return .episodes
+        return delegate.isShowingSession() ? .session : .episodes
     }
 
     /// Fork: the per-tab sort control — accented whenever the shown order isn't the

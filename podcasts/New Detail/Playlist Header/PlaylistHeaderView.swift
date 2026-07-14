@@ -125,42 +125,28 @@ struct PlaylistHeaderView: View {
         }
     }
 
-    /// Fork: the Inbox | Session | Episodes selector, exactly the podcast page's tab
-    /// strip. Inbox and Episodes (the feeder's views) need a feeder; Session always
-    /// shows. Inbox and Session carry counts (hidden when zero); Episodes doesn't.
+    /// Fork: the Episodes | Session selector, exactly the podcast page's tab strip.
+    /// Session carries a count (hidden when zero); Episodes doesn't. There is no Inbox
+    /// tab — unseen episodes carry the unread dot in the Episodes list.
     @ViewBuilder private var triageTabs: some View {
-        let hasInboxTab = viewModel.hasInboxTab
         HStack(spacing: 12) {
-            if hasInboxTab {
-                Text(viewModel.triageNewCount > 0 ? "\(L10n.inboxTitle) · \(viewModel.triageNewCount.localized())" : L10n.inboxTitle)
-                    .buttonize {
-                        viewModel.selectTriageTab(.new)
-                    } customize: { config in
-                        config.label
-                            .applyTriageTabStyle(theme: theme, highlighted: viewModel.selectedTriageTab == .new)
-                            .applyButtonEffect(isPressed: config.isPressed)
-                    }
-            }
+            Text(L10n.episodes)
+                .buttonize {
+                    viewModel.selectTriageTab(.browse)
+                } customize: { config in
+                    config.label
+                        .applyTriageTabStyle(theme: theme, highlighted: viewModel.selectedTriageTab == .browse)
+                        .applyButtonEffect(isPressed: config.isPressed)
+                }
 
             Text(viewModel.triageLineupCount > 0 ? "\(L10n.playbackSessionTabSession) · \(viewModel.triageLineupCount.localized())" : L10n.playbackSessionTabSession)
                 .buttonize {
                     viewModel.selectTriageTab(.lineup)
                 } customize: { config in
                     config.label
-                        .applyTriageTabStyle(theme: theme, highlighted: viewModel.selectedTriageTab == .lineup || (!hasInboxTab && viewModel.selectedTriageTab == .new))
+                        .applyTriageTabStyle(theme: theme, highlighted: viewModel.selectedTriageTab == .lineup)
                         .applyButtonEffect(isPressed: config.isPressed)
                 }
-
-            if hasInboxTab {
-                Text(L10n.episodes)
-                    .buttonize {
-                        viewModel.selectTriageTab(.browse)
-                    } customize: { config in
-                        config.label
-                            .applyTriageTabStyle(theme: theme, highlighted: viewModel.selectedTriageTab == .browse)
-                            .applyButtonEffect(isPressed: config.isPressed)
-                    }
-            }
 
             Spacer()
         }

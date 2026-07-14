@@ -34,6 +34,7 @@ protocol PodcastActionsDelegate: AnyObject {
     func displayedPodcast() -> Podcast?
     func episodeCount() -> Int
     func archivedEpisodeCount() -> Int
+    func unseenEpisodeCount() -> Int
 
     func manageSubscriptionTapped()
     func settingsTapped()
@@ -65,9 +66,7 @@ protocol PodcastActionsDelegate: AnyObject {
     func showBookmarks()
     func showEpisodes()
     func showSession()
-    func showInbox()
     func isShowingSession() -> Bool
-    func isShowingInbox() -> Bool
     func showYouMightLike()
     func showLogin(message: String?)
 
@@ -92,12 +91,10 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
     enum EpisodesListMode {
         case episodes
         case session
-        case inbox
     }
 
     var episodesListMode: EpisodesListMode = .episodes
     var showingSession: Bool { episodesListMode == .session }
-    var showingInbox: Bool { episodesListMode == .inbox }
     /// Fork: the podcast session's store members, cached per reload — drives the
     /// little green in-this-session indicator on Episodes rows.
     var cachedSessionMemberUuids: Set<String> = []
@@ -106,9 +103,6 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
     /// Fork: the Episodes tab's last sections — switching back restores them
     /// instantly while the async refresh runs, instead of showing the old tab's rows.
     private var cachedEpisodesTabData: [ArraySection<String, ListItem>]?
-    /// Fork: the Inbox tab's Add All / Mark All as Seen footer.
-    static let inboxActionsFooterHeight: CGFloat = InboxActionsFooterView.height
-    var inboxActionsFooterHost: UIHostingController<AnyView>?
 
     var hasSimilarShows = CurrentValueSubject<Bool, Never>(false)
     var isLoadingRecommendations = CurrentValueSubject<Bool, Never>(false)
@@ -715,8 +709,6 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
         case .session:
             loadSessionEpisodes(podcast: podcast, animated: animated)
             return
-        case .inbox:
-            loadInboxEpisodes(podcast: podcast, animated: animated)
             return
         case .episodes:
             break
@@ -873,113 +865,6 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
         } else {
             DispatchQueue.main.async(execute: apply)
         }
-    }
-
-    /// Fork: the inline Inbox tab — the feeder's fresh offers through the standard
-    /// episodes pipeline, closed off by the Add All / Clear All footer.
-    private func loadInboxEpisodes(podcast: Podcast, animated: Bool) {
-        let searchHeader = ListHeader(headerTitle: L10n.search, isSectionHeader: true, sectionNumber: -1)
-        var finalData = [ArraySection<String, ListItem>(model: searchHeader.headerTitle, elements: [searchHeader])]
-
-        let uuidsToFilter = (searchController?.searchInProgress() ?? false) ? uuidsThatMatchSearch : nil
-        let searchTerm = searchController?.searchTextField?.text ?? ""
-
-        let tintColor = AppTheme.appTintColor()
-        var episodes: [ListItem] = SessionFeederEngine.inboxEpisodes(for: inboxSession(for: podcast))
-        .filter { episode in
-            guard let uuidsToFilter else { return true }
-            return uuidsToFilter.contains(episode.uuid) || (!searchTerm.isEmpty && episode.displayableTitle().localizedCaseInsensitiveContains(searchTerm))
-        }
-        .map { ListEpisode(episode: $0, tintColor: tintColor) }
-        // Fork: the Inbox tab's per-podcast sort — newest first by default.
-        episodes = TriageTabSort.arrange(episodes.compactMap { $0 as? ListEpisode }, tab: .inbox, pageUuid: podcast.uuid)
-        if episodes.isEmpty, !searchTerm.isEmpty {
-            episodes = [NoSearchResultsPlaceholder()]
-        }
-        finalData.append(ArraySection(model: "episodes", elements: episodes))
-
-        let hasOffers = finalData[1].elements.contains { $0 is ListEpisode }
-        let apply = { [weak self] in
-            guard let self else { return }
-
-            self.navTitleLabel.text = podcast.title
-            self.episodesTable.tableFooterView = hasOffers ? self.inboxActionsFooter() : nil
-            if animated {
-                let changeSet = StagedChangeset(source: self.episodeInfo, target: finalData)
-                do {
-                    try SJCommonUtils.catchException {
-                        self.episodesTable.reload(using: changeSet, with: .none, setData: { data in
-                            self.episodeInfo = data
-                        })
-                    }
-                } catch {
-                    self.episodeInfo = finalData
-                    self.reloadData()
-                }
-            } else {
-                self.episodeInfo = finalData
-                self.reloadData()
-            }
-            self.searchController?.episodesDidReload()
-            if self.isMultiSelectEnabled {
-                self.updateSelectAllBtn()
-            }
-        }
-
-        if Thread.isMainThread {
-            apply()
-        } else {
-            DispatchQueue.main.async(execute: apply)
-        }
-    }
-
-    /// The session whose feeder drives the Inbox tab — the real one when it exists,
-    /// otherwise a transient preview (no store, no dismissals) so the inbox works
-    /// before a session is ever created.
-    func inboxSession(for podcast: Podcast) -> Session {
-        SessionStore.shared.session(forPodcast: podcast.uuid)
-            ?? Session(uuid: "podcast-inbox-preview", storePlaylistUuid: nil, feeder: .podcast(uuid: podcast.uuid))
-    }
-
-    /// Fork: the Inbox tab's closing action buttons — pills matching the header's
-    /// Play-as-Session button.
-    private func inboxActionsFooter() -> UIView {
-        if inboxActionsFooterHost == nil {
-            let host = UIHostingController(rootView: AnyView(
-                InboxActionsFooterView(
-                    addAll: { [weak self] in self?.inboxAddAllTapped() },
-                    markAllSeen: { [weak self] in self?.inboxMarkAllSeenTapped() }
-                )
-                .environmentObject(Theme.sharedTheme)
-            ))
-            host.view.backgroundColor = .clear
-            addChild(host)
-            host.didMove(toParent: self)
-            inboxActionsFooterHost = host
-        }
-        let view = inboxActionsFooterHost!.view!
-        view.frame = CGRect(x: 0, y: 0, width: episodesTable.bounds.width, height: Self.inboxActionsFooterHeight)
-        return view
-    }
-
-    private var inboxDisplayedEpisodes: [Episode] {
-        episodeInfo.flatMap { $0.elements }.compactMap { ($0 as? ListEpisode)?.episode }
-    }
-
-    private func inboxAddAllTapped() {
-        guard let podcast else { return }
-
-        let session = SessionManager.shared.findOrCreateSession(forPodcast: podcast)
-        SessionManager.shared.addToSessions(episodeUuids: inboxDisplayedEpisodes.map(\.uuid), preferred: session, presenting: self) { [weak self] _ in
-            guard let self, let podcast = self.podcast else { return }
-            self.loadLocalEpisodes(podcast: podcast, animated: true)
-        }
-    }
-
-    private func inboxMarkAllSeenTapped() {
-        guard let podcast else { return }
-        InboxManager.shared.markSeen(episodeUuids: inboxDisplayedEpisodes.map(\.uuid))
-        loadLocalEpisodes(podcast: podcast, animated: true)
     }
 
     @objc func hideSearchKeyboard() {
@@ -1142,6 +1027,16 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
         guard let podcast else { return 0 }
 
         return DataManager.sharedManager.count(query: "SELECT COUNT(*) FROM \(DataManager.episodeTableName) WHERE podcast_id == ? AND archived = 1", values: [podcast.id])
+    }
+
+    /// Fork: how many of the rows on screen still wear the unread dot. Counted from the
+    /// member Set already cached for this load — never a query per row, and never a second
+    /// query here.
+    func unseenEpisodeCount() -> Int {
+        episodeInfo
+            .flatMap(\.elements)
+            .compactMap { ($0 as? ListEpisode)?.episode }
+            .count { cachedUnseenUuids.contains($0.uuid) }
     }
 
     func settingsTapped() {
@@ -1684,19 +1579,8 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
         switchViewMode(to: .episodes)
     }
 
-    /// Fork: the inline Inbox tab — the podcast feeder's fresh offers, no session
-    /// required (a preview feeder computes offers until one exists).
-    func showInbox() {
-        episodesListMode = .inbox
-        switchViewMode(to: .episodes)
-    }
-
     func isShowingSession() -> Bool {
         showingSession
-    }
-
-    func isShowingInbox() -> Bool {
-        showingInbox
     }
 
     func multiSelectPreferredSession() -> Session? {

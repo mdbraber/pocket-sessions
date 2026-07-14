@@ -19,13 +19,17 @@ enum TriageTabSortOrder: Int, CaseIterable {
     }
 }
 
-/// Fork: per-page, per-tab sort for the triage strip — each podcast or playlist
-/// page remembers a sort per tab. Defaults are the tab's natural order (Inbox and
-/// Episodes newest first, Session the hand-ordered lineup); the control accents
+/// Fork: per-page, per-tab sort for the Episodes | Session strip — each podcast or
+/// playlist page remembers a sort per tab. Defaults are the tab's natural order
+/// (Episodes newest first, Session the hand-ordered lineup); the control accents
 /// whenever anything else is chosen.
+///
+/// Sort is deliberately a different scope from the search term: it is a durable
+/// preference about a particular show ("this one's serial, always oldest-first"),
+/// not a transient lens.
 enum TriageTabSort {
     enum Tab: String {
-        case inbox, session, episodes
+        case session, episodes
 
         var defaultOrder: TriageTabSortOrder {
             self == .session ? .custom : .newestToOldest

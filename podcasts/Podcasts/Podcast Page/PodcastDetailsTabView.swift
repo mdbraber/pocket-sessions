@@ -10,7 +10,6 @@ struct PodcastDetailsTabView: View {
     weak var delegate: PodcastActionsDelegate?
 
     enum Tab {
-        case inbox
         case episodes
         case session
         case bookmarks
@@ -29,44 +28,23 @@ struct PodcastDetailsTabView: View {
     }
 
     @State private var sessionCount: Int = 0
-    @State private var inboxCount: Int = 0
-    /// Fork: auto-add sessions absorb their offers, so there is nothing to triage —
-    /// the Inbox tab hides, exactly like the playlist page.
-    @State private var inboxHidden = false
 
     private var sessionTabTitle: String {
         sessionCount > 0 ? "\(L10n.playbackSessionTabSession) · \(sessionCount.localized())" : L10n.playbackSessionTabSession
     }
 
-    private var inboxTabTitle: String {
-        inboxCount > 0 ? "\(L10n.inboxTitle) · \(inboxCount.localized())" : L10n.inboxTitle
-    }
-
     private func refreshSessionCount() {
         guard let podcast = delegate?.displayedPodcast() else {
             sessionCount = 0
-            inboxCount = 0
-            inboxHidden = false
             return
         }
-        let session = SessionStore.shared.session(forPodcast: podcast.uuid)
-        sessionCount = session.map { SessionFeederEngine.storeMemberUuids(for: $0).count } ?? 0
-        let feeder = session ?? Session(uuid: "podcast-inbox-preview", storePlaylistUuid: nil, feeder: .podcast(uuid: podcast.uuid))
-        inboxCount = SessionFeederEngine.inboxEpisodes(for: feeder).count
-        inboxHidden = session?.autoAdd == true
-        if inboxHidden, selectedTab == .inbox {
-            openSession()
-        }
+        sessionCount = SessionStore.shared.session(forPodcast: podcast.uuid)
+            .map { SessionFeederEngine.storeMemberUuids(for: $0).count } ?? 0
     }
 
     private func openSession() {
         selectedTab = .session
         delegate?.showSession()
-    }
-
-    private func openInbox() {
-        selectedTab = .inbox
-        delegate?.showInbox()
     }
 
     var body: some View {
@@ -78,11 +56,8 @@ struct PodcastDetailsTabView: View {
             }
         }
         .onReceive(delegate?.currentViewModePublisher ?? Just(.episodes).eraseToAnyPublisher()) { viewMode in
-            // Fork: the Inbox and Session tabs ride the episodes view mode,
-            // distinguished by the list-mode flags.
-            if viewMode == .episodes, delegate?.isShowingInbox() == true {
-                selectedTab = .inbox
-            } else if viewMode == .episodes, delegate?.isShowingSession() == true {
+            // Fork: the Session tab rides the episodes view mode, distinguished by the list-mode flag.
+            if viewMode == .episodes, delegate?.isShowingSession() == true {
                 selectedTab = .session
             } else {
                 selectedTab = Tab(from: viewMode)
@@ -110,26 +85,6 @@ struct PodcastDetailsTabView: View {
 
     @ViewBuilder var tabs: some View {
         HStack(spacing: 12) {
-            if !inboxHidden {
-                Text(inboxTabTitle)
-                    .buttonize {
-                        openInbox()
-                    } customize: { config in
-                        config.label
-                            .applyStyle(theme: theme, highlighted: selectedTab == .inbox)
-                            .applyButtonEffect(isPressed: config.isPressed)
-                    }
-            }
-
-            Text(sessionTabTitle)
-                .buttonize {
-                    openSession()
-                } customize: { config in
-                    config.label
-                        .applyStyle(theme: theme, highlighted: selectedTab == .session)
-                        .applyButtonEffect(isPressed: config.isPressed)
-                }
-
             Text(L10n.episodes)
                 .buttonize {
                     selectedTab = .episodes
@@ -137,6 +92,15 @@ struct PodcastDetailsTabView: View {
                 } customize: { config in
                     config.label
                         .applyStyle(theme: theme, highlighted: selectedTab == .episodes)
+                        .applyButtonEffect(isPressed: config.isPressed)
+                }
+
+            Text(sessionTabTitle)
+                .buttonize {
+                    openSession()
+                } customize: { config in
+                    config.label
+                        .applyStyle(theme: theme, highlighted: selectedTab == .session)
                         .applyButtonEffect(isPressed: config.isPressed)
                 }
 

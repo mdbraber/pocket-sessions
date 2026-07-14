@@ -1911,6 +1911,9 @@
 /* Label used to display the number or archived episodes in a podcast. '%1$@' is a placeholder for the archived episode number. */
 "podcast_archived_count_format" = "%1$@ archived";
 
+/* Fork: how many of the episodes on screen are still unseen (in the Inbox). %1$@ is the count. */
+"inbox_unseen_count_format" = "%1$@ unseen";
+
 /* Informational message informing the user that no episodes are being displayed because they're all archived. '%1$@' is a placeholder for the number of episodes. */
 "podcast_archived_msg" = "All %1$@ episodes of this podcast have been archived";
 

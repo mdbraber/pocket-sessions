@@ -11,9 +11,9 @@ extension PlaylistDetailViewController: SwipeTableViewCellDelegate, SwipeHandler
         let rowSection = viewModel.section(at: indexPath.section)
         switch orientation {
         case .left:
-            // Inbox and Episodes rows use the shared triage vocabulary; Session
-            // lineup rows keep the app-wide queue actions.
-            if rowSection == .inbox || rowSection == .browse {
+            // Episodes rows use the shared triage vocabulary (the dot lives there, so
+            // swiping it away must clear it); Session lineup rows keep the queue actions.
+            if rowSection == .browse {
                 return TriageSwipes.leftActions(for: episode) { [weak self] in
                     guard let self else { return }
                     self.viewModel.addToSessionsPerSetting(episodeUuids: [episode.uuid], presenting: self)
@@ -22,7 +22,7 @@ extension PlaylistDetailViewController: SwipeTableViewCellDelegate, SwipeHandler
             let actions = SwipeActionsHelper.createLeftActionsForEpisode(episode, tableView: tableView, indexPath: indexPath, swipeHandler: self)
             return actions.swipeKitActions()
         case .right:
-            if rowSection == .inbox || rowSection == .browse {
+            if rowSection == .browse {
                 return TriageSwipes.rightActions(for: episode) { [weak self] in
                     self?.viewModel.reloadEpisodeList(animated: true)
                 }

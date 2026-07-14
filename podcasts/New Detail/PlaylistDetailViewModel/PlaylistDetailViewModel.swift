@@ -12,7 +12,6 @@ class PlaylistDetailViewModel: ObservableObject {
     enum Section: String, ContentEquatable, ContentIdentifiable {
         case header
         case archive
-        case inbox
         case episodes
         /// Fork: the session page's Episodes tab — the feeder's full domain, browsed
         /// without triage semantics.
@@ -23,30 +22,26 @@ class PlaylistDetailViewModel: ObservableObject {
         }
     }
 
-    /// Fork: which tab of a session page is shown — Inbox (the feeder's fresh offers),
-    /// Session (the hand-ordered plays-next list), or Episodes (the feeder's full
-    /// domain, widened by the funnel).
+    /// Fork: which tab of a session page is shown — Session (the hand-ordered plays-next
+    /// list) or Episodes (the feeder's full domain). There is no Inbox tab: unseen episodes
+    /// are not partitioned off, they carry the unread dot in the Episodes list.
     enum TriageTab {
-        case new
         case lineup
         case browse
 
-        /// The tab's global sort-direction key.
+        /// The tab's per-page sort key.
         var sortKey: TriageTabSort.Tab {
             switch self {
-            case .new: return .inbox
             case .lineup: return .session
             case .browse: return .episodes
             }
         }
     }
 
-    @Published var selectedTriageTab: TriageTab = .new
-    /// The opening tab is picked once per visit: Inbox when it has offers, else Session.
+    @Published var selectedTriageTab: TriageTab = .browse
+    /// The opening tab is picked once per visit: Session when it has a lineup, else Episodes.
     private var triageTabAutoSelected = false
-    @Published private(set) var triageNewCount = 0
     @Published private(set) var triageLineupCount = 0
-    private(set) var triageNewDuration: TimeInterval = 0
     private(set) var triageLineupDuration: TimeInterval = 0
     private(set) var triageBrowseCount = 0
     private(set) var triageBrowseDuration: TimeInterval = 0
@@ -109,26 +104,16 @@ class PlaylistDetailViewModel: ObservableObject {
     let dataManager: DataManager
     let episodesDataManager: EpisodesDataManager
 
-    /// All visible episodes in display order: inbox (if any) followed by the lineup.
+    /// All visible episodes in display order.
     var episodes: [ListEpisode] {
         dataSource
-            .filter { $0.model == .inbox || $0.model == .episodes }
+            .filter { $0.model == .episodes }
             .flatMap { $0.elements.compactMap { $0 as? ListEpisode } }
-    }
-
-    /// Fork: unpositioned episodes awaiting triage (the "New" section). Empty unless the
-    /// custom-order overlay is active.
-    var inboxEpisodes: [ListEpisode] {
-        dataSource.first(where: { $0.model == .inbox })?.elements.compactMap { $0 as? ListEpisode } ?? []
     }
 
     /// Fork: the positioned episodes (the "Lineup").
     var lineupEpisodes: [ListEpisode] {
         dataSource.first(where: { $0.model == .episodes })?.elements.compactMap { $0 as? ListEpisode } ?? []
-    }
-
-    var hasInboxSection: Bool {
-        dataSource.contains { $0.model == .inbox }
     }
 
     /// Fork: the session coordinating this playlist as its store, when there is one.
@@ -144,12 +129,6 @@ class PlaylistDetailViewModel: ObservableObject {
 
     var sessionAutoAdd: Bool {
         session?.autoAdd ?? false
-    }
-
-    var hasInboxTab: Bool {
-        if let session { return session.feeder != .none && !session.autoAdd }
-        if isLensPage { return !(lensSession?.autoAdd ?? false) }
-        return false
     }
 
     /// Fork: smart playlist (lens) pages carry the same triage tabs — the lens itself
@@ -188,22 +167,6 @@ class PlaylistDetailViewModel: ObservableObject {
         elements.remove(at: sourceRow)
         elements.insert(element, at: min(destinationRow, elements.count))
         dataSource[index] = ArraySection(model: .episodes, elements: elements)
-    }
-
-    /// Fork: moves an inbox element into the episodes section at the given element index —
-    /// triage by drag. Persistence happens separately via commitLineupOrder().
-    func moveInboxElementToLineup(fromInboxRow: Int, toEpisodesRow: Int) {
-        guard let inboxIndex = dataSource.firstIndex(where: { $0.model == .inbox }),
-              let episodesIndex = dataSource.firstIndex(where: { $0.model == .episodes }) else { return }
-
-        var inboxElements = dataSource[inboxIndex].elements
-        guard let element = inboxElements[safe: fromInboxRow] else { return }
-        inboxElements.remove(at: fromInboxRow)
-        dataSource[inboxIndex] = ArraySection(model: .inbox, elements: inboxElements)
-
-        var episodeElements = dataSource[episodesIndex].elements
-        episodeElements.insert(element, at: min(toEpisodesRow, episodeElements.count))
-        dataSource[episodesIndex] = ArraySection(model: .episodes, elements: episodeElements)
     }
 
     /// Fork: persists the lineup exactly as currently displayed (after a cross-section
@@ -578,18 +541,11 @@ class PlaylistDetailViewModel: ObservableObject {
             )
         }
 
-        // Fork: a session's store splits by tab — Inbox (feeder's fresh offers),
-        // Session (the store itself), Episodes (the feeder's full domain, widened by
-        // the funnel). Membership is computed by the feeder engine; the fetched
-        // episodes ARE the session lineup.
+        // Fork: a session's store splits by tab — Session (the store itself) and Episodes
+        // (the feeder's full domain). The fetched episodes ARE the session lineup. Unseen
+        // episodes are NOT partitioned out of Episodes: they carry the unread dot instead.
         if let session, !isSearching {
             let tint = AppTheme.appTintColor()
-            let hasInboxTab = session.feeder != .none && !session.autoAdd
-            if !hasInboxTab, selectedTriageTab == .new {
-                selectedTriageTab = .lineup
-            }
-
-            let inbox = SessionFeederEngine.inboxEpisodes(for: session).map { ListEpisode(episode: $0, tintColor: tint) }
             let lineup = episodes
             allOverlayEpisodes = episodes
             sessionMemberUuidsForDisplay = Set(lineup.map { $0.episode.uuid })
@@ -598,32 +554,23 @@ class PlaylistDetailViewModel: ObservableObject {
             if !triageTabAutoSelected {
                 triageTabAutoSelected = true
                 // Land on the Session; an empty lineup lands on Episodes instead.
-                if selectedTriageTab != .browse {
-                    selectedTriageTab = lineup.isEmpty ? .browse : .lineup
-                }
+                selectedTriageTab = lineup.isEmpty ? .browse : .lineup
             }
 
-            triageNewCount = inbox.count
             triageLineupCount = lineup.count
-            triageNewDuration = inbox.reduce(0.0) { $0 + max(0, $1.episode.duration - $1.episode.playedUpTo) }
             triageLineupDuration = lineup.reduce(0.0) { $0 + max(0, $1.episode.duration - $1.episode.playedUpTo) }
 
             var shown: [ListEpisode]
             let model: Section
             switch selectedTriageTab {
-            case .new:
-                shown = inbox
-                model = .inbox
             case .lineup:
                 shown = lineup
                 model = .episodes
             case .browse:
                 let members = episodesFilter.needsSessionContext
                     ? Set(SessionFeederEngine.storeMemberUuids(for: session)) : []
-                // Fresh offers live in the Inbox only — Episodes never shows them.
-                let inboxUuids = Set(inbox.map { $0.episode.uuid })
                 shown = SessionFeederEngine.domainEpisodes(for: session, includeArchived: true)
-                    .filter { !inboxUuids.contains($0.uuid) && episodesFilter.matches($0, sessionMemberUuids: members) }
+                    .filter { episodesFilter.matches($0, sessionMemberUuids: members) }
                     .map { ListEpisode(episode: $0, tintColor: tint) }
                 model = .browse
             }
@@ -647,13 +594,11 @@ class PlaylistDetailViewModel: ObservableObject {
             return sections
         }
 
-        // Fork: smart playlist (lens) pages carry the same three tabs — the lens is
-        // the feeder, its session's store (if any) is the Session lineup, and
-        // Episodes is the query itself behind the funnel.
+        // Fork: smart playlist (lens) pages carry the same two tabs — the lens is the
+        // feeder, its session's store (if any) is the Session lineup, and Episodes is the
+        // query itself. Unseen episodes carry the dot; they are not partitioned off.
         if isLensPage, !isSearching {
             let tint = AppTheme.appTintColor()
-            let inbox = SessionFeederEngine.inboxEpisodes(for: lensFeederSession)
-                .map { ListEpisode(episode: $0, tintColor: tint) }
             var lineup = [ListEpisode]()
             if let real = lensSession, let storeUuid = real.storePlaylistUuid,
                let store = DataManager.sharedManager.findPlaylist(uuid: storeUuid) {
@@ -663,9 +608,7 @@ class PlaylistDetailViewModel: ObservableObject {
             }
             let browseMembers = episodesFilter.needsSessionContext
                 ? Set(lensSession.map { SessionFeederEngine.storeMemberUuids(for: $0) } ?? []) : []
-            // Fresh offers live in the Inbox only — Episodes never shows them.
-            let lensInboxUuids = Set(inbox.map { $0.episode.uuid })
-            let browse = episodes.filter { !lensInboxUuids.contains($0.episode.uuid) && episodesFilter.matches($0.episode, sessionMemberUuids: browseMembers) }
+            let browse = episodes.filter { episodesFilter.matches($0.episode, sessionMemberUuids: browseMembers) }
             allOverlayEpisodes = episodes
             sessionMemberUuidsForDisplay = Set(lineup.map { $0.episode.uuid })
             unseenUuidsForDisplay = InboxManager.shared.unseenUuids()
@@ -673,17 +616,10 @@ class PlaylistDetailViewModel: ObservableObject {
             if !triageTabAutoSelected {
                 triageTabAutoSelected = true
                 // Land on the Session; an empty lineup lands on Episodes instead.
-                if selectedTriageTab == .new {
-                    selectedTriageTab = lineup.isEmpty ? .browse : .lineup
-                }
-            }
-            if !hasInboxTab, selectedTriageTab == .new {
-                selectedTriageTab = .browse
+                selectedTriageTab = lineup.isEmpty ? .browse : .lineup
             }
 
-            triageNewCount = inbox.count
             triageLineupCount = lineup.count
-            triageNewDuration = inbox.reduce(0.0) { $0 + max(0, $1.episode.duration - $1.episode.playedUpTo) }
             triageLineupDuration = lineup.reduce(0.0) { $0 + max(0, $1.episode.duration - $1.episode.playedUpTo) }
             triageBrowseCount = browse.count
             triageBrowseDuration = browse.reduce(0.0) { $0 + max(0, $1.episode.duration - $1.episode.playedUpTo) }
@@ -691,9 +627,6 @@ class PlaylistDetailViewModel: ObservableObject {
             var shown: [ListEpisode]
             let model: Section
             switch selectedTriageTab {
-            case .new:
-                shown = inbox
-                model = .inbox
             case .lineup:
                 shown = lineup
                 model = .episodes

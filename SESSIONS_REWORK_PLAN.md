@@ -583,9 +583,32 @@ isn't in the Inbox yet when its notification fires (no-op), and the drain offers
 One-directional, like every other decision: taking an episode back out of Up Next does not make it unseen.
 Three tests pin all three cases.
 
-### Stage 6 — Two tabs  · ~250 LOC deleted · blast radius: 5 files
-Drop the Inbox tab from `PodcastDetailsTabView:113-122` and `PlaylistHeaderView:134-143`; remove
-`EpisodesListMode.inbox`, `loadInboxEpisodes`, the inbox footer, `TriageTab.new`. New counts line (Q1).
+### Stage 6 — Two tabs ✅ **DONE**
+**−333 lines net** (12 files: +130 / −463). Build green; app 393/393, DataModel 473/475, Server 94/94.
+
+Both page types are now **`Episodes | Session | …`**, in that order (the strip used to read
+Inbox | Session | Episodes — Episodes leads now, because it is the default and the Inbox is gone).
+
+Deleted: `PodcastDetailsTabView.Tab.inbox` + `inboxCount`/`inboxHidden`; `PodcastViewController`'s
+`EpisodesListMode.inbox`, `showInbox`, `isShowingInbox`, `loadInboxEpisodes`, `inboxSession`,
+`inboxActionsFooter` and its Add-All/Mark-All actions; `PlaylistDetailViewModel.Section.inbox`,
+`TriageTab.new`, `triageNewCount`/`triageNewDuration`, `inboxEpisodes`, `hasInboxSection`, `hasInboxTab`,
+`moveInboxElementToLineup` (triage-by-drag from a section that no longer exists); the playlist page's inbox
+footer; `TriageTabSort.Tab.inbox`; and `InboxActionsFooterView` (the file survives as `InboxPillButton.swift`
+— the global Inbox's Clear is the one surface still wearing that pill).
+
+The lens-page Episodes list also stopped partitioning out unseen episodes, matching what the podcast page
+already did in Stage 4.
+
+**Q1 — the counts line, answered.** Session tab: `"N episodes"` for the lineup (unchanged). Episodes tab:
+`"N episodes • M archived • K unseen"` — the new `K unseen` is counted from the member `Set` already cached
+for that load, so it costs nothing. New string `inbox_unseen_count_format`.
+⏭️ **`• M archived` stays for now.** The plan says drop it, and the reason it *can* be dropped is that the
+preset picker's label makes "what am I not seeing" explicit. That label doesn't exist until Stage 8, so
+dropping it now would just hide information. It goes with the funnel.
+
+*(Note: `MediaExporterResourceLoaderDelegateRetryTests` is flaky — it talks to `example.com` and fails
+intermittently. Unrelated; passes on retry.)*
 
 ### Stage 7 — `FilterPreset` model + query builder  · ~350 LOC + ~200 test LOC · blast radius: new files only
 Pure function `(FilterPreset) -> (String, [Any])` in the **app target** (§2.2 — no module change).
