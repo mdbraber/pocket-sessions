@@ -20,6 +20,7 @@ enum FilterPresetPicker {
     /// worth showing (see `present`), so it must reflect the search state *now*, not at build time.
     static func makeButton(
         target: UIViewController,
+        scope: FilterScope = .episodes,
         searchActive: @escaping () -> Bool = { false },
         onChange: @escaping () -> Void
     ) -> UIButton {
@@ -31,34 +32,34 @@ enum FilterPresetPicker {
         button.setContentCompressionResistancePriority(.required, for: .horizontal)
         button.addAction(UIAction { [weak target] _ in
             guard let target else { return }
-            present(from: target, searchActive: searchActive(), onChange: onChange)
+            present(from: target, scope: scope, searchActive: searchActive(), onChange: onChange)
         }, for: .touchUpInside)
-        style(button)
+        style(button, scope: scope)
         return button
     }
 
     /// Re-applies the label and the cue. Call whenever the preset (or the theme) may have changed.
-    static func style(_ button: UIButton) {
-        let preset = FilterPresets.active
+    static func style(_ button: UIButton, scope: FilterScope = .episodes) {
+        let preset = FilterPresets.active(scope)
         button.setTitle(preset.name, for: .normal)
         button.setImage(UIImage(systemName: "chevron.down"), for: .normal)
         button.semanticContentAttribute = .forceRightToLeft // chevron trails the label
         button.configuration = nil
 
         // The cue is a bonus, not the mechanism — the label already says what is happening.
-        let narrowing = FilterPresets.isNarrowing
+        let narrowing = FilterPresets.isNarrowing(scope)
         button.tintColor = AppTheme.colorForStyle(narrowing ? .primaryInteractive01 : .primaryIcon02)
         button.setTitleColor(AppTheme.colorForStyle(narrowing ? .primaryInteractive01 : .primaryText02), for: .normal)
         button.accessibilityLabel = L10n.filterPresetAccessibility(preset.name)
     }
 
-    static func present(from controller: UIViewController, searchActive: Bool = false, onChange: @escaping () -> Void) {
+    static func present(from controller: UIViewController, scope: FilterScope = .episodes, searchActive: Bool = false, onChange: @escaping () -> Void) {
         let picker = OptionsPicker(title: L10n.filters.localizedUppercase)
-        let active = FilterPresets.active
+        let active = FilterPresets.active(scope)
 
-        for preset in FilterPresetStore.shared.presets {
+        for preset in FilterPresetStore.shared.enabledPresets {
             picker.addAction(action: OptionAction(label: preset.name, icon: nil, selected: preset.uuid == active.uuid) {
-                FilterPresetStore.shared.activePresetUuid = preset.uuid
+                FilterPresetStore.shared.setActivePresetUuid(preset.uuid, for: scope)
                 onChange()
             })
         }
@@ -81,9 +82,9 @@ enum FilterPresetPicker {
         // narrowing preset, or an active search. On a clean list it is noise (selecting "All
         // Episodes" from the list above is the reset for the preset alone); its unique value is
         // clearing the search term at the same time, so it also shows when only search is active.
-        if FilterPresets.isNarrowing || searchActive {
+        if FilterPresets.isNarrowing(scope) || searchActive {
             picker.addAction(action: OptionAction(label: L10n.filterPresetReset, icon: "close") {
-                FilterPresetStore.shared.activePresetUuid = nil
+                FilterPresetStore.shared.setActivePresetUuid(nil, for: scope)
                 NotificationCenter.postOnMainThread(notification: FilterPresets.resetAll)
                 onChange()
             })

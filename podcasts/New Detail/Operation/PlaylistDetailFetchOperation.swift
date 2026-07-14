@@ -27,7 +27,7 @@ class PlaylistDetailFetchOperation: Operation, @unchecked Sendable {
         autoreleasepool {
             if self.isCancelled { return }
 
-            let newData = episodesDataManager.playlistEpisodes(for: playlist, preset: FilterPresets.active)
+            let newData = episodesDataManager.playlistEpisodes(for: playlist, preset: FilterPresets.active())
 
             let archivedEpisodesCount = dataManager.playlistArchivedEpisodeCount(
                 for: playlist,

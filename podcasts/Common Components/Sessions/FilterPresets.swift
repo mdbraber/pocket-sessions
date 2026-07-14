@@ -1,22 +1,29 @@
 import Foundation
 import PocketCastsDataModel
 
+/// Which list a filter applies to. The Episodes list and the Session lineup keep **independent**
+/// active presets — filtering "long unplayed episodes" on the Episodes tab should not also reshape
+/// the hand-made Session lineup. Global across pages within a scope, but separate between scopes.
+enum FilterScope: String {
+    case episodes, session
+}
+
 /// Fork: the live edge of the Filter Preset system — everything that needs the *current* state
 /// (which preset is active, which session stores exist) so that `FilterPresetQuery` itself can stay
 /// a pure function.
 ///
-/// The active preset is **global and sticky**: one selection, shared across every episode list,
-/// persisted across launches. That is only safe because the control is **labelled with it** — an
-/// invisible sticky filter is how people lose their mail and never find out why. The label is the
-/// safety mechanism, not a nicety.
+/// The active preset is **global and sticky within a scope**: one selection per scope, shared across
+/// every page, persisted across launches. That is only safe because the control is **labelled with
+/// it** — an invisible sticky filter is how people lose their mail and never find out why. The label
+/// is the safety mechanism, not a nicety.
 enum FilterPresets {
-    static var active: FilterPreset {
-        FilterPresetStore.shared.activePreset
+    static func active(_ scope: FilterScope = .episodes) -> FilterPreset {
+        FilterPresetStore.shared.activePreset(for: scope)
     }
 
-    /// True when the active preset narrows anything beyond the default. Drives the control's accent.
-    static var isNarrowing: Bool {
-        !active.isDefault
+    /// True when the scope's active preset narrows anything beyond the default. Drives the accent.
+    static func isNarrowing(_ scope: FilterScope = .episodes) -> Bool {
+        !active(scope).isDefault
     }
 
     /// Every session's store playlist — what `inSession` resolves against. Global, not page-relative:
@@ -44,22 +51,23 @@ enum FilterPresets {
     ///
     /// `applyScope` is false on single-podcast surfaces (a podcast's own Episodes/Session list),
     /// which ignore the podcast/folder rule — see `FilterPreset.podcastUuids`.
-    static func predicate(columns: FilterPresetQuery.Columns = .unaliased, applyScope: Bool = true) -> (sql: String, arguments: [Any])? {
-        FilterPresetQuery.predicate(
-            for: active,
+    static func predicate(_ scope: FilterScope = .episodes, columns: FilterPresetQuery.Columns = .unaliased, applyScope: Bool = true) -> (sql: String, arguments: [Any])? {
+        let preset = active(scope)
+        return FilterPresetQuery.predicate(
+            for: preset,
             sessionStoreUuids: sessionStoreUuids,
-            scopePodcastUuids: applyScope ? scopePodcastUuids(for: active) : nil,
+            scopePodcastUuids: applyScope ? scopePodcastUuids(for: preset) : nil,
             columns: columns
         )
     }
 
-    /// Filters an **ordered** uuid list through the active preset, preserving its order.
+    /// Filters an **ordered** uuid list through the scope's active preset, preserving its order.
     ///
     /// This is how the Session tab applies a preset: a lineup is a hand-made order, so it can't be
     /// re-queried — but it can be sieved. Going back through the same SQL keeps one source of truth
     /// for what a rule *means*, rather than growing a second, in-memory matcher that drifts from it.
-    static func filtering(_ orderedUuids: [String], applyScope: Bool = true) -> [String] {
-        guard !orderedUuids.isEmpty, let predicate = predicate(applyScope: applyScope) else { return orderedUuids }
+    static func filtering(_ orderedUuids: [String], scope: FilterScope = .session, applyScope: Bool = true) -> [String] {
+        guard !orderedUuids.isEmpty, let predicate = predicate(scope, applyScope: applyScope) else { return orderedUuids }
 
         let placeholders = orderedUuids.map { _ in "?" }.joined(separator: ",")
         let matching = Set(

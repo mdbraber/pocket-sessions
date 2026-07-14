@@ -1967,6 +1967,8 @@
 "filter_preset_scope_all" = "All Podcasts";
 /* Fork: scope summary showing how many podcasts/folders are selected. %1$@ is the count. */
 "filter_preset_scope_count" = "%1$@ selected";
+/* Fork: enters reorder mode in the Filter Preset list. */
+"filter_preset_reorder" = "Reorder Presets";
 
 /* Informational message informing the user that no episodes are being displayed because they're all archived. '%1$@' is a placeholder for the number of episodes. */
 "podcast_archived_msg" = "All %1$@ episodes of this podcast have been archived";

@@ -84,10 +84,21 @@ final class FilterPresetStore {
         }
     }
 
+    /// Presets that show in the quick picker — enabled only, in stored order.
+    var enabledPresets: [FilterPreset] {
+        queue.sync { document.presets.filter(\.enabled) }
+    }
+
+    /// Reorders the stored presets (drag in the management list).
+    func move(fromOffsets: IndexSet, toOffset: Int) {
+        mutate { $0.presets.move(fromOffsets: fromOffsets, toOffset: toOffset) }
+    }
+
     func delete(uuid: String) {
         mutate { $0.presets.removeAll { $0.uuid == uuid } }
-        if activePresetUuid == uuid {
-            activePresetUuid = nil
+        // Clear it from whichever scope was pointing at it.
+        for scope in [FilterScope.episodes, .session] where activePresetUuid(for: scope) == uuid {
+            setActivePresetUuid(nil, for: scope)
         }
     }
 
@@ -103,22 +114,25 @@ final class FilterPresetStore {
 
     // MARK: - The active preset (device-local)
 
-    /// Global and sticky: one selection, shared across every page, persisted across launches.
+    /// Global and sticky **per scope**: one selection each for the Episodes list and the Session
+    /// lineup, shared across every page, persisted across launches. They are independent — filtering
+    /// the Episodes list does not reshape the hand-made Session lineup.
     ///
     /// Sticky is safe here for one reason only — the control is **labelled with the active preset**,
     /// so an invisible filter is structurally impossible. (Sticky filters are dangerous exactly when
     /// you cannot see them.) Nil means "All Episodes".
-    var activePresetUuid: String? {
-        get { UserDefaults.standard.string(forKey: Self.activePresetKey) }
-        set {
-            UserDefaults.standard.set(newValue, forKey: Self.activePresetKey)
-            NotificationCenter.postOnMainThread(notification: Self.changed)
-        }
+    func activePresetUuid(for scope: FilterScope) -> String? {
+        UserDefaults.standard.string(forKey: "\(Self.activePresetKey)-\(scope.rawValue)")
     }
 
-    /// The preset in force right now. Falls back to All Episodes if the active one was deleted.
-    var activePreset: FilterPreset {
-        guard let uuid = activePresetUuid, let preset = preset(uuid: uuid) else {
+    func setActivePresetUuid(_ uuid: String?, for scope: FilterScope) {
+        UserDefaults.standard.set(uuid, forKey: "\(Self.activePresetKey)-\(scope.rawValue)")
+        NotificationCenter.postOnMainThread(notification: Self.changed)
+    }
+
+    /// The preset in force for a scope right now. Falls back to All Episodes if it was deleted.
+    func activePreset(for scope: FilterScope) -> FilterPreset {
+        guard let uuid = activePresetUuid(for: scope), let preset = preset(uuid: uuid) else {
             return preset(uuid: FilterPreset.allEpisodes.uuid) ?? FilterPreset.allEpisodes
         }
         return preset

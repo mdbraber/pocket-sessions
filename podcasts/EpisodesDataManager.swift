@@ -85,7 +85,7 @@ class EpisodesDataManager: PlaybackSessionEpisodeSource {
         let episodeSortOrder = podcast.podcastSortOrder
 
         let sortOrder = episodeSortOrder ?? .newestToOldest
-        let episodesQuery = createEpisodesQuery(podcast, uuidsToFilter: uuidsToFilter, preset: FilterPresets.active)
+        let episodesQuery = createEpisodesQuery(podcast, uuidsToFilter: uuidsToFilter, preset: FilterPresets.active())
 
         switch podcast.podcastGrouping() {
         case .none:

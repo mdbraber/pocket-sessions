@@ -1,9 +1,11 @@
+import Combine
 import PocketCastsUtils
 import SwiftUI
 
-/// Fork: navigation out of the SwiftUI list into the UIKit editor. A tiny reference type so the
-/// list view can be built before the hosting controller exists (the controller fills in `host`).
-final class FilterPresetsCoordinator {
+/// Fork: navigation out of the SwiftUI list into the UIKit editor, plus the shared edit-mode state.
+/// A reference type so the list view can be built before the hosting controller exists.
+final class FilterPresetsListModel: ObservableObject {
+    @Published var editMode: EditMode = .inactive
     weak var host: UIViewController?
 
     func edit(_ preset: FilterPreset) {
@@ -12,48 +14,62 @@ final class FilterPresetsCoordinator {
     }
 }
 
-/// Fork: the management list for Filter Presets — the one place they are created, edited and
-/// deleted.
+/// Fork: the management list for Filter Presets — the one place they are created, edited, reordered,
+/// enabled/disabled and deleted.
 ///
-/// Reachable two ways: "Edit Presets…" from inside the picker (in-context, while filtering), and
-/// Settings → Filter Presets (the top-level home, matching the feature's global/synced scope). Both
-/// land here.
+/// Reachable two ways: "Edit Presets…" from inside the picker, and Settings → Filter Presets.
 ///
-/// Built-ins appear with no special-casing: they are seeds, not fixtures, so they edit and delete
-/// exactly like the user's own.
+/// A preset can be **disabled** — it stays here but drops out of the quick picker, keeping that list
+/// compact. Built-ins are seeds, not fixtures: they enable/disable, reorder and delete like any
+/// other.
 struct FilterPresetsListView: View {
     @EnvironmentObject var theme: Theme
+    @ObservedObject var model: FilterPresetsListModel
     @State private var presets: [FilterPreset] = FilterPresetStore.shared.presets
-
-    let coordinator: FilterPresetsCoordinator
 
     var body: some View {
         List {
             ForEach(presets) { preset in
-                Button {
-                    coordinator.edit(preset)
-                } label: {
-                    HStack {
+                HStack(spacing: 12) {
+                    Button {
+                        model.edit(preset)
+                    } label: {
                         Text(preset.name)
-                            .foregroundStyle(theme.primaryText01)
+                            .foregroundStyle(preset.enabled ? theme.primaryText01 : theme.primaryText02)
                         Spacer()
-                        Image("cs-chevron")
-                            .renderingMode(.template)
-                            .foregroundStyle(theme.primaryIcon02)
                     }
-                    .contentShape(Rectangle())
+                    .buttonStyle(.plain)
+
+                    // A disabled preset stays here but drops out of the quick picker.
+                    Toggle("", isOn: enabledBinding(for: preset))
+                        .labelsHidden()
                 }
-                .buttonStyle(.plain)
+            }
+            .onMove { from, to in
+                FilterPresetStore.shared.move(fromOffsets: from, toOffset: to)
+                reload()
             }
             .onDelete { offsets in
                 offsets.map { presets[$0].uuid }.forEach { FilterPresetStore.shared.delete(uuid: $0) }
                 reload()
             }
         }
+        .environment(\.editMode, $model.editMode)
         .navigationTitle(L10n.settingsFilterPresets)
         .onReceive(NotificationCenter.default.publisher(for: FilterPresetStore.changed)) { _ in
             reload()
         }
+    }
+
+    private func enabledBinding(for preset: FilterPreset) -> Binding<Bool> {
+        Binding(
+            get: { preset.enabled },
+            set: { on in
+                var updated = preset
+                updated.enabled = on
+                FilterPresetStore.shared.upsert(updated)
+            }
+        )
     }
 
     private func reload() {
@@ -62,12 +78,16 @@ struct FilterPresetsListView: View {
 }
 
 final class FilterPresetsListViewController: PCHostingController<AnyView> {
-    private let coordinator = FilterPresetsCoordinator()
+    private let model: FilterPresetsListModel
+    private var cancellable: AnyCancellable?
 
     init() {
-        let coordinator = coordinator
-        super.init(rootView: AnyView(FilterPresetsListView(coordinator: coordinator).setupDefaultEnvironment()))
-        coordinator.host = self
+        let model = FilterPresetsListModel()
+        self.model = model
+        super.init(rootView: AnyView(FilterPresetsListView(model: model).setupDefaultEnvironment()))
+        model.host = self
+        // Bars swap between ⋯ (normal) and Done (reordering) as edit mode changes.
+        cancellable = model.$editMode.receive(on: RunLoop.main).sink { [weak self] _ in self?.updateBars() }
     }
 
     @MainActor dynamic required init?(coder aDecoder: NSCoder) {
@@ -77,11 +97,40 @@ final class FilterPresetsListViewController: PCHostingController<AnyView> {
     override func viewDidLoad() {
         super.viewDidLoad()
         title = L10n.settingsFilterPresets
-        navigationItem.rightBarButtonItem = UIBarButtonItem(barButtonSystemItem: .add, target: self, action: #selector(newTapped))
+        updateBars()
+    }
+
+    private func updateBars() {
+        // New preset leads the bar; management (⋯) trails it.
+        navigationItem.leftBarButtonItem = UIBarButtonItem(barButtonSystemItem: .add, target: self, action: #selector(newTapped))
+
+        if model.editMode == .active {
+            navigationItem.rightBarButtonItem = UIBarButtonItem(barButtonSystemItem: .done, target: self, action: #selector(doneReordering))
+        } else {
+            navigationItem.rightBarButtonItem = UIBarButtonItem(image: UIImage(systemName: "ellipsis"), style: .plain, target: self, action: #selector(optionsTapped))
+        }
     }
 
     @objc private func newTapped() {
         let editor = FilterPresetEditorViewController(preset: FilterPreset(name: L10n.filterPresetNew), mode: .create)
         present(SJUIUtils.navController(for: editor), animated: true)
+    }
+
+    @objc private func doneReordering() {
+        model.editMode = .inactive
+    }
+
+    @objc private func optionsTapped() {
+        let picker = OptionsPicker(title: nil)
+        picker.addAction(action: OptionAction(label: L10n.filterPresetReorder, icon: "option-multiselect") { [weak self] in
+            self?.model.editMode = .active
+        })
+        // "Reset all filters" — the same clear the picker offers, reachable from management too.
+        picker.addAction(action: OptionAction(label: L10n.filterPresetReset, icon: "close") {
+            FilterPresetStore.shared.setActivePresetUuid(nil, for: .episodes)
+            FilterPresetStore.shared.setActivePresetUuid(nil, for: .session)
+            NotificationCenter.postOnMainThread(notification: FilterPresets.resetAll)
+        })
+        picker.present(from: self)
     }
 }

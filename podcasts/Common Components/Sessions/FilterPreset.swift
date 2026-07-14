@@ -54,6 +54,9 @@ struct FilterPreset: Codable, Equatable, Identifiable {
     let uuid: String
     var name: String
     var iconId: Int
+    /// Disabled presets are hidden from the quick picker (keeping it compact) but stay in the
+    /// management list. Built-ins are seeds, so they can be disabled like any other.
+    var enabled: Bool
 
     /// Empty (or full) = any. Otherwise the statuses are ORed.
     var playingStatus: Set<PlayingStatusRule>
@@ -102,6 +105,7 @@ struct FilterPreset: Codable, Equatable, Identifiable {
         uuid: String = UUID().uuidString,
         name: String,
         iconId: Int = 0,
+        enabled: Bool = true,
         playingStatus: Set<PlayingStatusRule> = [],
         downloadStatus: Set<DownloadStatusRule> = [],
         starred: Rule = nil,
@@ -120,6 +124,7 @@ struct FilterPreset: Codable, Equatable, Identifiable {
         self.uuid = uuid
         self.name = name
         self.iconId = iconId
+        self.enabled = enabled
         self.playingStatus = playingStatus
         self.downloadStatus = downloadStatus
         self.starred = starred
@@ -137,7 +142,7 @@ struct FilterPreset: Codable, Equatable, Identifiable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case uuid, name, iconId, playingStatus, downloadStatus, starred, mediaType
+        case uuid, name, iconId, enabled, playingStatus, downloadStatus, starred, mediaType
         case archived, unseen, inSession, podcastUuids, folderUuids
         case filterDuration, longerThan, shorterThan, filterHours, sortType
     }
@@ -155,6 +160,7 @@ struct FilterPreset: Codable, Equatable, Identifiable {
         uuid = try c.decode(String.self, forKey: .uuid)
         name = try c.decodeIfPresent(String.self, forKey: .name) ?? ""
         iconId = try c.decodeIfPresent(Int.self, forKey: .iconId) ?? 0
+        enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
         playingStatus = try c.decodeIfPresent(Set<PlayingStatusRule>.self, forKey: .playingStatus) ?? []
         downloadStatus = try c.decodeIfPresent(Set<DownloadStatusRule>.self, forKey: .downloadStatus) ?? []
         starred = try c.decodeIfPresent(Bool.self, forKey: .starred)
@@ -174,7 +180,7 @@ struct FilterPreset: Codable, Equatable, Identifiable {
     /// True when this preset narrows nothing beyond the default (archived stays hidden) — i.e. it
     /// is "All Episodes" in all but name.
     var isDefault: Bool {
-        self == FilterPreset(uuid: uuid, name: name, iconId: iconId, sortType: sortType)
+        self == FilterPreset(uuid: uuid, name: name, iconId: iconId, enabled: enabled, sortType: sortType)
     }
 
     /// Whether a podcast/folder scope is set.

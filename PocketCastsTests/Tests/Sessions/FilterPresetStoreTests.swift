@@ -11,12 +11,14 @@ final class FilterPresetStoreTests: XCTestCase {
         super.setUp()
         fileURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("filter-presets-\(UUID().uuidString).json")
-        UserDefaults.standard.removeObject(forKey: "SJActiveFilterPreset")
+        UserDefaults.standard.removeObject(forKey: "SJActiveFilterPreset-episodes")
+        UserDefaults.standard.removeObject(forKey: "SJActiveFilterPreset-session")
     }
 
     override func tearDown() {
         try? FileManager.default.removeItem(at: fileURL)
-        UserDefaults.standard.removeObject(forKey: "SJActiveFilterPreset")
+        UserDefaults.standard.removeObject(forKey: "SJActiveFilterPreset-episodes")
+        UserDefaults.standard.removeObject(forKey: "SJActiveFilterPreset-session")
         fileURL = nil
         super.tearDown()
     }
@@ -60,19 +62,19 @@ final class FilterPresetStoreTests: XCTestCase {
     // MARK: - The active preset
 
     func testTheActivePresetIsAllEpisodesByDefault() {
-        XCTAssertEqual(FilterPresetStore(fileURL: fileURL).activePreset.uuid, FilterPreset.allEpisodes.uuid)
+        XCTAssertEqual(FilterPresetStore(fileURL: fileURL).activePreset(for: .episodes).uuid, FilterPreset.allEpisodes.uuid)
     }
 
     /// Deleting the preset you are currently looking through must not leave the app filtering by a
     /// ghost.
     func testDeletingTheActivePresetFallsBackToAllEpisodes() {
         let store = FilterPresetStore(fileURL: fileURL)
-        store.activePresetUuid = "preset-starred"
+        store.setActivePresetUuid("preset-starred", for: .episodes)
 
         store.delete(uuid: "preset-starred")
 
-        XCTAssertNil(store.activePresetUuid)
-        XCTAssertEqual(store.activePreset.uuid, FilterPreset.allEpisodes.uuid)
+        XCTAssertNil(store.activePresetUuid(for: .episodes))
+        XCTAssertEqual(store.activePreset(for: .episodes).uuid, FilterPreset.allEpisodes.uuid)
     }
 
     // MARK: - Decode safety

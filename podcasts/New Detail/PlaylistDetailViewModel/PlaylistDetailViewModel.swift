@@ -46,12 +46,15 @@ class PlaylistDetailViewModel: ObservableObject {
     private(set) var triageBrowseCount = 0
     private(set) var triageBrowseDuration: TimeInterval = 0
 
-    /// Fork: the active Filter Preset — global, sticky, and applied to both tabs. Safe to be
-    /// sticky only because the control is labelled with it.
-    var activePreset: FilterPreset { FilterPresets.active }
+    /// The scope of the currently-shown tab: the Episodes list and the Session lineup keep
+    /// independent presets, so the control on each edits its own.
+    var filterScope: FilterScope { selectedTriageTab == .lineup ? .session : .episodes }
 
-    /// True when the preset genuinely narrows — drives the control's accent.
-    var isPresetNarrowing: Bool { FilterPresets.isNarrowing }
+    /// Fork: the active Filter Preset for the current tab.
+    var activePreset: FilterPreset { FilterPresets.active(filterScope) }
+
+    /// True when the current tab's preset genuinely narrows — drives the control's accent.
+    var isPresetNarrowing: Bool { FilterPresets.isNarrowing(filterScope) }
 
     /// The full fetched list, regardless of the selected tab - the header artwork
     /// always reflects the whole playlist.
@@ -102,11 +105,11 @@ class PlaylistDetailViewModel: ObservableObject {
     /// Fork: applies the active Filter Preset to a hand-ordered list, preserving its order. Used
     /// on the Session tab, where the lineup cannot be re-queried but can be sieved.
     private func sieved(_ episodes: [ListEpisode]) -> [ListEpisode] {
-        guard FilterPresets.isNarrowing else { return episodes }
+        guard FilterPresets.isNarrowing(.session) else { return episodes }
         // A podcast session's lineup is single-podcast, so it ignores the preset's podcast/folder
         // scope — same exemption as the podcast page (see FilterPreset.podcastUuids).
         let applyScope = !(session?.feeder.isSinglePodcast ?? false)
-        let kept = Set(FilterPresets.filtering(episodes.map(\.episode.uuid), applyScope: applyScope))
+        let kept = Set(FilterPresets.filtering(episodes.map(\.episode.uuid), scope: .session, applyScope: applyScope))
         return episodes.filter { kept.contains($0.episode.uuid) }
     }
 
@@ -757,7 +760,7 @@ extension PlaylistDetailViewModel {
         }
         self.searchTerm = searchTerm
         let escapedSearch = searchTerm.escapeLike(escapeChar: "\\")
-        let newData = episodesDataManager.playlistEpisodes(for: playlist, limit: 0, search: escapedSearch, preset: FilterPresets.active)
+        let newData = episodesDataManager.playlistEpisodes(for: playlist, limit: 0, search: escapedSearch, preset: FilterPresets.active())
         let changeSetTuple = buildChangeSet(source: episodes, newData: newData)
         DispatchQueue.main.async { [weak self] in
             // Avoid animation as long we use the current diffable framework

@@ -1133,7 +1133,7 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
     /// stays only to satisfy the delegate protocol.
     func toggleShowArchived() {
         guard let podcast else { return }
-        var preset = FilterPresets.active
+        var preset = FilterPresets.active()
         preset.archived = (preset.archived == false) ? nil : false
         FilterPresetStore.shared.upsert(preset)
         loadLocalEpisodes(podcast: podcast, animated: true)
@@ -1143,7 +1143,7 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
     /// placeholder. nil ("don't care") and true ("archived only") both surface them; only an
     /// explicit false hides them.
     func showingArchived() -> Bool {
-        FilterPresets.active.archived != false
+        FilterPresets.active().archived != false
     }
 
     /// Fork: display filters (played/seen) changed — rebuild the episode list.
