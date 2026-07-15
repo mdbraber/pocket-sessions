@@ -12,7 +12,6 @@ extension AppDelegate {
 
     func handleShortcutItem(_ shortcutItem: UIApplicationShortcutItem) {
         guard let urlString = shortcutItem.userInfo?["url"] as? String, let url = URL(string: urlString) else { return }
-        FileLog.shared.addMessage("QuickAction handleShortcutItem url=\(urlString) appState=\(UIApplication.shared.applicationState.rawValue)")
         // A cold launch routes during scene connection, before playback state is
         // restored — defer until the app is actually active so play actions land.
         if UIApplication.shared.applicationState == .active {
@@ -626,7 +625,6 @@ extension AppDelegate {
     // MARK: - Fork: icon quick action playback
 
     static func playUpNextShortcut(retriesLeft: Int = 4) {
-        FileLog.shared.addMessage("QuickAction play-upnext: session=\(Settings.playbackSession() != nil) playing=\(PlaybackManager.shared.playing()) current=\(PlaybackManager.shared.currentEpisode() != nil) retriesLeft=\(retriesLeft)")
         if Settings.playbackSession() != nil {
             PlaybackManager.shared.endPlaybackSession()
         }
@@ -641,17 +639,11 @@ extension AppDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 playUpNextShortcut(retriesLeft: retriesLeft - 1)
             }
-        } else {
-            FileLog.shared.addMessage("QuickAction play-upnext: gave up (no current episode, empty queue)")
         }
     }
 
     static func playSessionShortcut(retriesLeft: Int = 4) {
-        FileLog.shared.addMessage("QuickAction play-session: session=\(Settings.playbackSession() != nil) paused=\(Settings.playbackSessionPaused()) playing=\(PlaybackManager.shared.playing()) current=\(PlaybackManager.shared.currentEpisode() != nil) retriesLeft=\(retriesLeft)")
-        guard let session = Settings.playbackSession() else {
-            FileLog.shared.addMessage("QuickAction play-session: no active playback session — nothing to do")
-            return
-        }
+        guard let session = Settings.playbackSession() else { return }
         guard !PlaybackManager.shared.playing() else { openUpNextTab(); return }
         if Settings.playbackSessionPaused() || PlaybackManager.shared.currentEpisode() == nil {
             if let episode = PlaybackManager.shared.currentEpisode() ?? session.nextEpisode(after: nil) {
@@ -674,7 +666,6 @@ extension AppDelegate {
     /// "open player automatically" on, the player opens too: the quick action usually just resumes
     /// the current episode, so the normal load-triggered auto-open wouldn't fire.
     private static func openUpNextTab() {
-        FileLog.shared.addMessage("QuickAction openUpNextTab (openPlayerAuto=\(UserDefaults.standard.bool(forKey: Constants.UserDefaults.openPlayerAutomatically)))")
         DispatchQueue.main.async {
             NavigationManager.sharedManager.navigateTo(NavigationManager.upNextPageKey)
         }
