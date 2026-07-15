@@ -18,6 +18,31 @@ final class SessionCloudSync {
     private let zoneID = CKRecordZone.ID(zoneName: zoneName)
     private var engine: CKSyncEngine?
 
+    /// Last-known server records (their system fields carry the change tag), keyed by ID. A save
+    /// MUST start from this so it updates the existing record; a fresh, tag-less CKRecord is
+    /// rejected as "record to insert already exists" (CKError.serverRecordChanged) once the record
+    /// exists on the server, and the two devices never converge. Rebuilt from fetches, successful
+    /// saves, and server records returned on a conflict — so it self-heals after a cold launch.
+    private let cacheLock = NSLock()
+    private var serverRecords: [CKRecord.ID: CKRecord] = [:]
+
+    private func baseRecord(for recordID: CKRecord.ID, type: String) -> CKRecord {
+        cacheLock.lock(); defer { cacheLock.unlock() }
+        return serverRecords[recordID] ?? CKRecord(recordType: type, recordID: recordID)
+    }
+
+    private func rememberServerRecords(_ records: [CKRecord]) {
+        guard !records.isEmpty else { return }
+        cacheLock.lock(); defer { cacheLock.unlock() }
+        for record in records { serverRecords[record.recordID] = record }
+    }
+
+    private func forgetServerRecords(_ ids: [CKRecord.ID]) {
+        guard !ids.isEmpty else { return }
+        cacheLock.lock(); defer { cacheLock.unlock() }
+        for id in ids { serverRecords[id] = nil }
+    }
+
     static func start() {
         guard shared == nil else { return }
         // No entitlement (or no account) → containerIdentifier lookup/engine setup
@@ -150,18 +175,21 @@ final class SessionCloudSync {
         case "session":
             guard parts.count == 2, let session = snapshot.sessions.first(where: { $0.uuid == parts[1] }),
                   let payload = try? JSONEncoder().encode(session) else { return nil }
-            let record = CKRecord(recordType: "ForkSession", recordID: recordID)
+            let record = baseRecord(for: recordID, type: "ForkSession")
             record["payload"] = payload as NSData
             return record
         case "offered":
             guard parts.count == 2, let date = InboxStore.shared.offeredThrough(podcastUuid: parts[1]) else { return nil }
-            let record = CKRecord(recordType: "ForkOfferedThrough", recordID: recordID)
-            record["date"] = date as NSDate
+            let record = baseRecord(for: recordID, type: "ForkOfferedThrough")
+            // Never regress the triage watermark below what the server already holds — a lower date
+            // would re-offer episodes the other device already triaged away.
+            let serverDate = record["date"] as? Date
+            record["date"] = (serverDate.map { max($0, date) } ?? date) as NSDate
             return record
         case "preset":
             guard parts.count == 2, let preset = FilterPresetStore.shared.preset(uuid: parts[1]),
                   let payload = try? JSONEncoder().encode(preset) else { return nil }
-            let record = CKRecord(recordType: "ForkFilterPreset", recordID: recordID)
+            let record = baseRecord(for: recordID, type: "ForkFilterPreset")
             record["payload"] = payload as NSData
             return record
         default:
@@ -243,6 +271,8 @@ extension SessionCloudSync: CKSyncEngineDelegate {
         case .stateUpdate(let update):
             persist(state: update.stateSerialization)
         case .fetchedRecordZoneChanges(let changes):
+            rememberServerRecords(changes.modifications.map(\.record))
+            forgetServerRecords(changes.deletions.map(\.recordID))
             for modification in changes.modifications {
                 apply(record: modification.record)
             }
@@ -250,9 +280,22 @@ extension SessionCloudSync: CKSyncEngineDelegate {
                 applyDeletion(recordID: deletion.recordID)
             }
         case .sentRecordZoneChanges(let sent):
+            rememberServerRecords(sent.savedRecords)
+            forgetServerRecords(sent.deletedRecordIDs)
+            var retry = [CKSyncEngine.PendingRecordZoneChange]()
             for failed in sent.failedRecordSaves {
-                // Server wins: the fetched copy arrives via fetchedRecordZoneChanges.
-                FileLog.shared.addMessage("SessionCloudSync: save failed for \(failed.record.recordID.recordName): \(failed.error)")
+                if failed.error.code == .serverRecordChanged, let serverRecord = failed.error.serverRecord {
+                    // The record already exists on the server. Adopt its change tag, then re-save our
+                    // value on top (last write wins) — otherwise the save is dropped forever and the
+                    // devices never converge.
+                    rememberServerRecords([serverRecord])
+                    retry.append(.saveRecord(failed.record.recordID))
+                } else {
+                    FileLog.shared.addMessage("SessionCloudSync: save failed for \(failed.record.recordID.recordName): \(failed.error)")
+                }
+            }
+            if !retry.isEmpty, let engine {
+                engine.state.add(pendingRecordZoneChanges: retry)
             }
         case .accountChange(let change):
             switch change.changeType {
