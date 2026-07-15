@@ -960,14 +960,14 @@ class Settings: NSObject {
     private static let sessionMultiSelectActionsKey = "SessionMultiSelectActions"
     class func sessionMultiSelectActions() -> [MultiSelectAction] {
         let defaultActions: [MultiSelectAction] = [.removeFromSession, .playNext, .playLast, .download, .markAsPlayed, .archive, .addToPlaylist, .star]
-        guard let savedInts = UserDefaults.standard.object(forKey: Settings.sessionMultiSelectActionsKey) as? [Int32] else {
-            return defaultActions
-        }
-
-        let actions = savedInts.compactMap { MultiSelectAction(rawValue: $0) }
-
-        // Make sure new items are shown
-        return actions + defaultActions.filter { !actions.contains($0) }
+        // Everything here is already in a session, and session rows aren't queue rows — so
+        // "Add to Session" and the queue-structural moves never make sense in this world.
+        // Filtering here (not just in the default) also scrubs a stale or synced saved list.
+        let excluded: Set<MultiSelectAction> = [.addToSession, .moveToTop, .moveToBottom, .removeFromUpNext]
+        let saved = (UserDefaults.standard.object(forKey: Settings.sessionMultiSelectActionsKey) as? [Int32])?.compactMap { MultiSelectAction(rawValue: $0) }
+        let actions = saved ?? defaultActions
+        // Keep saved order, append any newly added defaults, then drop the inapplicable ones.
+        return (actions + defaultActions.filter { !actions.contains($0) }).filter { !excluded.contains($0) }
     }
 
     class func updateSessionMultiSelectActions(_ actions: [MultiSelectAction]) {
@@ -978,14 +978,14 @@ class Settings: NSObject {
     private static let upNextMultiSelectActionsKey = "UpNextMultiSelectActions"
     class func upNextMultiSelectActions() -> [MultiSelectAction] {
         let defaultActions: [MultiSelectAction] = [.moveToTop, .moveToBottom, .removeFromUpNext, .addToSession, .download, .markAsPlayed, .archive, .addToPlaylist, .star]
-        guard let savedInts = UserDefaults.standard.object(forKey: Settings.upNextMultiSelectActionsKey) as? [Int32] else {
-            return defaultActions
-        }
-
-        let actions = savedInts.compactMap { MultiSelectAction(rawValue: $0) }
-
-        // Make sure new items are shown
-        return actions + defaultActions.filter { !actions.contains($0) }
+        // Everything here is already queued, so "Add to Up Next" (Play Next / Play Last) is
+        // redundant with the move actions and never makes sense in this world. Filtering here
+        // (not just in the default) also scrubs a stale or synced saved list.
+        let excluded: Set<MultiSelectAction> = [.playNext, .playLast]
+        let saved = (UserDefaults.standard.object(forKey: Settings.upNextMultiSelectActionsKey) as? [Int32])?.compactMap { MultiSelectAction(rawValue: $0) }
+        let actions = saved ?? defaultActions
+        // Keep saved order, append any newly added defaults, then drop the inapplicable ones.
+        return (actions + defaultActions.filter { !actions.contains($0) }).filter { !excluded.contains($0) }
     }
 
     class func updateUpNextMultiSelectActions(_ actions: [MultiSelectAction]) {

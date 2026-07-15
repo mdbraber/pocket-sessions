@@ -692,6 +692,16 @@ enum MultiSelectAction: Int32, CaseIterable, AnalyticsDescribable {
             // Only relevant when at least one selected episode is currently in Up Next
             return episodes.contains { PlaybackManager.shared.inUpNext(episode: $0) }
 
+        #if !os(watchOS)
+        case .addToSession:
+            // Nothing to add once every selected episode is already in a session.
+            return episodes.contains { !SessionMembership.shared.inAnySession.contains($0.uuid) }
+
+        case .removeFromSession:
+            // Only relevant when at least one selected episode is actually in a session.
+            return episodes.contains { SessionMembership.shared.inAnySession.contains($0.uuid) }
+        #endif
+
         default:
             return true
         }
