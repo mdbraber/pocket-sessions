@@ -467,6 +467,9 @@ extension PlaylistDetailViewController {
     /// Applies a preset's sort/group to this page when the preset is selected. The list's own sort
     /// and group controls (in the ⋯ menu) then override these — the preset only seeds the defaults.
     func applyPresetSortAndGroup(_ preset: FilterPreset) {
+        // Fork: a plain manual playlist is hand-ordered — a preset filters it, but must not impose
+        // the preset's sort or grouping. (Session stores are also manual, but sort/group via tabs.)
+        guard !(viewModel.isManualPlaylist && viewModel.session == nil) else { return }
         if let raw = preset.sortOrder, let order = TriageTabSortOrder(rawValue: raw) {
             TriageTabSort.setOrder(order, tab: viewModel.selectedTriageTab.sortKey, pageUuid: viewModel.playlist.uuid)
         }
@@ -558,10 +561,11 @@ private extension PlaylistDetailViewController {
             countsLabel.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -16)
         ]
 
-        // Fork: the Filter Preset control, on BOTH tabs — a preset applies to any episode list,
-        // including the Session lineup (where it sieves, and never reorders).
+        // Fork: the Filter Preset control belongs on every episode list — the triage-tab pages
+        // (where it sieves the Session lineup, and narrows Episodes) AND plain manual playlists
+        // (filter-only there, so the hand-drag order is never reordered or grouped).
         var funnelButton: UIButton?
-        if viewModel.usesTriageTabs {
+        if viewModel.usesTriageTabs || viewModel.isManualPlaylist {
             let funnel = FilterPresetPicker.makeButton(
                 target: self,
                 scope: viewModel.filterScope,
