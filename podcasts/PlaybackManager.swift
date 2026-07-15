@@ -761,6 +761,15 @@ class PlaybackManager: ServerPlaybackDelegate {
     /// episode moves to the top of Up Next, like any "play now") and advances through the
     /// session's list until it runs dry, then playback returns to the queue.
     func startPlaybackSession(_ session: PlaybackSession) {
+        // Pull pending auto-add offers into the store ONCE, at start — not on every advance.
+        // (Sessions are an iOS-only fork feature; the watch shares this file.)
+        #if !os(watchOS)
+        if session.type != .podcast,
+           let filter = DataManager.sharedManager.findPlaylist(uuid: session.uuid),
+           let storeSession = SessionStore.shared.session(forStore: filter.uuid), storeSession.autoAdd {
+            SessionManager.shared.ingestAutoAdd(session: storeSession)
+        }
+        #endif
         guard let first = session.nextEpisode(after: nil) else { return }
 
         FileLog.shared.addMessage("Starting playback session from \(session.type.rawValue) \(session.uuid)")

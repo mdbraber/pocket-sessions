@@ -11,12 +11,10 @@ class EpisodesDataManager: PlaybackSessionEpisodeSource {
         case .podcast:
             return episodes(for: .podcast(uuid: session.uuid))
         case .playlist, .smartPlaylist:
-            // Sessions play their store (a manual playlist) in its order. Auto-add
-            // sessions ingest pending offers first so nothing waits in the inbox.
-            if let filter = DataManager.sharedManager.findPlaylist(uuid: session.uuid), let storeSession = SessionStore.shared.session(forStore: filter.uuid) {
-                if storeSession.autoAdd {
-                    SessionManager.shared.ingestAutoAdd(session: storeSession)
-                }
+            // Sessions play their store (a manual playlist) in its order. This is a PURE read —
+            // auto-add ingestion happens once when the session starts (startPlaybackSession), NOT
+            // here, which is called on every advance and would re-balloon the store each time.
+            if let filter = DataManager.sharedManager.findPlaylist(uuid: session.uuid) {
                 return playlistEpisodes(for: filter).map { $0.episode }
             }
             return episodes(for: .filter(uuid: session.uuid))
