@@ -99,6 +99,13 @@ extension AppDelegate {
             } else if shortcut == "discover" {
                 NavigationManager.sharedManager.navigateTo(NavigationManager.discoverPageKey, data: nil)
                 AnalyticsHelper.forceTouchDiscover()
+            } else if shortcut == "play-upnext" {
+                // Fork: the icon quick actions' two play options. Dispatched here, not via a
+                // separate "/shortcuts/play-upnext" route — this greedy ":shortcut" route is
+                // registered first and returns true, so a standalone route never gets reached.
+                AppDelegate.playUpNextShortcut()
+            } else if shortcut == "play-session" {
+                AppDelegate.playSessionShortcut()
             }
 
             return true
@@ -143,17 +150,6 @@ extension AppDelegate {
         JLRoutes.global().addRoute("/open") { _ -> Bool in
             true
         }
-        // Fork: the icon quick actions' two play options. Retried briefly — on a
-        // cold launch the queue restore can lag the route.
-        JLRoutes.global().addRoute("/shortcuts/play-upnext") { _ -> Bool in
-            AppDelegate.playUpNextShortcut()
-            return true
-        }
-        JLRoutes.global().addRoute("/shortcuts/play-session") { _ -> Bool in
-            AppDelegate.playSessionShortcut()
-            return true
-        }
-
         JLRoutes.global().addRoute("/play") { _ -> Bool in
             PlaybackManager.shared.play()
 
