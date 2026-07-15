@@ -778,6 +778,14 @@ class PlaybackManager: ServerPlaybackDelegate {
         Settings.playbackSession() != nil && !Settings.playbackSessionPaused()
     }()
 
+    /// Whether the now-playing episode is being played AS part of the active session (not the
+    /// queue). Settings sync uses this to keep the device that's actively playing a session
+    /// authoritative over its own framing — a remote pointer change (another device that merely
+    /// adopted, or cleared, the session) must not flip live session playback into Up Next.
+    var isPlayingSessionEpisode: Bool {
+        Settings.playbackSession() != nil && !Settings.playbackSessionPaused() && currentEpisodeIsFromSession
+    }
+
     /// Starts a playback session: plays its first unfinished episode now (the interrupted
     /// episode moves to the top of Up Next, like any "play now") and advances through the
     /// session's list until it runs dry, then playback returns to the queue.

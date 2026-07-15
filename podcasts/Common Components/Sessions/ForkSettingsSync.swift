@@ -35,6 +35,13 @@ final class ForkSettingsSync {
         "SJPlaylistFolderMembership"
     ]
 
+    /// The active playback-session pointer. Synced so idle devices adopt the framing, but never
+    /// applied over a device that's actively playing that session (see `pull`).
+    private static let pointerKeys: Set<String> = [
+        Settings.playbackSessionTypeKey,
+        Settings.playbackSessionUuidKey
+    ]
+
     /// Key families (per podcast / per page) that sync by prefix.
     private static let prefixes: [String] = [
         "\(Settings.mirrorUpNextToSessionKey)-",
@@ -104,6 +111,10 @@ final class ForkSettingsSync {
         var applied = false
         var foldersChanged = false
         for key in synced {
+            // The device actively playing a session owns its now-playing framing: don't let a
+            // remote pointer change — another device that merely adopted the session, or cleared
+            // it — clobber it and flip live session playback into Up Next. Idle devices still adopt.
+            if Self.pointerKeys.contains(key), PlaybackManager.shared.isPlayingSessionEpisode { continue }
             let remote = store.object(forKey: key)
             let local = UserDefaults.standard.object(forKey: key)
             guard !valuesEqual(remote, local) else { continue }
