@@ -13,7 +13,13 @@ final class SessionCloudSync {
 
     private static let zoneName = "ForkSessions"
     private static let stateKey = "SJSessionCloudSyncState"
-    private static let bootstrappedKey = "SJSessionCloudSyncBootstrapped"
+    // A bootstrap re-uploads every local record. Versioned so a fix that needs all devices to
+    // re-sync (e.g. the serverRecordChanged etag fix) just bumps this constant — bootstrapIfNeeded
+    // re-runs whenever the device's stored version is behind, no new key required. Devices that
+    // diverged while saves were dropped reconcile to the union (each fetches the other's).
+    // History: v1 = initial; v2 = serverRecordChanged etag fix.
+    private static let bootstrapVersionKey = "SJSessionCloudSyncBootstrapVersion"
+    private static let bootstrapVersion = 2
 
     private let zoneID = CKRecordZone.ID(zoneName: zoneName)
     private var engine: CKSyncEngine?
@@ -94,7 +100,7 @@ final class SessionCloudSync {
 
     /// First run: everything currently in the store becomes a pending save.
     private func bootstrapIfNeeded() {
-        guard !UserDefaults.standard.bool(forKey: Self.bootstrappedKey), let engine else { return }
+        guard UserDefaults.standard.integer(forKey: Self.bootstrapVersionKey) < Self.bootstrapVersion, let engine else { return }
         engine.state.add(pendingDatabaseChanges: [.saveZone(CKRecordZone(zoneID: zoneID))])
         let snapshot = SessionStore.shared.snapshot
         var pending = [CKSyncEngine.PendingRecordZoneChange]()
@@ -108,7 +114,7 @@ final class SessionCloudSync {
             pending.append(.saveRecord(recordID(preset: preset.uuid)))
         }
         engine.state.add(pendingRecordZoneChanges: pending)
-        UserDefaults.standard.set(true, forKey: Self.bootstrappedKey)
+        UserDefaults.standard.set(Self.bootstrapVersion, forKey: Self.bootstrapVersionKey)
     }
 
     /// Every local `InboxStore` mutation lands here as an old/new snapshot.
@@ -300,7 +306,7 @@ extension SessionCloudSync: CKSyncEngineDelegate {
         case .accountChange(let change):
             switch change.changeType {
             case .signIn, .switchAccounts:
-                UserDefaults.standard.set(false, forKey: Self.bootstrappedKey)
+                UserDefaults.standard.set(0, forKey: Self.bootstrapVersionKey)
                 bootstrapIfNeeded()
             default:
                 break
