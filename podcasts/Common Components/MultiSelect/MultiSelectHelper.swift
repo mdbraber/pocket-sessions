@@ -423,7 +423,10 @@ class MultiSelectHelper {
     // MARK: - Selection Helpers
 
     class func shouldSelectAll(onCount: Int, totalCount: Int) -> Bool {
-        onCount < totalCount
+        // Nothing selected (including an empty list) always offers "Select All" — "Deselect
+        // All" is only meaningful once everything present is selected. Without the onCount == 0
+        // guard an empty list (0 < 0) wrongly reads as "Deselect All".
+        onCount == 0 || onCount < totalCount
     }
 
     // MARK: - Inverse Actions
