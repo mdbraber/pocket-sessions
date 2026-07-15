@@ -156,6 +156,8 @@ extension PodcastViewController: UITableViewDataSource, UITableViewDelegate {
                 if let podcast {
                     cell.playlist = .podcast(uuid: podcast.uuid)
                 }
+                // On the podcast's Session tab, the play button joins the session (like tapping the row).
+                cell.playInSession = (showingSession ? podcast.flatMap { SessionStore.shared.session(forPodcast: $0.uuid) } : nil)
 
                 cell.delegate = self
                 cell.populateFrom(episode: listEpisode.episode, tintColor: podcast?.iconTintColor(), podcastUuid: podcast?.uuid, listUuid: listUuid)

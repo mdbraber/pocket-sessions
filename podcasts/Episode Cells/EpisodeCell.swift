@@ -126,6 +126,10 @@ class EpisodeCell: ThemeableSwipeCell, MainEpisodeActionViewDelegate {
 
     var playlist: AutoplayHelper.Playlist?
 
+    /// Fork: when set (session lineup rows), the play button plays the episode AS part of this
+    /// session — same as tapping the row — instead of standalone in Up Next.
+    var playInSession: Session?
+
     private var inUpNext = false
     private var playlistUuid: String?
     private var podcastUuid: String?
@@ -560,6 +564,13 @@ class EpisodeCell: ThemeableSwipeCell, MainEpisodeActionViewDelegate {
         // if the user tapped play from a featured list, record that. We just want the first play, if they are unpausing it, that's not relevant (hence the last check below)
         if let podcastUuid, let listUuid, !PlaybackManager.shared.isNowPlayingEpisode(episodeUuid: episode.uuid) {
             AnalyticsHelper.podcastEpisodePlayedFromList(listId: listUuid, podcastUuid: podcastUuid)
+        }
+
+        // Fork: on a session's lineup the play button joins the session rather than starting
+        // standalone queue playback.
+        if let playInSession {
+            SessionManager.shared.play(episode: episode, in: playInSession)
+            return
         }
 
         PlaybackActionHelper.play(episode: episode, playlistUuid: playlistUuid, podcastUuid: podcastUuid, playlist: playlist)

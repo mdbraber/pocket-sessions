@@ -165,6 +165,9 @@ extension PlaylistDetailViewController: UITableViewDataSource {
             let cell = tableView.dequeueReusableCell(withIdentifier: Self.cellIdentifier, for: indexPath) as! EpisodeCell
             cell.episodeImageLeadConstraint.constant = 16.0
             cell.playlist = .filter(uuid: viewModel.playlist.uuid)
+            // Session lineup rows: the play button joins the session (like tapping the row).
+            cell.playInSession = (viewModel.usesTriageTabs && viewModel.selectedTriageTab == .lineup)
+                ? (viewModel.session ?? viewModel.lensSession) : nil
             cell.delegate = self
             if let listEpisode = itemAtRow as? ListEpisode {
                 cell.populateFrom(episode: listEpisode.episode, tintColor: nil, playlistUuid: viewModel.playlist.uuid)
