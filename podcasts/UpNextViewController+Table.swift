@@ -29,8 +29,21 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
     }
 
     var topBlockHasControls: Bool {
+        // A world with a single episode (just the one on the card) has nothing to count,
+        // sort, shuffle or filter — the info row is noise, so drop it. The queue count is
+        // the real queue, not the filtered view, so an active filter keeps the row (you
+        // need it to clear the filter).
+        guard topBlockEpisodeCount > 1 else { return false }
         if displayedWorld == .session { return Settings.playbackSession() != nil }
         return PlaybackManager.shared.queue.upNextCount() > 0 || PlaybackManager.shared.currentEpisode() != nil
+    }
+
+    /// Episodes in the current world, counting the now-playing card.
+    var topBlockEpisodeCount: Int {
+        if displayedWorld == .session {
+            return (sessionOwnsCard ? 1 : 0) + (sessionEpisodes?.count ?? 0)
+        }
+        return (queueOwnsCard ? 1 : 0) + PlaybackManager.shared.queue.upNextCount()
     }
 
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
