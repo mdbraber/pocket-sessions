@@ -138,7 +138,7 @@ class EpisodeListSearchController: SimpleNotificationsViewController, UISearchBa
         sortButton.isHidden = true
 
         let episodeCount = delegate.episodeCount()
-        let hasEpisodeLimit = (podcast.autoArchiveEpisodeLimitCount > 0 && podcast.isAutoArchiveOverridden)
+        let hasEpisodeLimit = (podcast.autoArchiveEpisodeLimit > 0 && podcast.overrideGlobalArchive)
 
         let infoText = episodeCount == 1 ? L10n.podcastEpisodeCountSingular : L10n.podcastEpisodeCountPluralFormat(episodeCount.localized())
         let attributedText = NSMutableAttributedString(string: infoText, attributes: [.foregroundColor: AppTheme.colorForStyle(.primaryText02)])
@@ -147,7 +147,7 @@ class EpisodeListSearchController: SimpleNotificationsViewController, UISearchBa
         // impossible: whether archived show is a visible, named rule. An episode LIMIT is different
         // (it's an auto-archive setting, not a filter), so that note stays.
         if hasEpisodeLimit {
-            attributedText.append(NSAttributedString(string: " • " + L10n.podcastEpisodeLimitCountFormat(podcast.autoArchiveEpisodeLimitCount.localized()), attributes: [.foregroundColor: AppTheme.colorForStyle(.support08)]))
+            attributedText.append(NSAttributedString(string: " • " + L10n.podcastEpisodeLimitCountFormat(podcast.autoArchiveEpisodeLimit.localized()), attributes: [.foregroundColor: AppTheme.colorForStyle(.support08)]))
         }
         let unseenCount = delegate.unseenEpisodeCount()
         if unseenCount > 0 {
@@ -288,7 +288,7 @@ class EpisodeListSearchController: SimpleNotificationsViewController, UISearchBa
             let archiveAllAction = OptionAction(label: L10n.podcastArchiveAll, icon: "podcast-archiveall") {}
             archiveAllAction.submenu = { [weak self] in self?.makeArchiveAllPicker(episodeCount: unarchivedCount, playedOnly: false) }
             optionPicker.addAction(action: archiveAllAction)
-        } else if !(podcast.autoArchiveEpisodeLimitCount > 0 && podcast.isAutoArchiveOverridden) {
+        } else if !(podcast.autoArchiveEpisodeLimit > 0 && podcast.overrideGlobalArchive) {
             // we only show unarchive all for podcasts that haven't set an episode limit
             let unarchiveAllAction = OptionAction(label: L10n.podcastUnarchiveAll, icon: "list_unarchive") { [weak self] in
                 guard let strongSelf = self else { return }

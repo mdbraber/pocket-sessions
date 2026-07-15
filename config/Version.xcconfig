@@ -3,6 +3,7 @@
 //   VERSION_SHORT (marketing) = the sessions version    -> shows as "Version"
 //   VERSION_LONG  (build)     = the stock base it's on  -> shows as "Build"
 // TestFlight then reads e.g. "0.2 (8.16.0.2)" — clearly the sessions fork, cut from
-// 8.16.0.2, and in a separate version train so a regular 8.16.0.x can't collide.
+// 8.16.0.x, and in a separate version train so a regular 8.16.0.x can't collide.
+// (Stock trunk is at 8.16.0.3 as of this merge.)
 VERSION_LONG = 8.16.0.2
 VERSION_SHORT = 0.2

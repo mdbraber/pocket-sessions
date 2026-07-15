@@ -648,6 +648,7 @@ enum AnalyticsEvent: String {
     case settingsGeneralIntelligentPlaybackToggled
     case settingsGeneralPlayUpNextOnTapToggled
     case settingsGeneralRemoteSkipsChaptersToggled
+    case settingsGeneralAudioOnlyToggled
     case settingsGeneralExtraPlaybackActionsToggled
     case settingsGeneralLegacyBluetoothToggled
     case settingsGeneralMultiSelectGestureToggled
@@ -950,6 +951,8 @@ enum AnalyticsEvent: String {
     case syncedTranscriptsUnavailable
     case syncedTranscriptsSeekFailed
     case syncedTranscriptsAutoScrollResumed
+    case syncedTranscriptsChapterSeekUsed
+    case syncedTranscriptsChapterSeekFailed
 
     // MARK: - Widgets
 

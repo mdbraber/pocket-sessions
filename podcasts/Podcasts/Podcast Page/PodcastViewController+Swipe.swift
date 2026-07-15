@@ -74,7 +74,7 @@ extension PodcastViewController: SwipeTableViewCellDelegate, SwipeHandler {
     func archivingRemovesFromList() -> Bool {
         if showingSession { return true }
 
-        return !(podcast?.shouldShowArchived ?? false)
+        return !(podcast?.showArchived ?? false)
     }
 
     func actionPerformed(willBeRemoved: Bool) {

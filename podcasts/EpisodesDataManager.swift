@@ -194,7 +194,7 @@ class EpisodesDataManager: PlaybackSessionEpisodeSource {
         var arguments = [Any]()
 
         // The active Filter Preset. It owns archived visibility now (as an ordinary rule), which is
-        // why there is no separate shouldShowArchived clause here any more.
+        // why there is no separate showArchived clause here any more.
         if let preset, let predicate = FilterPresetQuery.predicate(
             for: preset,
             sessionStoreUuids: SessionStore.shared.sessions.compactMap(\.storePlaylistUuid),
