@@ -27,7 +27,12 @@ final class ForkSettingsSync {
         "SJInboxGroupLimit",
         "SJGlobalInboxOptOutPodcasts",
         Settings.playbackSessionTypeKey,
-        Settings.playbackSessionUuidKey
+        Settings.playbackSessionUuidKey,
+        // Playlist folders are fork-only (upstream has no such concept), so they have no
+        // other sync channel. Both are plist values — a JSON blob of folders and a
+        // playlistUuid->folderUuid map — and low-churn, so KV last-writer-wins fits.
+        "SJPlaylistFolders",
+        "SJPlaylistFolderMembership"
     ]
 
     /// Key families (per podcast / per page) that sync by prefix.
@@ -97,6 +102,7 @@ final class ForkSettingsSync {
 
         applyingRemote = true
         var applied = false
+        var foldersChanged = false
         for key in synced {
             let remote = store.object(forKey: key)
             let local = UserDefaults.standard.object(forKey: key)
@@ -107,6 +113,7 @@ final class ForkSettingsSync {
                 UserDefaults.standard.removeObject(forKey: key)
             }
             applied = true
+            if key == "SJPlaylistFolders" || key == "SJPlaylistFolderMembership" { foldersChanged = true }
         }
         applyingRemote = false
 
@@ -115,6 +122,11 @@ final class ForkSettingsSync {
         // pointer additionally announces itself (adopt, never auto-play).
         NotificationCenter.postOnMainThread(notification: SessionStore.changed)
         NotificationCenter.postOnMainThread(notification: Constants.Notifications.playbackSessionChanged)
+        // Folder membership shapes the Playlists grid — rebuild it so a synced folder shows
+        // without waiting for the next navigation.
+        if foldersChanged {
+            NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged)
+        }
     }
 
     private func valuesEqual(_ a: Any?, _ b: Any?) -> Bool {
