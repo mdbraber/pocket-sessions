@@ -480,12 +480,22 @@ class Settings: NSObject {
     }
     class func setShowSmartPlaylistSessions(_ on: Bool) { UserDefaults.standard.set(on, forKey: showSmartPlaylistSessionsKey) }
 
-    /// Per-podcast sessions show only for podcasts whose folder is selected here (e.g. "Series").
+    /// Per-podcast sessions show for podcasts whose folder is selected here (e.g. "Series")…
     class func showPodcastSessionFolders() -> Set<String> {
         Set(UserDefaults.standard.stringArray(forKey: showPodcastSessionFoldersKey) ?? [])
     }
     class func setShowPodcastSessionFolders(_ uuids: Set<String>) {
         UserDefaults.standard.set(Array(uuids), forKey: showPodcastSessionFoldersKey)
+    }
+
+    static let showPodcastSessionPodcastsKey = "SJShowPodcastSessionPodcasts"
+
+    /// …or for individually selected podcasts.
+    class func showPodcastSessionPodcasts() -> Set<String> {
+        Set(UserDefaults.standard.stringArray(forKey: showPodcastSessionPodcastsKey) ?? [])
+    }
+    class func setShowPodcastSessionPodcasts(_ uuids: Set<String>) {
+        UserDefaults.standard.set(Array(uuids), forKey: showPodcastSessionPodcastsKey)
     }
 
     static let sessionAutoAddLimitKey = "SJSessionAutoAddLimit"

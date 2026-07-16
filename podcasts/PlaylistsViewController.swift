@@ -214,12 +214,14 @@ class PlaylistsViewController: PCViewController, FilterCreatedDelegate {
     @objc private func playlistOptionsTapped() {
         let optionsPicker = OptionsPicker(title: nil)
 
-        // Fork: which session playlists appear here (Manual / Smart / per-folder Podcast sessions).
-        optionsPicker.addAction(action: OptionAction(label: L10n.sessionPlaylistsTitle, icon: "option-multiselect") { [weak self] in
+        // Fork: which session playlists appear here (Manual / Smart / per-folder-or-podcast sessions).
+        optionsPicker.addAction(action: OptionAction(label: L10n.sessionPlaylistsShow, icon: "option-multiselect") { [weak self] in
             DispatchQueue.main.async {
-                self?.navigationController?.pushViewController(SessionPlaylistsSettingsViewController { [weak self] in
-                    self?.reloadFilters()
-                }, animated: true)
+                let settings = SessionPlaylistsSettingsViewController { [weak self] in self?.reloadFilters() }
+                let nav = SJUIUtils.navController(for: settings)
+                nav.modalPresentationStyle = .pageSheet
+                nav.sheetPresentationController?.detents = [.medium(), .large()]
+                self?.present(nav, animated: true)
             }
         })
 

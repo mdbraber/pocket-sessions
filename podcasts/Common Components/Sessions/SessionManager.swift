@@ -70,6 +70,54 @@ class SessionManager {
         NotificationCenter.default.addObserver(self, selector: #selector(episodeStateChanged), name: Constants.Notifications.manyEpisodesChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(trackChanged), name: Constants.Notifications.playbackTrackChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(prune), name: ServerNotifications.podcastsRefreshed, object: nil)
+        // Fork: every podcast in a selected Session-Playlists folder keeps a session; a deleted
+        // podcast loses its session.
+        NotificationCenter.default.addObserver(self, selector: #selector(syncFolderScopedPodcastSessions), name: Constants.Notifications.folderChanged, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(podcastDeleted(_:)), name: Constants.Notifications.podcastDeleted, object: nil)
+        syncFolderScopedPodcastSessions()
+    }
+
+    /// Fork: for each podcast folder ticked in Session Playlists, ensure every podcast in it has an
+    /// (empty, auto-add-off) session, filed into a playlist folder with the same name. Idempotent.
+    @objc func syncFolderScopedPodcastSessions() {
+        let selectedFolders = Settings.showPodcastSessionFolders()
+        let selectedPodcasts = Settings.showPodcastSessionPodcasts()
+        guard !selectedFolders.isEmpty || !selectedPodcasts.isEmpty else { return }
+        let podcasts = DataManager.sharedManager.allPodcasts(includeUnsubscribed: false)
+        var filed = false
+
+        // Folder-selected podcasts: session filed into a playlist folder with the folder's name.
+        let podcastFolders = DataManager.sharedManager.allFolders(includeDeleted: false).filter { selectedFolders.contains($0.uuid) }
+        for podcastFolder in podcastFolders {
+            let playlistFolder = PlaylistFolderManager.shared.allFolders().first { $0.name == podcastFolder.name }
+                ?? PlaylistFolderManager.shared.createFolder(name: podcastFolder.name, color: podcastFolder.color, playlistUuids: [])
+            for podcast in podcasts where podcast.folderUuid == podcastFolder.uuid {
+                let session = findOrCreateSession(forPodcast: podcast) // empty, auto-add off by default
+                guard let storeUuid = session.storePlaylistUuid else { continue }
+                if PlaylistFolderManager.shared.folderUuid(forPlaylist: storeUuid) != playlistFolder.uuid {
+                    PlaylistFolderManager.shared.setFolder(playlistFolder.uuid, forPlaylist: storeUuid)
+                    filed = true
+                }
+            }
+        }
+
+        // Individually-selected podcasts: just ensure the session exists (left ungrouped).
+        for podcast in podcasts where selectedPodcasts.contains(podcast.uuid) {
+            _ = findOrCreateSession(forPodcast: podcast)
+        }
+
+        if filed {
+            NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged)
+        }
+    }
+
+    @objc private func podcastDeleted(_ notification: Notification) {
+        guard let podcastUuid = notification.object as? String,
+              let session = SessionStore.shared.session(forPodcast: podcastUuid) else { return }
+        if let storeUuid = session.storePlaylistUuid {
+            PlaylistFolderManager.shared.setFolder(nil, forPlaylist: storeUuid)
+        }
+        deleteSession(session)
     }
 
     // MARK: - Creation
@@ -567,6 +615,7 @@ class SessionManager {
         case .smartPlaylist, .folder, .allPodcasts:
             return Settings.showSmartPlaylistSessions()
         case .podcast(let podcastUuid):
+            if Settings.showPodcastSessionPodcasts().contains(podcastUuid) { return true }
             guard let folderUuid = DataManager.sharedManager.findPodcast(uuid: podcastUuid, includeUnsubscribed: true)?.folderUuid else { return false }
             return Settings.showPodcastSessionFolders().contains(folderUuid)
         }

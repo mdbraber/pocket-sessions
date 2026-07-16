@@ -2585,6 +2585,9 @@
 /* Fork: Playlists menu entry / screen title controlling which session playlists appear. */
 "session_playlists_title" = "Session Playlists";
 
+/* Fork: Playlists ⋯ menu entry / sheet title — choose which session playlists appear. */
+"session_playlists_show" = "Show Session Playlists";
+
 /* Fork: toggle — show hand-built (manual) session playlists in the Playlists tab. */
 "session_playlists_manual" = "Manual Sessions";
 

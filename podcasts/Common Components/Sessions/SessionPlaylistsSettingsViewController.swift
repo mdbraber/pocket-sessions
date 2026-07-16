@@ -2,18 +2,19 @@ import PocketCastsDataModel
 import PocketCastsUtils
 import UIKit
 
-/// Fork: Playlists ⋯ → "Session Playlists". Controls which session playlists appear in the
-/// Playlists tab: Manual and Smart Playlist sessions are simple on/off; per-podcast sessions show
-/// only for the podcast folders selected here (e.g. tick "Series" to surface just those). Replaces
-/// the old all-or-nothing "Hide Session Playlists".
+/// Fork: Playlists ⋯ → "Show Session Playlists" (a sheet). Manual and Smart Playlist sessions
+/// toggle on/off; per-podcast sessions show for the folders and podcasts ticked here (square
+/// checkboxes, like the smart-playlist rule picker). Replaces the old "Hide Session Playlists".
 class SessionPlaylistsSettingsViewController: PCViewController, UITableViewDataSource, UITableViewDelegate {
     private static let cellId = "SessionPlaylistsCell"
 
-    private enum Row { case manual, smart, folder(Folder) }
+    private enum Row { case manual, smart, folder(Folder), podcast(Podcast) }
 
     private let onChange: () -> Void
     private let settingsTable = ThemeableTable(frame: .zero, style: .grouped)
     private let folders = DataManager.sharedManager.allFolders(includeDeleted: false)
+    private let podcasts = DataManager.sharedManager.allPodcasts(includeUnsubscribed: false)
+        .sorted { ($0.title ?? "").localizedCaseInsensitiveCompare($1.title ?? "") == .orderedAscending }
 
     init(onChange: @escaping () -> Void) {
         self.onChange = onChange
@@ -23,13 +24,17 @@ class SessionPlaylistsSettingsViewController: PCViewController, UITableViewDataS
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
+    /// One toggles section, then a Podcast Sessions section: folders first, then podcasts.
     private var sections: [[Row]] {
-        [[.manual, .smart], folders.map { Row.folder($0) }]
+        var podcastSection: [Row] = folders.map { Row.folder($0) }
+        podcastSection += podcasts.map { Row.podcast($0) }
+        return [[.manual, .smart], podcastSection]
     }
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        title = L10n.sessionPlaylistsTitle
+        title = L10n.sessionPlaylistsShow
+        navigationItem.rightBarButtonItem = UIBarButtonItem(barButtonSystemItem: .done, target: self, action: #selector(doneTapped))
         settingsTable.dataSource = self
         settingsTable.delegate = self
         settingsTable.translatesAutoresizingMaskIntoConstraints = false
@@ -42,20 +47,17 @@ class SessionPlaylistsSettingsViewController: PCViewController, UITableViewDataS
         ])
     }
 
-    override func viewWillAppear(_ animated: Bool) {
-        super.viewWillAppear(animated)
-        settingsTable.reloadData()
-    }
+    @objc private func doneTapped() { dismiss(animated: true) }
 
     func numberOfSections(in tableView: UITableView) -> Int { sections.count }
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { sections[section].count }
 
     func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        section == 1 && !folders.isEmpty ? L10n.sessionPlaylistsPodcast : nil
+        section == 1 ? L10n.sessionPlaylistsPodcast : nil
     }
 
     func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        section == 1 && !folders.isEmpty ? L10n.sessionPlaylistsPodcastFooter : nil
+        section == 1 ? L10n.sessionPlaylistsPodcastFooter : nil
     }
 
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
@@ -64,6 +66,8 @@ class SessionPlaylistsSettingsViewController: PCViewController, UITableViewDataS
         cell.accessoryView = nil
         cell.accessoryType = .none
         cell.selectionStyle = .none
+        cell.imageView?.image = nil
+
         switch sections[indexPath.section][indexPath.row] {
         case .manual:
             cell.textLabel?.text = L10n.sessionPlaylistsManual
@@ -73,7 +77,12 @@ class SessionPlaylistsSettingsViewController: PCViewController, UITableViewDataS
             cell.accessoryView = makeToggle(isOn: Settings.showSmartPlaylistSessions(), action: #selector(smartChanged(_:)))
         case .folder(let folder):
             cell.textLabel?.text = folder.name
-            cell.accessoryType = Settings.showPodcastSessionFolders().contains(folder.uuid) ? .checkmark : .none
+            cell.imageView?.image = UIImage(systemName: "folder.fill")?.withTintColor(AppTheme.folderColor(colorInt: folder.color), renderingMode: .alwaysOriginal)
+            cell.accessoryView = checkbox(selected: Settings.showPodcastSessionFolders().contains(folder.uuid))
+            cell.selectionStyle = .default
+        case .podcast(let podcast):
+            cell.textLabel?.text = podcast.title
+            cell.accessoryView = checkbox(selected: Settings.showPodcastSessionPodcasts().contains(podcast.uuid))
             cell.selectionStyle = .default
         }
         return cell
@@ -81,12 +90,29 @@ class SessionPlaylistsSettingsViewController: PCViewController, UITableViewDataS
 
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        guard case .folder(let folder) = sections[indexPath.section][indexPath.row] else { return }
-        var set = Settings.showPodcastSessionFolders()
-        if set.contains(folder.uuid) { set.remove(folder.uuid) } else { set.insert(folder.uuid) }
-        Settings.setShowPodcastSessionFolders(set)
+        switch sections[indexPath.section][indexPath.row] {
+        case .folder(let folder):
+            toggle(Settings.showPodcastSessionFolders(), folder.uuid, set: Settings.setShowPodcastSessionFolders)
+        case .podcast(let podcast):
+            toggle(Settings.showPodcastSessionPodcasts(), podcast.uuid, set: Settings.setShowPodcastSessionPodcasts)
+        default:
+            return
+        }
+        SessionManager.shared.syncFolderScopedPodcastSessions()
         settingsTable.reloadRows(at: [indexPath], with: .none)
         onChange()
+    }
+
+    // MARK: - Helpers
+
+    private func toggle(_ current: Set<String>, _ uuid: String, set: (Set<String>) -> Void) {
+        var updated = current
+        if updated.contains(uuid) { updated.remove(uuid) } else { updated.insert(uuid) }
+        set(updated)
+    }
+
+    private func checkbox(selected: Bool) -> UIImageView {
+        UIImageView(image: UIImage(named: selected ? "checkbox-selected" : "checkbox-unselected"))
     }
 
     private func makeToggle(isOn: Bool, action: Selector) -> UISwitch {

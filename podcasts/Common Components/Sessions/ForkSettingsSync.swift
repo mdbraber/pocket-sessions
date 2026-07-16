@@ -24,6 +24,7 @@ final class ForkSettingsSync {
         Settings.showManualSessionsKey,
         Settings.showSmartPlaylistSessionsKey,
         Settings.showPodcastSessionFoldersKey,
+        Settings.showPodcastSessionPodcastsKey,
         "SJPlaylistsSortOrder",
         "SJPlaylistsLibraryType",
         "SJInboxGroupBy",
