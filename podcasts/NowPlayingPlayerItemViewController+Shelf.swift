@@ -257,11 +257,14 @@ extension NowPlayingPlayerItemViewController: NowPlayingActionsDelegate {
     func goToSessionTapped() {
         #if !APPCLIP
         guard let episode = PlaybackManager.shared.currentEpisode() as? Episode else { return }
-        // The sessions this podcast belongs to (their feeder covers it), each named by its store.
-        let named: [(name: String, storeUuid: String)] = SessionManager.shared.sessionsCovering(podcastUuid: episode.podcastUuid).compactMap { session in
+        // The sessions this podcast belongs to (their feeder covers it), ordered most specific
+        // first: the podcast's own session (1 feeder) on top, the all-podcasts session last.
+        let named: [(name: String, storeUuid: String)] = SessionManager.shared.sessionsCovering(podcastUuid: episode.podcastUuid).compactMap { session -> (name: String, storeUuid: String, feederCount: Int)? in
             guard let store = SessionManager.shared.store(for: session), !store.playlistName.isEmpty else { return nil }
-            return (store.playlistName, store.uuid)
+            return (store.playlistName, store.uuid, SessionManager.shared.feederPodcastCount(session.feeder))
         }
+        .sorted { $0.feederCount < $1.feederCount }
+        .map { (name: $0.name, storeUuid: $0.storeUuid) }
         guard !named.isEmpty else {
             Toast.show(L10n.playerActionGoToSessionNone)
             return

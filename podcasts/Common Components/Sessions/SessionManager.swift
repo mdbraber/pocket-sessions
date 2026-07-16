@@ -556,6 +556,25 @@ class SessionManager {
 
     // MARK: - Insert marker
 
+    /// How many podcasts a feeder covers — used to order sessions from most specific (a single
+    /// podcast) to broadest (all podcasts).
+    func feederPodcastCount(_ feeder: SessionFeeder) -> Int {
+        switch feeder {
+        case .none:
+            return 0
+        case .podcast:
+            return 1
+        case .folder(let uuid):
+            return DataManager.sharedManager.allPodcasts(includeUnsubscribed: false).filter { $0.folderUuid == uuid }.count
+        case .smartPlaylist(let uuid):
+            guard let playlist = DataManager.sharedManager.findPlaylist(uuid: uuid) else { return 0 }
+            if playlist.filterAllPodcasts { return Int.max }
+            return playlist.podcastUuids.components(separatedBy: ",").filter { !$0.isEmpty && $0 != "none" }.count
+        case .allPodcasts:
+            return Int.max
+        }
+    }
+
     func insertMarkerIndex(for session: Session, inLineup lineup: [String]) -> Int {
         // A podcast session's position follows the per-podcast override / global default; other
         // session types keep their own stored insert mode (edited on the session's own screen).
