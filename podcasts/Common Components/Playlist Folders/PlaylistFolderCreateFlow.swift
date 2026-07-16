@@ -75,12 +75,23 @@ extension PlaylistFolderManager {
         let members = Set(uuids)
         var result = [String]()
         for playlist in DataManager.sharedManager.allPlaylists(includeDeleted: false) where members.contains(playlist.uuid) {
-            guard let first = playlist.podcastUuids.components(separatedBy: ",").first(where: { !$0.isEmpty && $0 != "none" }),
-                  !result.contains(first) else { continue }
+            // Prefer the explicit podcast rule; a manual playlist or a filter-all smart playlist has
+            // no rule uuids, so fall back to the first podcast whose episode is actually in it —
+            // otherwise the folder tile is blank even though it clearly has a podcast.
+            let candidate = playlist.podcastUuids.components(separatedBy: ",").first { !$0.isEmpty && $0 != "none" }
+                ?? leadingEpisodePodcast(for: playlist)
+            guard let first = candidate, !result.contains(first) else { continue }
             result.append(first)
             if result.count == 4 { break }
         }
         return result
+    }
+
+    /// The first podcast with an episode in the playlist — the artwork source when there's no
+    /// podcast rule to read. Bounded fetch; only hit for rule-less members.
+    private func leadingEpisodePodcast(for playlist: EpisodeFilter) -> String? {
+        EpisodesDataManager().playlistEpisodes(for: playlist, limit: 5)
+            .lazy.map { $0.episode.podcastUuid }.first { !$0.isEmpty }
     }
 }
 
