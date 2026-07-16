@@ -11,6 +11,7 @@ protocol NowPlayingActionsDelegate: AnyObject {
     func routePickerTapped()
     func shareTapped()
     func goToTapped()
+    func goToSessionTapped()
     func chromecastTapped()
     func markPlayedTapped()
     func archiveTapped()
@@ -106,6 +107,15 @@ extension NowPlayingPlayerItemViewController: NowPlayingActionsDelegate {
             gotoPodcastBtn.accessibilityLabel = L10n.goToPodcast
 
             addToShelf(on: gotoPodcastBtn)
+        case .goToSession:
+            let gotoSessionBtn = UIButton(frame: CGRect.zero)
+            gotoSessionBtn.isPointerInteractionEnabled = true
+            gotoSessionBtn.imageView?.tintColor = ThemeColor.playerContrast02()
+            gotoSessionBtn.setImage(UIImage(named: action.largeIconName(episode: nil)), for: .normal)
+            gotoSessionBtn.addTarget(self, action: #selector(goToSessionBtnTapped(_:)), for: .touchUpInside)
+            gotoSessionBtn.accessibilityLabel = L10n.playerActionGoToSession
+
+            addToShelf(on: gotoSessionBtn)
         case .chromecast:
             #if !APPCLIP
             playerControlsStackView.addArrangedSubview(chromecastBtn)
@@ -244,6 +254,28 @@ extension NowPlayingPlayerItemViewController: NowPlayingActionsDelegate {
         #endif
     }
 
+    func goToSessionTapped() {
+        #if !APPCLIP
+        guard let episode = PlaybackManager.shared.currentEpisode() as? Episode else { return }
+        // The sessions this podcast belongs to (their feeder covers it), each named by its store.
+        let named: [(name: String, storeUuid: String)] = SessionManager.shared.sessionsCovering(podcastUuid: episode.podcastUuid).compactMap { session in
+            guard let store = SessionManager.shared.store(for: session), !store.playlistName.isEmpty else { return nil }
+            return (store.playlistName, store.uuid)
+        }
+        guard !named.isEmpty else {
+            Toast.show(L10n.playerActionGoToSessionNone)
+            return
+        }
+        let picker = OptionsPicker(title: L10n.playerActionGoToSession.localizedUppercase)
+        for item in named {
+            picker.addAction(action: OptionAction(label: item.name, icon: nil) {
+                NavigationManager.sharedManager.navigateTo(NavigationManager.filterPageKey, data: [NavigationManager.filterUuidKey: item.storeUuid])
+            })
+        }
+        picker.present(from: self)
+        #endif
+    }
+
     func chromecastTapped() {
         #if !APPCLIP
         googleCastTapped()
@@ -376,6 +408,11 @@ extension NowPlayingPlayerItemViewController: NowPlayingActionsDelegate {
     @objc private func goToTapped(_ sender: UIButton) {
         shelfButtonTapped(.goToPodcast)
         goToTapped()
+    }
+
+    @objc private func goToSessionBtnTapped(_ sender: UIButton) {
+        shelfButtonTapped(.goToSession)
+        goToSessionTapped()
     }
 
     @objc private func markPlayedTapped(_ sender: UIButton) {

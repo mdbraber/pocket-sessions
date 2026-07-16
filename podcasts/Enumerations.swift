@@ -273,7 +273,7 @@ extension PlayerAction: AnalyticsDescribable {
         [
             .effects, .sleepTimer, .routePicker, .shareEpisode, .addToPlaylist, .download,
             .transcript, .goToPodcast, .addBookmark, .markPlayed,
-            .starEpisode, .chromecast, .archive, .videoToggle
+            .starEpisode, .chromecast, .archive, .videoToggle, .goToSession
         ]
     }
 
@@ -307,6 +307,8 @@ extension PlayerAction: AnalyticsDescribable {
             self = .addToPlaylist
         case 14:
             self = .videoToggle
+        case 15:
+            self = .goToSession
         default:
             return nil
         }
@@ -342,6 +344,8 @@ extension PlayerAction: AnalyticsDescribable {
             return 13
         case .videoToggle:
             return 14
+        case .goToSession:
+            return 15
         }
     }
 
@@ -392,6 +396,8 @@ extension PlayerAction: AnalyticsDescribable {
             return L10n.playlistManualEpisodeAddToPlaylist
         case .videoToggle:
             return PlaybackManager.shared.shouldRenderVideo() ? L10n.playerActionHideVideo : L10n.playerActionShowVideo
+        case .goToSession:
+            return L10n.playerActionGoToSession
         }
     }
 
@@ -439,6 +445,8 @@ extension PlayerAction: AnalyticsDescribable {
             return "playlist-add-episode"
         case .videoToggle:
             return PlaybackManager.shared.shouldRenderVideo() ? "video_off" : "video_on"
+        case .goToSession:
+            return "gotoarrow"
         }
     }
 
@@ -475,6 +483,8 @@ extension PlayerAction: AnalyticsDescribable {
             return "playlist-add-episode"
         case .videoToggle:
             return PlaybackManager.shared.shouldRenderVideo() ? "video_off" : "video_on"
+        case .goToSession:
+            return "shelf_gotoarrow"
         }
     }
 
@@ -525,6 +535,8 @@ extension PlayerAction: AnalyticsDescribable {
             return "add_to_playlist"
         case .videoToggle:
             return "video_toggle"
+        case .goToSession:
+            return "go_to_session"
         }
     }
 }

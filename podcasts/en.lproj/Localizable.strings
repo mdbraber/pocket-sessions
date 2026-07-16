@@ -1561,6 +1561,12 @@
 /* Title for the prompt to navigate the user to the files section of the app. */
 "player_action_title_go_to_file" = "Go to Files";
 
+/* Fork: player action that opens a sheet of the sessions the playing podcast is part of. */
+"player_action_go_to_session" = "Go to Session";
+
+/* Fork: toast when Go to Session is tapped but the podcast belongs to no session. */
+"player_action_go_to_session_none" = "This podcast isn't in a session";
+
 /* Title for the available output device options. */
 "player_action_title_output_options" = "Output Device";
 

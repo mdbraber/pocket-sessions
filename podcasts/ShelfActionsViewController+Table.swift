@@ -106,6 +106,8 @@ extension ShelfActionsViewController: UITableViewDelegate, UITableViewDataSource
                 self.playerActionsDelegate?.shareTapped()
             case .goToPodcast:
                 self.playerActionsDelegate?.goToTapped()
+            case .goToSession:
+                self.playerActionsDelegate?.goToSessionTapped()
             case .chromecast:
                 self.playerActionsDelegate?.chromecastTapped()
             case .markPlayed:
