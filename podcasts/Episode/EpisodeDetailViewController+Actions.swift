@@ -42,32 +42,19 @@ extension EpisodeDetailViewController {
             addPicker.addAction(action: playLastAction)
         }
 
-        // Block 2 — Sessions: add/remove THIS episode from sessions. "Add to X" for sessions whose
-        // feeder covers it (not yet a member); "Remove from X" for its current memberships.
+        // Block 2 — Session: the generic Add/Remove verbs (honoring the Add/Remove-from-Session
+        // modes), not a per-session list. Add when the episode isn't in a session yet, Remove when
+        // it is — mirroring the swipe actions.
         if let episode = episode as? Episode {
-            // (session, name) pairs, dropping any with no resolvable store name.
-            func named(_ sessions: [Session]) -> [(session: Session, name: String)] {
-                sessions.compactMap { session in
-                    guard let name = SessionManager.shared.store(for: session)?.playlistName, !name.isEmpty else { return nil }
-                    return (session, name)
-                }
-            }
-            let members = named(SessionManager.shared.sessionsHolding(episodeUuids: [episode.uuid]))
-            let memberUuids = Set(members.map { $0.session.uuid })
-            let candidates = named(SessionManager.shared.sessionsCovering(podcastUuid: episode.podcastUuid))
-                .filter { !memberUuids.contains($0.session.uuid) }
-            if !members.isEmpty || !candidates.isEmpty {
-                addPicker.addSectionTitle(L10n.sessions)
-                for item in candidates {
-                    addPicker.addAction(action: OptionAction(label: L10n.sessionAddToFormat(item.name), icon: "playlist-add-episode") {
-                        SessionManager.shared.addToLineup(episodeUuids: [episode.uuid], session: item.session)
-                    })
-                }
-                for item in members {
-                    addPicker.addAction(action: OptionAction(label: L10n.sessionRemoveFromFormat(item.name), icon: "list_remove") {
-                        SessionManager.shared.removeFromLineup(episodeUuids: [episode.uuid], session: item.session)
-                    })
-                }
+            addPicker.addSectionTitle(L10n.sessions)
+            if SessionManager.shared.isInAnySession(episodeUuid: episode.uuid) {
+                addPicker.addAction(action: OptionAction(label: L10n.sessionRemoveFrom, icon: "list_remove") { [weak self] in
+                    SessionManager.shared.removeFromSessions(episodeUuids: [episode.uuid], preferred: nil, presenting: self)
+                })
+            } else {
+                addPicker.addAction(action: OptionAction(label: L10n.playlistAddToLineup, icon: "playlist-add-episode") { [weak self] in
+                    SessionManager.shared.addToSessions(episodeUuids: [episode.uuid], preferred: nil, presenting: self)
+                })
             }
         }
 
