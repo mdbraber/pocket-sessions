@@ -77,40 +77,70 @@ class SessionManager {
         // Fork: a smart playlist that feeds a session defines that session's contents. When its
         // rules change, bring the store back in line with the new filter (see reconcile below).
         NotificationCenter.default.addObserver(self, selector: #selector(feederSmartPlaylistChanged(_:)), name: Constants.Notifications.playlistChanged, object: nil)
-        // Star is a deliberate, low-frequency signal, so star-sensitive feeders mirror live
-        // (debounced). Play-status is volatile, so those feeders mirror lazily — see `reconcileOnView`.
-        NotificationCenter.default.addObserver(self, selector: #selector(episodeStarredChanged), name: Constants.Notifications.episodeStarredChanged, object: nil)
+        // Every eager signal (star, and any future eager axis) mirrors live on its notification;
+        // lazy signals (play-status) mirror on session view/play instead — see `reconcileOnView`.
+        for signal in SessionFeederEngine.FeederSignal.allCases where signal.cadence == .eager {
+            if let name = signal.eagerNotification {
+                NotificationCenter.default.addObserver(self, selector: #selector(eagerSignalFired), name: name, object: nil)
+            }
+        }
+        // The feeder-signal cache is only valid while the sessions and their feeders' rules hold.
+        NotificationCenter.default.addObserver(self, selector: #selector(invalidateFeederVolatilityCache), name: SessionStore.changed, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(invalidateFeederVolatilityCache), name: ServerNotifications.syncCompleted, object: nil)
         syncFolderScopedPodcastSessions()
     }
 
-    private let starReconcileDebounce = Debounce(delay: 1.5)
+    private let eagerReconcileDebounce = Debounce(delay: 1.5)
 
-    @objc private func episodeStarredChanged() {
-        starReconcileDebounce.call { [weak self] in
-            DispatchQueue.main.async { self?.reconcileSensitiveFeeders(\.starSensitive) }
-        }
+    /// The signals every smart-playlist-fed session's feeder is sensitive to, keyed by session uuid
+    /// — cached so each reconcile trigger can decide in O(1) whether any feeder even cares, instead
+    /// of re-querying feeders. Dropped when the set of sessions or a feeder's rules change (see the
+    /// observers in `setup` and the invalidate at the head of `feederSmartPlaylistChanged`).
+    private var cachedFeederSignals: [String: Set<SessionFeederEngine.FeederSignal>]?
+
+    @objc private func invalidateFeederVolatilityCache() {
+        cachedFeederSignals = nil
     }
 
-    /// Reconcile every smart-playlist-fed session whose feeder is sensitive on the given axis.
-    private func reconcileSensitiveFeeders(_ axis: KeyPath<SessionFeederEngine.FeederVolatility, Bool>) {
-        guard !isReconcilingFeeder else { return }
-        isReconcilingFeeder = true
-        defer { isReconcilingFeeder = false }
+    private func feederSignalsBySession() -> [String: Set<SessionFeederEngine.FeederSignal>] {
+        if let cached = cachedFeederSignals { return cached }
+        var map = [String: Set<SessionFeederEngine.FeederSignal>]()
         for session in SessionStore.shared.sessions {
             guard case .smartPlaylist(let uuid) = session.feeder,
-                  let feeder = DataManager.sharedManager.findPlaylist(uuid: uuid),
-                  SessionFeederEngine.volatility(of: feeder)[keyPath: axis] else { continue }
-            reconcileStoreToFeeder(session: session)
+                  let feeder = DataManager.sharedManager.findPlaylist(uuid: uuid) else { continue }
+            map[session.uuid] = SessionFeederEngine.signals(of: feeder)
+        }
+        cachedFeederSignals = map
+        return map
+    }
+
+    /// Fired by any eager signal's notification (star, and any future eager axis). Mirrors every
+    /// feeder sensitive to an eager signal — but only if one exists, so an event no feeder cares
+    /// about is O(1) with no DB work and no debounce scheduled.
+    @objc private func eagerSignalFired() {
+        let signals = feederSignalsBySession()
+        guard signals.values.contains(where: { $0.contains { $0.cadence == .eager } }) else { return }
+        eagerReconcileDebounce.call { [weak self] in
+            DispatchQueue.main.async { self?.reconcileEagerFeeders() }
         }
     }
 
-    /// Lazy mirror: called when a session is opened or played. Play-status feeders only sync here
-    /// (never mid-playback), so the lineup reshapes at a natural moment instead of churning live.
+    private func reconcileEagerFeeders() {
+        guard !isReconcilingFeeder else { return }
+        let signals = feederSignalsBySession()
+        let targets = SessionStore.shared.sessions.filter { (signals[$0.uuid] ?? []).contains { $0.cadence == .eager } }
+        guard !targets.isEmpty else { return }
+        isReconcilingFeeder = true
+        defer { isReconcilingFeeder = false }
+        targets.forEach { reconcileStoreToFeeder(session: $0) }
+    }
+
+    /// Lazy mirror: called when a session is opened or played, so lazy-cadence feeders (play-status)
+    /// reshape at a natural moment instead of churning live. O(1) short-circuit (cached) unless this
+    /// session's feeder actually has a lazy signal.
     func reconcileOnView(session: Session) {
-        guard case .smartPlaylist(let uuid) = session.feeder,
-              let feeder = DataManager.sharedManager.findPlaylist(uuid: uuid),
-              SessionFeederEngine.volatility(of: feeder).playStatusSensitive,
-              !isReconcilingFeeder else { return }
+        let signals = feederSignalsBySession()[session.uuid] ?? []
+        guard signals.contains(where: { $0.cadence == .lazy }), !isReconcilingFeeder else { return }
         isReconcilingFeeder = true
         defer { isReconcilingFeeder = false }
         reconcileStoreToFeeder(session: session)
@@ -124,6 +154,8 @@ class SessionManager {
         guard !isReconcilingFeeder,
               let playlist = notification.object as? EpisodeFilter,
               let session = SessionStore.shared.session(forSmartPlaylistFeeder: playlist.uuid) else { return }
+        // The feeder's rules just changed — its signal set may have too.
+        invalidateFeederVolatilityCache()
         isReconcilingFeeder = true
         defer { isReconcilingFeeder = false }
         reconcileStoreToFeeder(session: session)

@@ -69,20 +69,49 @@ enum SessionFeederEngine {
 
     // MARK: - Feeder volatility
 
-    /// How a smart-playlist feeder's membership can shift from episode-level actions — which picks
-    /// how eagerly its session mirrors the filter. Star is a deliberate, low-frequency signal, so
-    /// those feeders mirror live; play-status churns constantly during playback, so those mirror
-    /// lazily (on session load/play) to avoid reshuffling the lineup mid-listen.
-    struct FeederVolatility {
-        let starSensitive: Bool
-        let playStatusSensitive: Bool
+    /// A signal whose firing can shift a smart-playlist feeder's membership. Every axis is handled
+    /// uniformly — there is no bespoke path per signal. Each case carries its cadence (how eagerly a
+    /// sensitive feeder mirrors), how to tell whether a filter is sensitive to it, and, for eager
+    /// signals, the notification that announces the change. Add a new axis by adding a case.
+    enum FeederSignal: CaseIterable {
+        case star
+        case playStatus
+
+        /// Eager: mirror the moment the signal fires (deliberate, low-frequency changes).
+        /// Lazy: mirror only when the session is viewed/played (volatile changes we don't chase live).
+        enum Cadence { case eager, lazy }
+
+        var cadence: Cadence {
+            switch self {
+            case .star: return .eager
+            case .playStatus: return .lazy
+            }
+        }
+
+        /// The notification whose firing means this signal changed. Nil for lazy signals — those are
+        /// driven by session view/play, not an episode event.
+        var eagerNotification: Notification.Name? {
+            switch self {
+            case .star: return Constants.Notifications.episodeStarredChanged
+            case .playStatus: return nil
+            }
+        }
+
+        /// Does this filter's ruleset shift when this signal fires?
+        func affects(_ filter: EpisodeFilter) -> Bool {
+            switch self {
+            case .star:
+                return filter.filterStarred
+            case .playStatus:
+                // Sensitive unless it admits all three play states (then it imposes no restriction).
+                return !(filter.filterUnplayed && filter.filterPartiallyPlayed && filter.filterFinished)
+            }
+        }
     }
 
-    static func volatility(of filter: EpisodeFilter) -> FeederVolatility {
-        // Play-sensitive when the filter admits some play states but not all three — a filter with
-        // all of unplayed/partial/finished on imposes no play restriction, so it never shifts.
-        let allPlayStates = filter.filterUnplayed && filter.filterPartiallyPlayed && filter.filterFinished
-        return FeederVolatility(starSensitive: filter.filterStarred, playStatusSensitive: !allPlayStates)
+    /// The set of signals a feeder's filter is sensitive to.
+    static func signals(of filter: EpisodeFilter) -> Set<FeederSignal> {
+        Set(FeederSignal.allCases.filter { $0.affects(filter) })
     }
 
     // MARK: - Domains
