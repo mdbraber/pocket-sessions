@@ -2597,6 +2597,12 @@
 /* Fork: section heading — per-podcast sessions, shown per selected folder. */
 "session_playlists_podcast" = "Podcast Sessions";
 
+/* Fork: Show Session Playlists — folders block heading. */
+"session_playlists_folders" = "Folders";
+
+/* Fork: Show Session Playlists — podcasts block heading. */
+"session_playlists_podcasts" = "Podcasts";
+
 /* Fork: footer under the folder list explaining per-podcast session visibility. */
 "session_playlists_podcast_footer" = "Show podcast sessions only for podcasts in the selected folders.";
 
