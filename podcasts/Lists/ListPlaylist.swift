@@ -8,6 +8,12 @@ class ListPlaylist: ListItem, Identifiable, Hashable {
         playlist.uuid
     }
 
+    /// Fork: the position in the unified folders+playlists drag order. Folders override this
+    /// with their own `sortPosition` so both kinds share one number space and can interleave.
+    var combinedSortPosition: Int32 {
+        playlist.sortPosition
+    }
+
     override var differenceIdentifier: String {
         playlist.uuid
     }

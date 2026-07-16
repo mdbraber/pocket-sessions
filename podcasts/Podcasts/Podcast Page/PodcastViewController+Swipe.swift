@@ -41,8 +41,22 @@ extension PodcastViewController: SwipeTableViewCellDelegate, SwipeHandler {
                 }
             }, reload: { [weak self] in
                 guard let self, let podcast = self.podcast else { return }
+                // The unread dot isn't part of a row's diff identity, so a diff reload
+                // won't redraw the swiped row — refresh visible dots directly first.
+                self.refreshVisibleUnseenDots()
                 self.loadLocalEpisodes(podcast: podcast, animated: true)
             })
+        }
+    }
+
+    /// Fork: re-paint the unread dot on every visible row from a fresh unseen set, so a
+    /// mark-seen swipe clears the dot immediately (the dot isn't in a row's diff identity).
+    private func refreshVisibleUnseenDots() {
+        let unseen = InboxManager.shared.unseenUuids()
+        for case let cell as EpisodeCell in episodesTable.visibleCells {
+            guard let indexPath = episodesTable.indexPath(for: cell),
+                  let episode = episodeAtIndexPath(indexPath) else { continue }
+            cell.setUnseenIndicator(visible: unseen.contains(episode.uuid))
         }
     }
 

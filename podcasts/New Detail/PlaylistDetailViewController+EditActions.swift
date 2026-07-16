@@ -82,11 +82,9 @@ extension PlaylistDetailViewController {
             optionsPicker.addAction(action: sortAction())
         }
 
-        if viewModel.usesCustomOrderOverlay {
-            optionsPicker.addAction(action: newEpisodesAction())
-        }
-
-        // "Add to Session" (insert position) sits directly above Download All.
+        // "Add to Session" (where adds land in the lineup) sits directly above Download All.
+        // The old "New Episodes" (Inbox vs Auto add) option is gone — that choice now lives
+        // in each podcast's own Session settings.
         if viewModel.usesCustomOrderOverlay || viewModel.isLensPage {
             optionsPicker.addAction(action: insertModeAction())
         }
@@ -159,33 +157,9 @@ extension PlaylistDetailViewController {
 
     // MARK: - Fork: custom-order overlay settings
 
-    private func newEpisodesAction() -> OptionAction {
-        let current = viewModel.sessionAutoAdd ? L10n.playlistNewEpisodesAuto : L10n.playlistNewEpisodesInbox
-        let action = OptionAction(label: L10n.playlistNewEpisodesSetting, secondaryLabel: current, icon: "option-group") { }
-        action.submenu = { [weak self] in self?.makeNewEpisodesPicker() }
-        return action
-    }
-
-    private func makeNewEpisodesPicker() -> OptionsPicker {
-        let optionsPicker = OptionsPicker(title: L10n.playlistNewEpisodesSetting.localizedUppercase)
-        let autoAdd = viewModel.sessionAutoAdd
-
-        let inboxAction = OptionAction(label: L10n.playlistNewEpisodesInbox, selected: !autoAdd) { [weak self] in
-            self?.viewModel.updatePlaylist(newEpisodesAutoAdd: false)
-        }
-        optionsPicker.addAction(action: inboxAction)
-
-        let autoAction = OptionAction(label: L10n.playlistNewEpisodesAuto, selected: autoAdd) { [weak self] in
-            self?.viewModel.updatePlaylist(newEpisodesAutoAdd: true)
-        }
-        optionsPicker.addAction(action: autoAction)
-
-        return optionsPicker
-    }
-
     private func insertModeAction() -> OptionAction {
         let sessionInsertMode = currentInsertMode()
-        let action = OptionAction(label: L10n.playlistInsertModeSetting, secondaryLabel: sessionInsertMode.description, icon: "filter_manual_episode_order") { }
+        let action = OptionAction(label: L10n.playlistInsertModeSetting, secondaryLabel: sessionInsertMode.description, icon: "rectangle.stack") { }
         action.submenu = { [weak self] in self?.makeInsertModePicker() }
         return action
     }

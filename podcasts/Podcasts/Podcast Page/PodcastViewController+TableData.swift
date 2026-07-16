@@ -162,8 +162,8 @@ extension PodcastViewController: UITableViewDataSource, UITableViewDelegate {
                 cell.delegate = self
                 cell.populateFrom(episode: listEpisode.episode, tintColor: podcast?.iconTintColor(), podcastUuid: podcast?.uuid, listUuid: listUuid)
                 // The green in-this-session mini icon — Episodes and Inbox lists only
-                // (Session rows are all members by definition).
-                cell.setSessionIndicator(SessionIndicatorState.resolve(listEpisode.episode.uuid, thisSession: cachedSessionMemberUuids))
+                // (Session rows are all members by definition, so the badge is redundant there).
+                cell.setSessionIndicator(showingSession ? .none : SessionIndicatorState.resolve(listEpisode.episode.uuid, thisSession: cachedSessionMemberUuids))
                 // The unread dot: this episode is still in the Inbox.
                 cell.setUnseenIndicator(visible: cachedUnseenUuids.contains(listEpisode.episode.uuid))
                 cell.shouldShowSelect = isMultiSelectEnabled

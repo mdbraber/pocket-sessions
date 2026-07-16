@@ -97,6 +97,30 @@ final class InboxManager {
         markSeen(episodeUuids: members.map(\.uuid))
     }
 
+    /// Tri-state Add-to-Inbox. Tightening the policy also clears what the podcast already put in
+    /// the Inbox that the new policy would no longer offer: `never` clears all of it;
+    /// `whenNotInSessionOrUpNext` clears the ones already shelved in a session or queued.
+    func setInboxAddPolicy(_ policy: SessionFeederEngine.InboxAddPolicy, podcastUuid: String) {
+        SessionFeederEngine.setInboxAddPolicy(policy, forPodcast: podcastUuid)
+
+        let members = DataManager.sharedManager.findEpisodesWhere(
+            customWhere: "uuid IN (SELECT episodeUuid FROM \(DataManager.playlistEpisodeTableName) WHERE playlist_uuid = ?) AND podcastUuid = ?",
+            arguments: [DataManager.inboxPlaylistUuid, podcastUuid]
+        )
+        guard !members.isEmpty else { return }
+
+        switch policy {
+        case .always:
+            break
+        case .never:
+            markSeen(episodeUuids: members.map(\.uuid))
+        case .whenNotInSessionOrUpNext:
+            let shelved = SessionMembership.shared.inAnySession
+                .union(PlaybackManager.shared.queue.allEpisodes(includeNowPlaying: true).map(\.uuid))
+            markSeen(episodeUuids: members.map(\.uuid).filter { shelved.contains($0) })
+        }
+    }
+
     // MARK: - Setup
 
     func setup() {
@@ -128,11 +152,14 @@ final class InboxManager {
         guard !podcasts.isEmpty else { return }
 
         let optedOut = SessionFeederEngine.optOutPodcastUuids()
+        let conditionalPodcasts = SessionFeederEngine.conditionalInboxPodcastUuids()
         let lines = store.offeredThrough
 
         var newLines = [String: Date]()
         var needEpisodes = [(podcast: Podcast, line: Date)]()
 
+        // `.never` podcasts (optedOut) are skipped; `.whenNotInSessionOrUpNext` (conditional) are
+        // considered here and filtered per-episode below; everything else is `.always`.
         for podcast in podcasts where !optedOut.contains(podcast.uuid) {
             // `latestEpisodeDate` is maintained by the refresh (updateLatestEpisodeInfo), so by
             // the time we run it already reflects anything new that just arrived.
@@ -149,7 +176,15 @@ final class InboxManager {
         }
 
         if !needEpisodes.isEmpty {
-            add(episodes: newEpisodes(for: needEpisodes))
+            var episodes = newEpisodes(for: needEpisodes)
+            if !conditionalPodcasts.isEmpty {
+                // "When not in Session or Up Next": a conditional podcast's arrival skips the Inbox
+                // if it's already shelved in a session or sitting in the queue.
+                let shelved = SessionMembership.shared.inAnySession
+                    .union(PlaybackManager.shared.queue.allEpisodes(includeNowPlaying: true).map(\.uuid))
+                episodes = episodes.filter { !(conditionalPodcasts.contains($0.podcastUuid) && shelved.contains($0.uuid)) }
+            }
+            add(episodes: episodes)
         }
 
         // Advance the line even for podcasts whose new episodes we skipped (auto-archived on

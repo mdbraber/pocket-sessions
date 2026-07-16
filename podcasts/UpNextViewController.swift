@@ -424,13 +424,10 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
             return
         }
 
-        let navigate: () -> Void
-        switch session.type {
-        case .podcast:
-            guard let podcast = DataManager.sharedManager.findPodcast(uuid: session.uuid, includeUnsubscribed: true) else { return }
-            navigate = { [weak self] in
-                // From the tab, push locally so Back returns to the Session; from the
-                // player sheet there is no local stack — route through navigation.
+        // From the tab, push locally so Back returns to the Session; from the player
+        // sheet there is no local stack — route through NavigationManager instead.
+        let pushPodcast: (Podcast) -> () -> Void = { podcast in
+            return { [weak self] in
                 if let nav = self?.navigationController {
                     nav.pushViewController(PodcastViewController(podcast: podcast), animated: true)
                 } else {
@@ -440,18 +437,52 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
                     )
                 }
             }
-        case .playlist, .smartPlaylist:
-            navigate = { [weak self] in
+        }
+        let pushPlaylist: (String) -> () -> Void = { uuid in
+            return { [weak self] in
                 if let self, let nav = self.navigationController,
-                   let filter = DataManager.sharedManager.findPlaylist(uuid: session.uuid) {
+                   let filter = DataManager.sharedManager.findPlaylist(uuid: uuid) {
                     nav.pushViewController(PlaylistDetailViewController(playlist: filter, delegate: self), animated: true)
                 } else {
                     NavigationManager.sharedManager.navigateTo(
                         NavigationManager.filterPageKey,
-                        data: [NavigationManager.filterUuidKey: session.uuid]
+                        data: [NavigationManager.filterUuidKey: uuid]
                     )
                 }
             }
+        }
+        let openFolder: (Folder) -> () -> Void = { folder in
+            return {
+                NavigationManager.sharedManager.navigateTo(
+                    NavigationManager.folderPageKey,
+                    data: [NavigationManager.folderKey: folder]
+                )
+            }
+        }
+
+        // Prefer the feeder (the Smart Playlist / podcast / folder that fills this session)
+        // over the session's own store playlist, when one is available.
+        let feeder = SessionStore.shared.session(forStore: session.uuid)?.feeder
+        let navigate: () -> Void
+        switch (session.type, feeder) {
+        case (.podcast, _):
+            guard let podcast = DataManager.sharedManager.findPodcast(uuid: session.uuid, includeUnsubscribed: true) else { return }
+            navigate = pushPodcast(podcast)
+        case (_, .smartPlaylist(let uuid)):
+            navigate = pushPlaylist(uuid)
+        case (_, .podcast(let uuid)):
+            guard let podcast = DataManager.sharedManager.findPodcast(uuid: uuid, includeUnsubscribed: true) else {
+                navigate = pushPlaylist(session.uuid); break
+            }
+            navigate = pushPodcast(podcast)
+        case (_, .folder(let uuid)):
+            guard let folder = DataManager.sharedManager.findFolder(uuid: uuid) else {
+                navigate = pushPlaylist(session.uuid); break
+            }
+            navigate = openFolder(folder)
+        default:
+            // .none / .allPodcasts / no feeder → the session's own store playlist.
+            navigate = pushPlaylist(session.uuid)
         }
 
         if presentingViewController is PlayerContainerViewController {

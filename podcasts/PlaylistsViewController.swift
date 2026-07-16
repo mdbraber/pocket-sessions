@@ -117,6 +117,11 @@ class PlaylistsViewController: PCViewController, FilterCreatedDelegate {
 
         loadingIndicator = ThemeLoadingIndicator()
         insetAdjuster.setupInsetAdjustmentsForMiniPlayer(scrollView: filtersTable)
+        // Fork: the grid is a hosted SwiftUI ScrollView, not a UIScrollView the InsetAdjuster
+        // can drive, so keep its bottom safe area in step with the mini player by hand — else
+        // its last row sits under the mini player and can't be scrolled into reach.
+        NotificationCenter.default.addObserver(self, selector: #selector(updateGridInsets), name: Constants.Notifications.miniPlayerDidAppear, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(updateGridInsets), name: Constants.Notifications.miniPlayerDidDisappear, object: nil)
         handleThemeChanged()
 
         // Start cache invalidation coordinator and subscribe to stale updates
@@ -312,14 +317,20 @@ class PlaylistsViewController: PCViewController, FilterCreatedDelegate {
             gridHost = host
         }
 
-        var folders = FeatureFlag.playlistFolders.enabled ? PlaylistFolderManager.shared.allFolders() : []
+        let folders = FeatureFlag.playlistFolders.enabled ? PlaylistFolderManager.shared.allFolders() : []
         let feederUuids = SessionStore.shared.feederPlaylistUuids
-        var playlists = DataManager.sharedManager.allPlaylists(includeDeleted: false)
+        let playlists = DataManager.sharedManager.allPlaylists(includeDeleted: false)
             .filter { PlaylistFolderManager.shared.folderUuid(forPlaylist: $0.uuid) == nil && !feederUuids.contains($0.uuid) }
             .filter { SessionManager.shared.sessionStoreVisible(playlistUuid: $0.uuid) }
+
+        let items: [PlaylistGridItem]
         if playlistsSortOrder == .titleAtoZ {
-            folders.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-            playlists.sort { $0.playlistName.localizedCaseInsensitiveCompare($1.playlistName) == .orderedAscending }
+            items = folders.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }.map { PlaylistGridItem.folder($0) }
+                + playlists.sorted { $0.playlistName.localizedCaseInsensitiveCompare($1.playlistName) == .orderedAscending }.map { PlaylistGridItem.playlist($0) }
+        } else {
+            // Drag-and-drop: interleave folders and playlists by their shared sort position.
+            items = (folders.map { PlaylistGridItem.folder($0) } + playlists.map { PlaylistGridItem.playlist($0) })
+                .sorted { $0.sortPosition < $1.sortPosition }
         }
 
         let grid = PlaylistsGridView(
@@ -330,12 +341,18 @@ class PlaylistsViewController: PCViewController, FilterCreatedDelegate {
             onPlaylistTapped: { [weak self] playlist in
                 self?.showFilter(playlist)
             },
-            folders: folders,
-            playlists: playlists
+            items: items
         )
         gridHost?.rootView = AnyView(grid.environmentObject(Theme.sharedTheme))
         gridHost?.view.isHidden = playlistsLayout == .list || listPlaylistItems.isEmpty
         filtersTable.isHidden = playlistsLayout != .list && !listPlaylistItems.isEmpty
+        updateGridInsets()
+    }
+
+    /// Fork: reserve room below the SwiftUI grid for the mini player, mirroring what the
+    /// InsetAdjuster does for the list table.
+    @objc private func updateGridInsets() {
+        gridHost?.additionalSafeAreaInsets.bottom = Constants.effectiveMiniPlayerOffset
     }
 
     /// Reorder mode, like the podcast page's Edit: drag handles plus a Done button.
@@ -414,11 +431,23 @@ class PlaylistsViewController: PCViewController, FilterCreatedDelegate {
                 .filter { PlaylistFolderManager.shared.folderUuid(forPlaylist: $0.uuid) == nil && !feederUuids.contains($0.uuid) }
                 .filter { SessionManager.shared.sessionStoreVisible(playlistUuid: $0.uuid) }
                 .map { ListPlaylist(playlist: $0) }
+            // Fork: fold the legacy folders-first/playlists-first split into one shared
+            // position space (once), so drag order can interleave the two kinds.
+            let migratedOrder = self.normalizeCombinedOrderIfNeeded(folders: folderRows, playlists: playlistRows)
+
+            let newData: [ListPlaylist]
             if self.playlistsSortOrder == .titleAtoZ {
                 folderRows.sort { ($0 as? ListPlaylistFolder)?.folder.name.localizedCaseInsensitiveCompare(($1 as? ListPlaylistFolder)?.folder.name ?? "") == .orderedAscending }
                 playlistRows.sort { $0.playlist.playlistName.localizedCaseInsensitiveCompare($1.playlist.playlistName) == .orderedAscending }
+                newData = folderRows + playlistRows
+            } else if let migratedOrder {
+                // First run after unifying the order: use the exact sequence we just persisted,
+                // since the in-memory rows still carry their pre-migration positions.
+                newData = migratedOrder
+            } else {
+                // Drag-and-drop: a single order that lets folders sit anywhere among playlists.
+                newData = (folderRows + playlistRows).sorted { $0.combinedSortPosition < $1.combinedSortPosition }
             }
-            let newData = folderRows + playlistRows
 
             DispatchQueue.main.async {
                 self.refreshGrid()
@@ -461,6 +490,31 @@ class PlaylistsViewController: PCViewController, FilterCreatedDelegate {
                 }
             }
         }
+    }
+
+    private static let unifiedOrderMigratedKey = "SJUnifiedPlaylistOrderMigrated"
+
+    /// Fork: one-time migration from the old scheme (folders and playlists each numbered from 0,
+    /// folders always rendered first) to a single shared position space. Preserves the previously
+    /// visible order — folders first, then playlists — then renumbers them 0…n so a later drag can
+    /// slot a folder anywhere. Returns that order on the migrating pass, else nil.
+    private func normalizeCombinedOrderIfNeeded(folders: [ListPlaylist], playlists: [ListPlaylist]) -> [ListPlaylist]? {
+        guard !UserDefaults.standard.bool(forKey: Self.unifiedOrderMigratedKey) else { return nil }
+        let ordered = folders.sorted { $0.combinedSortPosition < $1.combinedSortPosition }
+            + playlists.sorted { $0.combinedSortPosition < $1.combinedSortPosition }
+        var index: Int32 = 0
+        for item in ordered {
+            if let folderItem = item as? ListPlaylistFolder {
+                var folder = folderItem.folder
+                folder.sortPosition = index
+                PlaylistFolderManager.shared.save(folder: folder)
+            } else {
+                DataManager.sharedManager.updatePosition(playlist: item.playlist, newPosition: index)
+            }
+            index += 1
+        }
+        UserDefaults.standard.set(true, forKey: Self.unifiedOrderMigratedKey)
+        return ordered
     }
 
     private func showOnboardingScreenIfNeeded() {

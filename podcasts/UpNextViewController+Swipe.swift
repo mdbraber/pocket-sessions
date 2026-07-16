@@ -43,7 +43,10 @@ extension UpNextViewController: SwipeTableViewCellDelegate, SwipeHandler {
             guard let episode = sessionEpisodes?[safe: indexPath.row] else { return nil }
             switch orientation {
             case .left:
-                return sessionMoveSwipeActions(at: indexPath)
+                // Session-world rows: reorder within the session (move to top/bottom),
+                // then push the episode into the actual Up Next queue (Play Next / Play Last),
+                // like every other list. Four actions — the moves plus the queue adds.
+                return (sessionMoveSwipeActions(at: indexPath) ?? []) + upNextAddSwipeActions(for: episode)
             case .right:
                 return episodeSwipeActions(for: episode)
             }
@@ -159,6 +162,40 @@ extension UpNextViewController: SwipeTableViewCellDelegate, SwipeHandler {
         moveToBottom.hidesWhenSelected = true
 
         return [moveToTop, moveToBottom]
+    }
+
+    /// Add-to-queue swipes for session-world rows — Play Next / Play Last, exactly like
+    /// every other list. Honours the primary-swipe preference for their order.
+    private func upNextAddSwipeActions(for episode: BaseEpisode) -> [SwipeAction] {
+        let uuid = episode.uuid
+
+        let addTop = SwipeAction(style: .default, title: nil) { action, _ in
+            if let fresh = DataManager.sharedManager.findBaseEpisode(uuid: uuid) {
+                PlaybackManager.shared.addToUpNext(episode: fresh, ignoringQueueLimit: true, toTop: true, userInitiated: true)
+                SessionLinking.mirrorQueueAdd(episodes: [fresh])
+            }
+            Analytics.track(.episodeSwipeActionPerformed, properties: ["action": "up_next_add_top", "source": "up_next"])
+            action.fulfill(with: .reset)
+        }
+        addTop.image = UIImage(named: "list_playnext")
+        addTop.backgroundColor = ThemeColor.support04()
+        addTop.accessibilityLabel = L10n.playNext
+        addTop.hidesWhenSelected = true
+
+        let addBottom = SwipeAction(style: .default, title: nil) { action, _ in
+            if let fresh = DataManager.sharedManager.findBaseEpisode(uuid: uuid) {
+                PlaybackManager.shared.addToUpNext(episode: fresh, ignoringQueueLimit: true, toTop: false, userInitiated: true)
+                SessionLinking.mirrorQueueAdd(episodes: [fresh])
+            }
+            Analytics.track(.episodeSwipeActionPerformed, properties: ["action": "up_next_add_bottom", "source": "up_next"])
+            action.fulfill(with: .reset)
+        }
+        addBottom.image = UIImage(named: "list_playlast")
+        addBottom.backgroundColor = ThemeColor.support03()
+        addBottom.accessibilityLabel = L10n.playLast
+        addBottom.hidesWhenSelected = true
+
+        return Settings.primaryUpNextSwipeAction() == .playNext ? [addTop, addBottom] : [addBottom, addTop]
     }
 
     /// Right-swipe actions for the Now Playing card and session rows: Remove (from

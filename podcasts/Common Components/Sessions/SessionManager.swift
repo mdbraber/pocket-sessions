@@ -74,7 +74,82 @@ class SessionManager {
         // podcast loses its session.
         NotificationCenter.default.addObserver(self, selector: #selector(syncFolderScopedPodcastSessions), name: Constants.Notifications.folderChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(podcastDeleted(_:)), name: Constants.Notifications.podcastDeleted, object: nil)
+        // Fork: a smart playlist that feeds a session defines that session's contents. When its
+        // rules change, bring the store back in line with the new filter (see reconcile below).
+        NotificationCenter.default.addObserver(self, selector: #selector(feederSmartPlaylistChanged(_:)), name: Constants.Notifications.playlistChanged, object: nil)
+        // Star is a deliberate, low-frequency signal, so star-sensitive feeders mirror live
+        // (debounced). Play-status is volatile, so those feeders mirror lazily — see `reconcileOnView`.
+        NotificationCenter.default.addObserver(self, selector: #selector(episodeStarredChanged), name: Constants.Notifications.episodeStarredChanged, object: nil)
         syncFolderScopedPodcastSessions()
+    }
+
+    private let starReconcileDebounce = Debounce(delay: 1.5)
+
+    @objc private func episodeStarredChanged() {
+        starReconcileDebounce.call { [weak self] in
+            DispatchQueue.main.async { self?.reconcileSensitiveFeeders(\.starSensitive) }
+        }
+    }
+
+    /// Reconcile every smart-playlist-fed session whose feeder is sensitive on the given axis.
+    private func reconcileSensitiveFeeders(_ axis: KeyPath<SessionFeederEngine.FeederVolatility, Bool>) {
+        guard !isReconcilingFeeder else { return }
+        isReconcilingFeeder = true
+        defer { isReconcilingFeeder = false }
+        for session in SessionStore.shared.sessions {
+            guard case .smartPlaylist(let uuid) = session.feeder,
+                  let feeder = DataManager.sharedManager.findPlaylist(uuid: uuid),
+                  SessionFeederEngine.volatility(of: feeder)[keyPath: axis] else { continue }
+            reconcileStoreToFeeder(session: session)
+        }
+    }
+
+    /// Lazy mirror: called when a session is opened or played. Play-status feeders only sync here
+    /// (never mid-playback), so the lineup reshapes at a natural moment instead of churning live.
+    func reconcileOnView(session: Session) {
+        guard case .smartPlaylist(let uuid) = session.feeder,
+              let feeder = DataManager.sharedManager.findPlaylist(uuid: uuid),
+              SessionFeederEngine.volatility(of: feeder).playStatusSensitive,
+              !isReconcilingFeeder else { return }
+        isReconcilingFeeder = true
+        defer { isReconcilingFeeder = false }
+        reconcileStoreToFeeder(session: session)
+    }
+
+    /// Guards `reconcileStoreToFeeder` from re-entering when its own store edits post
+    /// `playlistChanged`.
+    private var isReconcilingFeeder = false
+
+    @objc private func feederSmartPlaylistChanged(_ notification: Notification) {
+        guard !isReconcilingFeeder,
+              let playlist = notification.object as? EpisodeFilter,
+              let session = SessionStore.shared.session(forSmartPlaylistFeeder: playlist.uuid) else { return }
+        isReconcilingFeeder = true
+        defer { isReconcilingFeeder = false }
+        reconcileStoreToFeeder(session: session)
+    }
+
+    /// Fork: make the session's store match its smart-playlist feeder's current domain — drop
+    /// members the filter no longer matches, add the new matches at the session's insert position.
+    /// This is what keeps a session honest when you edit the filter (e.g. deselect a folder).
+    func reconcileStoreToFeeder(session: Session) {
+        // Only smart-playlist feeders mirror their filter. A podcast/folder feeder's "domain" is
+        // the whole podcast/folder, which must never be dumped wholesale into a curated lineup.
+        guard case .smartPlaylist = session.feeder, store(for: session) != nil else { return }
+        let domain = SessionFeederEngine.domainEpisodes(for: session).map(\.uuid)
+        let domainSet = Set(domain)
+        let current = SessionFeederEngine.storeMemberUuids(for: session)
+        let currentSet = Set(current)
+
+        let toRemove = current.filter { !domainSet.contains($0) }
+        let toAdd = domain.filter { !currentSet.contains($0) }
+
+        if !toRemove.isEmpty {
+            removeFromLineup(episodeUuids: toRemove, session: session)
+        }
+        if !toAdd.isEmpty {
+            addToLineup(episodeUuids: toAdd, session: session)
+        }
     }
 
     /// Fork: for each podcast folder ticked in Session Playlists, ensure every podcast in it has an
@@ -685,6 +760,8 @@ class SessionManager {
     /// Starts a session — the lineup only, never the Inbox or Episodes list. An
     /// empty lineup is a no-op with a hint; filling it is triage's job.
     func play(session: Session) {
+        // A play-status feeder mirrors lazily — sync it to the filter right before playing.
+        reconcileOnView(session: session)
         guard let storeUuid = session.storePlaylistUuid else { return }
         guard !SessionFeederEngine.storeMemberUuids(for: session).isEmpty else {
             Toast.show(L10n.sessionEmptyToast)
@@ -715,6 +792,10 @@ class SessionManager {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             if let uuid = notification.object as? String {
+                // Fast path: an episode in no session can't be in any lineup, so marking it
+                // played/archived needn't touch a single store. (This is the hot path behind a
+                // slow "Mark as Played" — without it, every mark queried every session's store.)
+                guard SessionMembership.shared.inAnySession.contains(uuid) else { return }
                 guard let episode = DataManager.sharedManager.findEpisode(uuid: uuid),
                       episode.played() || episode.archived else { return }
                 self.sweepLineups(decidedFilter: { $0 == uuid })
@@ -729,6 +810,9 @@ class SessionManager {
     /// Removes decided (played/archived) episodes from every lineup. A nil filter
     /// checks every member; otherwise only matching uuids are considered.
     private func sweepLineups(decidedFilter: ((String) -> Bool)?) {
+        // Nothing is in any lineup — skip the per-session store queries entirely (matters when
+        // many empty sessions exist, e.g. a folder-scoped session per podcast).
+        guard !SessionMembership.shared.inAnySession.isEmpty else { return }
         for session in SessionStore.shared.sessions {
             guard let store = store(for: session) else { continue }
             let members = DataManager.sharedManager.positionedEpisodeUuids(for: store)
@@ -809,6 +893,7 @@ class SessionManager {
             guard !linked.isEmpty else { return }
             let podcasts = DataManager.sharedManager.allPodcasts(includeUnsubscribed: false)
             var changed = false
+            var changedFeederSessions: [Session] = []
             for playlist in linked {
                 let folderUuids = Set(playlist.folderUuids.components(separatedBy: ",").filter { !$0.isEmpty })
                 let covered = podcasts.filter { $0.folderUuid.map(folderUuids.contains) ?? false }.map(\.uuid).sorted()
@@ -819,6 +904,13 @@ class SessionManager {
                 if SyncManager.isUserLoggedIn() { playlist.syncStatus = SyncStatus.notSynced.rawValue }
                 DataManager.sharedManager.save(playlist: playlist)
                 changed = true
+                if let session = SessionStore.shared.session(forSmartPlaylistFeeder: playlist.uuid) {
+                    changedFeederSessions.append(session)
+                }
+            }
+            // A folder-linked feeder that changed shape must reshape its session's store too.
+            for session in changedFeederSessions {
+                self.reconcileStoreToFeeder(session: session)
             }
             if changed {
                 NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged)

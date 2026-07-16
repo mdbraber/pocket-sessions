@@ -1,6 +1,27 @@
 import SwiftUI
 import PocketCastsDataModel
 
+/// Fork: one entry in the Playlists grid — either a folder tile or a playlist tile —
+/// so both kinds share a single ordered list and drag order can interleave them.
+enum PlaylistGridItem: Identifiable {
+    case folder(PlaylistFolder)
+    case playlist(EpisodeFilter)
+
+    var id: String {
+        switch self {
+        case .folder(let folder): return "playlist-folder-\(folder.uuid)"
+        case .playlist(let playlist): return playlist.uuid
+        }
+    }
+
+    var sortPosition: Int32 {
+        switch self {
+        case .folder(let folder): return folder.sortPosition
+        case .playlist(let playlist): return playlist.sortPosition
+        }
+    }
+}
+
 /// Fork: the Playlists overview's grid layouts — the podcast page's Large/Small Grid,
 /// with folder tiles (colored, 2×2 artwork) and playlist tiles (artwork composite),
 /// names captioned beneath.
@@ -11,34 +32,37 @@ struct PlaylistsGridView: View {
     let onFolderTapped: (PlaylistFolder) -> Void
     let onPlaylistTapped: (EpisodeFilter) -> Void
 
-    let folders: [PlaylistFolder]
-    let playlists: [EpisodeFilter]
+    /// Fork: folders and playlists share one ordered list so a folder can sit anywhere
+    /// among the playlists (drag order), not pinned to the top.
+    let items: [PlaylistGridItem]
 
     var body: some View {
         ScrollView {
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 16), count: columns), spacing: 16) {
-                ForEach(folders) { folder in
-                    Button {
-                        onFolderTapped(folder)
-                    } label: {
-                        VStack(spacing: 6) {
-                            PlaylistFolderPreviewTile(color: folder.color,
-                                                      podcastUuids: PlaylistFolderManager.shared.previewPodcastUuids(inFolder: folder.uuid))
-                            caption(folder.name)
+                ForEach(items) { item in
+                    switch item {
+                    case .folder(let folder):
+                        Button {
+                            onFolderTapped(folder)
+                        } label: {
+                            VStack(spacing: 6) {
+                                PlaylistFolderPreviewTile(color: folder.color,
+                                                          podcastUuids: PlaylistFolderManager.shared.previewPodcastUuids(inFolder: folder.uuid))
+                                caption(folder.name)
+                            }
                         }
-                    }
-                    .buttonStyle(.plain)
-                }
-                ForEach(playlists, id: \.uuid) { playlist in
-                    Button {
-                        onPlaylistTapped(playlist)
-                    } label: {
-                        VStack(spacing: 6) {
-                            PlaylistGridTile(playlist: playlist)
-                            caption(playlist.playlistName)
+                        .buttonStyle(.plain)
+                    case .playlist(let playlist):
+                        Button {
+                            onPlaylistTapped(playlist)
+                        } label: {
+                            VStack(spacing: 6) {
+                                PlaylistGridTile(playlist: playlist)
+                                caption(playlist.playlistName)
+                            }
                         }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
             }
             .padding(16)

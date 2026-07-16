@@ -29,6 +29,62 @@ enum SessionFeederEngine {
         NotificationCenter.postOnMainThread(notification: SessionStore.changed)
     }
 
+    // MARK: - Per-podcast Add-to-Inbox policy (tri-state)
+
+    /// When a podcast's new episodes enter the global Inbox. `never` is the legacy opt-out set;
+    /// `whenNotInSessionOrUpNext` skips episodes already shelved in a session or queued; `always`
+    /// is the default.
+    enum InboxAddPolicy: Int, CaseIterable {
+        case never = 0
+        case whenNotInSessionOrUpNext = 1
+        case always = 2
+    }
+
+    static let conditionalInboxKey = "SJInboxConditionalPodcasts"
+
+    static func conditionalInboxPodcastUuids() -> Set<String> {
+        Set(UserDefaults.standard.stringArray(forKey: conditionalInboxKey) ?? [])
+    }
+
+    static func inboxAddPolicy(forPodcast uuid: String) -> InboxAddPolicy {
+        if optOutPodcastUuids().contains(uuid) { return .never }
+        if conditionalInboxPodcastUuids().contains(uuid) { return .whenNotInSessionOrUpNext }
+        return .always
+    }
+
+    static func setInboxAddPolicy(_ policy: InboxAddPolicy, forPodcast uuid: String) {
+        var optOut = optOutPodcastUuids()
+        var conditional = conditionalInboxPodcastUuids()
+        optOut.remove(uuid)
+        conditional.remove(uuid)
+        switch policy {
+        case .never: optOut.insert(uuid)
+        case .whenNotInSessionOrUpNext: conditional.insert(uuid)
+        case .always: break
+        }
+        UserDefaults.standard.set(Array(optOut), forKey: optOutKey)
+        UserDefaults.standard.set(Array(conditional), forKey: conditionalInboxKey)
+        NotificationCenter.postOnMainThread(notification: SessionStore.changed)
+    }
+
+    // MARK: - Feeder volatility
+
+    /// How a smart-playlist feeder's membership can shift from episode-level actions — which picks
+    /// how eagerly its session mirrors the filter. Star is a deliberate, low-frequency signal, so
+    /// those feeders mirror live; play-status churns constantly during playback, so those mirror
+    /// lazily (on session load/play) to avoid reshuffling the lineup mid-listen.
+    struct FeederVolatility {
+        let starSensitive: Bool
+        let playStatusSensitive: Bool
+    }
+
+    static func volatility(of filter: EpisodeFilter) -> FeederVolatility {
+        // Play-sensitive when the filter admits some play states but not all three — a filter with
+        // all of unplayed/partial/finished on imposes no play restriction, so it never shifts.
+        let allPlayStates = filter.filterUnplayed && filter.filterPartiallyPlayed && filter.filterFinished
+        return FeederVolatility(starSensitive: filter.filterStarred, playStatusSensitive: !allPlayStates)
+    }
+
     // MARK: - Domains
 
     /// Every episode the feeder could ever speak for, narrowed by a Filter Preset. Newest first.

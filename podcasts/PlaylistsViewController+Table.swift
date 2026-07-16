@@ -137,20 +137,19 @@ extension PlaylistsViewController: UITableViewDelegate, UITableViewDataSource {
         Analytics.track(.filterListReordered)
     }
 
-    /// Fork: folders and playlists share the list — each kind persists its own order.
+    /// Fork: folders and playlists share one drag order, so they persist into a single
+    /// position space — a folder can sit anywhere among the playlists, not pinned on top.
     func persistListOrder() {
-        var playlistIndex: Int32 = 0
-        var folderIndex: Int32 = 0
+        var index: Int32 = 0
         for item in listPlaylistItems {
             if let folderItem = item as? ListPlaylistFolder {
                 var folder = folderItem.folder
-                folder.sortPosition = folderIndex
+                folder.sortPosition = index
                 PlaylistFolderManager.shared.save(folder: folder)
-                folderIndex += 1
             } else {
-                DataManager.sharedManager.updatePosition(playlist: item.playlist, newPosition: playlistIndex)
-                playlistIndex += 1
+                DataManager.sharedManager.updatePosition(playlist: item.playlist, newPosition: index)
             }
+            index += 1
         }
     }
 }

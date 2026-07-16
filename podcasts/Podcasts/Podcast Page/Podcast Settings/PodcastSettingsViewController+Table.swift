@@ -64,15 +64,13 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
 
             return cell
         case .globalInbox:
-            // Fork: whether new episodes of this podcast enter the global Inbox.
-            let cell = tableView.dequeueReusableCell(withIdentifier: PodcastSettingsViewController.switchCellId, for: indexPath) as! SwitchCell
+            // Fork: when new episodes of this podcast enter the global Inbox — tri-state
+            // (Never / When not in Session or Up Next / Always). The Inbox wears the eye.
+            let cell = tableView.dequeueReusableCell(withIdentifier: PodcastSettingsViewController.disclosureCellId, for: indexPath) as! DisclosureCell
             cell.cellLabel.text = L10n.inboxPodcastToggle
-            cell.cellSwitch.onTintColor = podcast.switchTintColor()
-            // The Inbox wears the eye (unseen) throughout the fork.
-            cell.setImage(image: UIImage(systemName: "eye", withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .regular)))
-            cell.cellSwitch.isOn = !SessionFeederEngine.optOutPodcastUuids().contains(podcast.uuid)
-            cell.cellSwitch.removeTarget(self, action: #selector(globalInboxChanged(_:)), for: UIControl.Event.valueChanged)
-            cell.cellSwitch.addTarget(self, action: #selector(globalInboxChanged(_:)), for: UIControl.Event.valueChanged)
+            cell.setImage(UIImage(systemName: "eye", withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .regular)), tintColor: podcast.iconTintColor())
+            cell.showSecondaryLabel = true
+            cell.cellSecondaryLabel.text = inboxPolicyTitle(SessionFeederEngine.inboxAddPolicy(forPodcast: podcast.uuid))
             return cell
         case .upNext:
             let cell = tableView.dequeueReusableCell(withIdentifier: PodcastSettingsViewController.switchCellId, for: indexPath) as! SwitchCell
@@ -275,6 +273,8 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
             alert.addAction(refreshAction)
 
             present(alert, animated: true, completion: nil)
+        } else if row == .globalInbox {
+            showInboxAddPolicyPicker()
         } else if row == .globalUpNext {
             let globalSettings = AutoAddToUpNextViewController()
             navigationController?.pushViewController(globalSettings, animated: true)
@@ -420,8 +420,25 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
 
     // MARK: - Settings changes
 
-    @objc private func globalInboxChanged(_ sender: UISwitch) {
-        InboxManager.shared.setOptedOut(!sender.isOn, podcastUuid: podcast.uuid)
+    private func inboxPolicyTitle(_ policy: SessionFeederEngine.InboxAddPolicy) -> String {
+        switch policy {
+        case .never: return L10n.inboxAddPolicyNever
+        case .whenNotInSessionOrUpNext: return L10n.inboxAddPolicyConditional
+        case .always: return L10n.inboxAddPolicyAlways
+        }
+    }
+
+    private func showInboxAddPolicyPicker() {
+        let picker = OptionsPicker(title: L10n.inboxPodcastToggle.localizedUppercase)
+        let current = SessionFeederEngine.inboxAddPolicy(forPodcast: podcast.uuid)
+        for policy in SessionFeederEngine.InboxAddPolicy.allCases {
+            picker.addAction(action: OptionAction(label: inboxPolicyTitle(policy), selected: current == policy) { [weak self] in
+                guard let self else { return }
+                InboxManager.shared.setInboxAddPolicy(policy, podcastUuid: self.podcast.uuid)
+                self.settingsTable.reloadData()
+            })
+        }
+        picker.present(from: self)
     }
 
     @objc private func autoDownloadChanged(_ sender: UISwitch) {

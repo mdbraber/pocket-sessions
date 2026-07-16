@@ -29,6 +29,10 @@ extension PlaylistDetailViewController: SwipeTableViewCellDelegate, SwipeHandler
                         self?.viewModel.reloadEpisodeList(animated: true)
                     }
                 }, reload: { [weak self] in
+                    // The unread dot lives in the cell but isn't part of a row's content
+                    // identity, so a diff reload won't redraw the swiped row — refresh the
+                    // visible dots directly so marking seen clears the dot immediately.
+                    self?.refreshVisibleUnseenDots()
                     self?.viewModel.reloadEpisodeList(animated: true)
                 })
             }
@@ -39,6 +43,17 @@ extension PlaylistDetailViewController: SwipeTableViewCellDelegate, SwipeHandler
             }
             let actions = SwipeActionsHelper.createRightActionsForEpisode(episode, tableView: tableView, indexPath: indexPath, swipeHandler: self)
             return actions.swipeKitActions()
+        }
+    }
+
+    /// Fork: re-paint the unread dot on every visible row from a fresh unseen set. The dot
+    /// isn't part of a row's diff identity, so a mark-seen has to nudge the cells itself.
+    private func refreshVisibleUnseenDots() {
+        let unseen = InboxManager.shared.unseenUuids()
+        for case let cell as EpisodeCell in tableView.visibleCells {
+            guard let indexPath = tableView.indexPath(for: cell),
+                  let episode = viewModel.listEpisode(at: indexPath)?.episode else { continue }
+            cell.setUnseenIndicator(visible: unseen.contains(episode.uuid))
         }
     }
 

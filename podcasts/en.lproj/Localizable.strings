@@ -5448,6 +5448,15 @@
 /* Per-podcast toggle controlling whether new episodes enter the global Inbox */
 "inbox_podcast_toggle" = "Add New Episodes to Inbox";
 
+/* Add-to-Inbox policy option: never add this podcast's new episodes to the Inbox */
+"inbox_add_policy_never" = "Never";
+
+/* Add-to-Inbox policy option: add to the Inbox only when the episode isn't already in a Session or Up Next */
+"inbox_add_policy_conditional" = "When not in Session or Up Next";
+
+/* Add-to-Inbox policy option: always add this podcast's new episodes to the Inbox */
+"inbox_add_policy_always" = "Always";
+
 /* Title of the smart playlist tab listing archived episodes */
 "playlist_archived_section_header" = "Archived";
 

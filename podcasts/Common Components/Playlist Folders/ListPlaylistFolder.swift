@@ -20,6 +20,10 @@ class ListPlaylistFolder: ListPlaylist {
         "playlist-folder-\(folder.uuid)"
     }
 
+    override var combinedSortPosition: Int32 {
+        folder.sortPosition
+    }
+
     override func handleIsEqual(_ otherItem: ListItem) -> Bool {
         guard let rhs = otherItem as? ListPlaylistFolder else { return false }
         return folder == rhs.folder && count == rhs.count

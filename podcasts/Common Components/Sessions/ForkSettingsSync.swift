@@ -30,6 +30,7 @@ final class ForkSettingsSync {
         "SJInboxGroupBy",
         "SJInboxGroupLimit",
         "SJGlobalInboxOptOutPodcasts",
+        "SJInboxConditionalPodcasts",
         Settings.playbackSessionTypeKey,
         Settings.playbackSessionUuidKey,
         Settings.sessionInsertPositionKey,

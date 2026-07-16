@@ -200,6 +200,11 @@ class PlaylistDetailViewController: PCViewController, UIScrollViewDelegate {
         updateColors()
         reloadNavTitle()
 
+        // A play-status feeder mirrors its filter lazily — sync the lineup as the page opens
+        // (no-op unless this is a smart-playlist session whose feeder is play-status sensitive).
+        if let session = viewModel.session ?? viewModel.lensSession {
+            SessionManager.shared.reconcileOnView(session: session)
+        }
         viewModel.reloadPlaylistAndEpisodes()
     }
 
