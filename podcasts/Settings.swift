@@ -462,6 +462,32 @@ class Settings: NSObject {
         sessionPositionOverride(podcastUuid: podcastUuid) ?? sessionInsertPosition()
     }
 
+    // MARK: - Which session playlists show in the Playlists tab
+
+    static let showManualSessionsKey = "SJShowManualSessions"
+    static let showSmartPlaylistSessionsKey = "SJShowSmartPlaylistSessions"
+    static let showPodcastSessionFoldersKey = "SJShowPodcastSessionFolders"
+
+    /// Hand-built (manual) session playlists.
+    class func showManualSessions() -> Bool {
+        UserDefaults.standard.object(forKey: showManualSessionsKey) as? Bool ?? true
+    }
+    class func setShowManualSessions(_ on: Bool) { UserDefaults.standard.set(on, forKey: showManualSessionsKey) }
+
+    /// Sessions fed by a smart playlist (also folder / all-podcasts feeders, which are smart under the hood).
+    class func showSmartPlaylistSessions() -> Bool {
+        UserDefaults.standard.object(forKey: showSmartPlaylistSessionsKey) as? Bool ?? true
+    }
+    class func setShowSmartPlaylistSessions(_ on: Bool) { UserDefaults.standard.set(on, forKey: showSmartPlaylistSessionsKey) }
+
+    /// Per-podcast sessions show only for podcasts whose folder is selected here (e.g. "Series").
+    class func showPodcastSessionFolders() -> Set<String> {
+        Set(UserDefaults.standard.stringArray(forKey: showPodcastSessionFoldersKey) ?? [])
+    }
+    class func setShowPodcastSessionFolders(_ uuids: Set<String>) {
+        UserDefaults.standard.set(Array(uuids), forKey: showPodcastSessionFoldersKey)
+    }
+
     static let sessionAutoAddLimitKey = "SJSessionAutoAddLimit"
 
     /// Fork: auto-add to Session stops once a session's lineup holds this many

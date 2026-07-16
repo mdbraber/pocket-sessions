@@ -556,6 +556,22 @@ class SessionManager {
 
     // MARK: - Insert marker
 
+    /// Whether a playlist should appear in the Playlists tab given the "Session Playlists" settings.
+    /// A plain (non-session) playlist always shows; a session store shows per its feeder type:
+    /// manual/smart toggles, and per-podcast sessions only when the podcast's folder is selected.
+    func sessionStoreVisible(playlistUuid: String) -> Bool {
+        guard let session = SessionStore.shared.session(forStore: playlistUuid) else { return true }
+        switch session.feeder {
+        case .none:
+            return Settings.showManualSessions()
+        case .smartPlaylist, .folder, .allPodcasts:
+            return Settings.showSmartPlaylistSessions()
+        case .podcast(let podcastUuid):
+            guard let folderUuid = DataManager.sharedManager.findPodcast(uuid: podcastUuid, includeUnsubscribed: true)?.folderUuid else { return false }
+            return Settings.showPodcastSessionFolders().contains(folderUuid)
+        }
+    }
+
     /// How many podcasts a feeder covers — used to order sessions from most specific (a single
     /// podcast) to broadest (all podcasts).
     func feederPodcastCount(_ feeder: SessionFeeder) -> Int {

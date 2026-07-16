@@ -58,10 +58,8 @@ class PlaylistFolderViewController: PCViewController, UITableViewDataSource, UIT
             }
             self.title = folder.name
             var playlists = PlaylistFolderManager.shared.playlists(inFolder: self.folderUuid)
-            // The Playlists world's global preferences apply inside folders too.
-            if UserDefaults.standard.bool(forKey: "SJPlaylistsHideSessions") {
-                playlists = playlists.filter { SessionStore.shared.session(forStore: $0.uuid) == nil }
-            }
+            // The Playlists world's Session Playlists preferences apply inside folders too.
+            playlists = playlists.filter { SessionManager.shared.sessionStoreVisible(playlistUuid: $0.uuid) }
             if LibrarySort(rawValue: Int32(UserDefaults.standard.integer(forKey: "SJPlaylistsSortOrder"))) == .titleAtoZ {
                 playlists.sort { $0.playlistName.localizedCaseInsensitiveCompare($1.playlistName) == .orderedAscending }
             }

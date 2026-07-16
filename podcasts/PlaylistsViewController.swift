@@ -214,11 +214,13 @@ class PlaylistsViewController: PCViewController, FilterCreatedDelegate {
     @objc private func playlistOptionsTapped() {
         let optionsPicker = OptionsPicker(title: nil)
 
-        // Fork: every manual playlist is a session — one switch hides them all.
-        let hideSessions = UserDefaults.standard.bool(forKey: "SJPlaylistsHideSessions")
-        optionsPicker.addAction(action: OptionAction(label: L10n.playlistsHideSessions, icon: "option-multiselect", selected: hideSessions) { [weak self] in
-            UserDefaults.standard.set(!hideSessions, forKey: "SJPlaylistsHideSessions")
-            self?.reloadFilters()
+        // Fork: which session playlists appear here (Manual / Smart / per-folder Podcast sessions).
+        optionsPicker.addAction(action: OptionAction(label: L10n.sessionPlaylistsTitle, icon: "option-multiselect") { [weak self] in
+            DispatchQueue.main.async {
+                self?.navigationController?.pushViewController(SessionPlaylistsSettingsViewController { [weak self] in
+                    self?.reloadFilters()
+                }, animated: true)
+            }
         })
 
         let sortAction = OptionAction(label: L10n.sortBy, secondaryLabel: playlistsSortOrder.description, icon: "podcast-sort") {}
@@ -313,10 +315,9 @@ class PlaylistsViewController: PCViewController, FilterCreatedDelegate {
 
         var folders = FeatureFlag.playlistFolders.enabled ? PlaylistFolderManager.shared.allFolders() : []
         let feederUuids = SessionStore.shared.feederPlaylistUuids
-        let hideSessions = UserDefaults.standard.bool(forKey: "SJPlaylistsHideSessions")
         var playlists = DataManager.sharedManager.allPlaylists(includeDeleted: false)
             .filter { PlaylistFolderManager.shared.folderUuid(forPlaylist: $0.uuid) == nil && !feederUuids.contains($0.uuid) }
-            .filter { !(hideSessions && SessionStore.shared.session(forStore: $0.uuid) != nil) }
+            .filter { SessionManager.shared.sessionStoreVisible(playlistUuid: $0.uuid) }
         if playlistsSortOrder == .titleAtoZ {
             folders.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
             playlists.sort { $0.playlistName.localizedCaseInsensitiveCompare($1.playlistName) == .orderedAscending }
@@ -410,10 +411,9 @@ class PlaylistsViewController: PCViewController, FilterCreatedDelegate {
                 }
                 : []
             let feederUuids = SessionStore.shared.feederPlaylistUuids
-            let hideSessions = UserDefaults.standard.bool(forKey: "SJPlaylistsHideSessions")
             var playlistRows = DataManager.sharedManager.allPlaylists(includeDeleted: false)
                 .filter { PlaylistFolderManager.shared.folderUuid(forPlaylist: $0.uuid) == nil && !feederUuids.contains($0.uuid) }
-                .filter { !(hideSessions && SessionStore.shared.session(forStore: $0.uuid) != nil) }
+                .filter { SessionManager.shared.sessionStoreVisible(playlistUuid: $0.uuid) }
                 .map { ListPlaylist(playlist: $0) }
             if self.playlistsSortOrder == .titleAtoZ {
                 folderRows.sort { ($0 as? ListPlaylistFolder)?.folder.name.localizedCaseInsensitiveCompare(($1 as? ListPlaylistFolder)?.folder.name ?? "") == .orderedAscending }
