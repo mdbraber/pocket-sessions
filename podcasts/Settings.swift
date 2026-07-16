@@ -530,8 +530,9 @@ class Settings: NSObject {
     static let playbackSessionTypeKey = "SJPlaybackSessionType"
     static let playbackSessionUuidKey = "SJPlaybackSessionUuid"
 
-    /// The active playback session, or nil when the Up Next queue plays normally.
-    /// Device-local (never synced), like the Up Next filter.
+    /// The active playback session, or nil when the Up Next queue plays normally. The pointer
+    /// (type + uuid) syncs via ForkSettingsSync so idle devices adopt the same session framing;
+    /// a device actively playing its own session is never yanked off it (see `pull`).
     class func playbackSession() -> PlaybackSession? {
         guard let typeValue = UserDefaults.standard.string(forKey: Settings.playbackSessionTypeKey),
               let type = PlaybackSessionType(rawValue: typeValue),

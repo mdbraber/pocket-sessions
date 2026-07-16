@@ -82,22 +82,34 @@ final class ForkSettingsSync {
 
     private func pushAll() {
         let defaults = UserDefaults.standard.dictionaryRepresentation()
+        var changed = false
         for key in Self.exactKeys {
-            push(key: key, value: defaults[key])
+            changed = push(key: key, value: defaults[key]) || changed
         }
         for (key, value) in defaults where Self.prefixes.contains(where: { key.hasPrefix($0) }) {
-            push(key: key, value: value)
+            changed = push(key: key, value: value) || changed
+        }
+        if changed {
+            // NSUbiquitousKeyValueStore uploads lazily — without this nudge a change made while the
+            // app stays foreground (e.g. starting a playback session) may not reach other devices
+            // until the app next backgrounds, which reads as "the pointer never syncs".
+            store.synchronize()
         }
     }
 
-    private func push(key: String, value: Any?) {
+    @discardableResult
+    private func push(key: String, value: Any?) -> Bool {
         let current = store.object(forKey: key)
-        guard !valuesEqual(current, value) else { return }
+        guard !valuesEqual(current, value) else { return false }
         if let value {
             store.set(value, forKey: key)
         } else if current != nil {
             store.removeObject(forKey: key)
         }
+        if Self.pointerKeys.contains(key) {
+            FileLog.shared.addMessage("ForkSettingsSync: pushed session pointer \(key)=\(String(describing: value))")
+        }
+        return true
     }
 
     // MARK: - Cloud → local
@@ -121,10 +133,16 @@ final class ForkSettingsSync {
             // The device actively playing a session owns its now-playing framing: don't let a
             // remote pointer change — another device that merely adopted the session, or cleared
             // it — clobber it and flip live session playback into Up Next. Idle devices still adopt.
-            if Self.pointerKeys.contains(key), PlaybackManager.shared.isPlayingSessionEpisode { continue }
+            if Self.pointerKeys.contains(key), PlaybackManager.shared.isPlayingSessionEpisode {
+                FileLog.shared.addMessage("ForkSettingsSync: skipped adopting pointer \(key) (this device is playing a session)")
+                continue
+            }
             let remote = store.object(forKey: key)
             let local = UserDefaults.standard.object(forKey: key)
             guard !valuesEqual(remote, local) else { continue }
+            if Self.pointerKeys.contains(key) {
+                FileLog.shared.addMessage("ForkSettingsSync: adopting session pointer \(key)=\(String(describing: remote))")
+            }
             if let remote {
                 UserDefaults.standard.set(remote, forKey: key)
             } else {
