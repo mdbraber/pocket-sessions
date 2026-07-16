@@ -218,10 +218,7 @@ class PlaylistsViewController: PCViewController, FilterCreatedDelegate {
         optionsPicker.addAction(action: OptionAction(label: L10n.sessionPlaylistsShow, icon: "option-multiselect") { [weak self] in
             DispatchQueue.main.async {
                 let settings = SessionPlaylistsSettingsViewController { [weak self] in self?.reloadFilters() }
-                let nav = SJUIUtils.navController(for: settings)
-                nav.modalPresentationStyle = .pageSheet
-                nav.sheetPresentationController?.detents = [.medium(), .large()]
-                self?.present(nav, animated: true)
+                self?.navigationController?.pushViewController(settings, animated: true)
             }
         })
 

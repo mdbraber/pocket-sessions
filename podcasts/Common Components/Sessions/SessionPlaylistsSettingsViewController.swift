@@ -17,6 +17,13 @@ class SessionPlaylistsSettingsViewController: PCViewController, UITableViewDataS
     private let podcasts = DataManager.sharedManager.allPodcasts(includeUnsubscribed: false)
         .sorted { ($0.title ?? "").localizedCaseInsensitiveCompare($1.title ?? "") == .orderedAscending }
 
+    /// Podcasts covered by a selected folder — shown selected + dimmed (visual only; not saved).
+    private var covered: Set<String> = []
+    private func recomputeCovered() {
+        let selectedFolders = Settings.showPodcastSessionFolders()
+        covered = selectedFolders.isEmpty ? [] : Set(podcasts.filter { $0.folderUuid.map(selectedFolders.contains) ?? false }.map(\.uuid))
+    }
+
     init(onChange: @escaping () -> Void) {
         self.onChange = onChange
         super.init(nibName: nil, bundle: nil)
@@ -35,7 +42,7 @@ class SessionPlaylistsSettingsViewController: PCViewController, UITableViewDataS
     override func viewDidLoad() {
         super.viewDidLoad()
         title = L10n.sessionPlaylistsShow
-        navigationItem.leftBarButtonItem = UIBarButtonItem(image: UIImage(systemName: "chevron.left"), style: .plain, target: self, action: #selector(backTapped))
+        recomputeCovered()
 
         settingsTable.dataSource = self
         settingsTable.delegate = self
@@ -53,8 +60,6 @@ class SessionPlaylistsSettingsViewController: PCViewController, UITableViewDataS
         ])
     }
 
-    @objc private func backTapped() { dismiss(animated: true) }
-
     func numberOfSections(in tableView: UITableView) -> Int { sections.count }
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { sections[section].rows.count }
     func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? { sections[section].header }
@@ -68,13 +73,15 @@ class SessionPlaylistsSettingsViewController: PCViewController, UITableViewDataS
         let content: SessionPickerRow
         switch sections[indexPath.section].rows[indexPath.row] {
         case .manual:
-            content = SessionPickerRow(label: L10n.sessionPlaylistsManual, selected: Settings.showManualSessions(), artwork: .none)
+            content = SessionPickerRow(label: L10n.sessionPlaylistsManual, selected: Settings.showManualSessions(), artwork: .none, dimmed: false)
         case .smart:
-            content = SessionPickerRow(label: L10n.sessionPlaylistsSmart, selected: Settings.showSmartPlaylistSessions(), artwork: .none)
+            content = SessionPickerRow(label: L10n.sessionPlaylistsSmart, selected: Settings.showSmartPlaylistSessions(), artwork: .none, dimmed: false)
         case .folder(let folder):
-            content = SessionPickerRow(label: folder.name, selected: Settings.showPodcastSessionFolders().contains(folder.uuid), artwork: .folder(folder.uuid))
+            content = SessionPickerRow(label: folder.name, selected: Settings.showPodcastSessionFolders().contains(folder.uuid), artwork: .folder(folder.uuid), dimmed: false)
         case .podcast(let podcast):
-            content = SessionPickerRow(label: podcast.title ?? "", selected: Settings.showPodcastSessionPodcasts().contains(podcast.uuid), artwork: .podcast(podcast.uuid))
+            // A podcast covered by a selected folder reads as selected but dimmed (not saved on its own).
+            let isCovered = covered.contains(podcast.uuid)
+            content = SessionPickerRow(label: podcast.title ?? "", selected: isCovered || Settings.showPodcastSessionPodcasts().contains(podcast.uuid), artwork: .podcast(podcast.uuid), dimmed: isCovered)
         }
         cell.contentConfiguration = UIHostingConfiguration { content }.margins(.vertical, 6)
         return cell
@@ -85,15 +92,21 @@ class SessionPlaylistsSettingsViewController: PCViewController, UITableViewDataS
         switch sections[indexPath.section].rows[indexPath.row] {
         case .manual:
             Settings.setShowManualSessions(!Settings.showManualSessions())
+            tableView.reloadRows(at: [indexPath], with: .none)
         case .smart:
             Settings.setShowSmartPlaylistSessions(!Settings.showSmartPlaylistSessions())
+            tableView.reloadRows(at: [indexPath], with: .none)
         case .folder(let folder):
             flip(Settings.showPodcastSessionFolders(), folder.uuid, set: Settings.setShowPodcastSessionFolders)
+            recomputeCovered() // covered podcasts changed — redraw the whole list
+            SessionManager.shared.syncFolderScopedPodcastSessions()
+            tableView.reloadData()
         case .podcast(let podcast):
+            if covered.contains(podcast.uuid) { return } // owned by a selected folder — not individually toggleable
             flip(Settings.showPodcastSessionPodcasts(), podcast.uuid, set: Settings.setShowPodcastSessionPodcasts)
+            SessionManager.shared.syncFolderScopedPodcastSessions()
+            tableView.reloadRows(at: [indexPath], with: .none)
         }
-        SessionManager.shared.syncFolderScopedPodcastSessions()
-        tableView.reloadRows(at: [indexPath], with: .none)
         onChange()
     }
 
@@ -111,6 +124,7 @@ private struct SessionPickerRow: View {
     let label: String
     let selected: Bool
     let artwork: Artwork
+    let dimmed: Bool
 
     var body: some View {
         HStack(spacing: 12) {
@@ -123,6 +137,7 @@ private struct SessionPickerRow: View {
             checkbox
         }
         .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        .opacity(dimmed ? 0.3 : 1)
     }
 
     @ViewBuilder private var artworkView: some View {
