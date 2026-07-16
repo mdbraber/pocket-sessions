@@ -111,7 +111,7 @@ extension NowPlayingPlayerItemViewController: NowPlayingActionsDelegate {
             let gotoSessionBtn = UIButton(frame: CGRect.zero)
             gotoSessionBtn.isPointerInteractionEnabled = true
             gotoSessionBtn.imageView?.tintColor = ThemeColor.playerContrast02()
-            gotoSessionBtn.setImage(UIImage(named: action.largeIconName(episode: nil)), for: .normal)
+            gotoSessionBtn.setImage(UIImage(systemName: "rectangle.stack", withConfiguration: UIImage.SymbolConfiguration(pointSize: 20, weight: .regular)), for: .normal)
             gotoSessionBtn.addTarget(self, action: #selector(goToSessionBtnTapped(_:)), for: .touchUpInside)
             gotoSessionBtn.accessibilityLabel = L10n.playerActionGoToSession
 
@@ -269,6 +269,8 @@ extension NowPlayingPlayerItemViewController: NowPlayingActionsDelegate {
         let picker = OptionsPicker(title: L10n.playerActionGoToSession.localizedUppercase)
         for item in named {
             picker.addAction(action: OptionAction(label: item.name, icon: nil) {
+                // Open the session's playlist on its Session (lineup) tab.
+                PlaylistDetailViewModel.pendingInitialTab[item.storeUuid] = .lineup
                 NavigationManager.sharedManager.navigateTo(NavigationManager.filterPageKey, data: [NavigationManager.filterUuidKey: item.storeUuid])
             })
         }

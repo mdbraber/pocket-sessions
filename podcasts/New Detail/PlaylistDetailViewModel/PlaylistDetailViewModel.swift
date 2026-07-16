@@ -290,8 +290,17 @@ class PlaylistDetailViewModel: ObservableObject {
         self.episodesDataManager = episodesDataManager
         self.onChange = onChange
         self.onButtonTapped = onButtonTapped
+        // Fork: a one-shot initial tab set by navigation (e.g. Go to Session → Session tab).
+        // Consumed here so the usual auto-select doesn't override it.
+        if let tab = Self.pendingInitialTab.removeValue(forKey: playlist.uuid) {
+            selectedTriageTab = tab
+            triageTabAutoSelected = true
+        }
         self.dataSource = makeSections(episodes: [])
     }
+
+    /// Fork: navigation can request the tab a playlist opens on (keyed by uuid, consumed once).
+    static var pendingInitialTab: [String: TriageTab] = [:]
 
     func update(data: DataSourceValue, then block: (() -> Void)? = nil) {
         self.dataSource = data

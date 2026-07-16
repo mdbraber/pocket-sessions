@@ -446,7 +446,7 @@ extension PlayerAction: AnalyticsDescribable {
         case .videoToggle:
             return PlaybackManager.shared.shouldRenderVideo() ? "video_off" : "video_on"
         case .goToSession:
-            return "gotoarrow"
+            return "rectangle.stack"
         }
     }
 
@@ -484,7 +484,7 @@ extension PlayerAction: AnalyticsDescribable {
         case .videoToggle:
             return PlaybackManager.shared.shouldRenderVideo() ? "video_off" : "video_on"
         case .goToSession:
-            return "shelf_gotoarrow"
+            return "rectangle.stack"
         }
     }
 

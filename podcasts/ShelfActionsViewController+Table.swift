@@ -38,7 +38,9 @@ extension ShelfActionsViewController: UITableViewDelegate, UITableViewDataSource
         if !tableView.isEditing {
             cell.actionName.text = action.title(episode: playingEpisode)
             if action != .routePicker {
-                cell.actionIcon.image = UIImage(named: action.iconName(episode: playingEpisode))
+                // Fork: a few actions (Go to Session) use an SF Symbol rather than a bundled asset.
+                let iconName = action.iconName(episode: playingEpisode)
+                cell.actionIcon.image = UIImage(named: iconName) ?? UIImage(systemName: iconName)
                 cell.customViewContainer.removeAllSubviews()
             } else if let routePickerView = playerActionsDelegate?.sharedRoutePicker(largeSize: false) {
                 cell.customViewContainer.addSubview(routePickerView)
@@ -61,7 +63,8 @@ extension ShelfActionsViewController: UITableViewDelegate, UITableViewDataSource
             }
         } else {
             cell.actionName.text = action.title(episode: nil)
-            cell.actionIcon.image = UIImage(named: action.iconName(episode: nil))
+            let iconName = action.iconName(episode: nil)
+            cell.actionIcon.image = UIImage(named: iconName) ?? UIImage(systemName: iconName)
             cell.customViewContainer.removeAllSubviews()
             cell.actionIcon.tintColor = ThemeColor.playerContrast02()
 
