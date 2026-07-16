@@ -1,3 +1,4 @@
+import PocketCastsDataModel
 import PocketCastsServer
 import PocketCastsUtils
 import UIKit
@@ -7,12 +8,12 @@ import UIKit
 class InboxSettingsViewController: PCViewController, UITableViewDataSource, UITableViewDelegate {
     private static let cellId = "InboxSettingsCell"
 
-    private enum TableRow: CaseIterable { case addToSessionMode, removeFromSessionMode, autoAddToUpNext, autoAddToSession, mirrorUpNextToSession, mirrorSessionToUpNext }
+    private enum TableRow: CaseIterable { case globalPosition, addToSessionMode, removeFromSessionMode, autoAddToUpNext, autoAddToSession, mirrorUpNextToSession, mirrorSessionToUpNext }
 
-    /// Grouped: the Add/Remove routing stands apart from the Auto Add pages and the linked-adds
-    /// switches. With sessions off only stock Up Next remains.
+    /// Four blocks: Position (the global default), Add & Remove routing, Auto Add limits, and the
+    /// linked-adds (Linking) switches.
     private var sections: [[TableRow]] {
-        [[.addToSessionMode, .removeFromSessionMode], [.autoAddToUpNext, .autoAddToSession], [.mirrorUpNextToSession, .mirrorSessionToUpNext]]
+        [[.globalPosition], [.addToSessionMode, .removeFromSessionMode], [.autoAddToUpNext, .autoAddToSession], [.mirrorUpNextToSession, .mirrorSessionToUpNext]]
     }
 
     private let settingsTable = ThemeableTable(frame: .zero, style: .grouped)
@@ -73,7 +74,13 @@ class InboxSettingsViewController: PCViewController, UITableViewDataSource, UITa
     }
 
     func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        sections[section].first == .mirrorUpNextToSession ? L10n.settingsLinking : nil
+        switch sections[section].first {
+        case .globalPosition: return L10n.sessionPositionHeading
+        case .addToSessionMode: return L10n.sessionAddRemoveHeading
+        case .autoAddToUpNext: return L10n.sessionAutoAddLimitsHeading
+        case .mirrorUpNextToSession: return L10n.settingsLinking
+        default: return nil
+        }
     }
 
     func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
@@ -88,6 +95,9 @@ class InboxSettingsViewController: PCViewController, UITableViewDataSource, UITa
         let cell = (tableView.dequeueReusableCell(withIdentifier: Self.cellId) as? ThemeableCell)
             ?? ThemeableCell(style: .value1, reuseIdentifier: Self.cellId)
         switch sections[indexPath.section][indexPath.row] {
+        case .globalPosition:
+            cell.textLabel?.text = L10n.sessionPositionHeading
+            cell.detailTextLabel?.text = Settings.sessionInsertPosition() == .top ? L10n.top : L10n.bottom
         case .addToSessionMode:
             cell.textLabel?.text = L10n.playlistAddToLineup
             cell.detailTextLabel?.text = AddToSessionMode.current.title
@@ -122,6 +132,17 @@ class InboxSettingsViewController: PCViewController, UITableViewDataSource, UITa
         tableView.deselectRow(at: indexPath, animated: true)
 
         switch sections[indexPath.section][indexPath.row] {
+        case .globalPosition:
+            let picker = OptionsPicker(title: L10n.sessionPositionHeading.localizedUppercase)
+            let current = Settings.sessionInsertPosition()
+            for mode in [PlaylistInsertMode.top, .bottom] {
+                let label = mode == .top ? L10n.top : L10n.bottom
+                picker.addAction(action: OptionAction(label: label, icon: nil, selected: current == mode) { [weak self] in
+                    Settings.setSessionInsertPosition(mode)
+                    self?.settingsTable.reloadData()
+                })
+            }
+            picker.present(from: self)
         case .addToSessionMode:
             let modes = AddToSessionMode.allCases
             let selectedIndex = modes.firstIndex(of: .current) ?? 0

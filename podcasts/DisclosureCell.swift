@@ -53,6 +53,17 @@ class DisclosureCell: ThemeableCell {
         cellImage.updateSizeConstraints(to: iconSize)
     }
 
+    /// Fork: set the leading icon from a ready UIImage (e.g. an SF Symbol), not an asset name.
+    func setImage(_ image: UIImage?, tintColor: UIColor? = nil) {
+        guard let image else { setImage(imageName: nil); return }
+        cellTextToImageConstraint.isActive = true
+        cellTextToMarginConstraint.isActive = false
+        cellTextToImageConstraint.priority = .required
+        cellTextToMarginConstraint.priority = .defaultHigh
+        cellImage.tintColor = tintColor
+        cellImage.image = image
+    }
+
     func setImage(imageName: String?, tintColor: UIColor? = nil) {
         if let imageName {
             cellTextToImageConstraint.isActive = true

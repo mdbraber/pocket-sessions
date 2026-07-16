@@ -92,7 +92,10 @@ class SessionManager {
             _ = DataManager.sharedManager.add(episodes: episodes, to: store)
         }
 
-        let session = Session(uuid: UUID().uuidString, storePlaylistUuid: store.uuid, feeder: feeder)
+        var session = Session(uuid: UUID().uuidString, storePlaylistUuid: store.uuid, feeder: feeder)
+        // New sessions start from the global Position default. (Podcast sessions resolve their
+        // position live via the per-podcast override / global, so this only steers other types.)
+        session.insertMode = Settings.sessionInsertPosition().rawValue
         SessionStore.shared.upsert(session)
         NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged)
         return session
@@ -554,7 +557,15 @@ class SessionManager {
     // MARK: - Insert marker
 
     func insertMarkerIndex(for session: Session, inLineup lineup: [String]) -> Int {
-        switch PlaylistInsertMode(rawValue: session.insertMode) ?? .afterLastInserted {
+        // A podcast session's position follows the per-podcast override / global default; other
+        // session types keep their own stored insert mode (edited on the session's own screen).
+        let mode: PlaylistInsertMode
+        if case .podcast(let podcastUuid) = session.feeder {
+            mode = Settings.resolvedSessionInsertPosition(podcastUuid: podcastUuid)
+        } else {
+            mode = PlaylistInsertMode(rawValue: session.insertMode) ?? .afterLastInserted
+        }
+        switch mode {
         case .top:
             return 0
         case .bottom:

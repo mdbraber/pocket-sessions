@@ -2561,6 +2561,21 @@
 /* Fork: podcast settings row / page title that opens the per-podcast Up Next & Session linking overrides. */
 "settings_linking_row" = "Up Next & Session Linking";
 
+/* Fork: section heading on the per-podcast Session page — where adds to the session are placed. */
+"session_position_heading" = "Position in Session";
+
+/* Fork: section heading on the per-podcast Session page — the Up Next <-> Session mirror overrides. */
+"session_linking_heading" = "Session Linking";
+
+/* Fork: Position in Session option — use the global default rather than a per-podcast position. */
+"session_position_follow_global" = "Follow Global";
+
+/* Fork: global Up Next & Session settings — heading for the Add-to / Remove-from Session routing. */
+"session_add_remove_heading" = "Add & Remove";
+
+/* Fork: global Up Next & Session settings — heading for the auto-add episode limits. */
+"session_auto_add_limits_heading" = "Auto Add Limits";
+
 /* Fork: footer under the per-podcast linked-adds overrides, clarifying these mirror a manual add (the action), not Auto Add, and Default follows the global Linking setting. */
 "settings_linking_podcast_msg" = "When you add an episode of this podcast to one list, also add it to the other. This mirrors the add action — it's separate from Auto Add above. Default follows your global Linking setting.";
 

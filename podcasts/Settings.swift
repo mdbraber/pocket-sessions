@@ -422,6 +422,46 @@ class Settings: NSObject {
         }
     }
 
+    // MARK: - Position in Session
+
+    static let sessionInsertPositionKey = "SJSessionInsertPosition"
+
+    /// Fork: the global default insert position for a Session's adds (Top / Bottom). New sessions
+    /// inherit it; a per-podcast override can pin a different position. Only Top/Bottom are offered
+    /// (the lineup's marker modes aren't a user-facing choice).
+    class func sessionInsertPosition() -> PlaylistInsertMode {
+        guard let raw = UserDefaults.standard.object(forKey: sessionInsertPositionKey) as? Int,
+              let mode = PlaylistInsertMode(rawValue: Int32(raw)) else { return .bottom }
+        return mode
+    }
+
+    class func setSessionInsertPosition(_ mode: PlaylistInsertMode) {
+        UserDefaults.standard.set(Int(mode.rawValue), forKey: sessionInsertPositionKey)
+    }
+
+    /// Per-podcast override, keyed by podcast. 0 (unset) means "follow the global default"; any
+    /// other value is `PlaylistInsertMode.rawValue + 1` so Top (raw 0) survives the unset default.
+    private static func sessionPositionOverrideKey(_ podcastUuid: String) -> String { "SJSessionPosition-\(podcastUuid)" }
+
+    class func sessionPositionOverride(podcastUuid: String) -> PlaylistInsertMode? {
+        let stored = UserDefaults.standard.integer(forKey: sessionPositionOverrideKey(podcastUuid))
+        guard stored > 0 else { return nil }
+        return PlaylistInsertMode(rawValue: Int32(stored - 1))
+    }
+
+    class func setSessionPositionOverride(_ mode: PlaylistInsertMode?, podcastUuid: String) {
+        if let mode {
+            UserDefaults.standard.set(Int(mode.rawValue) + 1, forKey: sessionPositionOverrideKey(podcastUuid))
+        } else {
+            UserDefaults.standard.removeObject(forKey: sessionPositionOverrideKey(podcastUuid))
+        }
+    }
+
+    /// The effective insert position for a podcast's session: its override, else the global default.
+    class func resolvedSessionInsertPosition(podcastUuid: String) -> PlaylistInsertMode {
+        sessionPositionOverride(podcastUuid: podcastUuid) ?? sessionInsertPosition()
+    }
+
     static let sessionAutoAddLimitKey = "SJSessionAutoAddLimit"
 
     /// Fork: auto-add to Session stops once a session's lineup holds this many

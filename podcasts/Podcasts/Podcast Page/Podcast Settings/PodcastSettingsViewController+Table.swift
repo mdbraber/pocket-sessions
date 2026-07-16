@@ -111,17 +111,12 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
             cell.cellSecondaryLabel.text = nil
             return cell
         case .session:
-            // Fork: auto-add new episodes to this podcast's Session, exactly the
-            // Add to Up Next pattern one section up.
-            let cell = tableView.dequeueReusableCell(withIdentifier: PodcastSettingsViewController.switchCellId, for: indexPath) as! SwitchCell
-            cell.cellLabel.text = L10n.settingsAutoAddToSession
-            cell.cellSwitch.onTintColor = podcast.switchTintColor()
-            cell.setImage(image: TriageSwipes.sessionAddTemplateImage)
-            cell.cellSwitch.isOn = SessionStore.shared.session(forPodcast: podcast.uuid)?.autoAdd ?? false
-
-            cell.cellSwitch.removeTarget(self, action: #selector(addToSessionChanged(_:)), for: UIControl.Event.valueChanged)
-            cell.cellSwitch.addTarget(self, action: #selector(addToSessionChanged(_:)), for: UIControl.Event.valueChanged)
-
+            // Fork: one "Session" row opening the consolidated per-podcast Session page
+            // (Position, Auto Add, and Session Linking).
+            let cell = tableView.dequeueReusableCell(withIdentifier: PodcastSettingsViewController.disclosureCellId, for: indexPath) as! DisclosureCell
+            cell.cellLabel.text = L10n.playbackSessionTabSession
+            cell.setImage(UIImage(systemName: "rectangle.stack"), tintColor: ThemeColor.primaryIcon01())
+            cell.cellSecondaryLabel.text = nil
             return cell
         case .sessionPosition:
             let cell = tableView.dequeueReusableCell(withIdentifier: PodcastSettingsViewController.disclosureCellId, for: indexPath) as! DisclosureCell
@@ -283,13 +278,8 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
         } else if row == .globalUpNext {
             let globalSettings = AutoAddToUpNextViewController()
             navigationController?.pushViewController(globalSettings, animated: true)
-        } else if row == .linking {
+        } else if row == .session {
             navigationController?.pushViewController(PodcastLinkingViewController(podcast: podcast), animated: true)
-        } else if row == .sessionPosition {
-            showSessionAutoAddPositionSettings()
-        } else if row == .globalSession {
-            let globalSettings = AutoAddToSessionViewController()
-            navigationController?.pushViewController(globalSettings, animated: true)
         } else if row == .playbackEffects {
             let effectsController = PodcastEffectsViewController(podcast: podcast)
             navigationController?.pushViewController(effectsController, animated: true)
@@ -494,7 +484,7 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
     }
 
     private func tableData() -> [[TableRow]] {
-        var data: [[TableRow]] = [[.autoDownload, .notifications, .globalInbox], [.upNext], [.session], [.linking], [.autoArchive], [.playbackEffects, .skipFirst, .skipLast]]
+        var data: [[TableRow]] = [[.autoDownload, .notifications, .globalInbox], [.upNext], [.session], [.autoArchive], [.playbackEffects, .skipFirst, .skipLast]]
 
         if podcast.refreshAvailable {
             data.insert([.feedError], at: 0)
@@ -505,12 +495,6 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
         if podcast.autoAddToUpNextOn(), let upNextSection = data.firstIndex(where: { $0.first == .upNext }) {
             data[upNextSection].append(.upNextPosition)
             data[upNextSection].append(.globalUpNext)
-        }
-
-        if SessionStore.shared.session(forPodcast: podcast.uuid)?.autoAdd == true,
-           let sessionSection = data.firstIndex(where: { $0.first == .session }) {
-            data[sessionSection].append(.sessionPosition)
-            data[sessionSection].append(.globalSession)
         }
 
         if canAppearInFilters {

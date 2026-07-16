@@ -28,6 +28,7 @@ final class ForkSettingsSync {
         "SJGlobalInboxOptOutPodcasts",
         Settings.playbackSessionTypeKey,
         Settings.playbackSessionUuidKey,
+        Settings.sessionInsertPositionKey,
         // Playlist folders are fork-only (upstream has no such concept), so they have no
         // other sync channel. Both are plist values — a JSON blob of folders and a
         // playlistUuid->folderUuid map — and low-churn, so KV last-writer-wins fits.
@@ -46,7 +47,8 @@ final class ForkSettingsSync {
     private static let prefixes: [String] = [
         "\(Settings.mirrorUpNextToSessionKey)-",
         "\(Settings.mirrorSessionToUpNextKey)-",
-        "SJTabSort-"
+        "SJTabSort-",
+        "SJSessionPosition-"
     ]
 
     private let store = NSUbiquitousKeyValueStore.default
