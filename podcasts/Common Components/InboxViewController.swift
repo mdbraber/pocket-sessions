@@ -500,6 +500,9 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
         let cell = tableView.dequeueReusableCell(withIdentifier: Self.episodeCellId, for: indexPath) as! EpisodeCell
         cell.delegate = self
         cell.populateFrom(episode: episode, tintColor: nil)
+        // The Inbox has no session of its own, so an in-session episode always reads as "other
+        // session" (dimmed green). The Up Next indicator is set automatically by populateFrom.
+        cell.setSessionIndicator(SessionIndicatorState.resolve(episode.uuid, thisSession: []))
         cell.shouldShowSelect = isMultiSelectEnabled
         if isMultiSelectEnabled {
             cell.showTick = selectedEpisodesContains(uuid: episode.uuid)

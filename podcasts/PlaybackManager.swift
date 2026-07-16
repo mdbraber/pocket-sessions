@@ -678,6 +678,13 @@ class PlaybackManager: ServerPlaybackDelegate {
     func addToUpNext(episode: BaseEpisode, ignoringQueueLimit: Bool, toTop: Bool) {
         #if !APPCLIP
         addToUpNext(episode: episode, ignoringQueueLimit: ignoringQueueLimit, toTop: toTop, userInitiated: false)
+        // Fork: this is the auto-add-to-Up-Next entry (server refresh). Honor the Up Next -> Session
+        // link so an auto-added episode also lands in the podcast's session when linking is on.
+        // (mirrorQueueAdd only touches Episodes, checks membership, and honors the per-podcast
+        // setting, so uploaded files and unlinked podcasts are skipped — and it never cascades.)
+        #if !os(watchOS)
+        SessionLinking.mirrorQueueAdd(episodes: [episode])
+        #endif
         #endif
     }
 

@@ -699,6 +699,10 @@ class SessionManager {
             offers = Array(offers.prefix(capacity))
         }
         addToLineup(episodeUuids: offers, session: session)
+        // Fork: auto-add to a Session honors the Session -> Up Next link, so an auto-added episode
+        // also lands in Up Next when linking is on. mirrorSessionAdd honors the per-podcast setting,
+        // skips episodes already queued, and calls the queue primitive directly (no cascade).
+        SessionLinking.mirrorSessionAdd(episodeUuids: offers)
     }
 
     /// Smart playlists carrying a folder rule re-materialize the folder's podcasts
