@@ -331,8 +331,8 @@
 /* Provides a link to the menu to present more options. */
 "carplay_more" = "More";
 
-/* CarPlay tab that lists playback sessions to switch between. */
-"carplay_sessions_tab" = "Sessions";
+/* Fork: CarPlay tab showing Up Next, the current session, and the other sessions to switch between. */
+"carplay_queue_tab" = "Queue";
 
 /* CarPlay empty state when there are no sessions to show. */
 "carplay_no_sessions" = "No sessions — create one in the app";
@@ -1565,7 +1565,7 @@
 "player_action_go_to_session" = "Go to Session";
 
 /* Fork: toast when Go to Session is tapped but the podcast belongs to no session. */
-"player_action_go_to_session_none" = "This podcast isn't in a session";
+"player_action_go_to_session_none" = "This podcast isn't in any session";
 
 /* Title for the available output device options. */
 "player_action_title_output_options" = "Output Device";
@@ -1924,12 +1924,12 @@
 "podcast_archived_count_format" = "%1$@ archived";
 
 /* Fork: how many of the episodes on screen are still unseen (in the Inbox). %1$@ is the count. */
-"inbox_unseen_count_format" = "%1$@ unseen";
+"inbox_unseen_count_format" = "%1$@ in Inbox";
 
 /* Fork: the built-in Filter Presets — the unfiltered default. */
 "filter_preset_all_episodes" = "All Episodes";
 /* Fork: built-in Filter Preset — episodes still in the Inbox. */
-"filter_preset_unseen" = "Unseen";
+"filter_preset_unseen" = "In Inbox";
 /* Fork: built-in Filter Preset — downloaded episodes only. */
 "filter_preset_downloaded" = "Downloaded";
 /* Fork: built-in Filter Preset — partially played episodes. */
@@ -1984,9 +1984,9 @@
 /* Fork: a minute count in the preset editor. %1$@ is the number. */
 "filter_preset_minutes" = "%1$@ min";
 /* Fork: preset rule value — episode is seen (not in the Inbox). */
-"episode_seen" = "Seen";
+"episode_seen" = "Not in Inbox";
 /* Fork: preset rule value — episode is unseen (in the Inbox). */
-"episode_unseen" = "Unseen";
+"episode_unseen" = "In Inbox";
 
 /* Fork: the podcast/folder scope row in the Filter Preset editor. */
 "filter_preset_rule_scope" = "Podcasts";
@@ -2549,23 +2549,14 @@
 /* Fork: per-podcast toggle — auto-add new episodes of this podcast to its Session (mirrors "Auto Add to Up Next"). */
 "settings_auto_add_to_session" = "Auto Add to Session";
 
-/* Fork: per-podcast override row — mirror this podcast's Up Next adds into its Session. */
-"settings_also_add_to_session" = "Also Add to Session";
-
-/* Fork: per-podcast override row — mirror this podcast's Session adds into Up Next. */
-"settings_also_add_to_up_next" = "Also Add to Up Next";
-
-/* Fork: the tri-state override option that follows the global switch. '%1$@' is the global's current On/Off. */
-"settings_mirror_default_format" = "Default (%1$@)";
-
 /* Fork: header of the settings group holding the linked-adds switches. */
 "settings_linking" = "Linking";
 
+/* Fork: podcast-settings row label opening the per-podcast Linking overrides. */
+"settings_linking_row" = "Linking";
+
 /* Fork: master toggle in per-podcast settings — enable to override the global Linking setting for this podcast. */
 "settings_linking_custom" = "Custom for This Podcast";
-
-/* Fork: podcast settings row / page title that opens the per-podcast Up Next & Session linking overrides. */
-"settings_linking_row" = "Up Next & Session Linking";
 
 /* Fork: section heading on the per-podcast Session page — where adds to the session are placed. */
 "session_position_heading" = "Position in Session";
@@ -2573,17 +2564,11 @@
 /* Fork: section heading on the per-podcast Session page — the Up Next <-> Session mirror overrides. */
 "session_linking_heading" = "Session Linking";
 
-/* Fork: Position in Session option — use the global default rather than a per-podcast position. */
-"session_position_follow_global" = "Follow Global";
-
 /* Fork: global Up Next & Session settings — heading for the Add-to / Remove-from Session routing. */
 "session_add_remove_heading" = "Add & Remove";
 
 /* Fork: global Up Next & Session settings — heading for the auto-add episode limits. */
 "session_auto_add_limits_heading" = "Auto Add Limits";
-
-/* Fork: Playlists menu entry / screen title controlling which session playlists appear. */
-"session_playlists_title" = "Session Playlists";
 
 /* Fork: Playlists ⋯ menu entry / sheet title — choose which session playlists appear. */
 "session_playlists_show" = "Show Session Playlists";
@@ -2594,17 +2579,14 @@
 /* Fork: toggle — show sessions fed by a smart playlist in the Playlists tab. */
 "session_playlists_smart" = "Smart Playlist Sessions";
 
-/* Fork: section heading — per-podcast sessions, shown per selected folder. */
-"session_playlists_podcast" = "Podcast Sessions";
-
 /* Fork: Show Session Playlists — folders block heading. */
 "session_playlists_folders" = "Folders";
 
 /* Fork: Show Session Playlists — podcasts block heading. */
 "session_playlists_podcasts" = "Podcasts";
 
-/* Fork: footer under the folder list explaining per-podcast session visibility. */
-"session_playlists_podcast_footer" = "Show podcast sessions only for podcasts in the selected folders.";
+/* Fork: empty state of the Sessions tab when the episode is in no session. */
+"episode_sessions_none" = "This episode isn't in any session";
 
 /* Fork: footer under the per-podcast linked-adds overrides, clarifying these mirror a manual add (the action), not Auto Add, and Default follows the global Linking setting. */
 "settings_linking_podcast_msg" = "When you add an episode of this podcast to one list, also add it to the other. This mirrors the add action — it's separate from Auto Add above. Default follows your global Linking setting.";
@@ -3708,7 +3690,7 @@
 "up_next" = "Up Next";
 
 /* Heading shown when your Up Next list is empty */
-"up_next_empty_title" = "Curate your listening session";
+"up_next_empty_title" = "Nothing in your queue";
 
 /* Description shown when your Up Next list is empty. Note that for non right to left languages "right" should be change to "left" (and translated) */
 "up_next_empty_description" = "You can queue episodes to play next by swiping right on episode rows, or tapping the icon on an episode card.";
@@ -4949,7 +4931,6 @@
 /* A title shown for a share option which creates an audio clip of an episode */
 "create_audio_clip_title" = "Create audio file";
 
-
 /* A description shown for a share option which creates an audio clip of an episode. This produces a ".m4a" file which is like an mp3 */
 "create_audio_clip_description" = "Create a .m4a audio file";
 
@@ -5289,56 +5270,8 @@
 /* Toast message displayed when the user enables the Up Next Shuffle option */
 "up_next_shuffle_toast_message" = "Shuffle is on. Episodes will play in random order.";
 
-/* Title shown at the top of the Up Next playback filter picker. Also the accessibility label of the filter button in the Up Next header */
-"up_next_filter_title" = "Filter Up Next By";
-
-/* Option in the Up Next playback filter picker that clears the filter so the whole queue plays */
-"up_next_filter_everything" = "No Filter";
-
-/* Up Next header label when a playback filter is active. %1$@ is the number of episodes matching the filter, %2$@ the total number of queued episodes, %3$@ the time remaining for matching episodes (e.g. '2h 10m') */
-"up_next_filter_header" = "Playing %1$@ of %2$@ · %3$@ left";
-
-/* Accessibility label of the cross button in the Up Next header that removes the active playback filter */
-"up_next_filter_clear" = "Clear Filter";
-
-/* Indicator line in the Up Next header while a playback filter is active. %1$@ is the filter's name, %2$@ its type ('Folder' or 'Smart Playlist') */
-"up_next_filter_indicator" = "Filter: %1$@ (%2$@)";
-
-/* Title of the notice shown in Up Next when no queued episode matches the active playback filter */
-"up_next_filter_empty_title" = "Nothing matches your filter";
-
-/* Message of the notice shown in Up Next when no queued episode matches the active playback filter. %1$@ is the filter's name */
-"up_next_filter_empty_description" = "No episodes in Up Next match \"%1$@\". Playback will stop after the current episode.";
-
-/* Option in the Up Next playback filter picker that hides the episodes the filter will skip (compact view) */
-"up_next_filter_hide_skipped" = "Hide Skipped Episodes";
-
-/* Option in the Up Next playback filter picker that shows the (dimmed) episodes the filter will skip */
-"up_next_filter_show_skipped" = "Show Skipped Episodes";
-
-/* Type tag shown next to a folder in the Up Next playback filter picker */
-"up_next_filter_type_folder" = "Folder";
-
-/* Type tag shown next to a smart playlist in the Up Next playback filter picker */
-"up_next_filter_type_smart_playlist" = "Smart Playlist";
-
-/* Header label of the session section in Up Next. %1$@ is the number of episodes remaining, %2$@ the time remaining (e.g. '3h 12m') */
-"playback_session_header" = "Session: %1$@ episodes · %2$@ left";
-
-/* Prefix wrapped around the Up Next queue header label to name the section while a session or filter shares the screen. %1$@ is the stock header text (e.g. '5 episodes · 5h 5m left') */
-"up_next_header_prefix" = "Up Next: %1$@";
-
-/* Title of the picker that starts a playback session */
-"playback_session_picker_title" = "Start Session";
-
 /* Option that ends the active playback session, returning playback to the Up Next queue */
 "playback_session_end" = "End Session";
-
-/* Type tag for a podcast in the playback session picker */
-"playback_session_type_podcast" = "Podcast";
-
-/* Type tag for a manual playlist in the playback session picker */
-"playback_session_type_playlist" = "Playlist";
 
 /* Fallback name for a playback session whose playlist title can't be resolved */
 "playback_session_tab_session" = "Session";
@@ -5352,28 +5285,13 @@
 /* Title of the sort picker shown when sorting a smart playlist during a playback session */
 "playback_session_sort_title" = "Sort Playlist";
 
-/* Footer under a collapsed paused session's resume row when exactly one more episode remains */
-"playback_session_more_episode_singular" = "1 more episode";
-
-/* Footer under a collapsed paused session's resume row. %1$@ is the number of additional episodes */
-"playback_session_more_episodes_plural" = "%1$@ more episodes";
-
 /* Swipe action that inserts a new (inbox) episode into the playlist lineup at the insert marker */
 "playlist_add_to_lineup" = "Add to Session";
 
-/* Setting title: what happens to new episodes in a custom-ordered smart playlist */
-"playlist_new_episodes_setting" = "New Episodes";
-
-/* New-episodes option: hold new episodes in the inbox for manual triage */
-"playlist_new_episodes_inbox" = "Hold in Episodes";
-
-/* New-episodes option: automatically add new episodes to the lineup at the insert marker */
-"playlist_new_episodes_auto" = "Add to Session Automatically";
-
-/* Setting title: where 'Add to Lineup' inserts episodes */
-"playlist_insert_mode_setting" = "Add to Session";
-
 /* Insert position option: pinned to the top of the lineup */
+/* Fork: row label / picker title for where newly added episodes land in a playlist or session. */
+"playlist_insert_mode_setting" = "Position in Playlist";
+
 "playlist_insert_mode_top" = "On Top";
 
 /* Insert position option: appended to the bottom of the lineup */
@@ -5385,50 +5303,20 @@
 /* Insert position option: before the episode added most recently (block grows upward) */
 "playlist_insert_mode_before_last" = "Before Last Added";
 
-/* Suffix appended to the session header when the playlist has untriaged inbox episodes. %1$@ is the count */
-"playback_session_header_new_suffix" = "%1$@ new";
-
 /* Tappable notice row at the end of the session section when exactly one untriaged episode is in the playlist inbox */
 "playback_session_inbox_notice_singular" = "1 new episode in Inbox";
 
 /* Tappable notice row at the end of the session section. %1$@ is the number of untriaged inbox episodes */
 "playback_session_inbox_notice_plural" = "%1$@ new episodes in Inbox";
 
-/* Section label above the recently used filters in the Up Next filter picker */
-"up_next_filter_recent_header" = "Recent";
-
-/* Section header above the filter-kind rows on the Filter Up Next sheet */
-"up_next_filter_type_header" = "Type";
-
 /* Playlist header button that starts a playback session from the playlist (replaces 'Play All' while sessions are enabled) */
 "playlist_play_as_session" = "Play Session";
-
-/* Second line of the session header in Up Next. %1$@ is the episode count, %2$@ the remaining time */
-"playback_session_meta" = "%1$@ episodes · %2$@ left";
-
-/* Action in the New section header that moves every inbox episode into the lineup at once */
-"playlist_add_all_to_lineup" = "Add All to Session";
-
-/* Accessibility label of the eye toggle that hides queue episodes belonging to the active session */
-"up_next_hide_session_episodes" = "Hide episodes from current session";
-
-/* Empty-state title when the session eye has hidden every queued episode */
-"up_next_session_hidden_empty_title" = "All queued episodes are in the session";
-
-/* Empty-state description when the session eye has hidden every queued episode */
-"up_next_session_hidden_empty_description" = "Episodes that belong to the current session are hidden from the queue.";
-
-/* Empty-state action that turns the session eye off again */
-"up_next_session_hidden_show" = "Show them";
-
-/* Title of the picker that offers the most recently played sessions */
-"playback_session_switch_title" = "Switch Session";
 
 /* Short nav bar button that opens the Switch Session sheet */
 "playback_session_switch_short" = "Switch";
 
 /* Title of the empty state shown on the Session view when no session is active */
-"playback_session_empty_title" = "Choose a session to listen";
+"playback_session_empty_title" = "Choose a session to play";
 
 /* Button on the empty Session view that opens the recent sessions picker */
 "playback_session_choose" = "Choose Session";
@@ -5440,7 +5328,7 @@
 "inbox_empty_title" = "Inbox zero";
 
 /* Message of the empty global Inbox state */
-"inbox_empty_message" = "New episodes from your podcasts will appear here to triage.";
+"inbox_empty_message" = "New episodes from your podcasts land here.";
 
 /* Toast after shelving an inbox episode. %1$@ is the playlist name(s) */
 "inbox_shelved_toast" = "Added to %1$@";
@@ -5457,32 +5345,19 @@
 /* Add-to-Inbox policy option: always add this podcast's new episodes to the Inbox */
 "inbox_add_policy_always" = "Always";
 
-/* Title of the smart playlist tab listing archived episodes */
-"playlist_archived_section_header" = "Archived";
-
 /* Subtitle on Session Playlist rows */
 "session_playlist_subtitle" = "Session Playlist";
 
-"session_dismissed_empty" = "Nothing dismissed from this session.";
-
 /* Alert when an ephemeral session's lineup drains. %1$@ = playlist name */
 "session_finished_title" = "\"%1$@\" finished";
-"session_finished_message" = "The session is empty. Keep the playlist or delete it?";
-"session_finished_keep" = "Keep";
 "session_finished_delete" = "Delete Playlist";
-
-/* Folder page: opens the folder session's playlist page */
-"folder_manage_session" = "Manage Session";
 
 /* Playlists overview: filter sheet by playlist type */
 "playlists_hide_sessions" = "Hide Session Playlists";
-"playlist_type_sessions" = "Session Playlists";
-"playlist_type_smart" = "Smart Playlists";
-"playlist_type_manual" = "Playlists";
 
 /* Toggle marking an episode as seen or unseen (a local attention mark) */
-"episode_mark_seen" = "Mark as Seen";
-"episode_mark_unseen" = "Mark as Unseen";
+"episode_mark_seen" = "Clear from Inbox";
+"episode_mark_unseen" = "Return to Inbox";
 
 /* Menu option capping every Group By group to its first N episodes */
 "episode_group_limit" = "Limit Groups";
@@ -5498,9 +5373,8 @@
 "inbox_group_no_folder" = "No Folder";
 
 /* Options on the Inbox Clear sheet: dismiss the remaining episodes without touching them, or archive them all */
-"inbox_clear_keep_all" = "Mark All as Seen";
+"inbox_clear_keep_all" = "Clear Inbox";
 "inbox_clear_archive_all" = "Archive All";
-
 
 /* Settings > Inbox: where the Add to Session action puts an episode */
 "inbox_add_mode_all" = "All Matching Sessions";
@@ -5515,9 +5389,9 @@
 "session_remove_mode_ask" = "Ask Every Time";
 
 /* Settings action that reconciles every session from current session membership */
-"session_backfill_now" = "Backfill Sessions Now";
+"session_backfill_now" = "Add Existing Episodes";
 /* Footer explaining the Add/Remove routing and the Backfill action */
-"session_backfill_msg" = "“All matching” adds an episode to every session whose feeder covers it. Backfill catches up existing episodes — each session gains the in-session episodes its feeder covers.";
+"session_backfill_msg" = "“All Matching Sessions” adds an episode to every session that includes it. “Add Existing Episodes” catches sessions up with older episodes they cover but never received.";
 /* Toast after a backfill: how many episodes were added across sessions. %1$@ is a number. */
 "session_backfill_done" = "Added %1$@ episodes across sessions";
 /* Toast after a backfill when nothing needed adding */
@@ -5536,28 +5410,16 @@
 "session_empty_message" = "Add episodes from the Inbox or the Episodes tab, or swipe any episode and choose Add to Session.";
 
 /* Group header action: the session's lineup becomes exactly this group, then plays */
-"session_replace_with" = "Replace as Session";
+"session_replace_with" = "Make This the Session";
 
 /* Fork: toast when Play as Session is tapped on a session with an empty lineup. */
 "session_empty_toast" = "Session is empty — add episodes from the Inbox or Episodes tab";
 
-/* Fork: title of the sheet asking whether a Session keeps an episode being removed from Up Next. */
-"session_queue_remove_title" = "This episode is also in a Session";
-
-/* Fork: keeps the episode in its Session while removing it from Up Next. */
-"session_queue_remove_keep" = "No, keep in Session";
-
 /* Fork: also removes the episode from its Session when removing it from Up Next. */
-"session_queue_remove_also" = "Yes, remove from Session";
+"session_queue_remove_also" = "Remove from Session Too";
 
-
-
-
-/* Playlist Folders: device-local folders grouping playlists, mirroring podcast folders */
-"playlist_folder_new" = "New Playlist Folder";
 "playlist_folder_choose" = "Choose Playlist Folder";
 "playlist_folder_choose_playlists" = "Choose Playlists";
-"playlist_folder_delete" = "Delete Playlist Folder";
 "playlist_folder_delete_message" = "The playlists inside will move back to your Playlists list.";
 
 /* Button confirming the playlist selection when creating a Playlist Folder. Singular and plural; %1$@ is the number */
@@ -5576,9 +5438,6 @@
 
 /* Inbox release-date group headers */
 "inbox_group_today" = "Today";
-"inbox_group_yesterday" = "Yesterday";
-"inbox_group_this_week" = "This Week";
-"inbox_group_this_month" = "This Month";
 "inbox_group_older" = "Older";
 "inbox_group_last7_days" = "Last 7 Days";
 "inbox_group_last_month" = "Last Month";
@@ -5598,9 +5457,6 @@
 "inbox_group_duration30to60" = "30–60 min";
 "inbox_group_duration60to120" = "1–2 hours";
 "inbox_group_duration_over120" = "Over 2 hours";
-
-/* Settings row: how many recent sessions the Switch Session picker offers */
-"settings_recent_sessions" = "Recent Sessions";
 
 /* Title shown at the top of the Up Next sort options picker */
 "up_next_sort_title" = "Sort Up Next";
@@ -5911,7 +5767,6 @@
 /* Subtitle for Notifications opt-in option in the Notifications screen during onboarding */
 "notifications_onboarding_notifications_subtitle" = "Receive news, podcast suggestions and more";
 
-
 /* Notification permission banner title*/
 "notitifications_permission_banner_title" = "Allow Push Notifications";
 
@@ -6177,10 +6032,6 @@
 
 /* Section header for the session add/remove rows in the episode Add picker */
 "sessions" = "Sessions";
-/* Row: add this episode to a session. %1$@ is the session name. */
-"session_add_to_format" = "Add to %1$@";
-/* Row: remove this episode from a session. %1$@ is the session name. */
-"session_remove_from_format" = "Remove from %1$@";
 
 /* An accessibility label used for the playlist image */
 "accessibility_playlist_image" = "Playlist image";
@@ -7050,7 +6901,6 @@
 /* tv Discover row failed to load title*/
 "tv_discover_row_failed_to_load_title" = "Failed to load";
 
-
 /* tv create account step - scan the QR code */
 "tv_create_account_step_scan" = "Scan the QR code or go to %1$@";
 
@@ -7063,3 +6913,147 @@
 /* tv create account login step - log in to your account */
 "tv_create_account_step_login" = "Log in to your account";
 
+/* Fork: toast when playing an episode outside the active session pauses it. %1$@ is the lineup name. */
+"session_paused_toast" = "Session “%1$@” paused";
+
+/* Fork: toast when the user explicitly ends the session, returning playback to the Up Next queue. */
+"session_ended_toast" = "Session ended — playing from Up Next";
+
+/* Fork: toast when the active session's lineup drains and playback returns to the queue. %1$@ is the lineup name. */
+"session_finished_toast" = "“%1$@” finished — back to Up Next";
+
+/* Fork: VoiceOver label appended to episode rows carrying the unread Inbox dot. */
+"accessibility_in_inbox" = "In Inbox";
+
+/* Fork: VoiceOver label for the row indicator marking an episode in this page's lineup. */
+"accessibility_in_this_lineup" = "In this session";
+
+/* Fork: VoiceOver label for the row indicator marking an episode in some other lineup. */
+"accessibility_in_other_lineup" = "In another session";
+
+/* Fork: VoiceOver label for the podcast-grid Inbox count badge. %1$@ is the count. */
+"accessibility_inbox_count" = "%1$@ in Inbox";
+
+/* Fork: VoiceOver label for the podcast-grid lineup count badge. %1$@ is the count. */
+"accessibility_lineup_count" = "%1$@ in session";
+
+/* Fork: VoiceOver label for the podcast-grid unplayed count badge. %1$@ is the count. */
+"accessibility_unplayed_count" = "%1$@ unplayed";
+
+/* Fork: VoiceOver label for the podcast-grid dot badge (new/latest episode present). */
+"accessibility_new_episode" = "New episode available";
+
+/* Fork: confirmation alert title when deleting a Filter Preset. %1$@ is the preset name. */
+"filter_preset_delete_confirm" = "Delete “%1$@”?";
+
+/* Fork: banner row atop the paused Session world in Up Next. */
+"session_paused_banner" = "Paused — playing from Up Next";
+
+/* Fork: tappable action on the paused-session banner that resumes session playback. */
+"session_resume" = "Resume";
+
+/* Fork: toast after removing a queued episode that also belongs to a session. %1$@ is the session name. */
+"session_queue_remove_toast" = "Still in Session “%1$@”";
+
+/* Fork: bulk variant of the removal toast when several removed episodes belong to sessions. */
+"session_queue_remove_toast_bulk" = "Some episodes are still in Sessions";
+
+/* Fork: caption in the full-screen player while a session drives playback. %1$@ is the session name. */
+"player_session_caption" = "Session · %1$@";
+
+/* Chromecast label in list options menus. */
+"chromecast" = "Chromecast";
+
+/* Fork: playlist options row — the playlist's session gains the in-session episodes its feeder covers. */
+"session_backfill_playlist" = "Backfill this Session";
+
+/* Fork: footer under the Backfill this Session row explaining what it does. */
+"session_backfill_playlist_msg" = "Adds episodes that are already in other sessions and match this playlist's rules — catches this session up after you widen the rules or create it late. Episodes in no session are never added.";
+
+/* Fork: playlist options row — how the smart playlist's session gets its episodes. */
+"session_fill_mode" = "Fill Session";
+
+/* Fork: Fill Session value — the session mirrors the playlist's episodes (default). */
+"session_fill_auto" = "Automatic";
+
+/* Fork: Fill Session value — hand-curated; episodes join only when explicitly added. */
+"session_fill_manual" = "Manual";
+
+/* Fork: footer under the Fill Session row explaining the two modes. */
+"session_fill_footer" = "Automatic: the session gathers episodes this playlist covers that are already in another session. Manual: episodes join only when you add them — episodes that leave the playlist still drop out.";
+
+/* Fork: footer under the podcast's Inbox section explaining the add policy row. */
+"inbox_podcast_footer" = "When new episodes of this podcast appear in the Inbox.";
+
+/* Fork: session chooser — row line when a session's lineup has no episodes. */
+"session_row_no_episodes" = "No episodes yet";
+
+/* Fork: session chooser — count of sessions in the list header. Singular and plural; %1$@ is the number. */
+"session_count_singular" = "1 session";
+"session_count_plural_format" = "%1$@ sessions";
+
+/* Fork: session chooser — appended to the count when some sessions are empty. %1$@ is the number. */
+"session_count_empty_suffix" = "%1$@ empty";
+
+/* Fork: session chooser — title when the user has no sessions at all. */
+"session_list_none_title" = "No sessions yet";
+
+/* Fork: session chooser — explains what a session is, shown when there are none. */
+"session_list_none_message" = "A session is a lineup you play off to the side of Up Next — one per podcast, playlist or folder.";
+
+/* Fork: session chooser — action opening the Podcasts tab so the user can start one. */
+"session_list_none_action" = "Browse podcasts";
+
+/* Fork: accessibility — the session that owns playback, spoken before the episode line. */
+"session_row_playing_accessibility" = "%1$@, playing";
+
+/* Fork: session chooser — title of the sort picker. */
+"session_sort_title" = "Sort Sessions";
+
+/* Fork: session chooser sort — most recently played first (the default). */
+"session_sort_recent" = "Recently Played";
+
+/* Fork: session chooser sort — alphabetical by session name. */
+"session_sort_name" = "Name A–Z";
+
+/* Fork: session chooser sort — least remaining listening time first. */
+"session_sort_time_left" = "Time Left";
+
+/* Fork: session chooser sort — sessions that most recently gained episodes first. */
+"session_sort_updated" = "Recently Updated";
+
+/* Fork: session chooser ⋯ menu — heading for the visibility toggles. */
+"session_show_heading" = "Show";
+
+/* Fork: session chooser ⋯ menu — hide sessions whose lineup is empty. */
+"session_show_hide_empty" = "Hide Empty Sessions";
+
+/* Fork: session chooser ⋯ menu — include sessions fed by a single podcast. */
+"session_show_podcasts" = "Podcast Sessions";
+
+/* Fork: session chooser ⋯ menu — include sessions fed by a playlist. */
+"session_show_playlists" = "Playlist Sessions";
+
+/* Fork: session chooser ⋯ menu — include sessions fed by a folder. */
+"session_show_folders" = "Folder Sessions";
+
+/* Fork: session chooser ⋯ menu — hide sessions the user has never started listening to. */
+"session_show_hide_unplayed" = "Hide Unplayed Sessions";
+
+/* Fork: left-swipe button that opens the "add this episode somewhere" options. */
+"swipe_add_to" = "Add to";
+
+/* Fork: add-to option — queue the episode at the top of Up Next. */
+"add_to_up_next_top" = "Add to Up Next (Top)";
+
+/* Fork: add-to option — queue the episode at the bottom of Up Next. */
+"add_to_up_next_bottom" = "Add to Up Next (Bottom)";
+
+/* Fork: title of the sheet opened by the Add to swipe. */
+"swipe_add_to_title" = "Add Episode To";
+
+/* Fork: smart playlist options — whether this playlist has a Session at all. */
+"playlist_is_session" = "Session Playlist";
+
+/* Fork: footer under the Session Playlist toggle explaining what turning it off does. */
+"playlist_is_session_footer" = "Off: this playlist has no Session — it won't appear in the session list, on CarPlay, or as a Session tab. Its lineup is kept, so turning this back on restores it.";

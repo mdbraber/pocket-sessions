@@ -405,6 +405,12 @@ class EpisodeCell: ThemeableSwipeCell, MainEpisodeActionViewDelegate {
                 desc.append(L10n.statusNotSelected)
             }
         }
+        if unseenIndicatorVisible {
+            desc.append(L10n.accessibilityInInbox)
+        }
+        if let sessionDescription = sessionIndicatorState.accessibilityLabel {
+            desc.append(sessionDescription)
+        }
         return desc.joined(separator: ". ")
     }
 
@@ -632,6 +638,9 @@ class EpisodeCell: ThemeableSwipeCell, MainEpisodeActionViewDelegate {
         return imageView
     }()
 
+    /// Tracked so labelForAccessibility can speak the session badge; VoiceOver can't see the glyph.
+    private var sessionIndicatorState: SessionIndicatorState = .none
+
     func setSessionIndicator(_ state: SessionIndicatorState) {
         if state.isVisible, sessionIndicator.superview == nil {
             if let stack = upNextIndicator.superview as? UIStackView, let index = stack.arrangedSubviews.firstIndex(of: upNextIndicator) {
@@ -645,8 +654,14 @@ class EpisodeCell: ThemeableSwipeCell, MainEpisodeActionViewDelegate {
                 ])
             }
         }
+        if let image = state.indicatorImage {
+            sessionIndicator.image = image
+        }
         sessionIndicator.tintColor = state.tint ?? ThemeColor.support02()
         sessionIndicator.isHidden = !state.isVisible
+
+        sessionIndicatorState = state
+        accessibilityLabel = labelForAccessibility(episode: episode)
     }
 
     /// Fork: the unread dot — this episode is in the Inbox, i.e. you haven't looked at it yet.
@@ -665,6 +680,9 @@ class EpisodeCell: ThemeableSwipeCell, MainEpisodeActionViewDelegate {
         return dot
     }()
 
+    /// Tracked so labelForAccessibility can speak the Inbox dot; VoiceOver can't see it.
+    private var unseenIndicatorVisible = false
+
     /// Membership of the Inbox playlist is what this reflects — so callers must pass a value
     /// read from a Set fetched ONCE per list load. Never query membership per row.
     func setUnseenIndicator(visible: Bool) {
@@ -681,13 +699,18 @@ class EpisodeCell: ThemeableSwipeCell, MainEpisodeActionViewDelegate {
         }
         unseenIndicator.backgroundColor = ThemeColor.primaryInteractive01()
         unseenIndicator.isHidden = !visible
+
+        unseenIndicatorVisible = visible
+        accessibilityLabel = labelForAccessibility(episode: episode)
     }
 
     override func prepareForReuse() {
         super.prepareForReuse()
 
         unseenIndicator.isHidden = true
+        unseenIndicatorVisible = false
         sessionIndicator.isHidden = true
+        sessionIndicatorState = .none
         starIndicator.isHidden = true
         upNextIndicator.layer.removeAllAnimations()
         upNextIndicator.isHidden = true

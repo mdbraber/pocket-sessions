@@ -202,12 +202,17 @@ class ManualPlaylistsChooserViewController: PCViewController {
             if removed.contains(playlist.uuid), let episode = episodes.first, episodes.count == 1 {
                 track(episode: episode, added: false, to: playlist)
                 dataManager.deleteEpisodes([episode.uuid], from: playlist)
+                // Fork (Sessions): pins never outlive membership.
+                SessionManager.shared.unpinDirectRemove(episodeUuids: [episode.uuid], storePlaylistUuid: playlist.uuid)
             }
         }
 
         changedPlaylists.forEach { playlist in
             playlist.syncStatus = SyncStatus.notSynced.rawValue
             dataManager.save(playlist: playlist)
+            // Fork (Sessions): a hand-add into a session's store is an explicit USER add —
+            // pin it so the feeder's prune never sweeps it back out.
+            SessionManager.shared.pinDirectAdd(episodeUuids: episodes.map(\.uuid), storePlaylistUuid: playlist.uuid)
         }
 
         let showAddedToast = !added.isEmpty && !changedPlaylists.isEmpty

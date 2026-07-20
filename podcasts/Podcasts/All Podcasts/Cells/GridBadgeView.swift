@@ -1,6 +1,22 @@
 import PocketCastsDataModel
 import UIKit
 
+extension BadgeType {
+    /// VoiceOver description of the badge for a given count, or nil when nothing is shown.
+    /// Dot types describe presence; count types speak the actual (uncapped) number.
+    func accessibilityDescription(count: Int) -> String? {
+        guard count > 0 else { return nil }
+        switch self {
+        case .off: return nil
+        case .latestEpisode: return L10n.accessibilityNewEpisode
+        case .anyInInbox: return L10n.accessibilityInInbox
+        case .allUnplayed: return L10n.accessibilityUnplayedCount("\(count)")
+        case .inboxCount: return L10n.accessibilityInboxCount("\(count)")
+        case .sessionCount: return L10n.accessibilityLineupCount("\(count)")
+        }
+    }
+}
+
 class GridBadgeView: UIView {
     private let badgeLabel = UILabel()
     private let simpleBadge = CircleView()
@@ -40,6 +56,8 @@ class GridBadgeView: UIView {
     }
 
     private func updateBadge(count: Int, badgeType: BadgeType) {
+        accessibilityLabel = badgeType.accessibilityDescription(count: count)
+        isAccessibilityElement = accessibilityLabel != nil
         guard count > 0 else {
             isHidden = true
             return

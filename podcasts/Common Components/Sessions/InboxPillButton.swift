@@ -11,7 +11,18 @@ struct InboxPillButton: View {
     let stroke: Color?
     let action: () -> Void
 
+    /// A long press at the call site is invisible to VoiceOver, so any alternative it offers
+    /// must also be exposed as a named accessibility action. Both or neither.
+    var accessibilityActionName: String?
+    var accessibilityAction: (() -> Void)?
+
     var body: some View {
+        button
+            .accessibilityLabel(title)
+            .conditionalAccessibilityAction(named: accessibilityActionName, accessibilityAction)
+    }
+
+    private var button: some View {
         Button(action: action) {
             HStack(alignment: .center, spacing: 8.0) {
                 if let icon {
@@ -40,6 +51,19 @@ struct InboxPillButton: View {
                         .stroke(stroke, lineWidth: 1)
                 }
             }
+        }
+    }
+}
+
+private extension View {
+    /// `accessibilityAction(named:)` has no optional form, so apply it only when the pill was
+    /// actually given an alternative to expose.
+    @ViewBuilder
+    func conditionalAccessibilityAction(named name: String?, _ handler: (() -> Void)?) -> some View {
+        if let name, let handler {
+            accessibilityAction(named: name) { handler() }
+        } else {
+            self
         }
     }
 }

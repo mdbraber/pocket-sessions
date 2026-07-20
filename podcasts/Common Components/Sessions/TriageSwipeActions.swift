@@ -3,12 +3,17 @@ import PocketCastsDataModel
 import SwipeCellKit
 
 /// Fork: the one triage swipe vocabulary, used by every inbox surface.
-/// Left: Play Next · Play Last (or Remove from Up Next). Right: Add/Remove Session
-/// (green) · Archive · Mark as (Un)Seen (blue). All state-aware.
+/// Left: Add to Session (green) · Add to… (green, a picker). Right: Remove Session
+/// (red) · Archive · Mark as (Un)Seen (blue). All state-aware.
 enum TriageSwipes {
     /// Left swipe: Add to Session (green) — only when the episode is NOT in *this page's* session —
-    /// then the queue verbs. (Remove from Session is the right swipe, shown when it IS.)
-    static func leftActions(for episode: BaseEpisode, inLocalSession: Bool, addToSession: @escaping () -> Void) -> [SwipeAction] {
+    /// then Add to… (the shared destination picker). (Remove from Session is the right
+    /// swipe, shown when it IS.)
+    static func leftActions(for episode: BaseEpisode,
+                            inLocalSession: Bool,
+                            presenting: UIViewController,
+                            source: String = "swipe",
+                            addToSession: @escaping () -> Void) -> [SwipeAction] {
         var leading = [SwipeAction]()
         if !inLocalSession {
             let add = SwipeAction(style: .default, title: nil) { _, _ in
@@ -21,48 +26,77 @@ enum TriageSwipes {
             leading.append(add)
         }
 
-        // The now-playing episode gets no queue swipe on the left.
-        if PlaybackManager.shared.isNowPlayingEpisode(episodeUuid: episode.uuid) {
-            return leading
+        return leading + [addToAction(for: episode, presenting: presenting, source: source)]
+    }
+
+    /// "Add to…" — the shared second left-swipe action, everywhere. It never acts
+    /// directly: it closes the swipe and asks where the episode should go (the top or
+    /// the bottom of the Up Next queue, or a manual playlist).
+    ///
+    /// - Parameter onPlaylistChooser: overrides how the manual-playlist chooser is
+    ///   opened (the Up Next screen has to dismiss itself first); by default the
+    ///   standard `NavigationManager` route is used.
+    static func addToAction(for episode: BaseEpisode,
+                            presenting: UIViewController,
+                            source: String = "swipe",
+                            themeOverride: Theme.ThemeType? = nil,
+                            onPlaylistChooser: (() -> Void)? = nil) -> SwipeAction {
+        let uuid = episode.uuid
+        let action = SwipeAction(style: .default, title: nil) { [weak presenting] action, _ in
+            action.fulfill(with: .reset)
+            guard let presenting else { return }
+            presentAddToPicker(episodeUuid: uuid,
+                               presenting: presenting,
+                               source: source,
+                               themeOverride: themeOverride,
+                               onPlaylistChooser: onPlaylistChooser)
+        }
+        action.image = UIImage(named: "plus-circle")
+        action.backgroundColor = ThemeColor.support02()
+        action.accessibilityLabel = L10n.swipeAddTo
+        action.hidesWhenSelected = true
+        return action
+    }
+
+    private static func presentAddToPicker(episodeUuid uuid: String,
+                                           presenting: UIViewController,
+                                           source: String,
+                                           themeOverride: Theme.ThemeType?,
+                                           onPlaylistChooser: (() -> Void)?) {
+        let picker = OptionsPicker(title: L10n.swipeAddToTitle.localizedUppercase, themeOverride: themeOverride)
+
+        picker.addAction(action: OptionAction(label: L10n.addToUpNextTop, icon: "list_playnext") {
+            guard let fresh = DataManager.sharedManager.findBaseEpisode(uuid: uuid) else { return }
+            PlaybackManager.shared.addToUpNext(episode: fresh, ignoringQueueLimit: true, toTop: true, userInitiated: true)
+            SessionLinking.mirrorQueueAdd(episodes: [fresh])
+            Analytics.track(.episodeSwipeActionPerformed, properties: ["action": "up_next_add_top", "source": source])
+        })
+
+        picker.addAction(action: OptionAction(label: L10n.addToUpNextBottom, icon: "list_playlast") {
+            guard let fresh = DataManager.sharedManager.findBaseEpisode(uuid: uuid) else { return }
+            PlaybackManager.shared.addToUpNext(episode: fresh, ignoringQueueLimit: true, toTop: false, userInitiated: true)
+            SessionLinking.mirrorQueueAdd(episodes: [fresh])
+            Analytics.track(.episodeSwipeActionPerformed, properties: ["action": "up_next_add_bottom", "source": source])
+        })
+
+        // User episodes can't live in a manual playlist, so only offer it for podcast episodes.
+        if DataManager.sharedManager.findEpisode(uuid: uuid) != nil {
+            picker.addAction(action: OptionAction(label: L10n.playlistManualEpisodeAddToPlaylist, icon: "plus-circle") {
+                if let onPlaylistChooser {
+                    onPlaylistChooser()
+                    return
+                }
+                guard let fresh = DataManager.sharedManager.findEpisode(uuid: uuid) else { return }
+                NavigationManager.sharedManager.navigateTo(
+                    NavigationManager.manualPlaylistsChooserKey,
+                    data: [
+                        NavigationManager.manualPlaylistsChooserEpisodeKey: fresh
+                    ]
+                )
+            })
         }
 
-        // State-aware, like the app-wide queue swipes: a queued episode offers
-        // Remove from Up Next instead of Play Next / Play Last.
-        if PlaybackManager.shared.inUpNext(episode: episode) {
-            let removeFromUpNext = SwipeAction(style: .default, title: nil) { _, _ in
-                SessionLinking.removeFromUpNextAskingSession(episode: episode)
-            }
-            removeFromUpNext.image = UIImage(named: "episode-removenext")
-            removeFromUpNext.backgroundColor = ThemeColor.support05()
-            removeFromUpNext.accessibilityLabel = L10n.removeFromUpNext
-            removeFromUpNext.hidesWhenSelected = true
-            return leading + [removeFromUpNext]
-        }
-
-        let addTop = SwipeAction(style: .default, title: nil) { _, _ in
-            PlaybackManager.shared.addToUpNext(episode: episode, ignoringQueueLimit: true, toTop: true, userInitiated: true)
-                    SessionLinking.mirrorQueueAdd(episodes: [episode])
-        }
-        addTop.image = UIImage(named: "list_playnext")
-        addTop.backgroundColor = ThemeColor.support04()
-        addTop.accessibilityLabel = L10n.playNext
-        addTop.hidesWhenSelected = true
-
-        let addBottom = SwipeAction(style: .default, title: nil) { _, _ in
-            PlaybackManager.shared.addToUpNext(episode: episode, ignoringQueueLimit: true, toTop: false, userInitiated: true)
-                    SessionLinking.mirrorQueueAdd(episodes: [episode])
-        }
-        addBottom.image = UIImage(named: "list_playlast")
-        addBottom.backgroundColor = ThemeColor.support03()
-        addBottom.accessibilityLabel = L10n.playLast
-        addBottom.hidesWhenSelected = true
-
-        // Honor the user's primary queue-swipe preference, like the stock helper.
-        if Settings.primaryUpNextSwipeAction() == .playNext {
-            return leading + [addTop, addBottom]
-        } else {
-            return leading + [addBottom, addTop]
-        }
+        picker.present(from: presenting)
     }
 
     /// The session glyph family (play.square.stack) with a plus: "add to the stack".

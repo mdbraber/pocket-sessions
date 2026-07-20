@@ -14,7 +14,7 @@ extension PlaylistDetailViewController: SwipeTableViewCellDelegate, SwipeHandler
             // Episodes rows use the shared triage vocabulary (the dot lives there, so
             // swiping it away must clear it); Session lineup rows keep the queue actions.
             if rowSection == .browse {
-                return TriageSwipes.leftActions(for: episode, inLocalSession: viewModel.thisSessionMemberUuids.contains(episode.uuid), addToSession: { [weak self] in
+                return TriageSwipes.leftActions(for: episode, inLocalSession: viewModel.thisSessionMemberUuids.contains(episode.uuid), presenting: self, source: swipeSource, addToSession: { [weak self] in
                     guard let self else { return }
                     self.viewModel.addToSessionsPerSetting(episodeUuids: [episode.uuid], presenting: self)
                 })

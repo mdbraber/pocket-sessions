@@ -297,72 +297,6 @@ class Settings: NSObject {
         return UserDefaults.standard.bool(forKey: Settings.upNextShuffleKey)
     }
 
-    static let upNextFilterTypeKey = "SJUpNextFilterType"
-    static let upNextFilterUuidKey = "SJUpNextFilterUuid"
-
-    /// The active Up Next play filter, or nil when the whole queue plays.
-    /// Deliberately device-local (never synced), so this fork feature can't affect other clients.
-    class func upNextFilter() -> UpNextFilter? {
-        guard FeatureFlag.upNextFilter.enabled,
-              let typeValue = UserDefaults.standard.string(forKey: Settings.upNextFilterTypeKey),
-              let type = UpNextFilterType(rawValue: typeValue),
-              let uuid = UserDefaults.standard.string(forKey: Settings.upNextFilterUuidKey)
-        else {
-            return nil
-        }
-
-        return UpNextFilter(type: type, uuid: uuid)
-    }
-
-    class func setUpNextFilter(_ filter: UpNextFilter?) {
-        guard FeatureFlag.upNextFilter.enabled else { return }
-
-        if let filter {
-            UserDefaults.standard.set(filter.type.rawValue, forKey: Settings.upNextFilterTypeKey)
-            UserDefaults.standard.set(filter.uuid, forKey: Settings.upNextFilterUuidKey)
-            rememberRecentUpNextFilter(filter)
-        } else {
-            UserDefaults.standard.removeObject(forKey: Settings.upNextFilterTypeKey)
-            UserDefaults.standard.removeObject(forKey: Settings.upNextFilterUuidKey)
-        }
-
-        NotificationCenter.postOnMainThread(notification: Constants.Notifications.upNextFilterChanged)
-    }
-
-    static let upNextRecentFiltersKey = "SJUpNextRecentFilters"
-    static let upNextRecentFiltersLimit = 5
-
-    /// The most recently applied Up Next filters, most recent first — shown as shortcuts
-    /// in the filter picker. Device-local, like the filter itself.
-    class func upNextRecentFilters() -> [UpNextFilter] {
-        guard FeatureFlag.upNextFilter.enabled,
-              let raw = UserDefaults.standard.array(forKey: upNextRecentFiltersKey) as? [[String: String]] else { return [] }
-        return raw.compactMap { entry in
-            guard let typeValue = entry["type"], let type = UpNextFilterType(rawValue: typeValue), let uuid = entry["uuid"] else { return nil }
-            return UpNextFilter(type: type, uuid: uuid)
-        }
-    }
-
-    private class func rememberRecentUpNextFilter(_ filter: UpNextFilter) {
-        var recents = upNextRecentFilters().filter { $0 != filter }
-        recents.insert(filter, at: 0)
-        let raw = recents.prefix(upNextRecentFiltersLimit).map { ["type": $0.type.rawValue, "uuid": $0.uuid] }
-        UserDefaults.standard.set(Array(raw), forKey: upNextRecentFiltersKey)
-    }
-
-    static let upNextFilterHideSkippedKey = "SJUpNextFilterHideSkipped"
-
-    /// When true and a filter is active, the Up Next list shows only matching episodes
-    /// (compact view). Skipped episodes stay in the queue, just hidden from the list.
-    class func upNextFilterHideSkipped() -> Bool {
-        FeatureFlag.upNextFilter.enabled && UserDefaults.standard.bool(forKey: Settings.upNextFilterHideSkippedKey)
-    }
-
-    class func setUpNextFilterHideSkipped(_ hide: Bool) {
-        UserDefaults.standard.set(hide, forKey: Settings.upNextFilterHideSkippedKey)
-        NotificationCenter.postOnMainThread(notification: Constants.Notifications.upNextFilterChanged)
-    }
-
     static let playlistsBadgeKey = "SJPlaylistsBadgeType"
 
     /// Fork: the Playlists overview's badge type — same option set as the podcast
@@ -422,46 +356,6 @@ class Settings: NSObject {
         }
     }
 
-    // MARK: - Position in Session
-
-    static let sessionInsertPositionKey = "SJSessionInsertPosition"
-
-    /// Fork: the global default insert position for a Session's adds (Top / Bottom). New sessions
-    /// inherit it; a per-podcast override can pin a different position. Only Top/Bottom are offered
-    /// (the lineup's marker modes aren't a user-facing choice).
-    class func sessionInsertPosition() -> PlaylistInsertMode {
-        guard let raw = UserDefaults.standard.object(forKey: sessionInsertPositionKey) as? Int,
-              let mode = PlaylistInsertMode(rawValue: Int32(raw)) else { return .bottom }
-        return mode
-    }
-
-    class func setSessionInsertPosition(_ mode: PlaylistInsertMode) {
-        UserDefaults.standard.set(Int(mode.rawValue), forKey: sessionInsertPositionKey)
-    }
-
-    /// Per-podcast override, keyed by podcast. 0 (unset) means "follow the global default"; any
-    /// other value is `PlaylistInsertMode.rawValue + 1` so Top (raw 0) survives the unset default.
-    private static func sessionPositionOverrideKey(_ podcastUuid: String) -> String { "SJSessionPosition-\(podcastUuid)" }
-
-    class func sessionPositionOverride(podcastUuid: String) -> PlaylistInsertMode? {
-        let stored = UserDefaults.standard.integer(forKey: sessionPositionOverrideKey(podcastUuid))
-        guard stored > 0 else { return nil }
-        return PlaylistInsertMode(rawValue: Int32(stored - 1))
-    }
-
-    class func setSessionPositionOverride(_ mode: PlaylistInsertMode?, podcastUuid: String) {
-        if let mode {
-            UserDefaults.standard.set(Int(mode.rawValue) + 1, forKey: sessionPositionOverrideKey(podcastUuid))
-        } else {
-            UserDefaults.standard.removeObject(forKey: sessionPositionOverrideKey(podcastUuid))
-        }
-    }
-
-    /// The effective insert position for a podcast's session: its override, else the global default.
-    class func resolvedSessionInsertPosition(podcastUuid: String) -> PlaylistInsertMode {
-        sessionPositionOverride(podcastUuid: podcastUuid) ?? sessionInsertPosition()
-    }
-
     // MARK: - Which session playlists show in the Playlists tab
 
     static let showManualSessionsKey = "SJShowManualSessions"
@@ -496,6 +390,26 @@ class Settings: NSObject {
     }
     class func setShowPodcastSessionPodcasts(_ uuids: Set<String>) {
         UserDefaults.standard.set(Array(uuids), forKey: showPodcastSessionPodcastsKey)
+    }
+
+    static let playlistsOptedOutOfSessionKey = "SJPlaylistsOptedOutOfSession"
+
+    /// Fork: smart playlists the user has declared "not a session playlist". Every smart
+    /// playlist can back a session by default; opting out hides its Session tab, its
+    /// "Play Session" button and its chooser/CarPlay row, and stops one being created.
+    /// The session's store and lineup are left untouched, so opting back in restores it.
+    class func playlistsOptedOutOfSession() -> Set<String> {
+        Set(UserDefaults.standard.stringArray(forKey: playlistsOptedOutOfSessionKey) ?? [])
+    }
+
+    class func playlistOptedOutOfSession(uuid: String) -> Bool {
+        playlistsOptedOutOfSession().contains(uuid)
+    }
+
+    class func setPlaylistOptedOutOfSession(_ optedOut: Bool, uuid: String) {
+        var uuids = playlistsOptedOutOfSession()
+        if optedOut { uuids.insert(uuid) } else { uuids.remove(uuid) }
+        UserDefaults.standard.set(Array(uuids), forKey: playlistsOptedOutOfSessionKey)
     }
 
     static let sessionAutoAddLimitKey = "SJSessionAutoAddLimit"
@@ -1872,60 +1786,6 @@ extension UserDefaults {
     }
 }
 
-// MARK: - Up Next Filter
-
-enum UpNextFilterType: String {
-    case podcast
-    case folder
-    case smartPlaylist
-    case playlist
-}
-
-/// The Up Next play filter: when set, automatic playback advance only picks queue episodes
-/// that belong to this folder or smart playlist. The queue itself is never trimmed or
-/// reordered by the filter — skipped episodes keep their place and relative order.
-struct UpNextFilter: Equatable {
-    let type: UpNextFilterType
-    let uuid: String
-
-    var title: String? {
-        switch type {
-        case .podcast:
-            return DataManager.sharedManager.findPodcast(uuid: uuid, includeUnsubscribed: true)?.title
-        case .folder:
-            return DataManager.sharedManager.findFolder(uuid: uuid)?.name
-        case .smartPlaylist, .playlist:
-            return DataManager.sharedManager.findPlaylist(uuid: uuid)?.playlistName
-        }
-    }
-
-    /// Which of the given episodes the filter currently matches, by uuid.
-    /// Podcast and folder membership resolve through the in-memory podcast cache;
-    /// playlists (smart or manual) run the playlist query once and intersect by uuid.
-    func matchingEpisodeUuids(in episodes: [BaseEpisode]) -> Set<String> {
-        switch type {
-        case .podcast:
-            return Set(episodes.compactMap { episode -> String? in
-                guard let episode = episode as? Episode, episode.podcastUuid == uuid else { return nil }
-                return episode.uuid
-            })
-        case .folder:
-            let podcastsInFolder = Set(DataManager.sharedManager.allPodcasts(includeUnsubscribed: false)
-                .filter { $0.folderUuid == uuid }
-                .map(\.uuid))
-            return Set(episodes.compactMap { episode -> String? in
-                guard let episode = episode as? Episode, podcastsInFolder.contains(episode.podcastUuid) else { return nil }
-                return episode.uuid
-            })
-        case .smartPlaylist, .playlist:
-            guard let playlist = DataManager.sharedManager.findPlaylist(uuid: uuid) else { return [] }
-            let query = PlaylistQueryBuilder.query(clause: .episode, for: playlist, episodeUuidToAdd: nil, limit: 0)
-            let playlistUuids = Set(DataManager.sharedManager.findPlaylistEpisodesWhere(query: query, arguments: nil).map(\.uuid))
-            return Set(episodes.map(\.uuid)).intersection(playlistUuids)
-        }
-    }
-}
-
 // MARK: - Playback Session
 
 enum PlaybackSessionType: String {
@@ -1962,18 +1822,6 @@ struct PlaybackSession: Equatable {
     /// The session's full episode list in display order (empty without an injected source).
     func orderedEpisodes() -> [BaseEpisode] {
         Self.episodeSource?.orderedEpisodes(for: self) ?? []
-    }
-
-    /// Which of the given (queue) episodes belong to this session's source, by uuid —
-    /// drives the "hide episodes from current session" queue view.
-    func matchingEpisodeUuids(in episodes: [BaseEpisode]) -> Set<String> {
-        let underlyingType: UpNextFilterType
-        switch type {
-        case .podcast: underlyingType = .podcast
-        case .playlist: underlyingType = .playlist
-        case .smartPlaylist: underlyingType = .smartPlaylist
-        }
-        return UpNextFilter(type: underlyingType, uuid: uuid).matchingEpisodeUuids(in: episodes)
     }
 
     /// The session's unfinished episodes in order, excluding the given (currently playing)

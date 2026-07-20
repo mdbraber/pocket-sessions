@@ -58,6 +58,15 @@ class PlayerContainerViewController: SimpleNotificationsViewController, PlayerTa
         return item
     }()
 
+    // Fork: the Sessions tab — sessions whose lineup holds the playing episode.
+    lazy var sessionsItem: SessionsPlayerItemViewController = {
+        let item = SessionsPlayerItemViewController()
+        item.containerDelegate = self
+        item.view.translatesAutoresizingMaskIntoConstraints = false
+
+        return item
+    }()
+
     lazy var chaptersItem: ChaptersViewController = {
         let item = ChaptersViewController()
         item.scrollViewHandler = self
@@ -120,6 +129,7 @@ class PlayerContainerViewController: SimpleNotificationsViewController, PlayerTa
 
     var showingChapters = false
     var showingNotes = false
+    var showingSessions = false
     var showingBookmarks = false
 
     var finalScrollViewConstraint: NSLayoutConstraint?
@@ -247,6 +257,10 @@ class PlayerContainerViewController: SimpleNotificationsViewController, PlayerTa
         addCustomObserver(Constants.Notifications.playbackStarted, selector: #selector(update))
         addCustomObserver(Constants.Notifications.playbackTrackChanged, selector: #selector(update))
         addCustomObserver(Constants.Notifications.podcastChaptersDidUpdate, selector: #selector(update))
+        // Fork: the Sessions tab only shows while the playing episode is in a lineup,
+        // so rebuild the tabs when session or lineup membership changes.
+        addCustomObserver(SessionStore.changed, selector: #selector(update))
+        addCustomObserver(Constants.Notifications.playlistChanged, selector: #selector(update))
         addCustomObserver(Constants.Notifications.themeChanged, selector: #selector(themeDidChange))
     }
 

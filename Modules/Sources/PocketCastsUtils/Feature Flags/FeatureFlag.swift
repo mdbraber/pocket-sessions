@@ -86,9 +86,6 @@ public enum FeatureFlag: String, CaseIterable {
     /// Enable the Up Next shuffle button
     case upNextShuffle
 
-    /// Filter Up Next playback to a folder or smart playlist (personal fork feature)
-    case upNextFilter
-
     /// Playlist folders in the Playlists overview (personal fork feature)
     case playlistFolders
 
@@ -99,11 +96,6 @@ public enum FeatureFlag: String, CaseIterable {
     /// The extended library badges: session-aware podcast badge types and
     /// playlist-row badges (personal fork feature)
     case libraryBadges
-
-
-    /// The fork tab bar (Inbox first, Up Next tab, Discover under Profile);
-    /// off restores the stock arrangement with a Discover tab (personal fork feature)
-    case customTabBar
 
     /// Push two auto downloads on subscribe of a podcast
     case autoDownloadOnSubscribe
@@ -399,15 +391,11 @@ public enum FeatureFlag: String, CaseIterable {
             false
         case .upNextShuffle:
             true
-        case .upNextFilter:
-            true
         case .playlistFolders:
             true
         case .smartPlaylistFolderRules:
             true
         case .libraryBadges:
-            true
-        case .customTabBar:
             true
         case .autoDownloadOnSubscribe:
             true

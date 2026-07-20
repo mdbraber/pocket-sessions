@@ -20,6 +20,27 @@ class EpisodeDetailViewController: FakeNavViewController, UIDocumentInteractionC
         return BookmarkEpisodeListController(episode: episode, themeOverride: themeOverride)
     }()
 
+    // Fork: the Sessions tab — sessions whose lineup holds this episode.
+    private lazy var sessionsViewModel: EpisodeSessionsViewModel = {
+        let viewModel = EpisodeSessionsViewModel(episodeUuid: episode.uuid)
+        viewModel.onOpenSession = { [weak self] row in
+            // Open the session's playlist on its Session (lineup) tab, dismissing this card first.
+            PlaylistDetailViewModel.pendingInitialTab[row.storeUuid] = .lineup
+            self?.dismiss(animated: true) {
+                NavigationManager.sharedManager.navigateTo(NavigationManager.filterPageKey, data: [NavigationManager.filterUuidKey: row.storeUuid])
+            }
+        }
+        viewModel.onAddToSession = { [weak self] in
+            // The standard add flow; any "which session?" picker presents over this card
+            // (without dismissing it), and the list refreshes via playlistChanged.
+            guard let self else { return }
+            SessionManager.shared.addToSessions(episodeUuids: [self.episode.uuid], preferred: nil, presenting: self)
+        }
+        return viewModel
+    }()
+
+    private lazy var sessionsController = ThemedHostingController(rootView: EpisodeSessionsListView(viewModel: sessionsViewModel, style: .episodeCard))
+
     @IBOutlet var podcastImage: PodcastImageView!
     @IBOutlet var episodeName: ThemeableLabel! {
         didSet {
@@ -172,6 +193,17 @@ class EpisodeDetailViewController: FakeNavViewController, UIDocumentInteractionC
 
     private var currentTab: Tab = .details
 
+    // Fork: the Sessions page only exists when the episode is in at least one lineup
+    // (checked once at load). Page indices map through this list, not Tab raw values.
+    private lazy var tabs: [Tab] = {
+        var tabs: [Tab] = [.details]
+        if !SessionManager.shared.sessionsHolding(episodeUuids: [episode.uuid]).isEmpty {
+            tabs.append(.sessions)
+        }
+        tabs.append(.bookmarks)
+        return tabs
+    }()
+
     // MARK: - Init
 
     init(episodeUuid: String, source: EpisodeDetailViewSource, playlist: AutoplayHelper.Playlist? = nil, timestamp: TimeInterval? = nil) {
@@ -192,6 +224,11 @@ class EpisodeDetailViewController: FakeNavViewController, UIDocumentInteractionC
 
         super.init(nibName: "EpisodeDetailViewController", bundle: nil)
     }
+
+    /// Fork: the session whose lineup this card was opened from (its store uuid). Playing
+    /// from here must play WITHIN that session — otherwise the episode plays as an ordinary
+    /// queue episode and the session it belongs to never becomes active.
+    var playFromSessionStoreUuid: String?
 
     init(episode: Episode, podcast: Podcast, source: EpisodeDetailViewSource, playlist: AutoplayHelper.Playlist? = nil) {
         self.episode = episode
@@ -261,6 +298,9 @@ class EpisodeDetailViewController: FakeNavViewController, UIDocumentInteractionC
         loadEpisodeArtwork()
 
         bookmarksController.view.isHidden = false
+        if tabs.contains(.sessions) {
+            sessionsController.view.isHidden = false
+        }
 
         addCustomObserver(Constants.Notifications.playbackStarted, selector: #selector(playbackEventDidFire))
         addCustomObserver(Constants.Notifications.playbackPaused, selector: #selector(playbackEventDidFire))
@@ -355,7 +395,7 @@ class EpisodeDetailViewController: FakeNavViewController, UIDocumentInteractionC
         let currentPage = containerScrollView.currentPage
 
         // If we're swiping to the first page, then allow the navbar shadow to be shown, or hide it if not
-        if currentPage == .details {
+        if tabs[safe: currentPage] == .details {
             super.scrollViewDidScroll(mainScrollView)
         } else {
             setShadowVisible(false)
@@ -364,7 +404,7 @@ class EpisodeDetailViewController: FakeNavViewController, UIDocumentInteractionC
         // Hides the vertical scroll indicators when changing pages
         mainScrollView.hideVerticalScrollIndicator()
 
-        guard let tab = Tab(rawValue: currentPage), tab != currentTab else {
+        guard let tab = tabs[safe: currentPage], tab != currentTab else {
             return
         }
 
@@ -592,19 +632,27 @@ class EpisodeDetailViewController: FakeNavViewController, UIDocumentInteractionC
     }
 
     private enum Tab: Int, AnalyticsDescribable {
-        case details, bookmarks
-
-        // Allow comparing against a raw int to the enum
-        static func == (lhs: Int, rhs: Self) -> Bool {
-            Tab(rawValue: lhs) == rhs
-        }
+        case details, sessions, bookmarks
 
         var analyticsDescription: String {
             switch self {
             case .details:
                 return "details"
+            case .sessions:
+                return "sessions"
             case .bookmarks:
                 return "bookmarks"
+            }
+        }
+
+        var title: String {
+            switch self {
+            case .details:
+                return L10n.episodeDetailsTitle
+            case .sessions:
+                return L10n.sessions
+            case .bookmarks:
+                return L10n.bookmarks
             }
         }
     }
@@ -630,6 +678,21 @@ extension EpisodeDetailViewController: AnalyticsSourceProvider {
 private extension EpisodeDetailViewController {
     private func addBookmarksTabIfNeeded() {
         containerScrollView.addPage(mainScrollView)
+
+        // Fork: the Sessions page sits between Details and Bookmarks, but only when the
+        // episode is in at least one lineup (page order must match the `tabs` list).
+        if tabs.contains(.sessions), let sessionsView = sessionsController.view {
+            sessionsView.translatesAutoresizingMaskIntoConstraints = false
+
+            // Same trick as bookmarks below: kept hidden until viewDidAppear so it
+            // doesn't animate into position when added.
+            sessionsView.isHidden = true
+
+            containerScrollView.addPage(sessionsView, padding: .init(top: EpisodeDetailConstants.topPadding, left: 0, bottom: 0, right: 0))
+
+            addChild(sessionsController)
+            sessionsController.didMove(toParent: self)
+        }
 
         guard let bookmarksView = bookmarksController.view else {
             return
@@ -680,10 +743,7 @@ private extension EpisodeDetailViewController {
         self.tabContainerView = tabContainerView
         self.tabContainerTrailingAnchor = trailingAnchor
 
-        let viewModel = EpisodeTabsViewModel(tabs: [
-            .init(title: L10n.episodeDetailsTitle),
-            .init(title: L10n.bookmarks)
-        ])
+        let viewModel = EpisodeTabsViewModel(tabs: tabs.map { .init(title: $0.title) })
 
         let controller = ThemedHostingController(rootView: EpisodeDetailTabView(viewModel: viewModel))
 
@@ -705,7 +765,7 @@ private extension EpisodeDetailViewController {
     }
 
     func selectedTabDidChange() {
-        guard let index = tabViewModel?.selectedIndex, let tab = Tab(rawValue: index), tab != currentTab else {
+        guard let index = tabViewModel?.selectedIndex, let tab = tabs[safe: index], tab != currentTab else {
             return
         }
 
@@ -718,7 +778,7 @@ private extension EpisodeDetailViewController {
         }
 
         currentTab = tab
-        tabViewModel?.selectTabIndex(tab.rawValue)
+        tabViewModel?.selectTabIndex(tabs.firstIndex(of: tab) ?? 0)
 
         guard animated else {
             updateRightButtons()
@@ -742,6 +802,8 @@ private extension EpisodeDetailViewController {
             addRightAction(image: UIImage(named: "podcast-share"), accessibilityLabel: L10n.share, action: #selector(shareTapped(_:)))
             starButton = addRightAction(image: UIImage(named: "star_empty"), accessibilityLabel: L10n.starEpisode, action: #selector(starTapped(_:)))
             updateStar()
+        case .sessions:
+            break
         case .bookmarks:
             if bookmarksController.viewModel.numberOfItems != 0 {
                 addRightAction(image: UIImage(named: "more"),

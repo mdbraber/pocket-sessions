@@ -5,9 +5,19 @@ class ListEpisode: ListItem {
     let episode: Episode
     let tintColor: UIColor
 
+    // Fork: session membership captured at build time. The session mini-badge is painted in
+    // cell config, so the DifferenceKit diff must see membership changes as content changes —
+    // otherwise adding an episode to a session leaves the visible row's badge stale.
+    let inAnySession: Bool
+
     init(episode: Episode, tintColor: UIColor) {
         self.episode = episode
         self.tintColor = tintColor
+        #if !APPCLIP && !os(watchOS)
+        self.inAnySession = SessionMembership.shared.inAnySession.contains(episode.uuid)
+        #else
+        self.inAnySession = false
+        #endif
 
         super.init()
     }
@@ -33,6 +43,7 @@ class ListEpisode: ListItem {
             episode.playbackErrorDetails == rhs.episode.playbackErrorDetails &&
             episode.keepEpisode == rhs.episode.keepEpisode &&
             episode.sizeInBytes == rhs.episode.sizeInBytes &&
+            inAnySession == rhs.inAnySession &&
             tintColor == rhs.tintColor
     }
 }

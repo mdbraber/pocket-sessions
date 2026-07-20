@@ -51,7 +51,7 @@ class PodcastListCell: ThemeableCollectionCell {
         podcastTitle.text = podcast.title
         podcastInfo.text = podcast.author
 
-        accessibilityLabel = podcast.title
+        accessibilityLabel = [podcast.title, badgeType.accessibilityDescription(count: podcast.cachedUnreadCount)].compactMap { $0 }.joined(separator: ", ")
 
         if badgeType.showsCount {
             unplayedHeight.constant = 22

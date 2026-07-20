@@ -9,6 +9,7 @@ enum PlayerTabs: Int {
     case nowPlaying
     case showNotes
     case chapters
+    case sessions
     case bookmarks
 
     var description: String {
@@ -19,6 +20,8 @@ enum PlayerTabs: Int {
             return L10n.playerShowNotesTitle
         case .chapters:
             return L10n.chapters
+        case .sessions:
+            return L10n.sessions
         case .bookmarks:
             return L10n.bookmarks
         }
@@ -49,6 +52,8 @@ class PlayerTabsView: UIScrollView {
                 AnalyticsHelper.playerShowNotesOpened()
             case .chapters:
                 AnalyticsHelper.chaptersOpened()
+            case .sessions:
+                break
             case .bookmarks:
                 break
             }
@@ -260,6 +265,8 @@ private extension PlayerTabsView {
             tabName = "show_notes"
         case .chapters:
             tabName = "chapters"
+        case .sessions:
+            tabName = "sessions"
         case .bookmarks:
             tabName = "bookmarks"
         }

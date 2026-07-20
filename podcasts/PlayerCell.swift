@@ -164,6 +164,12 @@ class PlayerCell: ThemeableSwipeCell {
         } else if let playbackError = episode.playbackErrorDetails {
             desc.append(playbackError)
         }
+        if upNextIndicatorVisible {
+            desc.append(L10n.upNext)
+        }
+        if let sessionDescription = sessionIndicatorState.accessibilityLabel {
+            desc.append(sessionDescription)
+        }
 
         return desc.joined(separator: ". ")
     }
@@ -263,6 +269,9 @@ class PlayerCell: ThemeableSwipeCell {
         return imageView
     }()
 
+    /// Tracked so labelForAccessibility can speak the queued mark; VoiceOver can't see the glyph.
+    private var upNextIndicatorVisible = false
+
     func setUpNextIndicator(visible: Bool) {
         if visible, upNextMiniIndicator.superview == nil {
             if let stack = downloadedIndicator.superview as? UIStackView, let index = stack.arrangedSubviews.firstIndex(of: downloadedIndicator) {
@@ -278,6 +287,9 @@ class PlayerCell: ThemeableSwipeCell {
         }
         upNextMiniIndicator.tintColor = ThemeColor.support01()
         upNextMiniIndicator.isHidden = !visible
+
+        upNextIndicatorVisible = visible
+        accessibilityLabel = labelForAccessibility(episode: episode)
     }
 
     /// Fork: the equalizer bars + accent title for the row that's sounding right now.
@@ -306,6 +318,9 @@ class PlayerCell: ThemeableSwipeCell {
         episodeTitle.style = nowPlaying ? .primaryInteractive01 : .primaryText01
     }
 
+    /// Tracked so labelForAccessibility can speak the session badge; VoiceOver can't see the glyph.
+    private var sessionIndicatorState: SessionIndicatorState = .none
+
     func setSessionIndicator(_ state: SessionIndicatorState) {
         if state.isVisible, sessionIndicator.superview == nil {
             if let stack = downloadedIndicator.superview as? UIStackView, let index = stack.arrangedSubviews.firstIndex(of: downloadedIndicator) {
@@ -319,15 +334,23 @@ class PlayerCell: ThemeableSwipeCell {
                 ])
             }
         }
+        if let image = state.indicatorImage {
+            sessionIndicator.image = image
+        }
         sessionIndicator.tintColor = state.tint ?? ThemeColor.support02()
         sessionIndicator.isHidden = !state.isVisible
+
+        sessionIndicatorState = state
+        accessibilityLabel = labelForAccessibility(episode: episode)
     }
 
     override func prepareForReuse() {
         super.prepareForReuse()
 
         sessionIndicator.isHidden = true
+        sessionIndicatorState = .none
         upNextMiniIndicator.isHidden = true
+        upNextIndicatorVisible = false
         nowPlayingIndicator.isHidden = true
         episodeTitle.style = .primaryText01
         showTick = false

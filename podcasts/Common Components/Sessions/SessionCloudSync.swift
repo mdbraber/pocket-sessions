@@ -51,8 +51,15 @@ final class SessionCloudSync {
 
     static func start() {
         guard shared == nil else { return }
-        // No entitlement (or no account) → containerIdentifier lookup/engine setup
-        // throws at the CK layer; the catch keeps the app fully functional offline.
+        // CKContainer.default() TRAPS (EXC_BREAKPOINT, not a catchable exception) when the
+        // build lacks the iCloud entitlement — e.g. the staging simulator app; only builds
+        // signed with PocketCasts.device.entitlements carry it. The ubiquity token is the
+        // public probe for exactly the safe case: non-nil only with iCloud entitlements AND
+        // a signed-in account, the only situation CloudKit can actually sync in anyway.
+        guard FileManager.default.ubiquityIdentityToken != nil else {
+            FileLog.shared.addMessage("SessionCloudSync: iCloud unavailable (no entitlement or not signed in) — running local-only")
+            return
+        }
         shared = SessionCloudSync()
     }
 
@@ -96,6 +103,16 @@ final class SessionCloudSync {
         CKRecord.ID(recordName: "preset|\(uuid)", zoneID: zoneID)
     }
 
+    /// The Inbox seen-ledger travels as ONE record holding the JSON-encoded maps, not a record
+    /// per episode. The 90-day prune caps it at a few thousand entries (~tens of KB — far under
+    /// the 1MB record limit), and one record means one union-merge on every apply instead of
+    /// thousands of per-episode records churning through the engine. Per-podcast records exist
+    /// for `offeredThrough` because each key there merges on its own monotonic rule; the ledger
+    /// merges as a single union, so a single record is the natural grain.
+    private var seenLedgerRecordID: CKRecord.ID {
+        CKRecord.ID(recordName: "seenledger", zoneID: zoneID)
+    }
+
     // MARK: - Local → cloud
 
     /// First run: everything currently in the store becomes a pending save.
@@ -107,8 +124,12 @@ final class SessionCloudSync {
         for session in snapshot.sessions {
             pending.append(.saveRecord(recordID(session: session.uuid)))
         }
-        for podcastUuid in InboxStore.shared.snapshot.offeredThrough.keys {
+        let inboxSnapshot = InboxStore.shared.snapshot
+        for podcastUuid in inboxSnapshot.offeredThrough.keys {
             pending.append(.saveRecord(recordID(offeredThrough: podcastUuid)))
+        }
+        if !inboxSnapshot.seenAt.isEmpty || !inboxSnapshot.unseenAt.isEmpty {
+            pending.append(.saveRecord(seenLedgerRecordID))
         }
         for preset in FilterPresetStore.shared.snapshot.presets {
             pending.append(.saveRecord(recordID(preset: preset.uuid)))
@@ -127,6 +148,14 @@ final class SessionCloudSync {
         }
         for uuid in old.offeredThrough.keys where new.offeredThrough[uuid] == nil {
             pending.append(.deleteRecord(recordID(offeredThrough: uuid)))
+        }
+
+        // The seen-ledger: any change to either map re-saves the single ledger record. Note
+        // there is deliberately no `.deleteRecord` path — entries leave the ledger by the
+        // record being re-saved without them (prune) or by an unseen override, never by
+        // record deletion, because absence must not read as "delete" on the other side.
+        if old.seenAt != new.seenAt || old.unseenAt != new.unseenAt {
+            pending.append(.saveRecord(seenLedgerRecordID))
         }
 
         guard !pending.isEmpty else { return }
@@ -192,6 +221,29 @@ final class SessionCloudSync {
             let serverDate = record["date"] as? Date
             record["date"] = (serverDate.map { max($0, date) } ?? date) as NSDate
             return record
+        case "seenledger":
+            // Write the UNION of our ledger and whatever the server record already holds —
+            // never our maps alone. Record-level saves are last-writer-wins, so writing only
+            // the local view would clobber entries a device with a newer server copy has that
+            // we haven't fetched yet (the conflict-retry path hands us exactly that record).
+            // Retention-filtering the result is what lets pruned entries actually die instead
+            // of ping-ponging back from an unpruned server copy.
+            let local = InboxStore.shared.seenLedger
+            var seenAt = local.seenAt
+            var unseenAt = local.unseenAt
+            let record = baseRecord(for: recordID, type: "ForkInboxSeenLedger")
+            if let serverData = record["payload"] as? Data,
+               let serverLedger = try? JSONDecoder().decode(InboxSeenLedgerPayload.self, from: serverData) {
+                seenAt = InboxStore.unionNewest(seenAt, serverLedger.seenAt)
+                unseenAt = InboxStore.unionNewest(unseenAt, serverLedger.unseenAt)
+            }
+            let merged = InboxSeenLedgerPayload(
+                seenAt: InboxStore.withinSeenRetention(seenAt),
+                unseenAt: InboxStore.withinSeenRetention(unseenAt)
+            )
+            guard let payload = try? JSONEncoder().encode(merged) else { return nil }
+            record["payload"] = payload as NSData
+            return record
         case "preset":
             guard parts.count == 2, let preset = FilterPresetStore.shared.preset(uuid: parts[1]),
                   let payload = try? JSONEncoder().encode(preset) else { return nil }
@@ -224,6 +276,15 @@ final class SessionCloudSync {
             }
         }
 
+        if parts.first == "seenledger",
+           let payload = record["payload"] as? Data,
+           let ledger = try? JSONDecoder().decode(InboxSeenLedgerPayload.self, from: payload) {
+            // Union-merge, never replace — see InboxStore.applyRemoteSeenLedger.
+            InboxStore.shared.applyRemote {
+                InboxStore.shared.applyRemoteSeenLedger(ledger)
+            }
+        }
+
         if parts.first == "preset", parts.count == 2,
            let payload = record["payload"] as? Data,
            let preset = try? JSONDecoder().decode(FilterPreset.self, from: payload) {
@@ -250,6 +311,10 @@ final class SessionCloudSync {
                 InboxStore.shared.applyRemoteOfferedThrough(podcastUuid: parts[1], date: nil)
             }
         }
+
+        // "seenledger" deliberately has no deletion handling: nothing in the app ever deletes
+        // the record, and a stray deletion (dashboard cleanup, say) must not erase local
+        // tombstones — the next local mutation simply re-saves the record.
 
         if parts.first == "preset", parts.count == 2 {
             FilterPresetStore.shared.applyRemote {

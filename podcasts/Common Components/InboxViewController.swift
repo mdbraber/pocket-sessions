@@ -299,14 +299,20 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
 
         let optionsPicker = OptionsPicker(title: episode.displayableTitle().localizedUppercase)
         let unseen = InboxManager.shared.isUnseen(episodeUuid: episode.uuid)
-        optionsPicker.addAction(action: OptionAction(label: unseen ? L10n.episodeMarkSeen : L10n.episodeMarkUnseen, icon: nil) {
-            if unseen {
-                InboxManager.shared.markSeen(episodeUuids: [episode.uuid])
-            } else {
-                InboxManager.shared.markUnseen(episodeUuids: [episode.uuid])
-            }
+        optionsPicker.addAction(action: OptionAction(label: unseen ? L10n.episodeMarkSeen : L10n.episodeMarkUnseen, icon: nil) { [weak self] in
+            self?.toggleSeen(episodeUuid: episode.uuid)
         })
         optionsPicker.present(from: self)
+    }
+
+    /// Seen/unseen toggle behind the row long-press. Resolves the state at invocation time so
+    /// a stale sheet label can never invert the intent.
+    private func toggleSeen(episodeUuid: String) {
+        if InboxManager.shared.isUnseen(episodeUuid: episodeUuid) {
+            InboxManager.shared.markSeen(episodeUuids: [episodeUuid])
+        } else {
+            InboxManager.shared.markUnseen(episodeUuids: [episodeUuid])
+        }
     }
 
     // MARK: - Nav actions
@@ -341,7 +347,7 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
     @objc private func optionsTapped() {
         let optionsPicker = OptionsPicker(title: nil)
 
-        optionsPicker.addAction(action: OptionAction(label: "Chromecast", icon: "nav_cast_off") { [weak self] in
+        optionsPicker.addAction(action: OptionAction(label: L10n.chromecast, icon: "nav_cast_off") { [weak self] in
             self?.castButtonTapped()
         })
 
@@ -507,6 +513,17 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
         if isMultiSelectEnabled {
             cell.showTick = selectedEpisodesContains(uuid: episode.uuid)
         }
+        // The long-press seen/unseen toggle is invisible to VoiceOver, so expose it as a custom
+        // action too. Every row here is unseen by construction — the list IS the Inbox playlist,
+        // and a per-row membership query is exactly what InboxManager forbids — so the action
+        // reads Mark as Seen and does exactly that (idempotent if the row drifted seen before
+        // the reload landed). Mark as Unseen never applies: a seen episode is never in this list.
+        cell.accessibilityCustomActions = [
+            UIAccessibilityCustomAction(name: L10n.episodeMarkSeen) { _ in
+                InboxManager.shared.markSeen(episodeUuids: [episode.uuid])
+                return true
+            }
+        ]
         return cell
     }
 
@@ -607,7 +624,7 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
 
         switch orientation {
         case .left:
-            return TriageSwipes.leftActions(for: episode, inLocalSession: false, addToSession: { [weak self] in
+            return TriageSwipes.leftActions(for: episode, inLocalSession: false, presenting: self, source: "inbox", addToSession: { [weak self] in
                 guard let self, let episode = episode as? Episode else { return }
                 SessionManager.shared.addToSessions(episodeUuids: [episode.uuid], preferred: nil, presenting: self) { landed in
                     guard !landed.isEmpty else { return }
@@ -757,7 +774,11 @@ private struct InboxClearPill: View {
             color: theme.primaryUi01,
             background: theme.primaryInteractive01,
             stroke: nil,
-            action: action
+            action: action,
+            // The long press below is invisible to VoiceOver; expose the same options sheet as
+            // a named action. Archive All is what distinguishes it from a plain tap.
+            accessibilityActionName: L10n.inboxClearArchiveAll,
+            accessibilityAction: longPress
         )
         .padding(16)
         // Long-press surfaces the fuller set (Mark All as Seen / Archive All).

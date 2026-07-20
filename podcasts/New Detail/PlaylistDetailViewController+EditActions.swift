@@ -159,19 +159,19 @@ extension PlaylistDetailViewController {
 
     private func insertModeAction() -> OptionAction {
         let sessionInsertMode = currentInsertMode()
-        let action = OptionAction(label: L10n.playlistInsertModeSetting, secondaryLabel: sessionInsertMode.description, icon: "rectangle.stack") { }
+        let action = OptionAction(label: L10n.sessionPositionHeading, secondaryLabel: sessionInsertMode.description, icon: "rectangle.stack") { }
         action.submenu = { [weak self] in self?.makeInsertModePicker() }
         return action
     }
 
     private func currentInsertMode() -> PlaylistInsertMode {
-        guard let session = viewModel.insertModeSession else { return .afterLastInserted }
-        return PlaylistInsertMode(rawValue: session.insertMode) ?? .afterLastInserted
+        guard let session = viewModel.insertModeSession else { return .top }
+        return PlaylistInsertMode(rawValue: session.insertMode) ?? .top
     }
 
     private func makeInsertModePicker() -> OptionsPicker {
         let currentInsertMode = currentInsertMode()
-        let optionsPicker = OptionsPicker(title: L10n.playlistInsertModeSetting.localizedUppercase)
+        let optionsPicker = OptionsPicker(title: L10n.sessionPositionHeading.localizedUppercase)
         for mode in PlaylistInsertMode.allCases {
             let action = OptionAction(label: mode.description, selected: currentInsertMode == mode) { [weak self] in
                 self?.viewModel.updatePlaylist(insertMode: mode)

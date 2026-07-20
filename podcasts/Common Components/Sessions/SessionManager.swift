@@ -57,10 +57,6 @@ enum RemoveFromSessionMode: String, CaseIterable {
 class SessionManager {
     static let shared = SessionManager()
 
-    /// Fork: a podcast uuid whose page should open on its Session tab the next time it
-    /// appears — set right before navigating there (e.g. from the switch sheet).
-    static var pendingSessionLanding: String?
-
     func setup() {
         NotificationCenter.default.addObserver(self, selector: #selector(refreshFolderRules), name: Constants.Notifications.folderChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(refreshFolderRules), name: ServerNotifications.syncCompleted, object: nil)
@@ -69,6 +65,9 @@ class SessionManager {
         // Bulk operations announce without a uuid — those trigger a full sweep.
         NotificationCenter.default.addObserver(self, selector: #selector(episodeStateChanged), name: Constants.Notifications.manyEpisodesChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(trackChanged), name: Constants.Notifications.playbackTrackChanged, object: nil)
+        // Recency ("Recently Played") is earned by listening, not by navigating: opening a
+        // session primes it silently, so the stamp waits for audio to actually start.
+        NotificationCenter.default.addObserver(self, selector: #selector(sessionPlaybackStarted), name: Constants.Notifications.playbackStarted, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(prune), name: ServerNotifications.podcastsRefreshed, object: nil)
         // Fork: every podcast in a selected Session-Playlists folder keeps a session; a deleted
         // podcast loses its session.
@@ -87,6 +86,11 @@ class SessionManager {
         // The feeder-signal cache is only valid while the sessions and their feeders' rules hold.
         NotificationCenter.default.addObserver(self, selector: #selector(invalidateFeederVolatilityCache), name: SessionStore.changed, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(invalidateFeederVolatilityCache), name: ServerNotifications.syncCompleted, object: nil)
+        // A feeder's rules can also change via server sync (edited on another device) — the local
+        // playlistChanged-with-object path never sees those, so mirror every smart-fed session
+        // after each sync. Also once at startup, to heal edits missed while the app was gone.
+        NotificationCenter.default.addObserver(self, selector: #selector(smartFeederRulesMayHaveChanged), name: ServerNotifications.syncCompleted, object: nil)
+        smartFeederRulesMayHaveChanged()
         syncFolderScopedPodcastSessions()
     }
 
@@ -135,6 +139,29 @@ class SessionManager {
         targets.forEach { reconcileStoreToFeeder(session: $0) }
     }
 
+    private let syncReconcileDebounce = Debounce(delay: 2)
+
+    /// Debounced full mirror of every smart-fed session — the sync-driven counterpart of
+    /// `feederSmartPlaylistChanged`, which only covers local edits (they post `playlistChanged`
+    /// with the playlist object; synced-in edits don't).
+    @objc private func smartFeederRulesMayHaveChanged() {
+        syncReconcileDebounce.call { [weak self] in
+            DispatchQueue.main.async { self?.reconcileAllSmartFeeders() }
+        }
+    }
+
+    private func reconcileAllSmartFeeders() {
+        guard !isReconcilingFeeder else { return }
+        let targets = SessionStore.shared.sessions.filter {
+            if case .smartPlaylist = $0.feeder { return true }
+            return false
+        }
+        guard !targets.isEmpty else { return }
+        isReconcilingFeeder = true
+        defer { isReconcilingFeeder = false }
+        targets.forEach { reconcileStoreToFeeder(session: $0) }
+    }
+
     /// Lazy mirror: called when a session is opened or played, so lazy-cadence feeders (play-status)
     /// reshape at a natural moment instead of churning live. O(1) short-circuit (cached) unless this
     /// session's feeder actually has a lazy signal.
@@ -161,25 +188,51 @@ class SessionManager {
         reconcileStoreToFeeder(session: session)
     }
 
-    /// Fork: make the session's store match its smart-playlist feeder's current domain — drop
-    /// members the filter no longer matches, add the new matches at the session's insert position.
-    /// This is what keeps a session honest when you edit the filter (e.g. deselect a folder).
+    /// Fork: keep the session's store honest against its smart-playlist feeder — drop members
+    /// the filter no longer matches, and pull in covered episodes that are already SHELVED in
+    /// some session. Never the whole filter result: lineups are curated, so a smart-fed session
+    /// gathers the curated episodes its rules cover, it does not mirror the query. (The full-
+    /// domain add turned "create/edit a smart playlist" into "dump every matching episode into
+    /// the lineup".)
+    ///
+    /// Manual fill mode (`autoFill == false`) goes one step further: the shelved-gather half is
+    /// skipped entirely, so the session is hand-curated — the feeder still prunes members its
+    /// filter no longer matches, but episodes join ONLY via explicit user adds.
+    ///
+    /// The prune only prunes what it gathered — never what the user added: pinned members
+    /// (explicit user adds, `Session.pinnedEpisodeUuids`) survive even when the filter no
+    /// longer matches them.
     func reconcileStoreToFeeder(session: Session) {
         // Only smart-playlist feeders mirror their filter. A podcast/folder feeder's "domain" is
         // the whole podcast/folder, which must never be dumped wholesale into a curated lineup.
         guard case .smartPlaylist = session.feeder, store(for: session) != nil else { return }
+        // A playlist that has opted out of being a session playlist is left exactly as it was —
+        // no prune, no gather. Its lineup is preserved so opting back in restores it intact.
+        // Guarding here covers every reconcile entry point (eager, lazy, sync-driven, folder rules).
+        guard !SessionManager.isOptedOut(feeder: session.feeder) else { return }
         let domain = SessionFeederEngine.domainEpisodes(for: session).map(\.uuid)
         let domainSet = Set(domain)
         let current = SessionFeederEngine.storeMemberUuids(for: session)
         let currentSet = Set(current)
+        let shelved = SessionFeederEngine.allStoreMemberUuids()
 
-        let toRemove = current.filter { !domainSet.contains($0) }
-        let toAdd = domain.filter { !currentSet.contains($0) }
+        // Hygiene: pins must never outlive membership — drop stale pin entries for episodes
+        // no longer in the lineup (e.g. removed via a surface that bypasses the primitives).
+        let stalePins = session.pinnedEpisodeUuids.filter { !currentSet.contains($0) }
+        if !stalePins.isEmpty {
+            SessionStore.shared.unpin(episodeUuids: stalePins, for: session.uuid)
+        }
+        let pinned = Set(session.pinnedEpisodeUuids).intersection(currentSet)
+
+        let toRemove = current.filter { !domainSet.contains($0) && !pinned.contains($0) }
+        let toAdd = domain.filter { !currentSet.contains($0) && shelved.contains($0) }
 
         if !toRemove.isEmpty {
             removeFromLineup(episodeUuids: toRemove, session: session)
         }
-        if !toAdd.isEmpty {
+        // Manual fill: prune-only. Gathering shelved episodes here would grow a
+        // hand-curated lineup behind the user's back.
+        if session.autoFill, !toAdd.isEmpty {
             addToLineup(episodeUuids: toAdd, session: session)
         }
     }
@@ -248,9 +301,9 @@ class SessionManager {
         }
 
         var session = Session(uuid: UUID().uuidString, storePlaylistUuid: store.uuid, feeder: feeder)
-        // New sessions start from the global Position default. (Podcast sessions resolve their
-        // position live via the per-podcast override / global, so this only steers other types.)
-        session.insertMode = Settings.sessionInsertPosition().rawValue
+        // New sessions start from the model default; each session's Position is edited on
+        // its own surfaces (the playlist's ⋯ menu, or podcast settings for podcast sessions).
+        session.insertMode = PlaylistInsertMode.top.rawValue
         SessionStore.shared.upsert(session)
         NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged)
         return session
@@ -356,7 +409,12 @@ class SessionManager {
     /// Inserts episodes at the session's insert marker. Adding means intent to play,
     /// so archived episodes come back out of the archive on the way in (otherwise the
     /// decisive-action sweep would immediately remove them from the store again).
-    func addToLineup(episodeUuids: [String], session: Session) {
+    ///
+    /// `pinning` marks this as an explicit USER add: the episodes are pinned in this
+    /// session, so the feeder's prune (`reconcileStoreToFeeder`) never removes them.
+    /// Automatic paths (feeder gathers, backfills, auto-add ingest, queue mirrors,
+    /// seeding) leave it false — what was gathered stays prunable.
+    func addToLineup(episodeUuids: [String], session: Session, pinning: Bool = false) {
         guard let store = store(for: session), !episodeUuids.isEmpty else { return }
         unarchiveIfNeeded(episodeUuids: episodeUuids)
         unplayIfNeeded(episodeUuids: episodeUuids)
@@ -381,12 +439,19 @@ class SessionManager {
         var updated = session
         updated.lastInsertedUuid = episodeUuids.last ?? updated.lastInsertedUuid
         SessionStore.shared.upsert(updated)
+
+        // Pin AFTER the lastInserted upsert: pin() re-fetches and re-upserts the row, and
+        // upserting the (possibly stale) `updated` copy afterwards would clobber the pins.
+        if pinning {
+            SessionStore.shared.pin(episodeUuids: episodeUuids, for: session.uuid)
+        }
     }
 
     /// Replaces the lineup wholesale: the store becomes exactly these episodes, in
     /// this order. Former members return to triage (no dismissals are recorded —
-    /// replacement isn't a per-episode "no").
-    func replaceLineup(episodeUuids: [String], session: Session) {
+    /// replacement isn't a per-episode "no"). Former members are unpinned; `pinning`
+    /// pins the new lineup (an explicit USER choice, e.g. "Make This the Session").
+    func replaceLineup(episodeUuids: [String], session: Session, pinning: Bool = false) {
         guard let store = store(for: session), !episodeUuids.isEmpty else { return }
         let current = DataManager.sharedManager.positionedEpisodeUuids(for: store).filter { !episodeUuids.contains($0) }
         if !current.isEmpty {
@@ -403,6 +468,15 @@ class SessionManager {
         var updated = session
         updated.lastInsertedUuid = episodeUuids.last ?? ""
         SessionStore.shared.upsert(updated)
+
+        // After the upsert (see addToLineup): membership is now exactly `episodeUuids`,
+        // so pins on the replaced-away members must not outlive them.
+        if !current.isEmpty {
+            SessionStore.shared.unpin(episodeUuids: current, for: session.uuid)
+        }
+        if pinning {
+            SessionStore.shared.pin(episodeUuids: episodeUuids, for: session.uuid)
+        }
     }
 
     /// Persists a full lineup order (after drag reorder).
@@ -425,10 +499,54 @@ class SessionManager {
     func removeFromLineup(episodeUuids: [String], session: Session) {
         guard let store = store(for: session) else { return }
         DataManager.sharedManager.deleteEpisodes(episodeUuids, from: store) // already marks the playlist dirty
+        // Pins never outlive membership: leaving the lineup unpins, so a later
+        // re-gather behaves normally.
+        SessionStore.shared.unpin(episodeUuids: episodeUuids, for: session.uuid)
         NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged, object: store)
 
         if let playing = PlaybackManager.shared.currentEpisode(), episodeUuids.contains(playing.uuid) {
             PlaybackManager.shared.removeIfPlayingOrQueued(episode: playing, fireNotification: true, userInitiated: true)
+        }
+    }
+
+    // MARK: - Fork: direct-add pin bookkeeping
+
+    /// Pin bookkeeping for the upstream "Add to Playlist" flows (the playlist chooser and
+    /// the playlist detail "Add Episodes" search), which write to manual playlists directly
+    /// through DataManager — deliberately keeping the stock add's positioning semantics
+    /// rather than routing through `addToLineup`. When the target playlist backs a session,
+    /// though, that hand-add is still an explicit USER add: without a pin, a smart feeder's
+    /// prune (`reconcileStoreToFeeder`) would sweep the episode back out as soon as it falls
+    /// outside (or later leaves) the feeder's rules.
+    ///
+    /// Call ONLY from user-driven add UI. Automatic paths (sync applying remote playlist
+    /// changes, Inbox ingest, feeder gathers/backfills) never call this, so what they add
+    /// stays prunable. The global Inbox can never pin: its playlist uuid is guarded outright,
+    /// and the Inbox session's `storePlaylistUuid` is nil so the store lookup can't match it.
+    func pinDirectAdd(episodeUuids: [String], storePlaylistUuid: String) {
+        guard !episodeUuids.isEmpty,
+              storePlaylistUuid != DataManager.inboxPlaylistUuid,
+              let session = SessionStore.shared.session(forStore: storePlaylistUuid),
+              session.uuid != SessionStore.globalInboxUuid else { return }
+        SessionStore.shared.pin(episodeUuids: episodeUuids, for: session.uuid)
+        // The direct-add sites mark the playlist dirty and save it themselves, but they
+        // don't post playlistChanged the way `markStoreChanged` does — post it here so
+        // session UI refreshes. No double-post: those sites post nothing on this path.
+        if let store = DataManager.sharedManager.findPlaylist(uuid: storePlaylistUuid) {
+            NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged, object: store)
+        }
+    }
+
+    /// The symmetric half: unchecking a playlist in the chooser removes membership directly
+    /// (bypassing `removeFromLineup`), and pins must never outlive membership.
+    func unpinDirectRemove(episodeUuids: [String], storePlaylistUuid: String) {
+        guard !episodeUuids.isEmpty,
+              storePlaylistUuid != DataManager.inboxPlaylistUuid,
+              let session = SessionStore.shared.session(forStore: storePlaylistUuid),
+              session.uuid != SessionStore.globalInboxUuid else { return }
+        SessionStore.shared.unpin(episodeUuids: episodeUuids, for: session.uuid)
+        if let store = DataManager.sharedManager.findPlaylist(uuid: storePlaylistUuid) {
+            NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged, object: store)
         }
     }
 
@@ -489,6 +607,11 @@ class SessionManager {
 
         var added = 0
         for session in SessionStore.shared.sessions where session.uuid != SessionStore.globalInboxUuid {
+            // Manual-fill sessions are hand-curated: the global sweep must not pour covered
+            // episodes into them. (The per-playlist Backfill row remains the explicit way in.)
+            guard session.autoFill else { continue }
+            // Opted-out playlists are left alone by the sweep — their lineup is frozen, not filled.
+            guard !SessionManager.isOptedOut(feeder: session.feeder) else { continue }
             guard let store = store(for: session) else {
                 FileLog.shared.addMessage("Backfill: session \(session.uuid) has no store — skipped")
                 continue
@@ -497,11 +620,37 @@ class SessionManager {
             let missing = episodes.filter { !existing.contains($0.uuid) && feeder(session.feeder, coversPodcast: $0.podcastUuid) }
             FileLog.shared.addMessage("Backfill: '\(store.playlistName)' feeder=\(session.feeder) existing=\(existing.count) missing=\(missing.count)")
             guard !missing.isEmpty else { continue }
+            // Bulk catch-up counts as gathered, NOT pinned — the feeder may prune these later.
             _ = DataManager.sharedManager.add(episodes: missing, to: store)
             markStoreChanged(store)
             added += missing.count
         }
         return added
+    }
+
+    /// Fork: per-playlist Backfill (the playlist options row) — the smart playlist's session
+    /// (created on demand) gains every in-session episode its feeder covers that it doesn't
+    /// already hold. The single-session counterpart of `backfillSessions()`.
+    /// Deliberately ignores `autoFill`: this row IS an explicit user add — the escape hatch
+    /// into a Manual session.
+    @discardableResult
+    func backfillSession(forSmartPlaylist playlist: EpisodeFilter) -> Int {
+        let inSessionUuids = SessionMembership.shared.inAnySession
+        let episodes = inSessionUuids.compactMap { DataManager.sharedManager.findEpisode(uuid: $0) }
+        guard !episodes.isEmpty else { return 0 }
+
+        guard let session = findOrCreateSession(forSmartPlaylist: playlist), let store = store(for: session) else {
+            FileLog.shared.addMessage("Backfill: session for playlist \(playlist.uuid) has no store — skipped")
+            return 0
+        }
+        let existing = Set(SessionFeederEngine.storeMemberUuids(for: session))
+        let missing = episodes.filter { !existing.contains($0.uuid) && feeder(session.feeder, coversPodcast: $0.podcastUuid) }
+        FileLog.shared.addMessage("Backfill: '\(store.playlistName)' existing=\(existing.count) missing=\(missing.count)")
+        guard !missing.isEmpty else { return 0 }
+        // Bulk catch-up counts as gathered, NOT pinned — the feeder may prune these later.
+        _ = DataManager.sharedManager.add(episodes: missing, to: store)
+        markStoreChanged(store)
+        return missing.count
     }
 
     /// Every non-inbox session whose store currently holds any of these episodes.
@@ -532,6 +681,7 @@ class SessionManager {
                 let toRemove = episodeUuids.filter { members.contains($0) }
                 guard !toRemove.isEmpty else { continue }
                 DataManager.sharedManager.deleteEpisodes(toRemove, from: store) // marks the store dirty
+                SessionStore.shared.unpin(episodeUuids: toRemove, for: session.uuid) // pins never outlive membership
                 if let playing = PlaybackManager.shared.currentEpisode(), toRemove.contains(playing.uuid) { removedPlaying = true }
             }
             SessionMembership.shared.invalidate()
@@ -599,6 +749,13 @@ class SessionManager {
             covering.insert(preferred, at: 0)
         }
 
+        // Manual-fill sessions never receive from broad fan-outs ("all matching" and its
+        // fallbacks) — being covered by the feeder is not consent to be filled. The page's
+        // own session is an explicit target, so a Manual `preferred` still receives; the Ask
+        // picker below keeps enumerating the full `covering` list, so a Manual session can
+        // always be chosen by name.
+        let fanOutTargets = covering.filter { $0.autoFill || $0.uuid == preferred?.uuid }
+
         // The episodes' own podcasts always match — their sessions spring into being
         // on demand, so adding works even for a podcast that never had one.
         let podcastsWithoutSessions: [Podcast] = {
@@ -626,7 +783,10 @@ class SessionManager {
                         ? episodeUuids
                         : episodes.filter { self.feeder(session.feeder, coversPodcast: $0.podcastUuid) }.map(\.uuid)
                     guard !uuids.isEmpty else { continue }
-                    self.addToLineup(episodeUuids: uuids, session: session)
+                    // Every route through addToSessions is a USER verb (swipes, multi-select,
+                    // episode card, Ask picker) — pin-everywhere: the episode is pinned in
+                    // every session the verb lands it in.
+                    self.addToLineup(episodeUuids: uuids, session: session, pinning: true)
                     landed.append(session)
                 }
                 // Linked adds: one mirrored hop into the queue when enabled.
@@ -641,19 +801,21 @@ class SessionManager {
 
         switch AddToSessionMode.current {
         case .currentOnly:
-            add(to: [preferred ?? covering.first ?? withPodcastSessions([]).first].compactMap { $0 })
+            // The `fanOutTargets.first` fallback (no page session) is a guess, not a choice —
+            // it must not guess a Manual session. A Manual `preferred` is in `fanOutTargets`.
+            add(to: [preferred ?? fanOutTargets.first ?? withPodcastSessions([]).first].compactMap { $0 })
         case .allMatching:
-            add(to: withPodcastSessions(covering))
+            add(to: withPodcastSessions(fanOutTargets))
         case .ask:
             let rowCount = covering.count + podcastsWithoutSessions.count
             guard rowCount > 1, let presenting else {
-                add(to: withPodcastSessions(covering))
+                add(to: withPodcastSessions(fanOutTargets))
                 return
             }
             let picker = OptionsPicker(title: L10n.playlistAddToLineup.localizedUppercase)
             picker.addAction(action: OptionAction(label: L10n.inboxAddAllSessions, icon: nil) { [weak self] in
                 guard self != nil else { return }
-                add(to: withPodcastSessions(covering))
+                add(to: withPodcastSessions(fanOutTargets))
             })
             for session in covering {
                 let name = store(for: session)?.playlistName ?? L10n.playbackSessionTabSession
@@ -681,9 +843,14 @@ class SessionManager {
             Settings.setPlaybackSession(target)
             Settings.setPlaybackSessionPaused(false)
         }
-        // Recency for the Switch Session sheet.
-        SessionStore.shared.markUsed(playbackUuid: storeUuid)
         PlaybackManager.shared.play(sessionEpisode: episode)
+    }
+
+    /// Stamps the active session as recently played once audio starts, whatever started it
+    /// — the chooser, the Switch sheet, a Play Session button, CarPlay, or a resume.
+    @objc private func sessionPlaybackStarted() {
+        guard let playing = Settings.playbackSession(), !Settings.playbackSessionPaused() else { return }
+        SessionStore.shared.markUsed(playbackUuid: playing.uuid)
     }
 
     func sessionsCovering(podcastUuid: String) -> [Session] {
@@ -703,6 +870,10 @@ class SessionManager {
         case .folder(let uuid):
             return DataManager.sharedManager.findPodcast(uuid: podcastUuid)?.folderUuid == uuid
         case .smartPlaylist(let uuid):
+            // A playlist that opted out of being a session playlist covers nothing: it must never
+            // be offered as an add target, nor gathered into by any sweep. Its existing lineup is
+            // untouched — this only stops new traffic reaching it.
+            guard !Settings.playlistOptedOutOfSession(uuid: uuid) else { return false }
             guard let playlist = DataManager.sharedManager.findPlaylist(uuid: uuid) else { return false }
             if playlist.filterAllPodcasts { return true }
             return playlist.podcastUuids.components(separatedBy: ",").contains(podcastUuid)
@@ -748,14 +919,9 @@ class SessionManager {
     }
 
     func insertMarkerIndex(for session: Session, inLineup lineup: [String]) -> Int {
-        // A podcast session's position follows the per-podcast override / global default; other
-        // session types keep their own stored insert mode (edited on the session's own screen).
-        let mode: PlaylistInsertMode
-        if case .podcast(let podcastUuid) = session.feeder {
-            mode = Settings.resolvedSessionInsertPosition(podcastUuid: podcastUuid)
-        } else {
-            mode = PlaylistInsertMode(rawValue: session.insertMode) ?? .afterLastInserted
-        }
+        // Every session keeps its own stored insert mode (edited on the session's own
+        // screen, or in podcast settings for podcast sessions).
+        let mode = PlaylistInsertMode(rawValue: session.insertMode) ?? .top
         switch mode {
         case .top:
             return 0
@@ -776,11 +942,48 @@ class SessionManager {
         play(session: findOrCreateSession(forPodcast: podcast))
     }
 
+    /// Fork: this session is fed by a smart playlist the user has declared "not a session
+    /// playlist" (`Settings.playlistOptedOutOfSession`). Such a session is frozen — never
+    /// listed, never created, never reconciled, never filled — but its store and lineup are
+    /// preserved, so turning the toggle back on restores it exactly as it was.
+    static func isOptedOut(feeder: SessionFeeder) -> Bool {
+        if case .smartPlaylist(let uuid) = feeder { return Settings.playlistOptedOutOfSession(uuid: uuid) }
+        return false
+    }
+
     /// The smart playlist's session — the playlist itself is the feeder; the store
     /// carries its name. Created lazily, seeded with the current query order.
-    func findOrCreateSession(forSmartPlaylist lens: EpisodeFilter, seedEpisodeUuids: [String] = []) -> Session {
+    ///
+    /// Nil when the playlist has opted out of being a session playlist
+    /// (`Settings.playlistOptedOutOfSession`): no session is created, and an existing one
+    /// (from before the opt-out) is deliberately NOT returned, so no surface can revive it.
+    /// Optional rather than a separate guard so every call site is compiler-checked.
+    func findOrCreateSession(forSmartPlaylist lens: EpisodeFilter, seedEpisodeUuids: [String] = []) -> Session? {
+        guard !Settings.playlistOptedOutOfSession(uuid: lens.uuid) else { return nil }
         if let existing = SessionStore.shared.session(forSmartPlaylistFeeder: lens.uuid) { return existing }
         return createSession(name: lens.playlistName, feeder: .smartPlaylist(uuid: lens.uuid), seedEpisodeUuids: seedEpisodeUuids)
+    }
+
+    /// Fork: a just-created smart playlist inherits the episodes already shelved in sessions.
+    /// When its filter matches anything currently in a session lineup, its own session springs
+    /// into being and the reconciler mirrors the filter in — so podcasts you've already triaged
+    /// carry their lineup into the new playlist's session instead of starting empty.
+    func adoptNewSmartPlaylist(_ playlist: EpisodeFilter) {
+        guard !playlist.manual,
+              // "Not a session playlist" means never adopt one either.
+              !Settings.playlistOptedOutOfSession(uuid: playlist.uuid),
+              SessionStore.shared.session(forSmartPlaylistFeeder: playlist.uuid) == nil else { return }
+        let shelved = SessionFeederEngine.allStoreMemberUuids()
+        guard !shelved.isEmpty else { return }
+        let overlaps = EpisodesDataManager().playlistEpisodes(for: playlist, limit: 0)
+            .contains { shelved.contains($0.episode.uuid) }
+        guard overlaps else { return }
+
+        guard let session = findOrCreateSession(forSmartPlaylist: playlist) else { return }
+        guard !isReconcilingFeeder else { return }
+        isReconcilingFeeder = true
+        defer { isReconcilingFeeder = false }
+        reconcileStoreToFeeder(session: session)
     }
 
     /// The folder's session, created lazily on first use.
@@ -799,8 +1002,6 @@ class SessionManager {
             Toast.show(L10n.sessionEmptyToast)
             return
         }
-        // Recency for the Switch Session sheet.
-        SessionStore.shared.markUsed(playbackUuid: storeUuid)
         PlaybackManager.shared.startPlaybackSession(PlaybackSession(type: .playlist, uuid: storeUuid))
     }
 
@@ -855,28 +1056,30 @@ class SessionManager {
             }
             guard !decided.isEmpty else { continue }
             DataManager.sharedManager.deleteEpisodes(decided, from: store)
+            SessionStore.shared.unpin(episodeUuids: decided, for: session.uuid) // pins never outlive membership
             NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged, object: store)
             promptIfSessionFinished(session, store: store, remaining: members.count - decided.count)
         }
     }
 
-    /// The playing session just drained: ephemeral stores offer to clean themselves up.
+    /// The playing session just drained: ephemeral stores offer to clean themselves up
+    /// via a toast — dismissing it keeps the playlist. This can't stack with
+    /// PlaybackManager's plain "session finished" toast: that path clears the
+    /// playback-session pointer synchronously before this (main-async) sweep runs,
+    /// so the `Settings.playbackSession()` guard below fails whenever it fired.
     private func promptIfSessionFinished(_ session: Session, store: EpisodeFilter, remaining: Int) {
         guard remaining <= 0,
               session.feeder == SessionFeeder.none,
-              let playing = Settings.playbackSession(), playing.uuid == store.uuid,
-              let host = SceneHelper.rootViewController() else { return }
-        let alert = UIAlertController(
-            title: L10n.sessionFinishedTitle(store.playlistName),
-            message: L10n.sessionFinishedMessage,
-            preferredStyle: .alert
-        )
-        alert.addAction(UIAlertAction(title: L10n.sessionFinishedKeep, style: .cancel))
-        alert.addAction(UIAlertAction(title: L10n.sessionFinishedDelete, style: .destructive) { [weak self] _ in
-            PlaybackManager.shared.endPlaybackSession()
-            self?.deleteSession(session)
-        })
-        host.present(alert, animated: true)
+              let playing = Settings.playbackSession(), playing.uuid == store.uuid else { return }
+        let name = store.playlistName
+        DispatchQueue.main.async { [weak self] in
+            Toast.show(L10n.sessionFinishedTitle(name), actions: [
+                Toast.Action(title: L10n.sessionFinishedDelete, action: {
+                    PlaybackManager.shared.endPlaybackSession()
+                    self?.deleteSession(session)
+                })
+            ])
+        }
     }
 
     /// Playing an episode counts as seen naturally (progress) — nothing to write; this
@@ -900,6 +1103,9 @@ class SessionManager {
     }
 
     func ingestAutoAdd(session: Session) {
+        // Manual fill wins over the auto-add toggle: a hand-curated lineup absorbs nothing
+        // automatically — offers stay in the inbox until the user adds them explicitly.
+        guard session.autoFill, !SessionManager.isOptedOut(feeder: session.feeder) else { return }
         var offers = SessionFeederEngine.inboxEpisodes(for: session).map(\.uuid)
         guard !offers.isEmpty else { return }
         // The global limit caps auto-adds only: once the lineup is full, new arrivals

@@ -25,6 +25,9 @@ final class ForkSettingsSync {
         Settings.showSmartPlaylistSessionsKey,
         Settings.showPodcastSessionFoldersKey,
         Settings.showPodcastSessionPodcastsKey,
+        // Which smart playlists are NOT session playlists — a per-playlist opt-out, so it
+        // has to travel with the playlist to every device or the Session tab reappears there.
+        Settings.playlistsOptedOutOfSessionKey,
         "SJPlaylistsSortOrder",
         "SJPlaylistsLibraryType",
         "SJInboxGroupBy",
@@ -33,7 +36,6 @@ final class ForkSettingsSync {
         "SJInboxConditionalPodcasts",
         Settings.playbackSessionTypeKey,
         Settings.playbackSessionUuidKey,
-        Settings.sessionInsertPositionKey,
         // Playlist folders are fork-only (upstream has no such concept), so they have no
         // other sync channel. Both are plist values — a JSON blob of folders and a
         // playlistUuid->folderUuid map — and low-churn, so KV last-writer-wins fits.
@@ -52,8 +54,7 @@ final class ForkSettingsSync {
     private static let prefixes: [String] = [
         "\(Settings.mirrorUpNextToSessionKey)-",
         "\(Settings.mirrorSessionToUpNextKey)-",
-        "SJTabSort-",
-        "SJSessionPosition-"
+        "SJTabSort-"
     ]
 
     private let store = NSUbiquitousKeyValueStore.default

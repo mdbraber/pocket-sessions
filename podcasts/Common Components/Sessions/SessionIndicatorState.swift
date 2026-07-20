@@ -30,6 +30,28 @@ enum SessionIndicatorState {
         case .otherSession: return ThemeColor.support02().sessionDimmed()
         }
     }
+
+    /// The badge glyph at the mini-indicator's standard size, or nil when hidden.
+    /// "This session" is the filled stack, "other session" the outlined one — a shape
+    /// cue on top of the brightness difference, so the two don't rely on color alone.
+    var indicatorImage: UIImage? {
+        let symbolName: String
+        switch self {
+        case .none: return nil
+        case .thisSession: symbolName = "rectangle.stack.fill"
+        case .otherSession: symbolName = "rectangle.stack"
+        }
+        return UIImage(systemName: symbolName, withConfiguration: UIImage.SymbolConfiguration(pointSize: 11, weight: .semibold))
+    }
+
+    /// VoiceOver description of the badge, or nil when hidden.
+    var accessibilityLabel: String? {
+        switch self {
+        case .none: return nil
+        case .thisSession: return L10n.accessibilityInThisLineup
+        case .otherSession: return L10n.accessibilityInOtherLineup
+        }
+    }
 }
 
 extension UIColor {

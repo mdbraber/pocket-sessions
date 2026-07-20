@@ -46,9 +46,9 @@ enum FilterPresetPicker {
         // No glyph beside the name — the label alone is the control. (Any XIB image is cleared.)
         button.setImage(nil, for: .normal)
         button.configuration = nil
-        // The filter label sits hard against the right edge of its slot — the control is the
-        // rightmost thing on the info line, so it right-aligns.
-        button.contentHorizontalAlignment = .right
+        // The filter label sits hard against the trailing edge of its slot — the control is the
+        // trailing-most thing on the info line. (.trailing, not .right: RTL flips it.)
+        button.contentHorizontalAlignment = .trailing
 
         // The cue is a bonus, not the mechanism — the label already says what is happening.
         let narrowing = FilterPresets.isNarrowing(scope)

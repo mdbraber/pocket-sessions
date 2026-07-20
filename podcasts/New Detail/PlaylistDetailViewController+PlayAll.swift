@@ -21,8 +21,9 @@ extension PlaylistDetailViewController: UISheetPresentationControllerDelegate, P
             SessionManager.shared.play(session: session)
             return
         }
-        if !playlist.manual {
-            SessionManager.shared.play(session: SessionManager.shared.findOrCreateSession(forSmartPlaylist: playlist))
+        // Opted-out smart playlists have no session — they fall through to stock Play All.
+        if viewModel.isLensPage, let session = SessionManager.shared.findOrCreateSession(forSmartPlaylist: playlist) {
+            SessionManager.shared.play(session: session)
             return
         }
 
@@ -31,8 +32,6 @@ extension PlaylistDetailViewController: UISheetPresentationControllerDelegate, P
 
     private func startSession() {
         let playlist = viewModel.playlist
-        // Recency for the Switch Session sheet.
-        SessionStore.shared.markUsed(playbackUuid: playlist.uuid)
         PlaybackManager.shared.startPlaybackSession(PlaybackSession(type: playlist.manual ? .playlist : .smartPlaylist, uuid: playlist.uuid))
     }
 

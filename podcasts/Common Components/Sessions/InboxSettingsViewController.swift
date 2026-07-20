@@ -8,12 +8,11 @@ import UIKit
 class InboxSettingsViewController: PCViewController, UITableViewDataSource, UITableViewDelegate {
     private static let cellId = "InboxSettingsCell"
 
-    private enum TableRow: CaseIterable { case globalPosition, addToSessionMode, removeFromSessionMode, autoAddToUpNext, autoAddToSession, mirrorUpNextToSession, mirrorSessionToUpNext }
+    private enum TableRow: CaseIterable { case addToSessionMode, removeFromSessionMode, autoAddToUpNext, autoAddToSession, mirrorUpNextToSession, mirrorSessionToUpNext }
 
-    /// Four blocks: Position (the global default), Add & Remove routing, Auto Add limits, and the
-    /// linked-adds (Linking) switches.
+    /// Three blocks: Add & Remove routing, Auto Add limits, and the linked-adds (Linking) switches.
     private var sections: [[TableRow]] {
-        [[.globalPosition], [.addToSessionMode, .removeFromSessionMode], [.autoAddToUpNext, .autoAddToSession], [.mirrorUpNextToSession, .mirrorSessionToUpNext]]
+        [[.addToSessionMode, .removeFromSessionMode], [.autoAddToUpNext, .autoAddToSession], [.mirrorUpNextToSession, .mirrorSessionToUpNext]]
     }
 
     private let settingsTable = ThemeableTable(frame: .zero, style: .grouped)
@@ -60,8 +59,14 @@ class InboxSettingsViewController: PCViewController, UITableViewDataSource, UITa
     }
 
     @objc private func backfillTapped() {
-        let count = SessionManager.shared.backfillSessions()
-        Toast.show(count > 0 ? L10n.sessionBackfillDone(count.localized()) : L10n.sessionBackfillNone)
+        // Domain queries + store writes for every session — off the main thread, or the
+        // screen (including the back button) freezes for the duration.
+        DispatchQueue.global(qos: .userInitiated).async {
+            let count = SessionManager.shared.backfillSessions()
+            DispatchQueue.main.async {
+                Toast.show(count > 0 ? L10n.sessionBackfillDone(count.localized()) : L10n.sessionBackfillNone)
+            }
+        }
     }
 
     @objc private func mirrorUpNextToSessionChanged(_ sender: UISwitch) {
@@ -75,7 +80,6 @@ class InboxSettingsViewController: PCViewController, UITableViewDataSource, UITa
 
     func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         switch sections[section].first {
-        case .globalPosition: return L10n.sessionPositionHeading
         case .addToSessionMode: return L10n.sessionAddRemoveHeading
         case .autoAddToUpNext: return L10n.sessionAutoAddLimitsHeading
         case .mirrorUpNextToSession: return L10n.settingsLinking
@@ -95,9 +99,6 @@ class InboxSettingsViewController: PCViewController, UITableViewDataSource, UITa
         let cell = (tableView.dequeueReusableCell(withIdentifier: Self.cellId) as? ThemeableCell)
             ?? ThemeableCell(style: .value1, reuseIdentifier: Self.cellId)
         switch sections[indexPath.section][indexPath.row] {
-        case .globalPosition:
-            cell.textLabel?.text = L10n.sessionPositionHeading
-            cell.detailTextLabel?.text = Settings.sessionInsertPosition() == .top ? L10n.top : L10n.bottom
         case .addToSessionMode:
             cell.textLabel?.text = L10n.playlistAddToLineup
             cell.detailTextLabel?.text = AddToSessionMode.current.title
@@ -132,17 +133,6 @@ class InboxSettingsViewController: PCViewController, UITableViewDataSource, UITa
         tableView.deselectRow(at: indexPath, animated: true)
 
         switch sections[indexPath.section][indexPath.row] {
-        case .globalPosition:
-            let picker = OptionsPicker(title: L10n.sessionPositionHeading.localizedUppercase)
-            let current = Settings.sessionInsertPosition()
-            for mode in [PlaylistInsertMode.top, .bottom] {
-                let label = mode == .top ? L10n.top : L10n.bottom
-                picker.addAction(action: OptionAction(label: label, icon: nil, selected: current == mode) { [weak self] in
-                    Settings.setSessionInsertPosition(mode)
-                    self?.settingsTable.reloadData()
-                })
-            }
-            picker.present(from: self)
         case .addToSessionMode:
             let modes = AddToSessionMode.allCases
             let selectedIndex = modes.firstIndex(of: .current) ?? 0

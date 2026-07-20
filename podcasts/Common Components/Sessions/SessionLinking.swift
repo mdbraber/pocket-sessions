@@ -24,54 +24,37 @@ enum SessionLinking {
         }
     }
 
-    /// A user-initiated Remove from Up Next: an episode that also sits in a session
-    /// lineup prompts for whether the session keeps it; otherwise the queue removal
-    /// happens straight away. `completion` runs after the removal (never when the
-    /// prompt is dismissed without choosing).
+    /// A user-initiated Remove from Up Next: the queue removal always happens straight
+    /// away and the session keeps the episode; when it also sits in a session lineup, a
+    /// toast offers removing it from the session too. `completion` runs after the removal.
     static func removeFromUpNextAskingSession(episode: BaseEpisode, completion: (() -> Void)? = nil) {
-        let removeFromQueue = {
-            PlaybackManager.shared.removeIfPlayingOrQueued(episode: episode, fireNotification: true, userInitiated: true)
-        }
-
         // ONE query for which playlists hold this episode, then map to sessions — the old
         // `sessions.filter { storeMemberUuids(for:) … }` ran a DB query PER session on every remove
         // swipe, which is what made the swipe feel slow.
         let holdingPlaylists = Set(DataManager.sharedManager.manualPlaylistUUIDs(for: episode.uuid))
         let containing = SessionStore.shared.sessions.filter { $0.storePlaylistUuid.map(holdingPlaylists.contains) ?? false }
-        guard !containing.isEmpty else {
-            removeFromQueue()
-            completion?()
-            return
-        }
 
-        let picker = OptionsPicker(title: L10n.sessionQueueRemoveTitle.localizedUppercase)
-        picker.addAction(action: OptionAction(label: L10n.sessionQueueRemoveKeep, icon: nil) {
-            removeFromQueue()
-            completion?()
-        })
-        let removeBoth = OptionAction(label: L10n.sessionQueueRemoveAlso, icon: nil) {
-            removeFromQueue()
-            for session in containing {
-                SessionManager.shared.removeFromLineup(episodeUuids: [episode.uuid], session: session)
-            }
-            completion?()
+        PlaybackManager.shared.removeIfPlayingOrQueued(episode: episode, fireNotification: true, userInitiated: true)
+        completion?()
+
+        guard !containing.isEmpty else { return }
+        let name = containing.first.flatMap { SessionManager.shared.store(for: $0)?.playlistName } ?? L10n.playbackSessionTabSession
+        DispatchQueue.main.async {
+            Toast.show(L10n.sessionQueueRemoveToast(name), actions: [
+                Toast.Action(title: L10n.sessionQueueRemoveAlso, action: {
+                    for session in containing {
+                        SessionManager.shared.removeFromLineup(episodeUuids: [episode.uuid], session: session)
+                    }
+                })
+            ])
         }
-        removeBoth.destructive = true
-        picker.addAction(action: removeBoth)
-        // The remove verb can itself be chosen from another OptionsPicker (e.g. the
-        // episode detail add sheet), whose dismissal is still in flight — defer a
-        // runloop so this sheet presents from a settled top-most controller.
-        DispatchQueue.main.async { picker.present() }
     }
 
-    /// Bulk Remove from Up Next: if any of the selected episodes also sit in a session
-    /// lineup, prompt once for whether the sessions keep them; the choice applies to
-    /// the whole selection. `completion` runs after the removal.
+    /// Bulk Remove from Up Next: the queue removal always happens straight away and the
+    /// sessions keep their episodes; if any of the selection also sits in a session
+    /// lineup, a toast offers removing those from their sessions too. `completion` runs
+    /// after the removal.
     static func removeFromUpNextAskingSession(episodeUuids: [String], completion: (() -> Void)? = nil) {
-        let removeFromQueue = {
-            PlaybackManager.shared.bulkRemoveQueued(uuids: episodeUuids)
-        }
-
         // sessionUuid -> the selected episodes it holds. One query per selected episode (mapping it
         // to its playlists), not one per session — the latter was O(sessions) DB hits per swipe.
         var membership = [String: [String]]()
@@ -85,31 +68,21 @@ enum SessionLinking {
                 membership[sessionUuid, default: []].append(episodeUuid)
             }
         }
-        guard !membership.isEmpty else {
-            removeFromQueue()
-            completion?()
-            return
-        }
 
-        let picker = OptionsPicker(title: L10n.sessionQueueRemoveTitle.localizedUppercase)
-        picker.addAction(action: OptionAction(label: L10n.sessionQueueRemoveKeep, icon: nil) {
-            removeFromQueue()
-            completion?()
-        })
-        let removeBoth = OptionAction(label: L10n.sessionQueueRemoveAlso, icon: nil) {
-            removeFromQueue()
-            for (sessionUuid, held) in membership {
-                guard let session = SessionStore.shared.session(uuid: sessionUuid) else { continue }
-                SessionManager.shared.removeFromLineup(episodeUuids: held, session: session)
-            }
-            completion?()
+        PlaybackManager.shared.bulkRemoveQueued(uuids: episodeUuids)
+        completion?()
+
+        guard !membership.isEmpty else { return }
+        DispatchQueue.main.async {
+            Toast.show(L10n.sessionQueueRemoveToastBulk, actions: [
+                Toast.Action(title: L10n.sessionQueueRemoveAlso, action: {
+                    for (sessionUuid, held) in membership {
+                        guard let session = SessionStore.shared.session(uuid: sessionUuid) else { continue }
+                        SessionManager.shared.removeFromLineup(episodeUuids: held, session: session)
+                    }
+                })
+            ])
         }
-        removeBoth.destructive = true
-        picker.addAction(action: removeBoth)
-        // The remove verb can itself be chosen from another OptionsPicker (e.g. the
-        // episode detail add sheet), whose dismissal is still in flight — defer a
-        // runloop so this sheet presents from a settled top-most controller.
-        DispatchQueue.main.async { picker.present() }
     }
 
     /// After a user-initiated session add: mirror the episodes into Up Next at the

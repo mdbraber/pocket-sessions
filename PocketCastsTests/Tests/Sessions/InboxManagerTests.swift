@@ -28,6 +28,8 @@ final class InboxManagerTests: DBTestCase {
 
     override func tearDown() async throws {
         try? FileManager.default.removeItem(at: storeURL)
+        // The manual-unseen exemption set persists in UserDefaults; don't leak it across runs.
+        UserDefaults.standard.removeObject(forKey: InboxManager.manualUnseenKey)
         inbox = nil
         store = nil
         storeURL = nil
@@ -282,23 +284,28 @@ final class InboxManagerTests: DBTestCase {
         XCTAssertEqual(inbox.unseenUuids(), ["b"])
     }
 
-    /// Mark-unseen must also unplay and unarchive. Otherwise the very next sweep sees the
-    /// progress it still carries and removes it again — and since a removal leaves no record,
-    /// this is the ONLY recovery path in the whole model.
-    func testMarkUnseenClearsProgressAndUnarchivesSoTheSweepCannotUndoIt() {
+    /// Mark-unseen is an attention mark, not a rewind: playback state stays untouched. The
+    /// episode instead goes into the manual-unseen exemption set, which is what stops the very
+    /// next sweep from seeing the progress it still carries and removing it again.
+    func testMarkUnseenLeavesPlaybackStateAloneAndTheSweepCannotUndoIt() {
         let podcast = makePodcast(latestEpisodeDate: date(1))
-        let episode = makeEpisode(uuid: "decided", podcast: podcast, publishedDate: date(1), archived: true, playedUpTo: 120, playingStatus: .completed)
+        let episode = makeEpisode(uuid: "decided", podcast: podcast, publishedDate: date(1), playedUpTo: 120, playingStatus: .completed)
 
         inbox.markUnseen(episodeUuids: [episode.uuid])
 
         XCTAssertEqual(inbox.unseenUuids(), ["decided"])
 
         let reloaded = dataManager.findEpisode(uuid: "decided")
-        XCTAssertEqual(reloaded?.playedUpTo, 0, "unseen means fresh again — progress must be cleared")
-        XCTAssertEqual(reloaded?.archived, false, "unseen means fresh again — it must be unarchived")
+        XCTAssertEqual(reloaded?.playedUpTo, 120, "unseen is an attention mark — progress must be left alone")
+        XCTAssertEqual(reloaded?.playingStatus, PlayingStatus.completed.rawValue, "…and so must the played status")
 
         inbox.sweep()
         XCTAssertEqual(inbox.unseenUuids(), ["decided"], "the sweep must not immediately undo mark-unseen")
+
+        // Leaving the Inbox deliberately ends the exemption — otherwise the episode would dodge
+        // the sweep's progress rule forever if it ever came back.
+        inbox.markSeen(episodeUuids: ["decided"])
+        XCTAssertFalse(inbox.manualUnseenUuids().contains("decided"), "mark-seen must clear the manual-unseen exemption")
     }
 
     // MARK: - The sweep
@@ -344,6 +351,88 @@ final class InboxManagerTests: DBTestCase {
         inbox.drain()
 
         XCTAssertEqual(inbox.unseenUuids().count, InboxManager.capacity, "the Inbox fills to its cap and stops")
+    }
+
+    // MARK: - The seen-ledger
+
+    /// `markSeen` is the funnel every deliberate removal goes through, so recording there is
+    /// what gives the ledger complete coverage; `markUnseen` must clear the entry (with an
+    /// override), or the sync-import filter would fight mark-unseen forever.
+    func testMarkSeenRecordsIntoTheLedgerAndMarkUnseenClearsIt() {
+        let podcast = makePodcast(latestEpisodeDate: date(1))
+        makeEpisode(uuid: "triaged", podcast: podcast, publishedDate: date(1))
+
+        inbox.markSeen(episodeUuids: ["triaged"])
+        XCTAssertTrue(store.isSeen("triaged"), "mark-seen must leave a tombstone in the ledger")
+
+        inbox.markUnseen(episodeUuids: ["triaged"])
+        XCTAssertFalse(store.isSeen("triaged"), "mark-unseen must take it back out")
+        XCTAssertEqual(inbox.unseenUuids(), ["triaged"])
+
+        inbox.markSeen(episodeUuids: ["triaged"])
+        XCTAssertTrue(store.isSeen("triaged"), "a later mark-seen must win again — latest decision rules")
+    }
+
+    /// This closure is what `ServerConfig.shared.inboxSeenFilter` runs during the playlist
+    /// sync import: given the uuids the server would re-add to the Inbox, return the ones the
+    /// ledger says were deliberately removed, so the import drops them. The SyncTask path
+    /// itself needs a protobuf + network harness, so the filter is tested directly here — the
+    /// SyncTask side is a two-line subtract behind a `uuid == inboxPlaylistUuid` guard.
+    func testTheImportFilterDropsExactlyTheLedgerSeenUuids() {
+        let podcast = makePodcast(latestEpisodeDate: date(1))
+        makeEpisode(uuid: "triaged-here", podcast: podcast, publishedDate: date(1))
+        inbox.markSeen(episodeUuids: ["triaged-here"])
+
+        XCTAssertEqual(
+            inbox.inboxSeenFilter(["triaged-here", "genuinely-new"]), ["triaged-here"],
+            "only the triaged episode is filtered; a genuinely new one must still be added"
+        )
+
+        inbox.markUnseen(episodeUuids: ["triaged-here"])
+        XCTAssertTrue(
+            inbox.inboxSeenFilter(["triaged-here"]).isEmpty,
+            "after mark-unseen the filter must let the episode through — otherwise sync would fight the user"
+        )
+    }
+
+    /// The other device triaged an episode away; its ledger arrives over CloudKit before the
+    /// playlist sync catches up. The sweep applies the ledger to membership so the dot goes
+    /// now, not at some future sync.
+    func testTheSweepRemovesMembersTheRemoteLedgerSaysAreSeen() {
+        let podcast = makePodcast(latestEpisodeDate: date(5))
+        makeEpisode(uuid: "old", podcast: podcast, publishedDate: date(10))
+        inbox.drain()
+        makeEpisode(uuid: "triaged-elsewhere", podcast: podcast, publishedDate: date(2))
+        makeEpisode(uuid: "untouched", podcast: podcast, publishedDate: date(1))
+        podcast.latestEpisodeDate = date(1)
+        dataManager.save(podcast: podcast)
+        inbox.drain()
+        XCTAssertEqual(inbox.unseenUuids(), ["triaged-elsewhere", "untouched"])
+
+        store.applyRemoteSeenLedger(InboxSeenLedgerPayload(seenAt: ["triaged-elsewhere": Date()], unseenAt: [:]))
+        inbox.sweep()
+
+        XCTAssertEqual(inbox.unseenUuids(), ["untouched"])
+    }
+
+    /// Incoming server deletes (`rawDeleteEpisodes` in the sync import) bypass `markSeen`, so
+    /// a manual-unseen exemption can outlive its episode's membership. The sweep drops those —
+    /// otherwise the exemption would silently shield the episode from the progress rule if it
+    /// ever came back.
+    func testTheSweepDropsExemptionsWhoseEpisodesLeftTheInbox() {
+        let podcast = makePodcast(latestEpisodeDate: date(1))
+        makeEpisode(uuid: "put-back", podcast: podcast, publishedDate: date(1), playedUpTo: 60)
+        inbox.markUnseen(episodeUuids: ["put-back"])
+        XCTAssertEqual(inbox.manualUnseenUuids(), ["put-back"])
+
+        // Another device marks it seen; the server-side playlist import removes it with a raw
+        // delete, exactly the path that bypasses markSeen.
+        dataManager.rawDeleteEpisodes(["put-back"], from: inbox.inboxPlaylist())
+
+        inbox.sweep()
+
+        XCTAssertTrue(inbox.manualUnseenUuids().isEmpty, "an exemption without a member is stale and must go")
+        XCTAssertTrue(inbox.unseenUuids().isEmpty, "…and dropping it must not re-add the episode")
     }
 
     // MARK: - Unsubscribe

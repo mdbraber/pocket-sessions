@@ -12,13 +12,14 @@ class CarPlaySceneDelegate: CustomObserver, CPTemplateApplicationSceneDelegate, 
     var debouncer: Debounce = .init(delay: 0.2)
     weak var visibleTemplate: CPTemplate?
 
+
     func templateApplicationScene(_ templateApplicationScene: CPTemplateApplicationScene, didConnect interfaceController: CPInterfaceController) {
         FileLog.shared.addMessage("CarPlay: didConnect")
 
         self.interfaceController = interfaceController
         interfaceController.delegate = self
 
-        let tabTemplate = CPTabBarTemplate(templates: [createPodcastsTab(), createSessionsTab(), createFiltersTab(), createMoreTab()])
+        let tabTemplate = CPTabBarTemplate(templates: [createQueueTab(), createPodcastsTab(), createMoreTab()])
         interfaceController.setRootTemplate(tabTemplate)
 
         self.visibleTemplate = tabTemplate.selectedTemplate
@@ -156,6 +157,12 @@ class CarPlaySceneDelegate: CustomObserver, CPTemplateApplicationSceneDelegate, 
 
         if let starButton = starButton() {
             buttons.append(starButton)
+        }
+
+        // Fork: Up Next ↔ Session world toggle. CarPlay caps Now Playing at 5 buttons, so
+        // it rides in the last slot (with chapters shown that makes exactly 5).
+        if let worldButton = worldSwitchButton() {
+            buttons.append(worldButton)
         }
 
         template.updateNowPlayingButtons(buttons)

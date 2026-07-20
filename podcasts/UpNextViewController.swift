@@ -8,6 +8,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     static let nowPlayingCell = "UpNextNowPlayingCell"
     static let emptyStateCell = "EmptyStateCell"
     static let sessionInboxNoticeCell = "SessionInboxNoticeCell"
+    static let sessionPausedBannerCell = "SessionPausedBannerCell"
     static let upNextSection = 1
     static var upNextRowHeight: CGFloat = UITableView.automaticDimension
 
@@ -79,13 +80,18 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     // Use HitTargetButton so these small header controls meet Apple's recommended 44x44pt minimum tap target without changing their visible size.
     let shuffleButton = HitTargetButton(frame: CGRect(x: 0, y: 0, width: 24, height: 24))
     let sortButton = HitTargetButton(frame: CGRect(x: 0, y: 0, width: 24, height: 24))
-    let filterButton = HitTargetButton(frame: CGRect(x: 0, y: 0, width: 24, height: 24))
-    let hideSkippedButton = HitTargetButton(frame: CGRect(x: 0, y: 0, width: 24, height: 24))
-    let filterIndicatorButton = UIButton(type: .custom)
-    let clearFilterButton = HitTargetButton(frame: CGRect(x: 0, y: 0, width: 20, height: 20))
     let clearQueueButton = HitTargetButton(frame: CGRect(x: 0, y: 0, width: 93, height: 16))
     let sessionHeaderLabel = ThemeableLabel()
     let sessionSortButton = HitTargetButton(frame: CGRect(x: 0, y: 0, width: 24, height: 24))
+    /// Fork: the session CHOOSER's own controls — sort order, and a ⋯ menu of "Show"
+    /// toggles. Same construction as the queue's `sortButton`.
+    let sessionListSortButton = HitTargetButton(frame: CGRect(x: 0, y: 0, width: 24, height: 24))
+    let sessionListMoreButton = HitTargetButton(frame: CGRect(x: 0, y: 0, width: 24, height: 24))
+
+    /// Progressive disclosure: with only a handful of sessions the whole list is visible at
+    /// a glance, so sorting and filtering it is noise. Tuning constant — raise it if the
+    /// chooser's rows ever get shorter.
+    private static let sessionListControlsThreshold = 5
     /// Which world the screen is showing. The pill switcher changes only the view —
     /// never what plays — and auto-follows playback ownership on transitions (session
     /// starts → session view; session pauses → queue view; ending a session stays on
@@ -96,6 +102,82 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     }
 
     var displayedWorld: DisplayedWorld = .upNext
+
+    /// Fork: the Session world has two levels — the chooser listing every session, and
+    /// the lineup of one session. View state only: never persisted, and it has no
+    /// meaning while `displayedWorld == .upNext`.
+    enum SessionLevel {
+        case list
+        case lineup
+    }
+
+    var sessionLevel: SessionLevel = .list {
+        didSet {
+            guard oldValue != sessionLevel, sessionLevel == .list else { return }
+            // The chooser has no episode rows to act on.
+            isMultiSelectEnabled = false
+        }
+    }
+
+    /// Fork: which session the LINEUP level is showing. View state only — never persisted,
+    /// and it never touches playback: browsing a session is navigation, nothing more. Holds
+    /// the session's store-playlist uuid, i.e. the same uuid a `PlaybackSession` carries, so
+    /// it compares directly against `Settings.playbackSession()`.
+    var browsedSessionUuid: String?
+
+    /// The session the lineup renders: whatever is being browsed, falling back to the
+    /// active one (entering the Session world mid-session lands on it). Every lineup-level
+    /// read — episodes, header, counts, sort, swipes, moves — goes through this.
+    var browsedPlaybackSession: PlaybackSession? {
+        let active = Settings.playbackSession()
+        guard let browsedSessionUuid else { return active }
+        // Browsing the active session keeps its own type (a podcast session has no store
+        // playlist); anything reached from the chooser plays its store, a manual playlist.
+        if let active, active.uuid == browsedSessionUuid { return active }
+        return PlaybackSession(type: .playlist, uuid: browsedSessionUuid)
+    }
+
+    /// The store `Session` behind the browsed lineup — what lineup edits act on.
+    var browsedSession: Session? {
+        guard let uuid = browsedPlaybackSession?.uuid else { return nil }
+        return SessionStore.shared.session(forStore: uuid)
+    }
+
+    /// True when the lineup being browsed is also the one that owns playback. Everything
+    /// player-facing at the lineup level (the Now Playing card, the paused banner, the
+    /// "true top" re-prime) is gated on this: a browsed, non-active session has no
+    /// relationship with the player at all.
+    var browsingActiveSession: Bool {
+        guard let active = Settings.playbackSession() else { return false }
+        return browsedPlaybackSession == active
+    }
+
+    /// The lineup shows a Now Playing card only when the session it is browsing is the
+    /// active one AND the player is holding one of its episodes. `sessionOwnsCard` alone
+    /// is deliberately left un-narrowed (see its comment) — this is its lineup-level use.
+    var browsedSessionOwnsCard: Bool {
+        sessionOwnsCard && browsingActiveSession
+    }
+
+    /// Entering the Session world lands on the lineup whenever a session is active
+    /// (playing or paused — mid-session, continuity wins), on the chooser otherwise.
+    var sessionLandingLevel: SessionLevel {
+        Settings.playbackSession() != nil ? .lineup : .list
+    }
+
+    /// Entering the Session world: browse the active session (landing on its lineup) or,
+    /// with none, land on the chooser with nothing browsed.
+    func enterSessionWorld() {
+        browsedSessionUuid = Settings.playbackSession()?.uuid
+        sessionLevel = sessionLandingLevel
+    }
+
+    /// Fork: the chooser's rows, cached per reload (see `refreshSessionState`).
+    var sessionListRows = [SessionListRow]()
+
+    var showingSessionList: Bool {
+        displayedWorld == .session && sessionLevel == .list
+    }
 
     /// Tracks session-playing transitions for the view's auto-follow.
     private var lastKnownSessionActive: Bool?
@@ -111,6 +193,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
 
     @objc private func worldSwitcherChanged() {
         displayedWorld = DisplayedWorld(rawValue: worldSwitcher.selectedSegmentIndex) ?? .upNext
+        if displayedWorld == .session { enterSessionWorld() }
         reloadTable()
         upNextTable.setContentOffset(CGPoint(x: 0, y: -upNextTable.adjustedContentInset.top), animated: false)
     }
@@ -119,6 +202,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     /// title promised as much.
     @objc private func upNextTabActivated() {
         displayedWorld = sessionOwnsCard ? .session : .upNext
+        if displayedWorld == .session { enterSessionWorld() }
         reloadTable()
     }
 
@@ -131,7 +215,19 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
 
         let metrics = UIFontMetrics(forTextStyle: .footnote)
         let inSession = displayedWorld == .session
-        if inSession, Settings.playbackSession() != nil {
+        if inSession, sessionLevel == .list {
+            // The chooser gets the same title block as the lineup — same label, same font —
+            // so stepping between the two levels only swaps the words, never the treatment.
+            // No chevron: this is the top level, there is nowhere further back to go.
+            sessionHeaderLabel.text = L10n.sessions
+            sessionHeaderLabel.style = .primaryText01
+            sessionBackChevron.isHidden = true
+            sessionMetaLabel.text = sessionListCountsText()
+            sessionSortButton.isHidden = true
+            sessionInboxLabel.isHidden = true
+            sessionHeaderView.frame = CGRect(x: 0, y: 0, width: upNextTable.bounds.width, height: metrics.scaledValue(for: sessionHeaderHeight))
+            upNextTable.tableHeaderView = sessionHeaderView
+        } else if inSession, browsedPlaybackSession != nil {
             updateSessionHeader()
             sessionHeaderView.frame = CGRect(x: 0, y: 0, width: upNextTable.bounds.width, height: metrics.scaledValue(for: sessionHeaderHeight))
             upNextTable.tableHeaderView = sessionHeaderView
@@ -139,12 +235,16 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
             // The queue gets the same title block as the session — "Up Next".
             sessionHeaderLabel.text = L10n.upNext
             sessionHeaderLabel.style = .primaryText01
+            sessionBackChevron.isHidden = true
             sessionInboxLabel.isHidden = true
             sessionHeaderView.frame = CGRect(x: 0, y: 0, width: upNextTable.bounds.width, height: metrics.scaledValue(for: sessionHeaderHeight))
             upNextTable.tableHeaderView = sessionHeaderView
         } else {
             upNextTable.tableHeaderView = nil
         }
+
+        // One call for every branch above: the chooser's controls only exist at `.list`.
+        updateSessionListControls()
 
         let chromeHeight: CGFloat = 52
         guard upNextTable.contentInset.top != chromeHeight else { return }
@@ -158,13 +258,6 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         }
     }
 
-    @objc private func pillLongPressed(_ recognizer: UILongPressGestureRecognizer) {
-        guard recognizer.state == .began else { return }
-        // Only the Session segment (right half) offers the switcher.
-        guard recognizer.location(in: worldSwitcher).x > worldSwitcher.bounds.width / 2 else { return }
-        switchSessionTapped()
-    }
-
     /// Pill titles carry each world's episode count (including the playing episode)
     /// so the parked world stays visible in the periphery while peeking.
     func updateWorldSwitcher() {
@@ -175,8 +268,10 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         let queueCount = PlaybackManager.shared.queue.upNextCount() + (queueOwnsCard ? 1 : 0)
         setWorldSegment(title: "\(L10n.upNext) · \(queueCount)", playing: queueOwnsCard, at: DisplayedWorld.upNext.rawValue)
 
-        let sessionCount = (sessionEpisodes?.count ?? 0) + (sessionOwnsCard ? 1 : 0)
-        let sessionTitle = Settings.playbackSession() != nil
+        // The count describes the session the view is showing (the browsed one); the
+        // speaker glyph still marks whichever world owns playback.
+        let sessionCount = (sessionEpisodes?.count ?? 0) + (browsedSessionOwnsCard ? 1 : 0)
+        let sessionTitle = browsedPlaybackSession != nil
             ? "\(L10n.playbackSessionTabSession) · \(sessionCount)"
             : L10n.playbackSessionTabSession
         setWorldSegment(title: sessionTitle, playing: sessionOwnsCard, at: DisplayedWorld.session.rawValue)
@@ -216,9 +311,6 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
             content.draw(at: .zero)
         }.withRenderingMode(.alwaysOriginal)
     }
-    private var filterTrailingToHideSkipped: NSLayoutConstraint?
-    private var filterTrailingToShuffle: NSLayoutConstraint?
-
     /// Header of the session section: one "Session: <name> ›" line (tap navigates — the
     /// session is a live mirror of that playlist/podcast) with sort and end-session buttons,
     /// a metadata line, and — when the playlist has untriaged episodes — the tappable inbox
@@ -229,28 +321,38 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         sessionHeaderLabel.style = .primaryText01
         sessionHeaderLabel.font = UIFont.font(ofSize: 22, weight: .bold, scalingWith: .title2)
         sessionHeaderLabel.textAlignment = .center
-        view.addSubview(sessionHeaderLabel)
-        sessionHeaderLabel.translatesAutoresizingMaskIntoConstraints = false
+        sessionHeaderLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+        // Chevron + name is the breadcrumb back to the session chooser.
+        let titleRow = UIStackView(arrangedSubviews: [sessionBackChevron, sessionHeaderLabel])
+        titleRow.axis = .horizontal
+        titleRow.alignment = .center
+        titleRow.spacing = 4
+        titleRow.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(titleRow)
 
         sessionInboxLabel.font = UIFont.font(ofSize: 13, weight: .medium, scalingWith: .footnote)
         view.addSubview(sessionInboxLabel)
         sessionInboxLabel.translatesAutoresizingMaskIntoConstraints = false
 
         NSLayoutConstraint.activate([
-            // Centered like the playlist page's title block.
-            sessionHeaderLabel.topAnchor.constraint(equalTo: view.topAnchor, constant: 8),
-            sessionHeaderLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            sessionHeaderLabel.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 20),
-            sessionHeaderLabel.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -20),
+            // Centred at every level. The chevron rides inside this row, so a leading-aligned
+            // title would sit further right at the lineup than at the chooser — centring keeps
+            // "Up Next", "Sessions" and a session's own name in the same place.
+            titleRow.topAnchor.constraint(equalTo: view.topAnchor, constant: 8),
+            titleRow.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            titleRow.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 20),
+            titleRow.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -20),
 
             sessionInboxLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            sessionInboxLabel.topAnchor.constraint(equalTo: sessionHeaderLabel.bottomAnchor, constant: 3)
+            sessionInboxLabel.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 20),
+            sessionInboxLabel.topAnchor.constraint(equalTo: titleRow.bottomAnchor, constant: 3)
         ])
 
-        // The title opens the session's source (the session is a live mirror of it);
-        // the inbox line opens the same place to triage.
-        sessionHeaderLabel.isUserInteractionEnabled = true
-        sessionHeaderLabel.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(openSessionSource)))
+        // The title steps back up to the session chooser; the inbox line opens the
+        // session's source to triage.
+        titleRow.isUserInteractionEnabled = true
+        titleRow.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(sessionBreadcrumbTapped)))
         sessionInboxLabel.isUserInteractionEnabled = true
         sessionInboxLabel.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(sessionInboxNoticeTapped)))
         return view
@@ -267,26 +369,112 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         view.addSubview(sessionMetaLabel)
         sessionMetaLabel.translatesAutoresizingMaskIntoConstraints = false
 
-        view.addSubview(sessionSortButton)
-        sessionSortButton.translatesAutoresizingMaskIntoConstraints = false
+        // A stack, not individual anchors: hidden arranged subviews collapse, so the
+        // chooser's controls can come and go (progressive disclosure) without leaving a
+        // gap at the trailing edge or nudging the counts label.
+        let buttons = UIStackView(arrangedSubviews: [sessionSortButton, sessionListSortButton, sessionListMoreButton])
+        buttons.axis = .horizontal
+        buttons.alignment = .center
+        buttons.spacing = 16
+        buttons.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(buttons)
+
+        for button in [sessionSortButton, sessionListSortButton, sessionListMoreButton] {
+            button.translatesAutoresizingMaskIntoConstraints = false
+            button.setContentCompressionResistancePriority(.required, for: .horizontal)
+            NSLayoutConstraint.activate([
+                button.widthAnchor.constraint(equalToConstant: 24),
+                button.heightAnchor.constraint(equalToConstant: 24)
+            ])
+        }
+
+        // Identical geometry to the queue's header (see `headerView`): the label centres in
+        // a 48pt row inset 8 from the top, so the gap between the info line and the rows
+        // below it is the same in both worlds and at both session levels.
+        let controlsRow = UILayoutGuide()
+        view.addLayoutGuide(controlsRow)
 
         NSLayoutConstraint.activate([
-            // Bottom-anchored: extra row height becomes breathing room below the card,
-            // keeping the tight gap to the first episode.
-            sessionMetaLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
-            sessionMetaLabel.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -11),
-            sessionMetaLabel.trailingAnchor.constraint(lessThanOrEqualTo: sessionSortButton.leadingAnchor, constant: -10),
+            controlsRow.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            controlsRow.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            controlsRow.topAnchor.constraint(equalTo: view.topAnchor, constant: 8),
+            controlsRow.heightAnchor.constraint(equalToConstant: 48),
 
-            sessionSortButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
-            sessionSortButton.centerYAnchor.constraint(equalTo: sessionMetaLabel.centerYAnchor),
-            sessionSortButton.widthAnchor.constraint(equalToConstant: 24),
-            sessionSortButton.heightAnchor.constraint(equalToConstant: 24)
+            sessionMetaLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            sessionMetaLabel.centerYAnchor.constraint(equalTo: controlsRow.centerYAnchor),
+            sessionMetaLabel.trailingAnchor.constraint(lessThanOrEqualTo: buttons.leadingAnchor, constant: -10),
+
+            buttons.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+            buttons.centerYAnchor.constraint(equalTo: controlsRow.centerYAnchor)
         ])
         return view
     }()
 
     let sessionInboxLabel = UILabel()
     let sessionMetaLabel = ThemeableLabel()
+
+    /// Fork: the lineup header's leading chevron — the way back up to the chooser.
+    lazy var sessionBackChevron: UIImageView = {
+        let view = UIImageView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.setContentHuggingPriority(.required, for: .horizontal)
+        view.setContentCompressionResistancePriority(.required, for: .horizontal)
+        return view
+    }()
+
+    /// Fork: at the lineup level the header title steps back up to the chooser.
+    @objc func sessionBreadcrumbTapped() {
+        guard displayedWorld == .session, sessionLevel == .lineup else { return }
+        // Stepping back up ends the browse — the chooser is about every session.
+        browsedSessionUuid = nil
+        sessionLevel = .list
+        reloadTable()
+        upNextTable.setContentOffset(CGPoint(x: 0, y: -upNextTable.adjustedContentInset.top), animated: false)
+    }
+
+    /// Fork: the chooser's counts line — "N sessions", plus "· k empty" when some
+    /// sessions have nothing left to play.
+    func sessionListCountsText() -> String {
+        let count = sessionListRows.count
+        let base = count == 1 ? L10n.sessionCountSingular : L10n.sessionCountPluralFormat(count.localized())
+        let emptyCount = sessionListRows.filter { $0.episodeCount == 0 }.count
+        guard emptyCount > 0 else { return base }
+        return base + " · " + L10n.sessionCountEmptySuffix(emptyCount.localized())
+    }
+
+    /// Fork: picking a session in the chooser BROWSES it — the lineup opens, and nothing
+    /// about playback changes: no session is started, no episode is primed, the player and
+    /// the Up Next world carry on exactly as they were. A session only becomes active when
+    /// the user plays something from it (see the session row tap in +Table).
+    func openSessionFromList(_ row: SessionListRow) {
+        browsedSessionUuid = SessionStore.shared.session(uuid: row.sessionUuid)?.storePlaylistUuid ?? row.storeUuid
+        sessionLevel = .lineup
+        reloadTable()
+    }
+
+    /// Fork: playing an episode of a browsed, not-yet-active session — the one moment
+    /// browsing turns into listening. `startPlaybackSession` is what publishes the pointer
+    /// (and pulls in any pending auto-adds), so it runs first, silently; `play(sessionEpisode:)`
+    /// then needs that pointer to exist and lands on the episode the user actually tapped.
+    /// Audio starts here: a tap on an episode row is a request to play it.
+    func playFromBrowsedSession(episode: BaseEpisode) {
+        guard let session = browsedPlaybackSession else { return }
+        AnalyticsPlaybackHelper.shared.currentSource = .upNext
+        if session != Settings.playbackSession() {
+            PlaybackManager.shared.startPlaybackSession(session, autoPlay: false)
+            // The session must actually have started for the pointer to be there.
+            guard Settings.playbackSession() == session else { return }
+        }
+        // startPlaybackSession primes the session's FIRST episode; if that's the tapped
+        // one there is nothing to switch to, just start the audio.
+        if PlaybackManager.shared.currentEpisode()?.uuid == episode.uuid {
+            PlaybackManager.shared.play()
+        } else {
+            PlaybackManager.shared.play(sessionEpisode: episode)
+        }
+        browsedSessionUuid = session.uuid
+        reloadTable()
+    }
 
     /// The Switch Session sheet: looks like the Playlists screen (artwork, name, count),
     /// with "Up Next" as the first row to hand playback back to the queue.
@@ -297,11 +485,15 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     /// The empty state's "Choose session" variant omits the Up Next row — with no
     /// session active there is no queue mode to switch back to.
     func presentSessionPicker(includeUpNext: Bool) {
-        let controller = SwitchSessionViewController(themeOverride: themeOverride, includeUpNext: includeUpNext) { [weak self] pickedUpNext in
-            if pickedUpNext {
-                self?.displayedWorld = .upNext
-                self?.reloadTable()
-            }
+        let controller = SwitchSessionViewController(themeOverride: themeOverride, includeUpNext: includeUpNext) { [weak self] switched in
+            guard switched, let self else { return }
+            // Snap to whichever world now owns playback: picking a session
+            // activates it (Session world); picking Up Next / End Session ends
+            // the session (queue world).
+            self.displayedWorld = self.sessionOwnsCard ? .session : .upNext
+            // The sheet switches PLAYBACK, so the view follows it: browse whatever now plays.
+            if self.displayedWorld == .session { self.enterSessionWorld() }
+            self.reloadTable()
         }
         let nav = UINavigationController(rootViewController: controller)
         nav.modalPresentationStyle = .pageSheet
@@ -312,8 +504,9 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     /// "N episodes · X left" for what's still to come in the session — the playing
     /// episode isn't counted, so the line stays put during playback.
     func sessionMetaText() -> String? {
-        guard let session = Settings.playbackSession() else { return nil }
-        let excludedUuid = Settings.playbackSessionPaused() ? nil : PlaybackManager.shared.currentEpisode()?.uuid
+        guard let session = browsedPlaybackSession else { return nil }
+        // Only the browsed-and-active session has a playing episode to leave out.
+        let excludedUuid = browsedSessionOwnsCard ? PlaybackManager.shared.currentEpisode()?.uuid : nil
         let remainingEpisodes = session.remainingEpisodes(excluding: excludedUuid)
         let totalDuration = remainingEpisodes.reduce(0.0) { $0 + max(0, $1.duration - $1.playedUpTo) }
         // Same strings as the stock Up Next counts line, so the two worlds read alike.
@@ -328,9 +521,17 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     }
 
     func updateSessionHeader() {
-        let session = Settings.playbackSession()
+        let session = browsedPlaybackSession
 
 
+
+        // The chevron only shows on the session lineup, where it leads back to the chooser.
+        let showsChevron = displayedWorld == .session && sessionLevel == .lineup && session != nil
+        sessionBackChevron.isHidden = !showsChevron
+        if showsChevron {
+            sessionBackChevron.image = UIImage(systemName: "chevron.backward", withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold))?
+                .withTintColor(AppTheme.colorForStyle(.primaryText02, themeOverride: themeOverride), renderingMode: .alwaysOriginal)
+        }
 
         // With no session the view shows a dimmed "Session" bar with the switcher
         // (and the Switch Session row) as the way back in.
@@ -352,8 +553,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         case .playlist, .smartPlaylist:
             sourceName = DataManager.sharedManager.findPlaylist(uuid: session.uuid)?.playlistName ?? L10n.playbackSessionTabSession
         }
-        // The chevron signals the title links to its session page.
-        sessionHeaderLabel.text = sourceName + " ›"
+        sessionHeaderLabel.text = sourceName
         sessionHeaderLabel.style = .primaryText01
         sessionMetaLabel.text = sessionMetaText()
 
@@ -376,14 +576,23 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     }
 
     /// Ticks the under-card "… left" line while a session episode plays.
-    @objc func sessionPlaybackProgressed() {
-        guard Settings.playbackSession() != nil, !Settings.playbackSessionPaused() else { return }
-        sessionMetaLabel.text = sessionMetaText()
+    @objc func sessionPlayStateChanged() {
+        guard displayedWorld == .session else { return }
+        // Starting or pausing playback changes both the chooser's Playing marker and
+        // whether the lineup shows a Now Playing card, so both levels redraw.
+        if showingSessionList {
+            sessionListRows = SessionListRows.current()
+            upNextTable.reloadData()
+        } else {
+            reloadTable()
+        }
     }
 
-    /// Uuids of queued episodes matching the active Up Next filter, or nil when no filter is set.
-    /// Refreshed by `refreshUpNextFilterMatches()`; used for row dimming and the header count.
-    var upNextFilterMatchingUuids: Set<String>?
+    @objc func sessionPlaybackProgressed() {
+        // Only the lineup of the session that's actually sounding has a ticking line.
+        guard browsingActiveSession, !Settings.playbackSessionPaused() else { return }
+        sessionMetaLabel.text = sessionMetaText()
+    }
 
     /// The active session's remaining episodes, shown in place of the queue while a
     /// playback session runs. nil when no session is active.
@@ -419,7 +628,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     /// session, the title tap opens the switcher instead.
     @objc func openSessionSource() {
         guard displayedWorld == .session else { return }
-        guard let session = Settings.playbackSession() else {
+        guard let session = browsedPlaybackSession else {
             switchSessionTapped()
             return
         }
@@ -501,25 +710,6 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     }
 
 
-    /// Queue indices of the rows shown in the Up Next section, in display order.
-    /// nil when every queued episode is shown (no filter, or "show skipped" mode).
-    var visibleQueueIndices: [Int]?
-
-    /// Maps a visible table row to its index in the full queue.
-    func queueIndex(forVisibleRow row: Int) -> Int {
-        guard let visibleQueueIndices, row < visibleQueueIndices.count else { return row }
-        return visibleQueueIndices[row]
-    }
-
-    var visibleUpNextCount: Int {
-        visibleQueueIndices?.count ?? PlaybackManager.shared.queue.upNextCount()
-    }
-
-    /// True when the compact filtered view has nothing to show even though the queue isn't
-    /// empty — the Up Next section then shows a single explanatory notice cell instead.
-    var isShowingFilterEmptyNotice: Bool {
-        visibleQueueIndices?.isEmpty == true && PlaybackManager.shared.queue.upNextCount() > 0
-    }
     var selectedPlayListEpisodes = [PlaylistEpisode]() {
         didSet {
             multiSelectActionBar.setSelectedCount(count: selectedPlayListEpisodes.count)
@@ -541,8 +731,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     lazy var headerView: UIView = {
         let headerView = UIView(frame: CGRect(x: 0, y: 0, width: 0, height: 48))
 
-        // Queue controls live on the header's top row; the filter indicator line appears
-        // below them when a filter is active (see heightForHeaderInSection).
+        // Queue controls live on the header's top row.
         let controlsRow = UILayoutGuide()
         headerView.addLayoutGuide(controlsRow)
 
@@ -589,66 +778,21 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
             shuffleButton.heightAnchor.constraint(equalToConstant: 24)
         ])
 
-        if FeatureFlag.upNextFilter.enabled {
-            // The funnel sits left of the eye; the eye only appears while a filter is active,
-            // so the funnel's trailing constraint swaps between the two anchors.
-            headerView.addSubview(hideSkippedButton)
-            hideSkippedButton.translatesAutoresizingMaskIntoConstraints = false
-            hideSkippedButton.setContentCompressionResistancePriority(.required, for: .horizontal)
-            NSLayoutConstraint.activate([
-                hideSkippedButton.trailingAnchor.constraint(equalTo: shuffleButton.leadingAnchor, constant: -16),
-                hideSkippedButton.centerYAnchor.constraint(equalTo: controlsRow.centerYAnchor),
-                hideSkippedButton.widthAnchor.constraint(equalToConstant: 24),
-                hideSkippedButton.heightAnchor.constraint(equalToConstant: 24)
-            ])
-
-            headerView.addSubview(filterButton)
-            filterButton.translatesAutoresizingMaskIntoConstraints = false
-            filterButton.setContentCompressionResistancePriority(.required, for: .horizontal)
-            filterTrailingToHideSkipped = filterButton.trailingAnchor.constraint(equalTo: hideSkippedButton.leadingAnchor, constant: -16)
-            filterTrailingToShuffle = filterButton.trailingAnchor.constraint(equalTo: shuffleButton.leadingAnchor, constant: -16)
-            NSLayoutConstraint.activate([
-                filterButton.centerYAnchor.constraint(equalTo: controlsRow.centerYAnchor),
-                filterButton.leadingAnchor.constraint(greaterThanOrEqualTo: remainingLabel.trailingAnchor, constant: 10),
-                filterButton.widthAnchor.constraint(equalToConstant: 24),
-                filterButton.heightAnchor.constraint(equalToConstant: 24)
-            ])
-
-            // Indicator line under "Playing x of x": blue "Filter: Name (Type)" text that
-            // opens the picker, and a cross that clears the filter.
-            headerView.addSubview(filterIndicatorButton)
-            filterIndicatorButton.translatesAutoresizingMaskIntoConstraints = false
-            headerView.addSubview(clearFilterButton)
-            clearFilterButton.translatesAutoresizingMaskIntoConstraints = false
-            NSLayoutConstraint.activate([
-                filterIndicatorButton.leadingAnchor.constraint(equalTo: headerView.leadingAnchor, constant: 20),
-                filterIndicatorButton.bottomAnchor.constraint(equalTo: headerView.bottomAnchor, constant: -6),
-                filterIndicatorButton.heightAnchor.constraint(equalToConstant: 20),
-                clearFilterButton.leadingAnchor.constraint(equalTo: filterIndicatorButton.trailingAnchor, constant: 8),
-                clearFilterButton.centerYAnchor.constraint(equalTo: filterIndicatorButton.centerYAnchor),
-                clearFilterButton.widthAnchor.constraint(equalToConstant: 20),
-                clearFilterButton.heightAnchor.constraint(equalToConstant: 20),
-                clearFilterButton.trailingAnchor.constraint(lessThanOrEqualTo: headerView.trailingAnchor, constant: -20)
-            ])
-            updateFilterHeaderButtons()
-        }
-
         headerView.addSubview(clearQueueButton)
         clearQueueButton.translatesAutoresizingMaskIntoConstraints = false
         clearQueueButton.setContentCompressionResistancePriority(.required, for: .horizontal)
+        // With shuffle enabled both controls show — the clear button sits left of the icon.
+        let clearQueueTrailing = FeatureFlag.upNextShuffle.enabled
+            ? clearQueueButton.trailingAnchor.constraint(equalTo: shuffleButton.leadingAnchor, constant: -16)
+            : clearQueueButton.trailingAnchor.constraint(equalTo: trailingButtonAnchor, constant: trailingButtonConstant)
         NSLayoutConstraint.activate([
-            clearQueueButton.trailingAnchor.constraint(equalTo: trailingButtonAnchor, constant: trailingButtonConstant),
+            clearQueueTrailing,
             clearQueueButton.centerYAnchor.constraint(equalTo: controlsRow.centerYAnchor),
             clearQueueButton.leadingAnchor.constraint(greaterThanOrEqualTo: remainingLabel.trailingAnchor, constant: 10)
         ])
 
-        if FeatureFlag.upNextShuffle.enabled {
-            clearQueueButton.isHidden = true
-            shuffleButton.isHidden = PlaybackManager.shared.queue.upNextCount() == 0
-        } else {
-            shuffleButton.isHidden = true
-            clearQueueButton.isEnabled = PlaybackManager.shared.queue.upNextCount() > 0
-        }
+        shuffleButton.isHidden = !FeatureFlag.upNextShuffle.enabled || PlaybackManager.shared.queue.upNextCount() == 0
+        clearQueueButton.isEnabled = PlaybackManager.shared.queue.upNextCount() > 0
         if FeatureFlag.upNextSort.enabled {
             sortButton.isHidden = PlaybackManager.shared.queue.upNextCount() == 0
         }
@@ -665,6 +809,9 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
             upNextTable.register(UINib(nibName: "PlayerCell", bundle: nil), forCellReuseIdentifier: UpNextViewController.playerCell)
             upNextTable.register(UINib(nibName: "UpNextNowPlayingCell", bundle: nil), forCellReuseIdentifier: UpNextViewController.nowPlayingCell)
             upNextTable.register(EmptyStateCell.self, forCellReuseIdentifier: UpNextViewController.emptyStateCell)
+            upNextTable.register(SessionPausedBannerCell.self, forCellReuseIdentifier: UpNextViewController.sessionPausedBannerCell)
+            upNextTable.register(SessionListCell.self, forCellReuseIdentifier: SessionListCell.reuseIdentifier)
+            upNextTable.estimatedRowHeight = 72
             upNextTable.backgroundView = nil
             upNextTable.isEditing = true
             upNextTable.addGestureRecognizer(customLongPressGesture)
@@ -716,6 +863,10 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
 
         NotificationCenter.default.addObserver(self, selector: #selector(upNextChanged), name: Constants.Notifications.playbackTrackChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(upNextChanged), name: Constants.Notifications.playbackEnded, object: nil)
+        // The chooser's Playing marker tracks actual audio, so it has to redraw when
+        // playback starts or pauses — priming a session alone never lights it up.
+        NotificationCenter.default.addObserver(self, selector: #selector(sessionPlayStateChanged), name: Constants.Notifications.playbackStarted, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(sessionPlayStateChanged), name: Constants.Notifications.playbackPaused, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(upNextChanged), name: Constants.Notifications.upNextQueueChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(upNextChanged), name: Constants.Notifications.upNextEpisodeAdded, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(upNextChanged), name: Constants.Notifications.upNextEpisodeRemoved, object: nil)
@@ -749,8 +900,6 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         let pillContainer = UIView()
         worldSwitcher.translatesAutoresizingMaskIntoConstraints = false
         worldSwitcher.addTarget(self, action: #selector(worldSwitcherChanged), for: .valueChanged)
-        // Long-pressing the Session pill opens the Switch Session sheet.
-        worldSwitcher.addGestureRecognizer(UILongPressGestureRecognizer(target: self, action: #selector(pillLongPressed(_:))))
         pillContainer.addSubview(worldSwitcher)
         NSLayoutConstraint.activate([
             pillContainer.heightAnchor.constraint(equalToConstant: 52),
@@ -897,14 +1046,13 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     }
 
     private func setupActionButtonsIfNecessary() {
-        if FeatureFlag.upNextShuffle.enabled {
-            guard shuffleButton.allTargets.isEmpty else { return }
+        if FeatureFlag.upNextShuffle.enabled, shuffleButton.allTargets.isEmpty {
             NotificationCenter.default.addObserver(self, selector: #selector(themeDidChange), name: Constants.Notifications.themeChanged, object: nil)
             NotificationCenter.default.addObserver(self, selector: #selector(subscriptionStatusDidChange), name: ServerNotifications.subscriptionStatusChanged, object: nil)
             themeDidChange()
             shuffleButton.addTarget(self, action: #selector(shuffleButtonTapped), for: .touchUpInside)
-        } else {
-            guard clearQueueButton.allTargets.isEmpty else { return }
+        }
+        if clearQueueButton.allTargets.isEmpty {
             clearQueueButton.setTitle(L10n.queueClearQueue, for: .normal)
             clearQueueButton.setTitleColor(AppTheme.colorForStyle(.primaryText02, themeOverride: themeOverride), for: .normal)
             clearQueueButton.setTitleColor(AppTheme.colorForStyle(.primaryText02, themeOverride: themeOverride).withAlphaComponent(0.5), for: .disabled)
@@ -913,47 +1061,103 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
             clearQueueButton.addTarget(self, action: #selector(clearQueueTapped), for: .touchUpInside)
         }
         setupSortButtonIfNecessary()
-        setupFilterButtonIfNecessary()
+        setupSessionButtonsIfNecessary()
     }
 
-    private func setupFilterButtonIfNecessary() {
-        guard FeatureFlag.upNextFilter.enabled, filterButton.allTargets.isEmpty else { return }
-        NotificationCenter.default.addObserver(self, selector: #selector(updateFilterButtonImage), name: Constants.Notifications.themeChanged, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(upNextFilterDidChange), name: Constants.Notifications.upNextFilterChanged, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(upNextFilterDidChange), name: Constants.Notifications.playbackSessionChanged, object: nil)
-        updateFilterButtonImage()
-        filterButton.addTarget(self, action: #selector(filterButtonTapped), for: .touchUpInside)
-        hideSkippedButton.addTarget(self, action: #selector(hideSkippedButtonTapped), for: .touchUpInside)
-        filterIndicatorButton.addTarget(self, action: #selector(filterButtonTapped), for: .touchUpInside)
-        clearFilterButton.addTarget(self, action: #selector(clearFilterButtonTapped), for: .touchUpInside)
-
+    private func setupSessionButtonsIfNecessary() {
+        guard sessionSortButton.allTargets.isEmpty else { return }
+        NotificationCenter.default.addObserver(self, selector: #selector(sessionStateDidChange), name: Constants.Notifications.playbackSessionChanged, object: nil)
         sessionSortButton.addTarget(self, action: #selector(sessionSortTapped), for: .touchUpInside)
+        sessionListSortButton.addTarget(self, action: #selector(sessionListSortTapped), for: .touchUpInside)
+        sessionListMoreButton.addTarget(self, action: #selector(sessionListMoreTapped), for: .touchUpInside)
         // The session mirrors its playlist live — reflect order/content changes made
         // on the playlist's own screens.
-        NotificationCenter.default.addObserver(self, selector: #selector(upNextFilterDidChange), name: Constants.Notifications.playlistChanged, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(sessionStateDidChange), name: Constants.Notifications.playlistChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(sessionPlaybackProgressed), name: Constants.Notifications.playbackProgress, object: nil)
     }
 
-    @objc private func sessionSortTapped() {
-        guard let session = Settings.playbackSession(), session.type == .smartPlaylist || session.type == .playlist else { return }
-        presentSessionSortPicker(for: session)
+    // MARK: - Session chooser controls (fork)
+
+    /// Shows or hides the chooser's sort and ⋯ buttons, and re-tints them for the current
+    /// theme and preference state. Called from `updateStickyChrome` on every path.
+    private func updateSessionListControls() {
+        // Progressive disclosure measured against the UNFILTERED count: a filter that cuts
+        // the list below the threshold must not take away the control that undoes it.
+        let show = showingSessionList && SessionListRows.unfilteredCount() >= Self.sessionListControlsThreshold
+        sessionListSortButton.isHidden = !show
+        sessionListMoreButton.isHidden = !show
+        guard show else { return }
+
+        // A non-default sort/filter tints accent instead of the resting icon colour — the
+        // same signal the podcast page's sort button uses to say "this list isn't stock".
+        let sortStyle: ThemeStyle = Settings.sessionListSort() == .recentlyPlayed ? .primaryIcon02 : .primaryInteractive01
+        let sortImage = UIImage(named: "podcast-sort")?
+            .withTintColor(AppTheme.colorForStyle(sortStyle, themeOverride: themeOverride), renderingMode: .alwaysOriginal)
+        sessionListSortButton.setImage(sortImage, for: .normal)
+        sessionListSortButton.imageView?.adjustsImageSizeForAccessibilityContentSizeCategory = true
+        sessionListSortButton.imageView?.contentMode = .scaleAspectFit
+        sessionListSortButton.accessibilityLabel = L10n.sessionSortTitle
+
+        let moreStyle: ThemeStyle = SessionListFilters.current.isDefault ? .primaryIcon02 : .primaryInteractive01
+        let moreImage = UIImage(systemName: "ellipsis", withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold))?
+            .withTintColor(AppTheme.colorForStyle(moreStyle, themeOverride: themeOverride), renderingMode: .alwaysOriginal)
+        sessionListMoreButton.setImage(moreImage, for: .normal)
+        sessionListMoreButton.imageView?.adjustsImageSizeForAccessibilityContentSizeCategory = true
+        sessionListMoreButton.imageView?.contentMode = .scaleAspectFit
+        sessionListMoreButton.accessibilityLabel = L10n.accessibilityMoreActions
     }
 
-    /// Shows/hides the header filter controls, and swaps the funnel's trailing constraint so
-    /// no gap is left where the (hidden) eye button sits when no filter is active. These
-    /// controls always describe the queue — during a session the session section above the
-    /// queue carries its own header.
-    func updateFilterHeaderButtons() {
-        guard FeatureFlag.upNextFilter.enabled else { return }
-        let queueEmpty = PlaybackManager.shared.queue.upNextCount() == 0
-        let filterActive = Settings.upNextFilter() != nil
-        filterButton.isHidden = queueEmpty
-        hideSkippedButton.isHidden = queueEmpty || !filterActive
-        filterIndicatorButton.isHidden = queueEmpty || !filterActive
-        clearFilterButton.isHidden = filterIndicatorButton.isHidden
-        filterTrailingToHideSkipped?.isActive = false
-        filterTrailingToShuffle?.isActive = false
-        (hideSkippedButton.isHidden ? filterTrailingToShuffle : filterTrailingToHideSkipped)?.isActive = true
+    @objc private func sessionListSortTapped() {
+        let picker = OptionsPicker(title: L10n.sessionSortTitle.localizedUppercase, themeOverride: themeOverride)
+        let current = Settings.sessionListSort()
+        for option in SessionListSort.allCases {
+            picker.addAction(action: OptionAction(label: option.title, selected: option == current) { [weak self] in
+                guard let self, option != current else { return }
+                Settings.setSessionListSort(option)
+                self.reloadSessionListAndScrollToTop()
+            })
+        }
+        picker.present(from: self)
+    }
+
+    @objc private func sessionListMoreTapped() {
+        let picker = OptionsPicker(themeOverride: themeOverride)
+        picker.addSectionTitle(L10n.sessionShowHeading)
+        let filters = SessionListFilters.current
+        // Checkmark == "showing", so the row reads as the state it puts the list in.
+        picker.addAction(action: OptionAction(label: L10n.sessionShowHideEmpty, selected: filters.hideEmpty) { [weak self] in
+            Settings.setSessionListHideEmpty(!filters.hideEmpty)
+            self?.reloadSessionListAndScrollToTop()
+        })
+        picker.addAction(action: OptionAction(label: L10n.sessionShowHideUnplayed, selected: filters.hideUnplayed) { [weak self] in
+            Settings.setSessionListHideUnplayed(!filters.hideUnplayed)
+            self?.reloadSessionListAndScrollToTop()
+        })
+        picker.addAction(action: OptionAction(label: L10n.sessionShowPodcasts, selected: filters.showPodcasts) { [weak self] in
+            Settings.setSessionListShowPodcasts(!filters.showPodcasts)
+            self?.reloadSessionListAndScrollToTop()
+        })
+        picker.addAction(action: OptionAction(label: L10n.sessionShowPlaylists, selected: filters.showPlaylists) { [weak self] in
+            Settings.setSessionListShowPlaylists(!filters.showPlaylists)
+            self?.reloadSessionListAndScrollToTop()
+        })
+        picker.addAction(action: OptionAction(label: L10n.sessionShowFolders, selected: filters.showFolders) { [weak self] in
+            Settings.setSessionListShowFolders(!filters.showFolders)
+            self?.reloadSessionListAndScrollToTop()
+        })
+        picker.present(from: self)
+    }
+
+    /// A re-sorted or re-filtered list is a different list — start it at the top rather than
+    /// leaving the user parked at an offset that now means something else.
+    private func reloadSessionListAndScrollToTop() {
+        reloadTable()
+        upNextTable.setContentOffset(CGPoint(x: 0, y: -upNextTable.adjustedContentInset.top), animated: false)
+    }
+
+    @objc private func sessionSortTapped() {
+        guard let session = browsedPlaybackSession, session.type == .smartPlaylist || session.type == .playlist else { return }
+        presentSessionSortPicker(for: session)
     }
 
     /// Dragging a session row reorders the source playlist itself — the session is a live
@@ -961,13 +1165,38 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     /// lineup, switching to drag-and-drop sort first (seeded from the current order, so
     /// nothing lands in the inbox) if they weren't custom-ordered yet.
     func moveSessionEpisode(fromRow: Int, toRow: Int) {
-        guard let sessionEpisodes, let session = Settings.playbackSession(),
-              session.type == .playlist || session.type == .smartPlaylist,
+        guard let sessionEpisodes,
               fromRow < sessionEpisodes.count, toRow < sessionEpisodes.count,
-              let playlist = DataManager.sharedManager.findPlaylist(uuid: session.uuid) else { return }
+              let (session, playlist) = sessionPlaylistPreparedForReorder() else { return }
 
         let moved = sessionEpisodes[fromRow]
         let target = sessionEpisodes[toRow]
+
+        // Resolve the target after any sort switch: the session excludes played episodes,
+        // so map the drop position onto the playlist's full order.
+        guard let targetIndex = session.orderedEpisodes().firstIndex(where: { $0.uuid == target.uuid }) else { return }
+        DataManager.sharedManager.moveEpisode(moved.uuid, in: playlist, to: targetIndex)
+        Self.mirrorOrderIntoSmartFeeder(episodeUuid: moved.uuid, storePlaylist: playlist, to: targetIndex)
+        // See `writeSessionLineupTop`: announce after the drop animation, not during it.
+        DispatchQueue.main.async {
+            NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged, object: playlist)
+        }
+
+        var updated = sessionEpisodes
+        updated.remove(at: fromRow)
+        updated.insert(moved, at: toRow)
+        self.sessionEpisodes = updated
+    }
+
+    /// Fork: every manual session reorder writes through the mirrored playlist, and a
+    /// manual order can only live in custom sort — so the sort switch (and, for smart
+    /// playlists, seeding the positions) has to happen before any move lands. Shared by
+    /// the row-to-row move and the "true top" move so there's one order-writing path.
+    private func sessionPlaylistPreparedForReorder() -> (session: PlaybackSession, playlist: EpisodeFilter)? {
+        // The lineup on screen is the one being edited — browsed, not necessarily active.
+        guard let session = browsedPlaybackSession,
+              session.type == .playlist || session.type == .smartPlaylist,
+              let playlist = DataManager.sharedManager.findPlaylist(uuid: session.uuid) else { return nil }
 
         if playlist.sortType != PlaylistSort.dragAndDrop.rawValue {
             if !playlist.manual {
@@ -985,16 +1214,101 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
             DataManager.sharedManager.setCustomOrder(episodeUuids: session.orderedEpisodes().map { $0.uuid }, for: playlist)
         }
 
-        // Resolve the target after any sort switch: the session excludes played episodes,
-        // so map the drop position onto the playlist's full order.
-        guard let targetIndex = session.orderedEpisodes().firstIndex(where: { $0.uuid == target.uuid }) else { return }
-        DataManager.sharedManager.moveEpisode(moved.uuid, in: playlist, to: targetIndex)
-        NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged, object: playlist)
+        return (session, playlist)
+    }
 
+    /// The order-writing half of the true-top move, split out from the player-facing half
+    /// so it can run (and be covered by tests) without a live player: the episode becomes
+    /// first in the session's lineup.
+    static func writeSessionLineupTop(episodeUuid: String, in playlist: EpisodeFilter) {
+        DataManager.sharedManager.moveEpisode(episodeUuid, in: playlist, to: 0)
+        mirrorOrderIntoSmartFeeder(episodeUuid: episodeUuid, storePlaylist: playlist, to: 0)
+        // Deferred by one runloop: posting inline runs every observer synchronously, which
+        // means a full table refresh executes in the middle of the drop animation.
+        DispatchQueue.main.async {
+            NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged, object: playlist)
+        }
+    }
+
+    /// Fork: a smart-fed session's store MIRRORS its feeder, so the reconciler can rewrite
+    /// the store's order back from the smart playlist and undo a hand move. When the store
+    /// belongs to a smart-fed session whose feeder carries a custom order, the move is
+    /// written to the feeder as well — the two orders then agree and the move survives.
+    static func mirrorOrderIntoSmartFeeder(episodeUuid: String, storePlaylist: EpisodeFilter, to index: Int) {
+        guard let session = SessionStore.shared.session(forStore: storePlaylist.uuid),
+              case .smartPlaylist(let feederUuid) = session.feeder,
+              let feeder = DataManager.sharedManager.findPlaylist(uuid: feederUuid),
+              feeder.sortType == PlaylistSort.dragAndDrop.rawValue else { return }
+
+        // Deliberately silent: announcing the feeder here would trigger the smart-feeder
+        // reconcile, which re-derives the store from this very playlist — pure duplicate
+        // work right after a move, and the reason a reorder felt sluggish. The store's own
+        // notification (posted by the caller) is what the UI listens to.
+        DataManager.sharedManager.moveEpisode(episodeUuid, in: feeder, to: index)
+    }
+
+    /// Fork: the single "move this row to the top" entry point — used by the left-swipe
+    /// action and by a drag dropped on row 0 of the session section.
+    ///
+    /// While the session is sounding, the card is the episode you're listening to and the
+    /// top of the list is the row right under it (today's behaviour). While nothing is
+    /// sounding the card is merely "what's next", so the top of the list has to mean the
+    /// top of the lineup — otherwise no row can ever be made the next episode.
+    ///
+    /// A BROWSED, non-active session has no card and no player involvement at all, so
+    /// "top" can only mean the top of its stored lineup — a pure order write to position 0.
+    func moveSessionEpisodeToTop(fromRow: Int) {
+        guard browsingActiveSession else {
+            moveBrowsedSessionEpisodeToLineupTop(fromRow: fromRow)
+            return
+        }
+        if sessionOwnsCard, !sessionIsSounding {
+            moveSessionEpisodeToTrueTop(fromRow: fromRow)
+        } else {
+            moveSessionEpisode(fromRow: fromRow, toRow: 0)
+        }
+    }
+
+    /// The browsed (non-active) variant of the true-top move: order only, no priming —
+    /// there is nothing on the player belonging to this session to re-point.
+    private func moveBrowsedSessionEpisodeToLineupTop(fromRow: Int) {
+        guard let sessionEpisodes, fromRow < sessionEpisodes.count,
+              let (_, playlist) = sessionPlaylistPreparedForReorder() else { return }
+
+        let moved = sessionEpisodes[fromRow]
+        Self.writeSessionLineupTop(episodeUuid: moved.uuid, in: playlist)
+
+        // No card and no membership change here, and the table has already animated the row
+        // into place — so mirror the move in the local list rather than rebuilding every row
+        // (a full reload re-reads every session's members and stutters the drop).
         var updated = sessionEpisodes
         updated.remove(at: fromRow)
-        updated.insert(moved, at: toRow)
+        updated.insert(moved, at: 0)
         self.sessionEpisodes = updated
+    }
+
+    /// Writes the lineup so the moved episode is first (same order-writing path as
+    /// `moveSessionEpisode`), then re-primes the player onto it without starting audio.
+    /// The card then shows the moved episode and the previously primed one falls back
+    /// into the list — `sessionEpisodes` only ever excludes whatever the card holds.
+    private func moveSessionEpisodeToTrueTop(fromRow: Int) {
+        guard let sessionEpisodes, fromRow < sessionEpisodes.count,
+              let (_, playlist) = sessionPlaylistPreparedForReorder() else { return }
+
+        let moved = sessionEpisodes[fromRow]
+
+        // Prime first, write the order second — and not the other way around: jumping
+        // within a session moves the episode it interrupted (the one that was on the card)
+        // to the top of the lineup, which would land right back on top of the moved one.
+        // Priming first lets that happen, then this write puts the moved episode above it.
+        AnalyticsPlaybackHelper.shared.currentSource = .upNext
+        PlaybackManager.shared.play(sessionEpisode: moved, autoPlay: false)
+        Self.writeSessionLineupTop(episodeUuid: moved.uuid, in: playlist)
+
+        // The playlistChanged notification reloads asynchronously; refresh now so the card
+        // and the list swap in the same pass as the move. (reloadTable refreshes session
+        // state itself — calling both would do that work twice on the main thread.)
+        reloadTable()
     }
 
     /// Sorting during a playlist session edits the playlist's own sort order (the session
@@ -1027,75 +1341,17 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         optionsPicker.present(from: self)
     }
 
-    @objc private func hideSkippedButtonTapped() {
-        Settings.setUpNextFilterHideSkipped(!Settings.upNextFilterHideSkipped())
-    }
-
-
-    @objc private func clearFilterButtonTapped() {
-        Settings.setUpNextFilter(nil)
-    }
-
-    @objc private func updateFilterButtonImage() {
-        let filterActive = Settings.upNextFilter() != nil
-        // 18pt renders taller than the 24pt buttons and clips the funnel's tip — 16pt fits.
-        let symbolConfiguration = UIImage.SymbolConfiguration(pointSize: 16, weight: .medium)
-        let funnelStyle: ThemeStyle = filterActive ? .primaryIcon01 : .primaryIcon02
-        let funnel = (UIImage(systemName: filterActive ? "funnel.fill" : "funnel", withConfiguration: symbolConfiguration)
-            ?? UIImage(systemName: "line.3.horizontal.decrease", withConfiguration: symbolConfiguration))?
-            .withTintColor(AppTheme.colorForStyle(funnelStyle, themeOverride: themeOverride), renderingMode: .alwaysOriginal)
-        filterButton.setImage(funnel, for: .normal)
-        filterButton.imageView?.adjustsImageSizeForAccessibilityContentSizeCategory = true
-        filterButton.imageView?.contentMode = .scaleAspectFit
-        filterButton.accessibilityLabel = L10n.upNextFilterTitle
-
-        let hideSkipped = Settings.upNextFilterHideSkipped()
-        let eyeStyle: ThemeStyle = hideSkipped ? .primaryIcon01 : .primaryIcon02
-        let eyeImage = UIImage(systemName: hideSkipped ? "eye.slash.fill" : "eye", withConfiguration: symbolConfiguration)?
-            .withTintColor(AppTheme.colorForStyle(eyeStyle, themeOverride: themeOverride), renderingMode: .alwaysOriginal)
-        hideSkippedButton.setImage(eyeImage, for: .normal)
-        hideSkippedButton.imageView?.adjustsImageSizeForAccessibilityContentSizeCategory = true
-        hideSkippedButton.imageView?.contentMode = .scaleAspectFit
-        hideSkippedButton.accessibilityLabel = hideSkipped ? L10n.upNextFilterShowSkipped : L10n.upNextFilterHideSkipped
-
-        // Indicator line: "Filter: Name (Type)" in the enabled blue; opens the picker.
-        // (Sessions announce themselves through the pill switcher, not this line.)
-        var indicatorConfig = filterIndicatorButton.configuration ?? .plain()
-        indicatorConfig.contentInsets = .zero
-        indicatorConfig.image = nil
-        if let filter = Settings.upNextFilter(), let title = filter.title {
-            let typeLabel: String
-            switch filter.type {
-            case .podcast: typeLabel = L10n.playbackSessionTypePodcast
-            case .folder: typeLabel = L10n.upNextFilterTypeFolder
-            case .smartPlaylist: typeLabel = L10n.upNextFilterTypeSmartPlaylist
-            case .playlist: typeLabel = L10n.playbackSessionTypePlaylist
-            }
-            var attributedTitle = AttributedString(L10n.upNextFilterIndicator(title, typeLabel))
-            attributedTitle.font = UIFont.font(ofSize: 13, weight: .medium, scalingWith: .footnote)
-            attributedTitle.foregroundColor = AppTheme.colorForStyle(.primaryIcon01, themeOverride: themeOverride)
-            indicatorConfig.attributedTitle = attributedTitle
-        }
-        filterIndicatorButton.configuration = indicatorConfig
-        filterIndicatorButton.accessibilityLabel = L10n.upNextFilterTitle
-
-        let clearImage = UIImage(systemName: "xmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .bold))?
-            .withTintColor(AppTheme.colorForStyle(.primaryIcon02, themeOverride: themeOverride), renderingMode: .alwaysOriginal)
-        clearFilterButton.setImage(clearImage, for: .normal)
-        clearFilterButton.accessibilityLabel = L10n.upNextFilterClear
-    }
-
-    @objc private func upNextFilterDidChange() {
-        updateFilterButtonImage()
-        updateFilterHeaderButtons()
+    @objc private func sessionStateDidChange() {
         reloadTable()
     }
 
-    /// Recomputes which queued episodes match the active filter (nil when no filter is set),
-    /// which queue indices are visible when the compact "hide skipped" view is on, and the
-    /// active session's remaining episodes.
-    func refreshUpNextFilterMatches() {
-        if let session = Settings.playbackSession() {
+    /// Recomputes the active session's remaining episodes and snaps the pill switcher
+    /// to whichever world owns playback.
+    func refreshSessionState() {
+        // The chooser reads straight through to the store — safe on every reload.
+        sessionListRows = SessionListRows.current()
+
+        if let active = Settings.playbackSession() {
             let paused = Settings.playbackSessionPaused()
 
             // The pill auto-follows playback ownership: it snaps to whichever world is
@@ -1103,134 +1359,41 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
             let sessionActive = !paused
             if lastKnownSessionActive != sessionActive {
                 displayedWorld = sessionActive ? .session : .upNext
+                // Snapping to the Session world means showing what's playing: the lineup
+                // of the session that owns playback, whatever was being browsed before.
+                if displayedWorld == .session {
+                    browsedSessionUuid = active.uuid
+                    sessionLevel = .lineup
+                }
                 lastKnownSessionActive = sessionActive
             }
-
-            sessionInboxCount = Self.inboxCount(for: session)
-
-            // The playing episode is on the Now Playing card, so the list shows what's
-            // still to come (while paused the queue is playing — nothing to exclude).
-            // The header's counts and time still cover the whole session.
-            sessionEpisodes = session.remainingEpisodes(excluding: paused ? nil : PlaybackManager.shared.currentEpisode()?.uuid)
         } else {
-            sessionEpisodes = nil
-            sessionInboxCount = 0
-            // Ending a session keeps the Session view up (showing its empty state) —
-            // only a pause transition hands the view to the queue.
+            // Ending a session keeps the Session view up — only a pause transition hands
+            // the view to the queue. Browsing is unaffected: it never needed a session.
             lastKnownSessionActive = nil
         }
 
-        let episodes = PlaybackManager.shared.queue.allEpisodes(includeNowPlaying: false)
+        // A browsed session whose store went away (deleted while it was open) stops being
+        // browsable — fall back to the active session, or to the chooser.
+        if let browsedSessionUuid, browsedSessionUuid != Settings.playbackSession()?.uuid,
+           DataManager.sharedManager.findPlaylist(uuid: browsedSessionUuid) == nil {
+            self.browsedSessionUuid = nil
+        }
 
-        var visible: [Int]?
-        if FeatureFlag.upNextFilter.enabled, let filter = Settings.upNextFilter() {
-            let matching = filter.matchingEpisodeUuids(in: episodes)
-            upNextFilterMatchingUuids = matching
-            if Settings.upNextFilterHideSkipped() {
-                visible = episodes.enumerated().compactMap { matching.contains($0.element.uuid) ? $0.offset : nil }
-            }
+        if let session = browsedPlaybackSession {
+            sessionInboxCount = Self.inboxCount(for: session)
+
+            // Only an episode that actually has the card is kept out of the list — a
+            // primed-but-unplayed episode stays in place, so the list starts at the real
+            // top. A browsed, non-active session has no card, so nothing is excluded.
+            // The header's counts and time always cover the whole session.
+            sessionEpisodes = session.remainingEpisodes(excluding: browsedSessionOwnsCard ? PlaybackManager.shared.currentEpisode()?.uuid : nil)
         } else {
-            upNextFilterMatchingUuids = nil
+            sessionEpisodes = nil
+            sessionInboxCount = 0
+            // Nothing browsed and nothing active — the Session world is the chooser.
+            sessionLevel = .list
         }
-
-        visibleQueueIndices = visible
-    }
-
-    /// Slot-model reorder for the compact view: visible (matching) episodes swap among the
-    /// queue positions they already occupy, so hidden episodes never move. Playback order of
-    /// matching episodes always equals exactly what the compact list shows.
-    func moveVisibleEpisode(fromVisibleRow: Int, toVisibleRow: Int) {
-        guard let visibleIndices = visibleQueueIndices,
-              fromVisibleRow < visibleIndices.count, toVisibleRow < visibleIndices.count else { return }
-
-        let queue = PlaybackManager.shared.queue
-        var newOrder = queue.allEpisodes(includeNowPlaying: false)
-        guard let maxIndex = visibleIndices.max(), maxIndex < newOrder.count else {
-            refreshUpNextFilterMatches()
-            return
-        }
-
-        var visibleEpisodes = visibleIndices.map { newOrder[$0] }
-        let moved = visibleEpisodes.remove(at: fromVisibleRow)
-        visibleEpisodes.insert(moved, at: toVisibleRow)
-        for (slot, queueIndex) in visibleIndices.enumerated() {
-            newOrder[queueIndex] = visibleEpisodes[slot]
-        }
-        queue.reorderUpNext(sortedEpisodes: newOrder)
-    }
-
-    /// Step one of the two-step filter picker: choose the kind (or None to clear).
-    /// The active filter's type row shows its current selection as a secondary label.
-    @objc private func filterButtonTapped() {
-        let optionsPicker = OptionsPicker(title: L10n.upNextFilterTitle.localizedUppercase, themeOverride: themeOverride)
-        let activeFilter = Settings.upNextFilter()
-
-        optionsPicker.addAction(action: OptionAction(label: L10n.upNextFilterEverything, selected: activeFilter == nil) {
-            Settings.setUpNextFilter(nil)
-        })
-
-        // Shortcuts to the last few filters used, so the common case skips the drill-in.
-        let recents = Settings.upNextRecentFilters().filter { $0.title != nil }
-        if !recents.isEmpty {
-            optionsPicker.addSectionTitle(L10n.upNextFilterRecentHeader.localizedUppercase)
-            for recent in recents {
-                let typeLabel = Self.filterTypeLabels.first(where: { $0.0 == recent.type })?.1
-                optionsPicker.addAction(action: OptionAction(label: recent.title ?? "", secondaryLabel: typeLabel, selected: recent == activeFilter) {
-                    Settings.setUpNextFilter(recent)
-                })
-            }
-        }
-
-        optionsPicker.addSectionTitle(L10n.upNextFilterTypeHeader.localizedUppercase)
-        for (type, label) in Self.filterTypeLabels {
-            let isActiveType = activeFilter?.type == type
-            let action = OptionAction(label: label, secondaryLabel: isActiveType ? activeFilter?.title : nil) {}
-            // A submenu presents the item list on top; choosing there dismisses both,
-            // and the row renders a disclosure chevron.
-            action.submenu = { [weak self] in
-                self?.makeFilterItemPicker(for: type, title: label)
-            }
-            optionsPicker.addAction(action: action)
-        }
-
-        optionsPicker.present(from: self)
-    }
-
-    private static let filterTypeLabels: [(UpNextFilterType, String)] = [
-        (.podcast, L10n.playbackSessionTypePodcast),
-        (.folder, L10n.upNextFilterTypeFolder),
-        (.smartPlaylist, L10n.upNextFilterTypeSmartPlaylist),
-        (.playlist, L10n.playbackSessionTypePlaylist)
-    ]
-
-    /// Step two: the items of the chosen kind. Only one filter can be active — richer
-    /// combinations are what smart playlists are for.
-    private func makeFilterItemPicker(for type: UpNextFilterType, title: String) -> OptionsPicker {
-        let optionsPicker = OptionsPicker(title: title.localizedUppercase, themeOverride: themeOverride)
-        let activeFilter = Settings.upNextFilter()
-
-        let items: [(uuid: String, name: String, icon: String?)]
-        switch type {
-        case .podcast:
-            items = DataManager.sharedManager.allPodcastsOrderedByTitle().map { ($0.uuid, $0.title ?? "", nil) }
-        case .folder:
-            items = DataManager.sharedManager.allFolders()
-                .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-                .map { ($0.uuid, $0.name, "folder-empty") }
-        case .smartPlaylist:
-            items = DataManager.sharedManager.allSmartPlaylists(includeDeleted: false).map { ($0.uuid, $0.playlistName, $0.iconImageName()) }
-        case .playlist:
-            items = DataManager.sharedManager.allManualPlaylists(includeDeleted: false).map { ($0.uuid, $0.playlistName, $0.iconImageName()) }
-        }
-
-        for item in items {
-            let filter = UpNextFilter(type: type, uuid: item.uuid)
-            optionsPicker.addAction(action: OptionAction(label: item.name, icon: item.icon, selected: filter == activeFilter) {
-                Settings.setUpNextFilter(filter)
-            })
-        }
-
-        return optionsPicker
     }
 
     private func setupSortButtonIfNecessary() {
@@ -1292,9 +1455,12 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     /// The "Sort by duration" tooltip popover, while it's on screen. See `UIViewController.presentTip` in TipView.swift.
     var upNextSortDurationTip: UIViewController?
 
-    func showEpisodeDetailViewController(for episode: BaseEpisode?) {
+    func showEpisodeDetailViewController(for episode: BaseEpisode?, fromSession: Bool = false) {
         if let episode = episode as? Episode, let parentPodcast = episode.parentPodcast() {
             let episodeController = EpisodeDetailViewController(episode: episode, podcast: parentPodcast, source: .upNext)
+            if fromSession {
+                episodeController.playFromSessionStoreUuid = browsedPlaybackSession?.uuid
+            }
             episodeController.modalPresentationStyle = .formSheet
             episodeController.themeOverride = themeOverride
             present(episodeController, animated: true, completion: nil)
@@ -1308,22 +1474,10 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         }
     }
 
-    /// The queue's counts line ("N episodes · X left", or the filter's "Playing x of y").
+    /// The queue's counts line ("N episodes · X left").
     /// The playing episode's live remaining time is folded in only when it belongs to the
     /// queue (a parked queue under an active session doesn't own the playing episode).
     func queueCountsText(includeNowPlaying: Bool) -> String {
-        // With a filter active the counts describe what will actually play.
-        if FeatureFlag.upNextFilter.enabled, Settings.upNextFilter() != nil, let matchingUuids = upNextFilterMatchingUuids {
-            let matching = PlaybackManager.shared.queue.allEpisodes(includeNowPlaying: false).filter { matchingUuids.contains($0.uuid) }
-            let time = TimeFormatter.shared.multipleUnitFormattedShortTime(time: matching.reduce(0.0) { $0 + max(0, $1.duration - $1.playedUpTo) })
-            if matching.isEmpty {
-                return L10n.queueUpNextHeaderTimeLeft(time)
-            } else if matching.count == 1 {
-                return L10n.queueUpNextHeaderOneEpisode(time)
-            }
-            return L10n.queueUpNextHeaderPlural(matching.count.localized(), time)
-        }
-
         var totalDuration = PlaybackManager.shared.queue.upNextTotalDuration(includePlayingEpisode: false)
         if includeNowPlaying, let episode = PlaybackManager.shared.currentEpisode() {
             totalDuration += episode.duration.seconds - PlaybackManager.shared.currentTime()
@@ -1365,6 +1519,8 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
 
     @objc func selectAllTapped() {
         if displayedWorld == .session {
+            // The chooser has no episode rows to select.
+            guard !showingSessionList else { return }
             guard let sectionIndex = tableData.firstIndex(of: .sessionSection), (sessionEpisodes?.count ?? 0) > 0 else { return }
             upNextTable.selectAllBelow(fromIndexPath: IndexPath(row: 0, section: sectionIndex))
         } else {
@@ -1393,7 +1549,10 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
 
         let inSession = displayedWorld == .session
         let selectedCount = inSession ? selectedSessionEpisodes.count : selectedPlayListEpisodes.count
-        let worldCount = inSession ? (sessionEpisodes?.count ?? 0) : PlaybackManager.shared.queue.upNextCount()
+        // The chooser lists sessions, not episodes — nothing there to multi-select.
+        let worldCount = inSession
+            ? (showingSessionList ? 0 : (sessionEpisodes?.count ?? 0))
+            : PlaybackManager.shared.queue.upNextCount()
 
         if isMultiSelectEnabled {
             if MultiSelectHelper.shouldSelectAll(onCount: selectedCount, totalCount: worldCount) {
@@ -1402,26 +1561,16 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
                 rightButton = UIBarButtonItem(title: L10n.deselectAll, style: .plain, target: self, action: #selector(deselectAllTapped))
             }
             leftButton = UIBarButtonItem(title: L10n.cancel, style: .plain, target: self, action: #selector(cancelTapped))
-        } else if !isMultiSelectEnabled, worldCount > 0 {
-            rightButton = UIBarButtonItem(title: L10n.select, style: .plain, target: self, action: #selector(selectTapped))
-            if showingInTab {
-                if inSession {
-                    leftButton = UIBarButtonItem(title: L10n.playbackSessionSwitchShort, style: .plain, target: self, action: #selector(switchSessionTapped))
-                } else if FeatureFlag.upNextShuffle.enabled, PlaybackManager.shared.queue.upNextCount() > 0 {
-                    leftButton = UIBarButtonItem(title: L10n.clear, style: .plain, target: self, action: #selector(clearQueueTapped))
-                } else {
-                    leftButton = nil
-                }
-            } else {
-                leftButton = UIBarButtonItem(title: L10n.done, style: .plain, target: self, action: #selector(doneTapped))
-            }
-        } else if inSession, showingInTab {
-            rightButton = nil
-            leftButton = UIBarButtonItem(title: L10n.playbackSessionSwitchShort, style: .plain, target: self, action: #selector(switchSessionTapped))
         } else {
-            rightButton = nil
+            rightButton = worldCount > 0 ? UIBarButtonItem(title: L10n.select, style: .plain, target: self, action: #selector(selectTapped)) : nil
             if showingInTab {
-                leftButton = nil
+                // Fork: Clear belongs to the queue and only the queue — the Session side has
+                // nothing to clear. Switching sessions is the chooser's job (and a long-press
+                // on the tab bar item), so no Switch button here.
+                let queueCount = PlaybackManager.shared.queue.upNextCount()
+                leftButton = (!inSession && queueCount > 0)
+                    ? UIBarButtonItem(title: L10n.clear, style: .plain, target: self, action: #selector(clearQueueTapped))
+                    : nil
             } else {
                 leftButton = UIBarButtonItem(title: L10n.done, style: .plain, target: self, action: #selector(doneTapped))
             }
@@ -1589,6 +1738,8 @@ extension UpNextViewController {
         if FeatureFlag.upNextSort.enabled {
             sortButton.updateSizeConstraints(to: buttonSize)
         }
+        sessionListSortButton.updateSizeConstraints(to: buttonSize)
+        sessionListMoreButton.updateSizeConstraints(to: buttonSize)
     }
 
     override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
@@ -1646,10 +1797,10 @@ extension UpNextViewController {
 /// `includeUpNext: false` it becomes the "Choose session" sheet (no session active yet,
 /// so there is no queue mode to switch back to).
 extension UpNextViewController {
-    /// Fork: Remove from Session on session rows targets the playing session.
+    /// Fork: Remove from Session on session rows targets the lineup on screen — the
+    /// browsed session (which is the active one whenever nothing else is being browsed).
     func multiSelectCurrentSession() -> Session? {
-        guard let playing = Settings.playbackSession() else { return nil }
-        return SessionStore.shared.session(forStore: playing.uuid)
+        browsedSession
     }
 }
 
@@ -1657,46 +1808,29 @@ class SwitchSessionViewController: UIViewController, UITableViewDataSource, UITa
     private let themeOverride: Theme.ThemeType?
     private let includeUpNext: Bool
     private let onSwitched: (Bool) -> Void
-    /// Sessions ordered by recency of use, latest first; never-used ones keep their
-    /// list order after the used ones. One row per session: a lens acting as a
-    /// session's feeder IS that session — its store row (which plays the lineup)
-    /// stands for both, so the lens row is dropped.
-    private let playlists: [EpisodeFilter] = {
-        let all = DataManager.sharedManager.allPlaylists(includeDeleted: false)
-            .filter { !SessionStore.shared.feederPlaylistUuids.contains($0.uuid) }
-        let listedUuids = Set(all.map(\.uuid))
-        let unique = all.filter { playlist in
-            guard !playlist.manual,
-                  let session = SessionStore.shared.session(forSmartPlaylistFeeder: playlist.uuid),
-                  let storeUuid = session.storePlaylistUuid, listedUuids.contains(storeUuid) else { return true }
-            return false
-        }
-        return unique.enumerated().sorted { a, b in
-            let aUsed = lastUsed(for: a.element)
-            let bUsed = lastUsed(for: b.element)
-            if aUsed == bUsed { return a.offset < b.offset }
-            return aUsed > bUsed
-        }.map(\.element)
-    }()
-
-    private static func lastUsed(for playlist: EpisodeFilter) -> Date {
-        let session = SessionStore.shared.session(forStore: playlist.uuid)
-            ?? SessionStore.shared.session(forSmartPlaylistFeeder: playlist.uuid)
-        return session?.lastUsed ?? .distantPast
-    }
-    /// Shortcuts: the queue filtered by a recently used lens (switch sheet only).
-    private let recentFilters: [UpNextFilter]
+    /// The sheet is the fast path: always the complete list, always recency-ordered, and
+    /// it carries no sort/filter controls. The chooser's own sort and "Show" toggles are
+    /// deliberately not applied — switching sessions from here must never be able to miss
+    /// a session the user hid from a browsing list.
+    private let rows: [SessionListRow] = SessionListRows.current(sort: .recentlyPlayed, filters: .unfiltered)
     private let table = UITableView(frame: .zero, style: .plain)
+
+    /// An active session gets an "End Session" row at the bottom of the Up Next section.
+    private let showsEndSession: Bool
 
     init(themeOverride: Theme.ThemeType?, includeUpNext: Bool = true, onSwitched: @escaping (Bool) -> Void) {
         self.themeOverride = themeOverride
         self.includeUpNext = includeUpNext
-        self.recentFilters = includeUpNext ? Array(Settings.upNextRecentFilters().filter { $0.title != nil }.prefix(3)) : []
+        self.showsEndSession = includeUpNext && Settings.playbackSession() != nil
         self.onSwitched = onSwitched
         super.init(nibName: nil, bundle: nil)
     }
 
-    private var queueRowCount: Int { includeUpNext ? 1 + recentFilters.count : 0 }
+    private var queueRowCount: Int { includeUpNext ? 1 + (showsEndSession ? 1 : 0) : 0 }
+
+    private func isEndSessionRow(_ indexPath: IndexPath) -> Bool {
+        isQueueSection(indexPath.section) && showsEndSession && indexPath.row == queueRowCount - 1
+    }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) {
@@ -1710,7 +1844,7 @@ class SwitchSessionViewController: UIViewController, UITableViewDataSource, UITa
 
         // Title with the same left-right arrows glyph as the header's switch button —
         // or the session glyph when choosing a first session.
-        let titleIcon = UIImageView(image: UIImage(systemName: includeUpNext ? "arrow.left.arrow.right" : "play.square.stack", withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold))?
+        let titleIcon = UIImageView(image: UIImage(systemName: includeUpNext ? "arrow.left.arrow.right" : "rectangle.stack", withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold))?
             .withTintColor(AppTheme.colorForStyle(.primaryText01, themeOverride: themeOverride), renderingMode: .alwaysOriginal))
         let titleLabel = UILabel()
         titleLabel.text = includeUpNext ? L10n.playbackSessionSwitchShort : L10n.playbackSessionChoose
@@ -1725,6 +1859,8 @@ class SwitchSessionViewController: UIViewController, UITableViewDataSource, UITa
         table.backgroundColor = .clear
         table.separatorStyle = .none
         table.register(NewPlaylistCell.self, forCellReuseIdentifier: NewPlaylistCell.reuseIdentifier)
+        table.register(SessionListCell.self, forCellReuseIdentifier: SessionListCell.reuseIdentifier)
+        table.estimatedRowHeight = 72
         table.dataSource = self
         table.delegate = self
         table.translatesAutoresizingMaskIntoConstraints = false
@@ -1746,11 +1882,13 @@ class SwitchSessionViewController: UIViewController, UITableViewDataSource, UITa
     }
 
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        isQueueSection(section) ? queueRowCount : playlists.count
+        isQueueSection(section) ? queueRowCount : rows.count
     }
 
     func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
-        NewPlaylistCell.cellHeight
+        if isEndSessionRow(indexPath) { return 56 }
+        if isQueueSection(indexPath.section) { return NewPlaylistCell.cellHeight }
+        return UITableView.automaticDimension
     }
 
     func tableView(_ tableView: UITableView, viewForHeaderInSection section: Int) -> UIView? {
@@ -1773,30 +1911,39 @@ class SwitchSessionViewController: UIViewController, UITableViewDataSource, UITa
         includeUpNext ? 32 : .leastNormalMagnitude
     }
 
+    /// The destructive "End Session" row at the bottom of the Up Next section — same
+    /// leading inset as the sheet's rows, in the theme's danger red.
+    private func makeEndSessionCell() -> UITableViewCell {
+        let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+        cell.backgroundColor = AppTheme.colorForStyle(.primaryUi02, themeOverride: themeOverride)
+        cell.contentView.backgroundColor = .clear
+        var config = cell.defaultContentConfiguration()
+        config.text = L10n.playbackSessionEnd
+        config.textProperties.font = UIFont.font(ofSize: 15, weight: .medium, scalingWith: .subheadline)
+        config.textProperties.color = AppTheme.colorForStyle(.support05, themeOverride: themeOverride)
+        config.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16)
+        cell.contentConfiguration = config
+        return cell
+    }
+
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let cell = (tableView.dequeueReusableCell(withIdentifier: NewPlaylistCell.reuseIdentifier) as? NewPlaylistCell)
-            ?? NewPlaylistCell(style: .default, reuseIdentifier: NewPlaylistCell.reuseIdentifier)
-        cell.reset()
+        if isEndSessionRow(indexPath) {
+            return makeEndSessionCell()
+        }
 
         if isQueueSection(indexPath.section) {
-            if indexPath.row == 0 {
-                cell.configureUpNext(episodeCount: PlaybackManager.shared.queue.upNextCount())
-            } else {
-                // A recent lens over the queue, in the same clothes as the Up Next row.
-                let filter = recentFilters[indexPath.row - 1]
-                let queueEpisodes = PlaybackManager.shared.queue.allEpisodes(includeNowPlaying: false)
-                cell.configureUpNext(title: "\(L10n.upNext) · \(filter.title ?? "")",
-                                     episodeCount: filter.matchingEpisodeUuids(in: queueEpisodes).count)
-            }
+            let cell = (tableView.dequeueReusableCell(withIdentifier: NewPlaylistCell.reuseIdentifier) as? NewPlaylistCell)
+                ?? NewPlaylistCell(style: .default, reuseIdentifier: NewPlaylistCell.reuseIdentifier)
+            cell.reset()
+            cell.configureUpNext(episodeCount: PlaybackManager.shared.queue.upNextCount())
             cell.hideSeparator(indexPath.row == queueRowCount - 1)
             return cell
         }
 
-        let playlist = playlists[indexPath.row]
-        // The section header already says "Session" — no per-row type subtitle needed.
-        cell.set(playlistName: playlist.playlistName, isManualPlaylist: true)
-        cell.loadMetadata(for: playlist)
-        cell.hideSeparator(indexPath.row == playlists.count - 1)
+        let cell = (tableView.dequeueReusableCell(withIdentifier: SessionListCell.reuseIdentifier) as? SessionListCell)
+            ?? SessionListCell(style: .default, reuseIdentifier: SessionListCell.reuseIdentifier)
+        cell.themeOverride = themeOverride
+        cell.populate(from: rows[indexPath.row])
         return cell
     }
 
@@ -1805,9 +1952,17 @@ class SwitchSessionViewController: UIViewController, UITableViewDataSource, UITa
         AnalyticsPlaybackHelper.shared.currentSource = .upNext
 
         if isQueueSection(indexPath.section) {
-            if indexPath.row > 0 {
-                // A recent lens: switch to the queue with that filter applied.
-                Settings.setUpNextFilter(recentFilters[indexPath.row - 1])
+            if isEndSessionRow(indexPath) {
+                // End the session without forcing playback over to the queue — whatever
+                // was playing keeps playing; the Up Next world is simply shown.
+                if Settings.playbackSession() != nil {
+                    PlaybackManager.shared.endPlaybackSession()
+                }
+                dismiss(animated: true) { [onSwitched] in
+                    onSwitched(true)
+                    NavigationManager.sharedManager.navigateTo(NavigationManager.upNextPageKey)
+                }
+                return
             }
             if Settings.playbackSession() != nil {
                 PlaybackManager.shared.endPlaybackSession()
@@ -1829,48 +1984,29 @@ class SwitchSessionViewController: UIViewController, UITableViewDataSource, UITa
             return
         }
 
-        let playlist = playlists[indexPath.row]
-        // Recency for this sheet's ordering.
-        SessionStore.shared.markUsed(playbackUuid: playlist.uuid)
-        let session = PlaybackSession(type: playlist.manual ? .playlist : .smartPlaylist, uuid: playlist.uuid)
+        let row = rows[indexPath.row]
+        guard let storeUuid = SessionStore.shared.session(uuid: row.sessionUuid)?.storePlaylistUuid ?? row.storeUuid else { return }
+        // A session always plays its store — a manual playlist holding the lineup.
+        let session = PlaybackSession(type: .playlist, uuid: storeUuid)
         if session != Settings.playbackSession() {
-            PlaybackManager.shared.startPlaybackSession(session)
+            // Switching activates the session and primes its next episode as Now
+            // Playing, but never starts audio — the user presses play when ready.
+            PlaybackManager.shared.startPlaybackSession(session, autoPlay: false)
         } else if Settings.playbackSessionPaused() {
-            // Re-picking the active-but-paused session resumes it.
+            // Re-picking the active-but-paused session un-pauses and primes it,
+            // again without starting audio.
             if let episode = session.nextEpisode(after: nil) {
-                PlaybackManager.shared.play(sessionEpisode: episode)
+                PlaybackManager.shared.play(sessionEpisode: episode, autoPlay: false)
             }
-        } else if !PlaybackManager.shared.playing() {
-            PlaybackManager.shared.play()
         }
+        // Same session, already active: nothing to change — just land on it.
         dismiss(animated: true) { [onSwitched] in
-            onSwitched(false)
-            // Switching to a session means going there — land on its feeder page.
-            Self.navigateToSessionHome(storePlaylist: playlist)
+            onSwitched(true)
+            // Switching to a session means going there — land on the Up Next tab
+            // showing the Session world (the tab-activated snap follows whichever
+            // world owns playback, which is now the session).
+            NavigationManager.sharedManager.navigateTo(NavigationManager.upNextPageKey)
+            NotificationCenter.postOnMainThread(notification: Constants.Notifications.upNextTabActivated)
         }
-    }
-
-    /// Fork: sessions land on their feeder page (podcast page's Session tab, or the
-    /// lens playlist); anything else lands on the playlist itself.
-    private static func navigateToSessionHome(storePlaylist playlist: EpisodeFilter) {
-        if let session = SessionStore.shared.session(forStore: playlist.uuid) {
-            switch session.feeder {
-            case .podcast(let uuid):
-                if let podcast = DataManager.sharedManager.findPodcast(uuid: uuid, includeUnsubscribed: true) {
-                    SessionManager.pendingSessionLanding = uuid
-                    NavigationManager.sharedManager.navigateTo(NavigationManager.podcastPageKey, data: [NavigationManager.podcastKey: podcast])
-                    return
-                }
-            case .smartPlaylist(let uuid):
-                // Hidden "— feed" machinery isn't a destination; fall through to the store.
-                if !SessionStore.shared.feederPlaylistUuids.contains(uuid), DataManager.sharedManager.findPlaylist(uuid: uuid) != nil {
-                    NavigationManager.sharedManager.navigateTo(NavigationManager.filterPageKey, data: [NavigationManager.filterUuidKey: uuid])
-                    return
-                }
-            default:
-                break
-            }
-        }
-        NavigationManager.sharedManager.navigateTo(NavigationManager.filterPageKey, data: [NavigationManager.filterUuidKey: playlist.uuid])
     }
 }

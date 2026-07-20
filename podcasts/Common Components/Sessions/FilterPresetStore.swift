@@ -127,7 +127,7 @@ final class FilterPresetStore {
 
     func setActivePresetUuid(_ uuid: String?, for scope: FilterScope) {
         UserDefaults.standard.set(uuid, forKey: "\(Self.activePresetKey)-\(scope.rawValue)")
-        NotificationCenter.postOnMainThread(notification: Self.changed)
+        NotificationCenter.postChangedWithoutBlocking(Self.changed)
     }
 
     /// The preset in force for a scope right now. Falls back to All Episodes if it was deleted.
@@ -164,7 +164,7 @@ final class FilterPresetStore {
                 handler(FilterPresetStoreSnapshot(document: old), FilterPresetStoreSnapshot(document: document))
             }
         }
-        NotificationCenter.postOnMainThread(notification: Self.changed)
+        NotificationCenter.postChangedWithoutBlocking(Self.changed)
     }
 
     private func load() {

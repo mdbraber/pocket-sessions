@@ -25,6 +25,11 @@ class UnplayedBadge: UIView {
         clipsToBounds = true
         layer.cornerRadius = bounds.height / 2
 
+        // The owning cell speaks the badge (with context) as part of its own
+        // accessibility label, so don't let VoiceOver find a bare number here.
+        isAccessibilityElement = false
+        accessibilityElementsHidden = true
+
         // Fork: the XIB pins width == height (the old circle badge). The playlist-
         // style count sizes to its text instead, so the square lock only applies in
         // dot mode — and the badge must hug tightly or the row stack stretches it

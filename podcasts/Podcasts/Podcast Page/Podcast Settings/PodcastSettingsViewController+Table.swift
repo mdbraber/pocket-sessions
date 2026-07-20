@@ -100,39 +100,45 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
             cell.cellSecondaryLabel.text = L10n.settingsEpisodeLimitFormat(ServerSettings.autoAddToUpNextLimit().localized())
 
             return cell
-        case .linking:
-            // Fork: opens the per-podcast Linking page (its own Custom toggle reveals the two
-            // direction switches) — same shape as the Playback Effects row.
-            let cell = tableView.dequeueReusableCell(withIdentifier: PodcastSettingsViewController.disclosureCellId, for: indexPath) as! DisclosureCell
-            cell.cellLabel.text = L10n.settingsLinkingRow
-            cell.setImage(imageName: nil)
-            cell.cellSecondaryLabel.text = nil
-            return cell
-        case .session:
-            // Fork: one "Session" row opening the consolidated per-podcast Session page
-            // (Position, Auto Add, and Session Linking).
-            let cell = tableView.dequeueReusableCell(withIdentifier: PodcastSettingsViewController.disclosureCellId, for: indexPath) as! DisclosureCell
-            cell.cellLabel.text = L10n.playbackSessionTabSession
-            cell.setImage(UIImage(systemName: "rectangle.stack"), tintColor: ThemeColor.primaryIcon01())
-            cell.cellSecondaryLabel.text = nil
-            return cell
         case .sessionPosition:
+            // Fork: where adds land in this podcast's session — the session's own insert
+            // mode, edited directly here.
             let cell = tableView.dequeueReusableCell(withIdentifier: PodcastSettingsViewController.disclosureCellId, for: indexPath) as! DisclosureCell
-            cell.cellLabel.text = L10n.playlistInsertModeSetting
+            cell.cellLabel.text = L10n.sessionPositionHeading
             cell.setImage(imageName: nil)
             cell.showSecondaryLabel = true
-            let mode = SessionStore.shared.session(forPodcast: podcast.uuid).flatMap { PlaylistInsertMode(rawValue: $0.insertMode) } ?? .afterLastInserted
-            // Auto-add position is Up Next-style Top/Bottom (not the lineup's insert-marker modes).
-            cell.cellSecondaryLabel.text = (mode == .top) ? L10n.top : L10n.bottom
+            let mode = SessionStore.shared.session(forPodcast: podcast.uuid).flatMap { PlaylistInsertMode(rawValue: $0.insertMode) } ?? .top
+            cell.cellSecondaryLabel.text = mode.description
 
             return cell
-        case .globalSession:
+        case .sessionAutoAdd:
+            let cell = tableView.dequeueReusableCell(withIdentifier: PodcastSettingsViewController.switchCellId, for: indexPath) as! SwitchCell
+            cell.cellLabel.text = L10n.settingsAutoAddToSession
+            cell.cellSwitch.onTintColor = podcast.switchTintColor()
+            // Section lead row wears the section icon, like .upNext does.
+            cell.setImage(image: UIImage(systemName: "rectangle.stack"))
+            cell.cellSwitch.isOn = sessionAutoAddOn
+
+            cell.cellSwitch.removeTarget(self, action: #selector(addToSessionChanged(_:)), for: UIControl.Event.valueChanged)
+            cell.cellSwitch.addTarget(self, action: #selector(addToSessionChanged(_:)), for: UIControl.Event.valueChanged)
+
+            return cell
+        case .sessionGlobalSettings:
             let cell = tableView.dequeueReusableCell(withIdentifier: PodcastSettingsViewController.disclosureCellId, for: indexPath) as! DisclosureCell
             cell.cellLabel.text = L10n.settingsGlobalSettings
             cell.setImage(imageName: nil)
             cell.showSecondaryLabel = true
             cell.cellSecondaryLabel.text = L10n.settingsEpisodeLimitFormat(Settings.sessionAutoAddLimit().localized())
 
+            return cell
+        case .sessionLinking:
+            // Fork: pushes the Session Linking detail page (per-podcast Up Next ↔ Session
+            // mirror overrides), styled like the Auto Archive row below it.
+            let cell = tableView.dequeueReusableCell(withIdentifier: PodcastSettingsViewController.disclosureCellId, for: indexPath) as! DisclosureCell
+            cell.cellLabel.text = L10n.sessionLinkingHeading
+            cell.setImage(UIImage(systemName: "link"), tintColor: podcast.iconTintColor())
+            cell.cellSecondaryLabel.text = nil
+            cell.showSecondaryLabel = false
             return cell
         case .playbackEffects:
             let cell = tableView.dequeueReusableCell(withIdentifier: PodcastSettingsViewController.disclosureCellId, for: indexPath) as! DisclosureCell
@@ -278,8 +284,12 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
         } else if row == .globalUpNext {
             let globalSettings = AutoAddToUpNextViewController()
             navigationController?.pushViewController(globalSettings, animated: true)
-        } else if row == .session {
-            navigationController?.pushViewController(PodcastLinkingViewController(podcast: podcast), animated: true)
+        } else if row == .sessionPosition {
+            showSessionPositionPicker()
+        } else if row == .sessionGlobalSettings {
+            navigationController?.pushViewController(AutoAddToSessionViewController(), animated: true)
+        } else if row == .sessionLinking {
+            navigationController?.pushViewController(SessionLinkingViewController(podcast: podcast), animated: true)
         } else if row == .playbackEffects {
             let effectsController = PodcastEffectsViewController(podcast: podcast)
             navigationController?.pushViewController(effectsController, animated: true)
@@ -327,8 +337,30 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
     // MARK: - Table Config
 
     func tableView(_ tableView: UITableView, heightForHeaderInSection section: Int) -> CGFloat {
+        // Sections with a title size themselves; the fixed height would clip the text.
+        if self.tableView(tableView, titleForHeaderInSection: section) != nil {
+            return UITableView.automaticDimension
+        }
+
         // remove the standard padding from the top of a grouped UITableView
-        section == 0 ? CGFloat.leastNonzeroMagnitude : 19
+        return section == 0 ? CGFloat.leastNonzeroMagnitude : 19
+    }
+
+    func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
+        switch tableData()[section].first {
+        case .globalInbox:
+            return L10n.inboxTitle
+        case .upNext:
+            return L10n.upNext
+        case .sessionAutoAdd:
+            return L10n.playbackSessionTabSession
+        default:
+            return nil
+        }
+    }
+
+    func tableView(_ tableView: UITableView, willDisplayHeaderView view: UIView, forSection section: Int) {
+        ThemeableTable.setHeaderFooterTextColor(on: view)
     }
 
     // MARK: - Table Footer Text
@@ -344,7 +376,9 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
             } else {
                 return L10n.settingsUpNextLimit(upNextLimit.localized())
             }
-        } else if firstRow == .session {
+        } else if firstRow == .globalInbox {
+            return L10n.inboxPodcastFooter
+        } else if firstRow == .sessionAutoAdd {
             return L10n.settingsSessionLimit(Settings.sessionAutoAddLimit().localized())
         } else if firstRow == .feedError {
             return L10n.settingsFeedErrorMsg
@@ -393,30 +427,33 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
     }
 
 
-    // MARK: - Auto Add To Session
+    // MARK: - Session
 
-    /// Fork: where auto-added episodes land in the lineup — the session's own insert
-    /// modes, not just Up Next's top/bottom.
-    private func showSessionAutoAddPositionSettings() {
-        guard let session = SessionStore.shared.session(forPodcast: podcast.uuid) else { return }
-        let positionPicker = OptionsPicker(title: L10n.playlistInsertModeSetting.localizedUppercase)
-        let currentMode = PlaylistInsertMode(rawValue: session.insertMode) ?? .afterLastInserted
+    private var sessionAutoAddOn: Bool {
+        SessionStore.shared.session(forPodcast: podcast.uuid)?.autoAdd ?? false
+    }
 
-        // Auto-add position is Up Next-style: just Top or Bottom (labelled plainly, not the lineup's
-        // "On Top / After Last …" insert-marker modes).
-        for mode in [PlaylistInsertMode.top, .bottom] {
-            let label = (mode == .top) ? L10n.top : L10n.bottom
-            let selected = (mode == .top) ? (currentMode == .top) : (currentMode != .top)
-            positionPicker.addAction(action: OptionAction(label: label, icon: nil, selected: selected) { [weak self] in
-                guard let self, var session = SessionStore.shared.session(forPodcast: self.podcast.uuid) else { return }
+
+    /// Fork: where adds land in this podcast's session — edits the session's own insert
+    /// mode directly (the same property the playlist's ⋯ menu edits), creating the
+    /// session on first use.
+    private func showSessionPositionPicker() {
+        let picker = OptionsPicker(title: L10n.sessionPositionHeading.localizedUppercase)
+        let current = SessionStore.shared.session(forPodcast: podcast.uuid).flatMap { PlaylistInsertMode(rawValue: $0.insertMode) } ?? .top
+        for mode in PlaylistInsertMode.allCases {
+            picker.addAction(action: OptionAction(label: mode.description, icon: nil, selected: current == mode) { [weak self] in
+                guard let self else { return }
+                var session = SessionManager.shared.findOrCreateSession(forPodcast: podcast)
                 session.insertMode = mode.rawValue
                 SessionStore.shared.upsert(session)
-                self.settingsTable.reloadData()
+                settingsTable.reloadData()
             })
         }
-
-        positionPicker.present(from: self)
+        picker.present(from: self)
     }
+
+
+
 
     // MARK: - Settings changes
 
@@ -501,7 +538,9 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
     }
 
     private func tableData() -> [[TableRow]] {
-        var data: [[TableRow]] = [[.autoDownload, .notifications, .globalInbox], [.upNext], [.session], [.autoArchive], [.playbackEffects, .skipFirst, .skipLast]]
+        // The fork's new-episode pipeline reads top to bottom: Inbox → Up Next → Session →
+        // Session Linking, each block headed, switch-first (matching the Up Next block's shape).
+        var data: [[TableRow]] = [[.autoDownload, .notifications], [.globalInbox], [.upNext], [.sessionAutoAdd, .sessionPosition], [.sessionLinking, .autoArchive], [.playbackEffects, .skipFirst, .skipLast]]
 
         if podcast.refreshAvailable {
             data.insert([.feedError], at: 0)
@@ -512,6 +551,10 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
         if podcast.autoAddToUpNextOn(), let upNextSection = data.firstIndex(where: { $0.first == .upNext }) {
             data[upNextSection].append(.upNextPosition)
             data[upNextSection].append(.globalUpNext)
+        }
+
+        if sessionAutoAddOn, let sessionSection = data.firstIndex(where: { $0.first == .sessionAutoAdd }) {
+            data[sessionSection].append(.sessionGlobalSettings)
         }
 
         if canAppearInFilters {

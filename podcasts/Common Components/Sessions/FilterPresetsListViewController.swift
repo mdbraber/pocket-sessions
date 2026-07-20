@@ -27,6 +27,9 @@ struct FilterPresetsListView: View {
     @ObservedObject var model: FilterPresetsListModel
     @State private var presets: [FilterPreset] = FilterPresetStore.shared.presets
 
+    // Deletion is permanent (built-ins are never reseeded), so a swipe-delete confirms first.
+    @State private var pendingDelete: FilterPreset?
+
     var body: some View {
         List {
             ForEach(presets) { preset in
@@ -50,12 +53,21 @@ struct FilterPresetsListView: View {
                 reload()
             }
             .onDelete { offsets in
-                offsets.map { presets[$0].uuid }.forEach { FilterPresetStore.shared.delete(uuid: $0) }
-                reload()
+                pendingDelete = offsets.first.map { presets[$0] }
             }
         }
         .environment(\.editMode, $model.editMode)
         .navigationTitle(L10n.settingsFilterPresets)
+        .alert(L10n.filterPresetDeleteConfirm(pendingDelete?.name ?? ""), isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } })) {
+            Button(L10n.delete, role: .destructive) {
+                if let preset = pendingDelete {
+                    FilterPresetStore.shared.delete(uuid: preset.uuid)
+                    reload()
+                }
+                pendingDelete = nil
+            }
+            Button(L10n.cancel, role: .cancel) { pendingDelete = nil }
+        }
         .onReceive(NotificationCenter.default.publisher(for: FilterPresetStore.changed)) { _ in
             reload()
         }

@@ -69,7 +69,7 @@ final class SessionStoreDecodeTests: XCTestCase {
     /// out of `Document.init(from:)` and reset the whole store.
     func testSessionMissingDefaultedKeysDecodesWithDefaults() throws {
         var session = try json(for: Session(uuid: "s1", feeder: .podcast(uuid: "p1")))
-        for key in ["storePlaylistUuid", "autoAdd", "insertMode", "lastInsertedUuid", "lastUsed"] {
+        for key in ["storePlaylistUuid", "autoAdd", "autoFill", "insertMode", "lastInsertedUuid", "lastUsed", "pinnedEpisodeUuids"] {
             session.removeValue(forKey: key)
         }
         try write(["sessions": [session]])
@@ -80,8 +80,10 @@ final class SessionStoreDecodeTests: XCTestCase {
         let loaded = try XCTUnwrap(store.session(uuid: "s1"))
         XCTAssertNil(loaded.storePlaylistUuid)
         XCTAssertEqual(loaded.autoAdd, false)
+        XCTAssertEqual(loaded.autoFill, true, "a document written before autoFill existed must decode as Automatic")
         XCTAssertEqual(loaded.insertMode, PlaylistInsertMode.afterLastInserted.rawValue)
         XCTAssertEqual(loaded.lastInsertedUuid, "")
+        XCTAssertEqual(loaded.pinnedEpisodeUuids, [], "a document written before pins existed must decode as unpinned")
         XCTAssertEqual(loaded.feeder, .podcast(uuid: "p1"))
     }
 
@@ -126,9 +128,11 @@ final class SessionStoreDecodeTests: XCTestCase {
             storePlaylistUuid: "store-1",
             feeder: .smartPlaylist(uuid: "sp1"),
             autoAdd: true,
+            autoFill: false,
             insertMode: PlaylistInsertMode.top.rawValue,
             lastInsertedUuid: "e9",
-            lastUsed: Date(timeIntervalSince1970: 1_700_000_000)
+            lastUsed: Date(timeIntervalSince1970: 1_700_000_000),
+            pinnedEpisodeUuids: ["e3", "e7"]
         )
         try write(["sessions": [json(for: session)]])
 

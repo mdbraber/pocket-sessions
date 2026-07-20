@@ -8,6 +8,8 @@ MARKETING_VERSION = $(VERSION_SHORT)
 CURRENT_PROJECT_VERSION = $(VERSION_LONG)
 
 // Define a root bundle identifier so that extensions can append to it
-PRODUCT_BUNDLE_IDENTIFIER_ROOT = au.com.shiftyjelly.podcasts
+// Fork: personal bundle root — keeps the Xcode GUI (signing pane) and the Makefile's
+// device builds on the same App ID, so managed profiles mint for the right identifier.
+PRODUCT_BUNDLE_IDENTIFIER_ROOT = com.example.podcasts
 
 DEVELOPMENT_TEAM = PZYM8XX95Q // Automattic, Inc. (Company)

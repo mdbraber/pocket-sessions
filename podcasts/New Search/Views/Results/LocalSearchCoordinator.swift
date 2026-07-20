@@ -164,6 +164,10 @@ final class LocalSearchCoordinator {
                 return
             }
 
+            // Fork (Sessions): a hand-add into a session's store is an explicit USER add —
+            // pin it so the feeder's prune never sweeps it back out.
+            SessionManager.shared.pinDirectAdd(episodeUuids: [episode.uuid], storePlaylistUuid: playlist.uuid)
+
             // For now let's track the event directly here to avoid swift concurrency warning using the PlaylistTypeTrackerProvider
             Analytics.track(
                 .episodeAddedToList,

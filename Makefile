@@ -101,7 +101,6 @@ device: ## Builds, installs and launches on the personal iPhone (paid-team autom
 	    DEVELOPMENT_TEAM=ABCDE12345 \
 	    CODE_SIGN_STYLE=Automatic \
 	    PROVISIONING_PROFILE_SPECIFIER= \
-	    "CODE_SIGN_ENTITLEMENTS=$(CURDIR)/config/PocketCasts.device.entitlements" \
 	    -allowProvisioningUpdates build
 	xcrun devicectl device install app --device $(DEVICE_ID) ~/Library/Developer/Xcode/DerivedData/podcasts-*/Build/Products/Debug-iphoneos/podcasts.app
 	xcrun devicectl device process launch --device $(DEVICE_ID) com.example.podcasts

@@ -17,7 +17,7 @@ class FilterEditOptionsViewController: PCViewController, UITableViewDelegate, UI
     private let buttonCellId = "ButtonCell"
     private let settingsCellId = "SettingsCell"
     private let deleteCellId = "DettingsCell"
-    private enum TableRow: Int { case filterName, autodownload, autoDownloadLimit, siriShortcut, deletePlaylist }
+    private enum TableRow: Int { case filterName, autodownload, autoDownloadLimit, siriShortcut, isSessionPlaylist, sessionFillMode, backfillSession, deletePlaylist }
     private static let tableDataAutoDownloadDisabled: [[TableRow]] = {
         return [[.filterName], [.autodownload]]
     }()
@@ -139,6 +139,32 @@ class FilterEditOptionsViewController: PCViewController, UITableViewDelegate, UI
             cell.settingsImage.image = UIImage(named: "settings_shortcuts")
             cell.settingsImage.tintColor = AppTheme.colorForStyle(.primaryIcon01)
             return cell
+        case .isSessionPlaylist:
+            let cell = tableView.dequeueReusableCell(withIdentifier: switchCellId) as! SwitchCell
+            cell.cellSwitch.onStyle = .primaryIcon01
+
+            cell.cellLabel.text = L10n.playlistIsSession
+            cell.cellLabel.font.withSize(16)
+            cell.setImage(image: UIImage(systemName: "rectangle.stack"))
+            cell.cellSwitch.setOn(!Settings.playlistOptedOutOfSession(uuid: filterToEdit.uuid), animated: true)
+
+            cell.cellSwitch.removeTarget(self, action: nil, for: UIControl.Event.valueChanged)
+            cell.cellSwitch.addTarget(self, action: #selector(isSessionPlaylistChanged(_:)), for: .valueChanged)
+            return cell
+        case .sessionFillMode:
+            let cell = tableView.dequeueReusableCell(withIdentifier: disclosureCellId) as! DisclosureCell
+            cell.cellLabel.text = L10n.sessionFillMode
+            cell.cellSecondaryLabel.text = sessionAutoFill ? L10n.sessionFillAuto : L10n.sessionFillManual
+
+            return cell
+        case .backfillSession:
+            let cell = tableView.dequeueReusableCell(withIdentifier: deleteCellId, for: indexPath) as! AccountActionCell
+            cell.cellLabel.text = L10n.sessionBackfillPlaylist
+            cell.cellImage.image = UIImage(systemName: "rectangle.stack")
+            cell.iconStyle = .primaryIcon01
+            cell.counterView.isHidden = true
+            cell.showsDisclosureIndicator = false
+            return cell
         case .deletePlaylist:
             let cell = tableView.dequeueReusableCell(withIdentifier: deleteCellId, for: indexPath) as! AccountActionCell
             cell.cellLabel.text = L10n.playlistsDelete
@@ -172,6 +198,30 @@ class FilterEditOptionsViewController: PCViewController, UITableViewDelegate, UI
             let singleFilterVC = PlaylistShortcutsViewController(playlist: filterToEdit)
             navigationController?.pushViewController(singleFilterVC, animated: true)
             tableView.deselectRow(at: indexPath, animated: false)
+        case .sessionFillMode:
+            tableView.deselectRow(at: indexPath, animated: true)
+
+            let current = sessionAutoFill
+            let options = OptionsPicker(title: L10n.sessionFillMode.localizedUppercase)
+            options.addAction(action: OptionAction(label: L10n.sessionFillAuto, selected: current) { [weak self] in
+                self?.setSessionAutoFill(true)
+            })
+            options.addAction(action: OptionAction(label: L10n.sessionFillManual, selected: !current) { [weak self] in
+                self?.setSessionAutoFill(false)
+            })
+            options.present(from: self)
+        case .backfillSession:
+            tableView.deselectRow(at: indexPath, animated: true)
+            guard let playlist = filterToEdit else { return }
+
+            // Full-domain query + store writes — off the main thread, or the whole screen
+            // (including the back button) freezes for the duration on big playlists.
+            DispatchQueue.global(qos: .userInitiated).async {
+                let added = SessionManager.shared.backfillSession(forSmartPlaylist: playlist)
+                DispatchQueue.main.async {
+                    Toast.show(added > 0 ? L10n.sessionBackfillDone(added.localized()) : L10n.sessionBackfillNone)
+                }
+            }
         case .deletePlaylist:
             showDeleteConfirmationDialog(for: filterToEdit)
 
@@ -187,6 +237,18 @@ class FilterEditOptionsViewController: PCViewController, UITableViewDelegate, UI
         if section == autoDownloadSection {
             return filterToEdit.autoDownloadEpisodes ? L10n.episodeCountPluralFormat(filterToEdit.maxAutoDownloadEpisodes().localized()) : L10n.playlistsAutoDownloadOffSubtitle
         }
+        // Fork: explain what turning the playlist into (or out of) a session playlist means,
+        // then the fill modes and what backfilling does — the row names alone don't carry it.
+        if tableData()[section].contains(.isSessionPlaylist) {
+            guard tableData()[section].contains(.sessionFillMode) else { return L10n.playlistIsSessionFooter }
+            return "\(L10n.playlistIsSessionFooter)\n\n\(L10n.sessionFillFooter)\n\n\(L10n.sessionBackfillPlaylistMsg)"
+        }
+        if tableData()[section].contains(.sessionFillMode) {
+            return "\(L10n.sessionFillFooter)\n\n\(L10n.sessionBackfillPlaylistMsg)"
+        }
+        if tableData()[section].contains(.backfillSession) {
+            return L10n.sessionBackfillPlaylistMsg
+        }
         return nil
     }
 
@@ -201,6 +263,17 @@ class FilterEditOptionsViewController: PCViewController, UITableViewDelegate, UI
         filterToEdit.autoDownloadEpisodes = sender.isOn
         didChangeAutoDownload = true
         tableView.reloadData()
+    }
+
+    /// Fork: "Session Playlist" — ON means this smart playlist can back a session (the default).
+    /// Turning it OFF hides the fill/backfill rows here, and the Session tab, Play Session button
+    /// and chooser/CarPlay row elsewhere. Any existing session keeps its lineup, frozen, so
+    /// turning it back on restores everything.
+    @objc private func isSessionPlaylistChanged(_ sender: UISwitch) {
+        Settings.setPlaylistOptedOutOfSession(!sender.isOn, uuid: filterToEdit.uuid)
+        tableView.reloadData()
+        NotificationCenter.postOnMainThread(notification: SessionStore.changed)
+        NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged, object: filterToEdit)
     }
 
     // MARK: - TextFieldDelegate
@@ -242,6 +315,17 @@ class FilterEditOptionsViewController: PCViewController, UITableViewDelegate, UI
 
         data.append([.siriShortcut])
 
+        // Fork: smart playlists only — a manual playlist has no feeder to fill or backfill from.
+        // The opt-out switch itself always shows for a smart playlist; the fill/backfill rows
+        // only make sense while it IS a session playlist.
+        if !filterToEdit.manual {
+            var sessionRows: [TableRow] = [.isSessionPlaylist]
+            if !Settings.playlistOptedOutOfSession(uuid: filterToEdit.uuid) {
+                sessionRows.append(contentsOf: [.sessionFillMode, .backfillSession])
+            }
+            data.append(sessionRows)
+        }
+
         data.append([.deletePlaylist])
 
         return data
@@ -257,6 +341,18 @@ class FilterEditOptionsViewController: PCViewController, UITableViewDelegate, UI
             self?.tableView.reloadData()
         }
         optionPicker.addAction(action: action)
+    }
+
+    /// Fork: the playlist session's fill mode — Automatic when no session exists yet
+    /// (new sessions default to autoFill).
+    private var sessionAutoFill: Bool {
+        SessionStore.shared.session(forSmartPlaylistFeeder: filterToEdit.uuid)?.autoFill ?? true
+    }
+
+    private func setSessionAutoFill(_ autoFill: Bool) {
+        guard let session = SessionManager.shared.findOrCreateSession(forSmartPlaylist: filterToEdit) else { return }
+        SessionStore.shared.setAutoFill(autoFill, for: session.uuid)
+        tableView.reloadData()
     }
 
     private func updateExistingSortcutData() {

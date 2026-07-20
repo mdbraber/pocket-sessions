@@ -17,7 +17,8 @@ import PocketCastsUtils
 /// that structurally impossible instead: every one of those episodes is already below the line.
 ///
 /// **What removes:** any playback progress, archiving, being added to a Session, explicit triage,
-/// and the podcast being unsubscribed.
+/// and the podcast being unsubscribed. One exception: an episode explicitly marked unseen is
+/// exempt from the progress rule until it leaves the Inbox again (see `markUnseen`).
 final class InboxManager {
     static let shared = InboxManager()
 
@@ -130,6 +131,21 @@ final class InboxManager {
         center.addObserver(self, selector: #selector(episodeStateChanged), name: Constants.Notifications.manyEpisodesChanged, object: nil)
         center.addObserver(self, selector: #selector(episodeQueued(_:)), name: Constants.Notifications.upNextEpisodeAdded, object: nil)
         center.addObserver(self, selector: #selector(podcastDeleted(_:)), name: Constants.Notifications.podcastDeleted, object: nil)
+        // A remote seen-ledger arriving over CloudKit mutates the store; sweeping on that lets
+        // this device drop members the other device already triaged away without waiting for
+        // the playlist sync to happen to agree. (The sweep is a no-op when nothing applies, and
+        // the store skips no-op mutations, so this cannot ping-pong.)
+        center.addObserver(self, selector: #selector(episodeStateChanged), name: InboxStore.changed, object: nil)
+    }
+
+    // MARK: - Sync import filter
+
+    /// The subset of `candidates` the seen-ledger says were deliberately removed from the
+    /// Inbox. Injected into `ServerConfig.shared.inboxSeenFilter` at launch (AppDelegate), so
+    /// the playlist sync import — which lives in PocketCastsServer and cannot see app types —
+    /// can refuse to resurrect them. See `SyncTask+ServerChanges.importPlaylist`.
+    func inboxSeenFilter(_ candidates: Set<String>) -> Set<String> {
+        candidates.intersection(store.seenUuids())
     }
 
     // MARK: - Adding: the drain
@@ -148,6 +164,11 @@ final class InboxManager {
     ///   - Otherwise, everything published after the line — and not already archived or played —
     ///     is offered, and the line moves up.
     func drain() {
+        // Prune the seen-ledger here rather than on every store save: the drain already runs
+        // exactly once per refresh/sync cycle, so this is the cheapest existing hook — O(n)
+        // over the ledger a few times a day instead of on every mutation.
+        store.pruneSeen(olderThan: Date(timeIntervalSinceNow: -InboxStore.seenRetention))
+
         let podcasts = DataManager.sharedManager.allPodcasts(includeUnsubscribed: false)
         guard !podcasts.isEmpty else { return }
 
@@ -217,6 +238,30 @@ final class InboxManager {
         return DataManager.sharedManager.findEpisodesWhere(customWhere: query, arguments: arguments)
     }
 
+    // MARK: - Manual-unseen exemptions
+
+    /// Episodes explicitly marked unseen keep their playback state untouched, so the sweep's
+    /// progress rule would otherwise remove them again immediately. This set records the
+    /// exemption. It is cleared whenever the episode leaves the Inbox deliberately — every such
+    /// path (explicit triage, queuing, session shelving, unsubscribe, policy clears, and the
+    /// sweep's archive/delete removals) funnels through `markSeen` — so it can't bounce back.
+    static let manualUnseenKey = "SJInboxManualUnseen"
+
+    func manualUnseenUuids() -> Set<String> {
+        Set(UserDefaults.standard.stringArray(forKey: Self.manualUnseenKey) ?? [])
+    }
+
+    private func addManualUnseen(_ episodeUuids: [String]) {
+        UserDefaults.standard.set(Array(manualUnseenUuids().union(episodeUuids)), forKey: Self.manualUnseenKey)
+    }
+
+    private func clearManualUnseen(_ episodeUuids: [String]) {
+        let current = manualUnseenUuids()
+        let remaining = current.subtracting(episodeUuids)
+        guard remaining.count != current.count else { return }
+        UserDefaults.standard.set(Array(remaining), forKey: Self.manualUnseenKey)
+    }
+
     // MARK: - Verbs
 
     /// Adds episodes to the Inbox, respecting the cap. One write, one notification.
@@ -252,28 +297,35 @@ final class InboxManager {
         guard !episodeUuids.isEmpty else { return }
         let playlist = inboxPlaylist()
         DataManager.sharedManager.deleteEpisodes(episodeUuids, from: playlist)
+        // The seen-ledger records the decision itself, because playlist sync cannot: it is
+        // last-writer-wins over the whole membership set, so a lagging device would otherwise
+        // re-upload stale membership and resurrect these. Every deliberate removal funnels
+        // through here — explicit triage, queuing, session shelving, unsubscribe, the policy
+        // clears, and the sweep — so this one line is the ledger's single producer.
+        store.recordSeen(episodeUuids: episodeUuids)
+        // Leaving the Inbox deliberately also ends any manual-unseen exemption — otherwise the
+        // episode would dodge the sweep's progress rule forever if it ever came back.
+        clearManualUnseen(episodeUuids)
         NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged, object: playlist)
     }
 
     /// Mark as unseen — back into the Inbox.
     ///
-    /// This also **unplays and unarchives**, and that is load-bearing rather than a nicety: any
-    /// playback progress removes an episode from the Inbox, so re-adding one that still carries
-    /// progress would see it swept straight back out on the next state change. "Unseen" means
-    /// "fresh again", and it is the only recovery path in the model — removals leave no record.
+    /// Playback state and the archive flag are left untouched — "unseen" is an attention mark,
+    /// not a rewind. Because any playback progress normally removes an episode from the Inbox,
+    /// the uuid also goes into the manual-unseen exemption set so the next sweep doesn't take it
+    /// straight back out. Archiving remains decisive: it still removes the episode (and clears
+    /// the exemption with it).
     func markUnseen(episodeUuids: [String]) {
         guard !episodeUuids.isEmpty else { return }
         let episodes = episodeUuids.compactMap { DataManager.sharedManager.findEpisode(uuid: $0) }
         guard !episodes.isEmpty else { return }
 
-        for episode in episodes where episode.played() || episode.playedUpTo > 0 {
-            EpisodeManager.markAsUnplayed(episode: episode, fireNotification: false)
-        }
-        for episode in episodes where episode.archived {
-            EpisodeManager.unarchiveEpisode(episode: episode, fireNotification: false)
-        }
-        NotificationCenter.postOnMainThread(notification: Constants.Notifications.manyEpisodesChanged)
-
+        // Returning to the Inbox is a decision too: the uuid leaves the seen-ledger (with a
+        // synced unseen override, so another device's older seen entry can't resurrect the
+        // tombstone) — otherwise the sync-import filter would fight mark-unseen forever.
+        store.recordUnseen(episodeUuids: episodes.map(\.uuid))
+        addManualUnseen(episodes.map(\.uuid))
         add(episodes: episodes)
     }
 
@@ -290,12 +342,29 @@ final class InboxManager {
     /// Removes anything in the Inbox that has since been decided: any playback progress (a few
     /// seconds in is still a decision), archived, or deleted.
     ///
+    /// Episodes in the manual-unseen exemption set are skipped for the *progress* rule — they
+    /// were put back deliberately, still carrying their progress. Archiving and deleting are
+    /// explicit decisions and still remove them (which also clears the exemption, via `markSeen`).
+    ///
     /// Note what is NOT here: **being queued**. Queuing clears the dot as an *event*
     /// (`episodeQueued` below), not as a *state*. The difference matters — a podcast set to
     /// auto-add-to-Up-Next delivers episodes that are already queued, and those must still come
     /// through the Inbox. If the sweep treated "is in Up Next" as decided, it would strip their
     /// dots the next time anything at all changed.
     func sweep() {
+        let members = unseenUuids()
+
+        // Exemption hygiene: incoming server deletes (`rawDeleteEpisodes` in the sync import)
+        // bypass `markSeen`, so an exemption whose episode has already left the Inbox would
+        // otherwise linger forever — and silently shield the episode from the progress rule
+        // if it ever came back. An exemption only means anything while its episode is a
+        // member, so drop the rest. (An episode markUnseen just re-added IS a member here,
+        // so its fresh exemption survives.)
+        let staleExemptions = manualUnseenUuids().subtracting(members)
+        if !staleExemptions.isEmpty {
+            clearManualUnseen(Array(staleExemptions))
+        }
+
         let decided = DataManager.sharedManager.findEpisodesWhere(
             customWhere: """
             uuid IN (SELECT episodeUuid FROM \(DataManager.playlistEpisodeTableName) WHERE playlist_uuid = ?) \
@@ -303,8 +372,17 @@ final class InboxManager {
             """,
             arguments: [DataManager.inboxPlaylistUuid]
         )
-        guard !decided.isEmpty else { return }
-        markSeen(episodeUuids: decided.map(\.uuid))
+
+        let exempt = manualUnseenUuids()
+        var removable = Set(decided.filter { $0.archived || $0.wasDeleted || !exempt.contains($0.uuid) }.map(\.uuid))
+
+        // Members the seen-ledger says were triaged away on another device (the remote ledger
+        // merged in before the playlist sync corrected membership). markUnseen episodes are
+        // safe: their unseen override makes the ledger's answer "not seen".
+        removable.formUnion(members.intersection(store.seenUuids()))
+
+        guard !removable.isEmpty else { return }
+        markSeen(episodeUuids: Array(removable))
     }
 
     /// Queuing an episode is deciding to listen to it, so the dot goes.

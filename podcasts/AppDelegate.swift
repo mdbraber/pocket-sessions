@@ -46,6 +46,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
         PlaybackSession.episodeSource = EpisodesDataManager()
 
+        // Fork: lets the playlist sync import (which can't see app types) drop Inbox re-adds
+        // the seen-ledger says were deliberately triaged away. See ServerConfig.inboxSeenFilter.
+        ServerConfig.shared.inboxSeenFilter = { InboxManager.shared.inboxSeenFilter($0) }
+
         appInstallState = appLifecycleAnalytics.checkApplicationInstalledOrUpgraded()
 
         if let appInstallState {

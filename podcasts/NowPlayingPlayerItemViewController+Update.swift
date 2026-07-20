@@ -22,6 +22,7 @@ extension NowPlayingPlayerItemViewController {
         addCustomObserver(UIApplication.willEnterForegroundNotification, selector: #selector(update(notification:)))
         addCustomObserver(Constants.Notifications.playbackFailed, selector: #selector(update(notification:)))
 
+        addCustomObserver(Constants.Notifications.playbackSessionChanged, selector: #selector(updateSessionCaption))
         addCustomObserver(Constants.Notifications.sleepTimerChanged, selector: #selector(sleepTimerUpdated))
         addCustomObserver(Constants.Notifications.playerActionsUpdated, selector: #selector(reloadShelfActions))
         #if !APPCLIP
@@ -80,6 +81,7 @@ extension NowPlayingPlayerItemViewController {
         updateChapterInfo()
         updateChapterProgress()
         updateColors()
+        updateSessionCaption()
         let errorRelevantNotifications = Set([Constants.Notifications.playbackFailed, Constants.Notifications.playbackStarted, Constants.Notifications.playbackPaused])
         if let notificationName = notification?.name, errorRelevantNotifications.contains(notificationName) {
             updateError()
@@ -87,6 +89,16 @@ extension NowPlayingPlayerItemViewController {
         if !showingCustomImage {
             ImageManager.sharedManager.loadImage(episode: playingEpisode, imageView: artworkImageView, size: .page)
         }
+    }
+
+    /// Fork: shows "Session · <name>" under the podcast name while the current episode is
+    /// being played as part of the active session; collapses to nothing otherwise.
+    @objc func updateSessionCaption() {
+        let active = PlaybackManager.shared.isPlayingSessionEpisode
+        sessionCaptionLabel.isHidden = !active
+        sessionCaptionGap?.constant = active ? 4 : 0
+        sessionCaptionZeroHeight?.isActive = !active
+        sessionCaptionLabel.text = active ? L10n.playerSessionCaption(Settings.playbackSession()?.title ?? L10n.playbackSessionTabSession) : nil
     }
 
     private func updateColors() {

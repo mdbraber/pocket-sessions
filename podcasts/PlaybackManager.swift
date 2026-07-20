@@ -199,15 +199,21 @@ class PlaybackManager: ServerPlaybackDelegate {
         // collapsed in Up Next, and playing one of its episodes resumes it
         if episodeIsChanging, !isLoadingSessionEpisode,
            !jumpingWithinSession,
-           Settings.playbackSession() != nil, !Settings.playbackSessionPaused() {
+           let pausingSession = Settings.playbackSession(), !Settings.playbackSessionPaused() {
             FileLog.shared.addMessage("Playback session paused: a different episode was played explicitly")
             Settings.setPlaybackSessionPaused(true)
+            #if !APPCLIP && !os(watchOS)
+            let title = pausingSession.title ?? L10n.playbackSessionTabSession
+            DispatchQueue.main.async {
+                Toast.show(L10n.sessionPausedToast(title))
+            }
+            #endif
         }
 
         // if the user has built an Up Next list, preserve that but make this the currently playing episode
         if !overrideUpNext && !switchingToDifferentUpNextEpisode && queue.upNextCount() > 0 {
             if let currEpisode = currentEpisode(), currEpisode.uuid != episode.uuid {
-                switchTo(episodeToPlay: episode, moveExistingToUpNext: !interruptedEpisodeIsFromSession, autoPlay: true, completion: completion)
+                switchTo(episodeToPlay: episode, moveExistingToUpNext: !interruptedEpisodeIsFromSession, autoPlay: autoPlay, completion: completion)
 
                 return
             }
@@ -796,7 +802,9 @@ class PlaybackManager: ServerPlaybackDelegate {
     /// Starts a playback session: plays its first unfinished episode now (the interrupted
     /// episode moves to the top of Up Next, like any "play now") and advances through the
     /// session's list until it runs dry, then playback returns to the queue.
-    func startPlaybackSession(_ session: PlaybackSession) {
+    /// With `autoPlay: false` the session still becomes active and its first episode is
+    /// primed as Now Playing, but audio doesn't start (whatever was playing stops).
+    func startPlaybackSession(_ session: PlaybackSession, autoPlay: Bool = true) {
         // Pull pending auto-add offers into the store ONCE, at start — not on every advance.
         // (Sessions are an iOS-only fork feature; the watch shares this file.)
         #if !os(watchOS)
@@ -812,7 +820,7 @@ class PlaybackManager: ServerPlaybackDelegate {
         let interruptedEpisode = currentEpisode()
         isLoadingSessionEpisode = true
         defer { isLoadingSessionEpisode = false }
-        load(episode: first, autoPlay: true, overrideUpNext: false)
+        load(episode: first, autoPlay: autoPlay, overrideUpNext: false)
         currentEpisodeIsFromSession = true
 
         // Announce the session only after its first episode is loaded — announcing first
@@ -839,6 +847,11 @@ class PlaybackManager: ServerPlaybackDelegate {
         guard Settings.playbackSession() != nil else { return }
         let handOverToQueue = currentEpisodeIsFromSession && !Settings.playbackSessionPaused()
         Settings.setPlaybackSession(nil)
+        #if !APPCLIP && !os(watchOS)
+        DispatchQueue.main.async {
+            Toast.show(L10n.sessionEndedToast)
+        }
+        #endif
         guard handOverToQueue else { return }
 
         let wasPlaying = playing()
@@ -855,8 +868,9 @@ class PlaybackManager: ServerPlaybackDelegate {
     /// Plays a specific episode from the session without ending it, resuming the session
     /// when it was paused. Resuming interrupts queue playback, so that episode returns to
     /// the top of Up Next; jumping within an active session just swaps session episodes
-    /// and the queue stays untouched.
-    func play(sessionEpisode episode: BaseEpisode) {
+    /// and the queue stays untouched. With `autoPlay: false` the session un-pauses and the
+    /// episode is primed as Now Playing, but audio doesn't start.
+    func play(sessionEpisode episode: BaseEpisode, autoPlay: Bool = true) {
         guard let session = Settings.playbackSession() else { return }
         let resumingFromQueue = Settings.playbackSessionPaused()
         if resumingFromQueue {
@@ -867,7 +881,7 @@ class PlaybackManager: ServerPlaybackDelegate {
         defer { isLoadingSessionEpisode = false }
         // Resuming from queue playback returns that queue episode to the top of Up Next;
         // jumping within the session must never push the session episode into the queue.
-        switchTo(episodeToPlay: episode, moveExistingToUpNext: resumingFromQueue && !currentEpisodeIsFromSession, autoPlay: true)
+        switchTo(episodeToPlay: episode, moveExistingToUpNext: resumingFromQueue && !currentEpisodeIsFromSession, autoPlay: autoPlay)
         currentEpisodeIsFromSession = true
         Settings.setPlaybackSessionLastEpisodeUuid(episode.uuid)
 
@@ -914,6 +928,12 @@ class PlaybackManager: ServerPlaybackDelegate {
         guard let next = session.nextEpisode(after: currentEpisode()?.uuid) else {
             FileLog.shared.addMessage("Playback session finished — returning to the Up Next queue")
             Settings.setPlaybackSession(nil)
+            #if !APPCLIP && !os(watchOS)
+            let title = session.title ?? L10n.playbackSessionTabSession
+            DispatchQueue.main.async {
+                Toast.show(L10n.sessionFinishedToast(title))
+            }
+            #endif
             return false
         }
 
@@ -932,17 +952,7 @@ class PlaybackManager: ServerPlaybackDelegate {
         if queueCount == 0 { return }
 
         var index = 0
-        if FeatureFlag.upNextFilter.enabled, let filter = Settings.upNextFilter() {
-            let upcomingEpisodes = (0 ..< queueCount).compactMap { queue.episodeAt(index: $0) }
-            let matchingUuids = filter.matchingEpisodeUuids(in: upcomingEpisodes)
-            guard let matchingIndex = upcomingEpisodes.firstIndex(where: { matchingUuids.contains($0.uuid) }) else {
-                FileLog.shared.addMessage("Play Next Episode: no queued episodes match the Up Next filter, stopping playback")
-                stopPlaybackKeepingQueue()
-                return
-            }
-            index = matchingIndex
-            FileLog.shared.addMessage("Play Next Episode with Up Next filter: playing episode \(index) out of \(queueCount)")
-        } else if FeatureFlag.upNextShuffle.enabled, queueCount > 1, Settings.upNextShuffleEnabled() {
+        if FeatureFlag.upNextShuffle.enabled, queueCount > 1, Settings.upNextShuffleEnabled() {
             index = Int.random(in: 0..<queueCount)
             FileLog.shared.addMessage("Play Next Episode with Shuffle enabled: playing episode \(index) out of \(queueCount)")
         }

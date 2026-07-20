@@ -53,7 +53,7 @@ class FolderListCell: ThemeableCollectionCell {
         folderPreview.populateFromAsync(folder: folder)
         folderPreview.backgroundColor = AppTheme.folderColor(colorInt: folder.color)
 
-        accessibilityLabel = folderPreview.accessibilityLabel
+        accessibilityLabel = [folderPreview.accessibilityLabel, badgeType.accessibilityDescription(count: folder.cachedUnreadCount)].compactMap { $0 }.joined(separator: ", ")
 
         let count = DataManager.sharedManager.countOfPodcastsInFolder(folder: folder)
         folderInfo.text = L10n.podcastCount(count)

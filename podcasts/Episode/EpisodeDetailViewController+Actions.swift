@@ -109,7 +109,14 @@ extension EpisodeDetailViewController {
                 DataManager.sharedManager.save(episode: episode)
                 updateProgress()
             }
-            PlaybackActionHelper.play(episode: episode, playlist: fromPlaylist)
+            if let storeUuid = playFromSessionStoreUuid,
+               let session = SessionStore.shared.session(forStore: storeUuid) {
+                // Opened from a session's lineup: play it there, so the session becomes the
+                // active one instead of the episode landing in the queue.
+                SessionManager.shared.play(episode: episode, in: session)
+            } else {
+                PlaybackActionHelper.play(episode: episode, playlist: fromPlaylist)
+            }
         }
     }
 

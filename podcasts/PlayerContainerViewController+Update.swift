@@ -27,11 +27,14 @@ extension PlayerContainerViewController {
         tabsView.themeDidChange()
 
         let shouldShowNotes = (playingEpisode is Episode)
+        // Fork: only surface Sessions when the playing episode is in at least one lineup.
+        let shouldShowSessions = (playingEpisode is Episode) && !SessionManager.shared.sessionsHolding(episodeUuids: [playingEpisode.uuid]).isEmpty
         let shouldShowChapters = PlaybackManager.shared.chapterCount() > 0
         let shouldShowBookmarks = true
 
         // check to see if the visible views are already configured correctly
         if shouldShowNotes == showingNotes,
+            shouldShowSessions == showingSessions,
             shouldShowChapters == showingChapters,
             shouldShowBookmarks == showingBookmarks {
             return
@@ -42,6 +45,10 @@ extension PlayerContainerViewController {
         showNotesItem.removeFromParent()
         showNotesItem.view.removeFromSuperview()
         showingNotes = false
+
+        sessionsItem.removeFromParent()
+        sessionsItem.view.removeFromSuperview()
+        showingSessions = false
 
         chaptersItem.removeFromParent()
         chaptersItem.view.removeFromSuperview()
@@ -67,6 +74,14 @@ extension PlayerContainerViewController {
             tabsView.tabs += [.chapters]
 
             addTab(chaptersItem, previousTab: &previousTab)
+        }
+
+        // Fork: Sessions sits after Chapters, before Bookmarks.
+        if shouldShowSessions {
+            showingSessions = true
+            tabsView.tabs += [.sessions]
+
+            addTab(sessionsItem, previousTab: &previousTab)
         }
 
         if shouldShowBookmarks {

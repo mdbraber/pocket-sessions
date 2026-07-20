@@ -27,16 +27,8 @@ extension CarPlaySceneDelegate {
             }
         }
 
-        // the podcast tab is always what CarPlay opens first, however it doesn't show the Now Playing tab unless something is actively playing
-        // so with that in mind if the user has something in Up Next and Pocket Casts is paused, help them find their now playing stuff by adding that as a section here
-        let upNextEpisodes = PlaybackManager.shared.allEpisodesInQueue(includeNowPlaying: true)
-        if !upNextEpisodes.isEmpty {
-            let truncatedList = Array(upNextEpisodes.prefix(8))
-            let imageRowItem = createUpNextImageItem(episodes: truncatedList)
-
-            podcastItems.insert(imageRowItem, at: 0)
-        }
-
+        // Fork: no Up Next row here — the Queue tab owns the now-playing surfaces, so this
+        // tab is purely the podcast/folder grid as a list.
         return [CPListSection(items: podcastItems)]
     }
 
@@ -84,12 +76,14 @@ extension CarPlaySceneDelegate {
         return [CPListSection(items: filterItems)]
     }
 
-    func createFiltersTab() -> CPListTemplate {
-        let title = L10n.playlists
-        return CarPlayListData.template(title: title, emptyTitle: L10n.watchNoFilters, image: UIImage(named: "car_tab_filters")) { [weak self] in
+    /// Fork: Playlists lives inside More now (the Queue tab has the tab slot), pushed as a
+    /// drill-in list.
+    func playlistsTapped() {
+        let template = CarPlayListData.template(title: L10n.playlists, emptyTitle: L10n.watchNoFilters) { [weak self] in
             guard let self else { return nil }
             return self.filterTabSections
         }
+        interfaceController?.push(template)
     }
 }
 
@@ -98,7 +92,15 @@ extension CarPlaySceneDelegate {
 extension CarPlaySceneDelegate {
     func createMoreTab() -> CPListTemplate {
         return CarPlayListData.staticTemplate(title: L10n.carplayMore, image: UIImage(named: "car_tab_more")) {
-            // Downloads now lives here rather than as its own tab (the Sessions tab took its slot).
+            // Fork: Playlists and Downloads live here rather than as their own tabs (the Queue
+            // tab took the slot).
+            let playlistsItem = CPListItem(text: L10n.playlists, detailText: nil, image: UIImage(named: "car_tab_filters"))
+            playlistsItem.accessoryType = .disclosureIndicator
+            playlistsItem.handler = { [weak self] _, completion in
+                self?.playlistsTapped()
+                completion()
+            }
+
             let downloadsItem = CPListItem(text: L10n.downloads, detailText: nil, image: UIImage(named: "car_tab_downloads"))
             downloadsItem.accessoryType = .disclosureIndicator
             downloadsItem.handler = { [weak self] _, completion in
@@ -120,7 +122,7 @@ extension CarPlaySceneDelegate {
                 completion()
             }
 
-            return [CPListSection(items: [downloadsItem, listeningHistoryItem, filesItem])]
+            return [CPListSection(items: [playlistsItem, downloadsItem, listeningHistoryItem, filesItem])]
         }
     }
 }

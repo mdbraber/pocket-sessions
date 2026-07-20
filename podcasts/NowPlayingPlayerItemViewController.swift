@@ -82,6 +82,23 @@ class NowPlayingPlayerItemViewController: PlayerItemViewController {
         }
     }
 
+    /// Fork: "Session · <name>" caption under the podcast name while a session (rather
+    /// than the Up Next queue) drives playback. Built programmatically — see
+    /// `setUpSessionCaption()` for how it slots into the XIB's constraints.
+    lazy var sessionCaptionLabel: ThemeableLabel = {
+        let label = ThemeableLabel()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.style = .playerContrast02
+        label.adjustsFontForContentSizeCategory = true
+        label.font = .font(ofSize: 12, weight: .medium, scalingWith: .footnote)
+        label.textAlignment = .center
+        label.isHidden = true
+        return label
+    }()
+
+    var sessionCaptionGap: NSLayoutConstraint?
+    var sessionCaptionZeroHeight: NSLayoutConstraint?
+
     @IBOutlet var chapterName: ThemeableLabel! {
         didSet {
 #if APPCLIP
@@ -246,6 +263,7 @@ class NowPlayingPlayerItemViewController: PlayerItemViewController {
         super.viewDidLoad()
 
         setUpArtworkImageView()
+        setUpSessionCaption()
 
         #if !APPCLIP
         let upNextPan = UIPanGestureRecognizer(target: self, action: #selector(panGestureRecognizerHandler(_:)))
@@ -399,6 +417,34 @@ class NowPlayingPlayerItemViewController: PlayerItemViewController {
             artwork.heightAnchor.constraint(lessThanOrEqualTo: episodeImage.heightAnchor),
             fillWidth,
             fillHeight,
+        ])
+    }
+
+    /// Fork: inserts the session caption directly below `podcastName`. The XIB pins the
+    /// centering container's bottom to `podcastName`'s bottom (ssQ-d5-cyr), so that pin is
+    /// re-routed through the caption: container.bottom follows the caption instead, and the
+    /// caption collapses to zero height (with no gap) when there's no active session.
+    private func setUpSessionCaption() {
+        guard let container = podcastName.superview else { return }
+
+        // Drop the XIB's container.bottom == podcastName.bottom pin.
+        container.constraints.first {
+            $0.firstItem === container && $0.firstAttribute == .bottom
+                && $0.secondItem === podcastName && $0.secondAttribute == .bottom
+        }?.isActive = false
+
+        container.addSubview(sessionCaptionLabel)
+
+        let gap = sessionCaptionLabel.topAnchor.constraint(equalTo: podcastName.bottomAnchor)
+        let zeroHeight = sessionCaptionLabel.heightAnchor.constraint(equalToConstant: 0)
+        sessionCaptionGap = gap
+        sessionCaptionZeroHeight = zeroHeight
+        NSLayoutConstraint.activate([
+            gap,
+            zeroHeight,
+            sessionCaptionLabel.leadingAnchor.constraint(equalTo: podcastName.leadingAnchor),
+            sessionCaptionLabel.trailingAnchor.constraint(equalTo: podcastName.trailingAnchor),
+            container.bottomAnchor.constraint(equalTo: sessionCaptionLabel.bottomAnchor)
         ])
     }
 

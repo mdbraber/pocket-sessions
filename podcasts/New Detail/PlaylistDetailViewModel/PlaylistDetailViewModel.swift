@@ -38,9 +38,8 @@ class PlaylistDetailViewModel: ObservableObject {
         }
     }
 
+    /// Pages open on Episodes; only explicit navigation (`pendingInitialTab`) opens the Session tab.
     @Published var selectedTriageTab: TriageTab = .browse
-    /// The opening tab is picked once per visit: Session when it has a lineup, else Episodes.
-    private var triageTabAutoSelected = false
     @Published private(set) var triageLineupCount = 0
     private(set) var triageLineupDuration: TimeInterval = 0
     private(set) var triageBrowseCount = 0
@@ -140,10 +139,16 @@ class PlaylistDetailViewModel: ObservableObject {
 
     /// Fork: smart playlist (lens) pages carry the same triage tabs — the lens itself
     /// is the feeder; its session's store lives elsewhere and may not exist yet.
-    var isLensPage: Bool { !isManualPlaylist }
+    /// A smart playlist that opted out of being a session playlist is NOT a lens page — it
+    /// renders as a plain smart playlist: no triage tabs, no Play Session, no session rows in
+    /// the ⋯ menu, and nothing here lazily creates a session for it.
+    var isLensPage: Bool { !isManualPlaylist && !Settings.playlistOptedOutOfSession(uuid: playlist.uuid) }
 
+    /// Nil once the playlist opts out of being a session playlist, even if a session still
+    /// exists from before — the page must show no trace of it. The session itself is untouched.
     var lensSession: Session? {
-        SessionStore.shared.session(forSmartPlaylistFeeder: playlist.uuid)
+        guard isLensPage else { return nil }
+        return SessionStore.shared.session(forSmartPlaylistFeeder: playlist.uuid)
     }
 
     /// The feeder used to compute lens-page offers before a session exists.
@@ -153,6 +158,13 @@ class PlaylistDetailViewModel: ObservableObject {
 
     /// Fork: pages showing the Inbox | Session | Episodes strip.
     var usesTriageTabs: Bool { session != nil || isLensPage }
+
+    /// Fork: the header's play button normally plays the SESSION lineup. A smart playlist that
+    /// opted out of being a session playlist has no session to play, so it reads (and behaves
+    /// as) stock Play All. Manual playlists are unaffected.
+    var playAllButtonTitle: String {
+        (!isManualPlaylist && !isLensPage) ? L10n.playAll : L10n.playlistPlayAsSession
+    }
 
     /// Every episode that belongs to any session's store — the "in a session" badge set. Memoized
     /// (see `SessionMembership`) so it isn't re-queried on every reload.
@@ -291,10 +303,8 @@ class PlaylistDetailViewModel: ObservableObject {
         self.onChange = onChange
         self.onButtonTapped = onButtonTapped
         // Fork: a one-shot initial tab set by navigation (e.g. Go to Session → Session tab).
-        // Consumed here so the usual auto-select doesn't override it.
         if let tab = Self.pendingInitialTab.removeValue(forKey: playlist.uuid) {
             selectedTriageTab = tab
-            triageTabAutoSelected = true
         }
         self.dataSource = makeSections(episodes: [])
     }
@@ -465,8 +475,8 @@ class PlaylistDetailViewModel: ObservableObject {
         let preferred: Session
         if let session {
             preferred = session
-        } else if isLensPage {
-            preferred = SessionManager.shared.findOrCreateSession(forSmartPlaylist: playlist)
+        } else if isLensPage, let lens = SessionManager.shared.findOrCreateSession(forSmartPlaylist: playlist) {
+            preferred = lens
         } else {
             addToLineup(episodeUuids: episodeUuids)
             return
@@ -479,10 +489,10 @@ class PlaylistDetailViewModel: ObservableObject {
     func addToLineup(episodeUuids: [String]) {
         guard !episodeUuids.isEmpty else { return }
         if let session {
-            SessionManager.shared.addToLineup(episodeUuids: episodeUuids, session: session)
-        } else if isLensPage {
-            let session = SessionManager.shared.findOrCreateSession(forSmartPlaylist: playlist)
-            SessionManager.shared.addToLineup(episodeUuids: episodeUuids, session: session)
+            // Explicit USER add — pinned, so the feeder's prune never removes it.
+            SessionManager.shared.addToLineup(episodeUuids: episodeUuids, session: session, pinning: true)
+        } else if isLensPage, let session = SessionManager.shared.findOrCreateSession(forSmartPlaylist: playlist) {
+            SessionManager.shared.addToLineup(episodeUuids: episodeUuids, session: session, pinning: true)
         } else {
             dataManager.insertIntoCustomOrder(episodeUuids: episodeUuids, for: playlist)
             // Linked adds: one mirrored hop into the queue when enabled.
@@ -502,10 +512,9 @@ class PlaylistDetailViewModel: ObservableObject {
             guard session.insertMode != insertMode.rawValue else { return }
             session.insertMode = insertMode.rawValue
             SessionStore.shared.upsert(session)
-        } else if isLensPage {
+        } else if isLensPage, var session = SessionManager.shared.findOrCreateSession(forSmartPlaylist: playlist) {
             // No fed session yet — create it so the choice sticks (same lazy
             // creation the Session tab does).
-            var session = SessionManager.shared.findOrCreateSession(forSmartPlaylist: playlist)
             session.insertMode = insertMode.rawValue
             SessionStore.shared.upsert(session)
         } else {
@@ -564,12 +573,6 @@ class PlaylistDetailViewModel: ObservableObject {
             thisSessionMemberUuids = Set(lineup.map { $0.episode.uuid })
             unseenUuidsForDisplay = InboxManager.shared.unseenUuids()
 
-            if !triageTabAutoSelected {
-                triageTabAutoSelected = true
-                // Land on the Session; an empty lineup lands on Episodes instead.
-                selectedTriageTab = lineup.isEmpty ? .browse : .lineup
-            }
-
             triageLineupCount = lineup.count
             triageLineupDuration = lineup.reduce(0.0) { $0 + max(0, $1.episode.duration - $1.episode.playedUpTo) }
 
@@ -625,12 +628,6 @@ class PlaylistDetailViewModel: ObservableObject {
             // so its in-session episodes all render as "other session".
             thisSessionMemberUuids = (lensSession != nil) ? Set(lineup.map { $0.episode.uuid }) : []
             unseenUuidsForDisplay = InboxManager.shared.unseenUuids()
-
-            if !triageTabAutoSelected {
-                triageTabAutoSelected = true
-                // Land on the Session; an empty lineup lands on Episodes instead.
-                selectedTriageTab = lineup.isEmpty ? .browse : .lineup
-            }
 
             triageLineupCount = lineup.count
             triageLineupDuration = lineup.reduce(0.0) { $0 + max(0, $1.episode.duration - $1.episode.playedUpTo) }

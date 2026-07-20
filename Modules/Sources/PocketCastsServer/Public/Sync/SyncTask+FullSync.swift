@@ -27,6 +27,18 @@ extension SyncTask {
             let matchedEpisodeUuids = Set(DataManager.sharedManager.playlistEpisodes(for: playlist).map { $0.uuid })
             addedEpisodes = serverEpisodes.filter { !matchedEpisodeUuids.contains($0.uuid) }
 
+            // Fork: a full sync wholesale-restores membership from the server, which for the
+            // Inbox (membership means "unseen") would resurrect every episode the user triaged
+            // away on this device while the server copy lagged. Filter the restore through the
+            // app's seen-ledger (injected — see ServerConfig.inboxSeenFilter). Other playlists
+            // are untouched.
+            if playlist.uuid == DataManager.inboxPlaylistUuid, let seenFilter = ServerConfig.shared.inboxSeenFilter {
+                let seen = seenFilter(Set(addedEpisodes.map(\.uuid)))
+                if !seen.isEmpty {
+                    addedEpisodes.removeAll { seen.contains($0.uuid) }
+                }
+            }
+
             let didAdd = DataManager.sharedManager.add(episodes: addedEpisodes, to: playlist)
             if !didAdd {
                 let playlistCount = DataManager.sharedManager.allPlaylistEpisodeCount(for: playlist, episodeUuidToAdd: nil, includingArchivedEpisodes: true)

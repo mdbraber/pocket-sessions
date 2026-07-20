@@ -344,8 +344,18 @@ extension SyncTask {
 
         let serverSet = Set(playlistItem.episodeOrder)
         let matchedEpisodes = DataManager.sharedManager.playlistEpisodes(for: playlist).map { $0.uuid }
-        let missingEpisodes = serverSet.subtracting(matchedEpisodes)
+        var missingEpisodes = serverSet.subtracting(matchedEpisodes)
         let episodesToDelete = Set(matchedEpisodes).subtracting(serverSet)
+
+        // Fork: the Inbox is membership-means-unseen, and playlist sync is last-writer-wins over
+        // the whole membership set — a lagging device re-uploads stale membership, and without
+        // this filter the "missing" set would resurrect episodes this device already triaged
+        // away. The app's seen-ledger (injected; SyncTask can't see app types) says which of the
+        // server-only uuids were deliberately removed; drop those from the re-add set. Non-Inbox
+        // playlists are untouched.
+        if playlist.uuid == DataManager.inboxPlaylistUuid, let seenFilter = ServerConfig.shared.inboxSeenFilter {
+            missingEpisodes.subtract(seenFilter(missingEpisodes))
+        }
 
         let addedEpisodes: [Episode] = missingEpisodes.compactMap { episode -> Episode? in
             let playlistEpisode = playlistItem.episodes.first(where: { $0.episode == episode })

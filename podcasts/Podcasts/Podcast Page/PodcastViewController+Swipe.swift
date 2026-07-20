@@ -17,7 +17,7 @@ extension PodcastViewController: SwipeTableViewCellDelegate, SwipeHandler {
                 let actions = SwipeActionsHelper.createLeftActionsForEpisode(episode, tableView: tableView, indexPath: indexPath, swipeHandler: self)
                 return actions.swipeKitActions()
             }
-            return TriageSwipes.leftActions(for: episode, inLocalSession: cachedSessionMemberUuids.contains(episode.uuid), addToSession: { [weak self] in
+            return TriageSwipes.leftActions(for: episode, inLocalSession: cachedSessionMemberUuids.contains(episode.uuid), presenting: self, source: swipeSource, addToSession: { [weak self] in
                 guard let self, let podcast = self.podcast else { return }
 
                 let session = SessionManager.shared.findOrCreateSession(forPodcast: podcast)

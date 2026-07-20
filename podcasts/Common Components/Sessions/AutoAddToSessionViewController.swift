@@ -70,7 +70,7 @@ class AutoAddToSessionViewController: PCViewController, UITableViewDelegate, UIT
 
         let cell = tableView.dequeueReusableCell(withIdentifier: podcastDisclosureCellId, for: indexPath) as! PodcastDisclosureCell
         let podcast = autoAddPodcasts[indexPath.row]
-        let mode = SessionStore.shared.session(forPodcast: podcast.uuid).flatMap { PlaylistInsertMode(rawValue: $0.insertMode) } ?? .afterLastInserted
+        let mode = SessionStore.shared.session(forPodcast: podcast.uuid).flatMap { PlaylistInsertMode(rawValue: $0.insertMode) } ?? .top
         cell.populate(from: podcast, secondaryText: mode.description)
 
         return cell
@@ -102,7 +102,7 @@ class AutoAddToSessionViewController: PCViewController, UITableViewDelegate, UIT
             }
         } else {
             let podcast = autoAddPodcasts[indexPath.row]
-            let options = OptionsPicker(title: L10n.playlistInsertModeSetting.localizedUppercase)
+            let options = OptionsPicker(title: L10n.sessionPositionHeading.localizedUppercase)
             for mode in PlaylistInsertMode.allCases {
                 addActionForPodcast(podcast: podcast, mode: mode, to: options)
             }
@@ -147,7 +147,7 @@ class AutoAddToSessionViewController: PCViewController, UITableViewDelegate, UIT
     }
 
     private func addActionForPodcast(podcast: Podcast, mode: PlaylistInsertMode, to: OptionsPicker) {
-        let currentMode = SessionStore.shared.session(forPodcast: podcast.uuid).flatMap { PlaylistInsertMode(rawValue: $0.insertMode) } ?? .afterLastInserted
+        let currentMode = SessionStore.shared.session(forPodcast: podcast.uuid).flatMap { PlaylistInsertMode(rawValue: $0.insertMode) } ?? .top
         let action = OptionAction(label: mode.description, selected: currentMode == mode) { [weak self] in
             guard var session = SessionStore.shared.session(forPodcast: podcast.uuid) else { return }
             session.insertMode = mode.rawValue

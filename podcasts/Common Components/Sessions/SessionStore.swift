@@ -29,11 +29,19 @@ struct Session: Codable, Equatable, Identifiable {
 
     // Settings (defaults chosen at creation; all locally owned).
     var autoAdd: Bool = false
-    var insertMode: Int32 = PlaylistInsertMode.afterLastInserted.rawValue
+    /// Fill mode: true (Automatic) lets feeders gather covered episodes into the lineup;
+    /// false (Manual) means episodes join ONLY via explicit user adds.
+    var autoFill: Bool = true
+    var insertMode: Int32 = PlaylistInsertMode.top.rawValue
     var lastInsertedUuid: String = ""
     /// When the session was last the active playback session — the Switch Session
     /// sheet orders by it, latest first.
     var lastUsed: Date? = nil
+    /// Episodes the USER explicitly added to this lineup ("Add to Session" and friends).
+    /// The feeder's prune (`reconcileStoreToFeeder`) never removes a pinned member —
+    /// only gathered members stay prunable. Pins never outlive membership: leaving the
+    /// lineup unpins, so a later re-gather behaves normally.
+    var pinnedEpisodeUuids: [String] = []
 
     var id: String { uuid }
 
@@ -42,21 +50,25 @@ struct Session: Codable, Equatable, Identifiable {
         storePlaylistUuid: String? = nil,
         feeder: SessionFeeder,
         autoAdd: Bool = false,
-        insertMode: Int32 = PlaylistInsertMode.afterLastInserted.rawValue,
+        autoFill: Bool = true,
+        insertMode: Int32 = PlaylistInsertMode.top.rawValue,
         lastInsertedUuid: String = "",
-        lastUsed: Date? = nil
+        lastUsed: Date? = nil,
+        pinnedEpisodeUuids: [String] = []
     ) {
         self.uuid = uuid
         self.storePlaylistUuid = storePlaylistUuid
         self.feeder = feeder
         self.autoAdd = autoAdd
+        self.autoFill = autoFill
         self.insertMode = insertMode
         self.lastInsertedUuid = lastInsertedUuid
         self.lastUsed = lastUsed
+        self.pinnedEpisodeUuids = pinnedEpisodeUuids
     }
 
     enum CodingKeys: String, CodingKey {
-        case uuid, storePlaylistUuid, feeder, autoAdd, insertMode, lastInsertedUuid, lastUsed
+        case uuid, storePlaylistUuid, feeder, autoAdd, autoFill, insertMode, lastInsertedUuid, lastUsed, pinnedEpisodeUuids
     }
 
     // CRITICAL: same rule as Document.init(from:) — decode every defaulted key with
@@ -72,9 +84,11 @@ struct Session: Codable, Equatable, Identifiable {
         feeder = try c.decode(SessionFeeder.self, forKey: .feeder)
         storePlaylistUuid = try c.decodeIfPresent(String.self, forKey: .storePlaylistUuid)
         autoAdd = try c.decodeIfPresent(Bool.self, forKey: .autoAdd) ?? false
-        insertMode = try c.decodeIfPresent(Int32.self, forKey: .insertMode) ?? PlaylistInsertMode.afterLastInserted.rawValue
+        autoFill = try c.decodeIfPresent(Bool.self, forKey: .autoFill) ?? true
+        insertMode = try c.decodeIfPresent(Int32.self, forKey: .insertMode) ?? PlaylistInsertMode.top.rawValue
         lastInsertedUuid = try c.decodeIfPresent(String.self, forKey: .lastInsertedUuid) ?? ""
         lastUsed = try c.decodeIfPresent(Date.self, forKey: .lastUsed)
+        pinnedEpisodeUuids = try c.decodeIfPresent([String].self, forKey: .pinnedEpisodeUuids) ?? []
     }
 }
 
@@ -228,6 +242,36 @@ final class SessionStore {
         upsert(session)
     }
 
+    /// Persists the fill mode for a session — Automatic (feeders gather covered
+    /// episodes) vs Manual (episodes join only via explicit user adds).
+    func setAutoFill(_ autoFill: Bool, for sessionUuid: String) {
+        guard var session = session(uuid: sessionUuid), session.autoFill != autoFill else { return }
+        session.autoFill = autoFill
+        upsert(session)
+    }
+
+    /// Pins episodes in a session — a pin marks an explicit USER add, which the
+    /// feeder's prune (`reconcileStoreToFeeder`) must never remove. No-op when every
+    /// uuid is already pinned.
+    func pin(episodeUuids: [String], for sessionUuid: String) {
+        guard var session = session(uuid: sessionUuid) else { return }
+        let toAdd = episodeUuids.filter { !session.pinnedEpisodeUuids.contains($0) }
+        guard !toAdd.isEmpty else { return }
+        session.pinnedEpisodeUuids.append(contentsOf: toAdd)
+        upsert(session)
+    }
+
+    /// Unpins episodes — called whenever members leave a lineup, so pins never
+    /// outlive membership and a later re-gather behaves normally. No-op when none
+    /// of the uuids are pinned.
+    func unpin(episodeUuids: [String], for sessionUuid: String) {
+        guard var session = session(uuid: sessionUuid), !session.pinnedEpisodeUuids.isEmpty else { return }
+        let remaining = session.pinnedEpisodeUuids.filter { !episodeUuids.contains($0) }
+        guard remaining.count != session.pinnedEpisodeUuids.count else { return }
+        session.pinnedEpisodeUuids = remaining
+        upsert(session)
+    }
+
     /// Removes the session row. The store playlist and any feeder playlist are the
     /// caller's to delete (they're real synced objects).
     func delete(sessionUuid: String) {
@@ -253,7 +297,7 @@ final class SessionStore {
                 handler(SessionStoreSnapshot(document: old), SessionStoreSnapshot(document: document))
             }
         }
-        NotificationCenter.postOnMainThread(notification: Self.changed)
+        NotificationCenter.postChangedWithoutBlocking(Self.changed)
     }
 
     /// Applies a remote change without echoing it back into the sync engine.
@@ -280,5 +324,20 @@ final class SessionStore {
     private func save() {
         guard let data = try? JSONEncoder().encode(document) else { return }
         try? data.write(to: fileURL, options: .atomic)
+    }
+}
+
+extension NotificationCenter {
+    /// Posts a store-changed notification on the main thread WITHOUT ever blocking on it.
+    /// The fork's document stores mutate during their own singleton init (e.g. seeding), and
+    /// `postOnMainThread`'s off-main `DispatchQueue.main.sync` then deadlocks against any
+    /// main-thread touch of the same `shared` static — a 0x8BADF00D watchdog kill. Observers
+    /// of these notifications only refresh UI, so async delivery loses nothing.
+    static func postChangedWithoutBlocking(_ name: Notification.Name) {
+        if Thread.isMainThread {
+            NotificationCenter.default.post(name: name, object: nil)
+        } else {
+            DispatchQueue.main.async { NotificationCenter.default.post(name: name, object: nil) }
+        }
     }
 }

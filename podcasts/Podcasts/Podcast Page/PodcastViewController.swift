@@ -520,17 +520,6 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
         addCustomObserver(Constants.Notifications.episodePlayStatusChanged, selector: #selector(refreshEpisodes))
         addCustomObserver(SessionStore.changed, selector: #selector(refreshEpisodes))
 
-        if let pending = SessionManager.pendingSessionLanding, pending == podcast?.uuid {
-            SessionManager.pendingSessionLanding = nil
-            showSession()
-        } else if !hasAppearedAlready, let podcast,
-                  let session = SessionStore.shared.session(forPodcast: podcast.uuid),
-                  !SessionFeederEngine.storeMemberUuids(for: session).isEmpty {
-            // Opening a podcast lands on its Session; an empty (or absent) lineup
-            // lands on Episodes as before.
-            showSession()
-        }
-
         if featuredPodcast, !hasAppearedAlready {
             Analytics.track(.discoverFeaturedPodcastTapped, properties: ["uuid": podcastUUID])
             AnalyticsHelper.openedFeaturedPodcast()
@@ -584,8 +573,22 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
 
-        episodesTable.contentInset.bottom = Constants.effectiveMiniPlayerOffset + (isMultiSelectEnabled ? 80 : 0)
+        episodesTable.contentInset.bottom = miniPlayerClearance() + (isMultiSelectEnabled ? 80 : 0)
         episodesTable.verticalScrollIndicatorInsets.bottom = episodesTable.contentInset.bottom
+    }
+
+    /// Fork: bottom clearance for the now-playing pill. Under Liquid Glass the pill is a
+    /// UITabAccessory that is supposed to ride the bottom safe area, but on this screen it
+    /// doesn't always reach the table — so measure the pill's actual overlap with the table
+    /// and top up exactly the part the safe area misses (zero when it's already covered,
+    /// so this can never double-pad).
+    private func miniPlayerClearance() -> CGFloat {
+        guard LiquidGlass.isEnabled else { return Constants.effectiveMiniPlayerOffset }
+        guard let pill = appDelegate()?.miniPlayer()?.view, pill.window != nil,
+              let container = episodesTable.superview else { return 0 }
+        let pillFrame = container.convert(pill.bounds, from: pill)
+        let overlap = episodesTable.frame.maxY - pillFrame.minY
+        return max(0, overlap - episodesTable.safeAreaInsets.bottom)
     }
 
     override var preferredStatusBarStyle: UIStatusBarStyle {
@@ -1266,7 +1269,8 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
     private func playGroupAsSession(_ group: [ListEpisode]) {
         guard let podcast, let first = group.first?.episode else { return }
         let session = SessionManager.shared.findOrCreateSession(forPodcast: podcast)
-        SessionManager.shared.addToLineup(episodeUuids: group.map { $0.episode.uuid }, session: session)
+        // Explicit USER add — pinned, so the feeder's prune never removes it.
+        SessionManager.shared.addToLineup(episodeUuids: group.map { $0.episode.uuid }, session: session, pinning: true)
         SessionManager.shared.play(episode: first, in: session)
     }
 
@@ -1282,7 +1286,8 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
     private func replaceSessionWithGroup(_ group: [ListEpisode]) {
         guard let podcast, !group.isEmpty else { return }
         let session = SessionManager.shared.findOrCreateSession(forPodcast: podcast)
-        SessionManager.shared.replaceLineup(episodeUuids: group.map { $0.episode.uuid }, session: session)
+        // Explicit USER choice — the new lineup is pinned against the feeder's prune.
+        SessionManager.shared.replaceLineup(episodeUuids: group.map { $0.episode.uuid }, session: session, pinning: true)
     }
 
     private func downloadAction(for group: [ListEpisode], season: Int?) -> OptionAction? {

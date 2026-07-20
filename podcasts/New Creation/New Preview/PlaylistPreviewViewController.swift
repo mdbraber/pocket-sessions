@@ -239,6 +239,10 @@ class PlaylistPreviewViewController: PCViewController {
         delegate?.filterCreated(newFilter: viewModel.newPlaylist)
         NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged, object: viewModel.newPlaylist)
 
+        // Fork: if the new filter matches episodes already shelved in sessions, its session
+        // springs into being and inherits them (the reconciler keeps it mirrored from here).
+        SessionManager.shared.adoptNewSmartPlaylist(viewModel.newPlaylist)
+
         if Settings.firstTimePlaylistCreated {
             Settings.shouldShowDragAndDropTip = true
         }

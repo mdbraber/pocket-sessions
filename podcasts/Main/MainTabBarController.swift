@@ -13,6 +13,7 @@ class MainTabBarController: UITabBarController, NavigationProtocol, UIGestureRec
         true
     }
 
+    // .discover never becomes a tab (Discover lives under Profile) but the case stays for exhaustive switches elsewhere.
     enum Tab: Int { case podcasts, filter, discover, profile, upNext, inbox }
 
     var pcTabs = [Tab]()
@@ -102,14 +103,8 @@ class MainTabBarController: UITabBarController, NavigationProtocol, UIGestureRec
 
         fixTarBarTraitCollectionOnIpadForiOS18()
 
-        // Fork: two independent axes — the layout flag decides whether Discover is a
-        // tab (custom layout parks it under Profile), and the inbox flag decides
-        // whether the global Inbox leads the bar, in either layout.
-        var tabs: [Tab] = FeatureFlag.customTabBar.enabled
-            ? [.podcasts, .filter, .upNext, .profile]
-            : [.podcasts, .filter, .discover, .upNext, .profile]
-        tabs.insert(.inbox, at: 0)
-        pcTabs = tabs
+        // Fork tab bar: the global Inbox leads; Discover is parked under Profile.
+        pcTabs = [.inbox, .podcasts, .filter, .upNext, .profile]
 
         // Fork: long-pressing the Up Next/Session tab offers the Switch Session sheet.
         let longPress = UILongPressGestureRecognizer(target: self, action: #selector(upNextTabLongPressed(_:)))
@@ -131,23 +126,12 @@ class MainTabBarController: UITabBarController, NavigationProtocol, UIGestureRec
         let filtersViewController = PlaylistsViewController()
         filtersViewController.tabBarItem = UITabBarItem(title: L10n.playlists, image: UIImage(named: "playlists_tab"), tag: pcTabs.firstIndex(of: .filter)!)
 
-        var discoverViewController: UIViewController?
-        if let discoverIndex = pcTabs.firstIndex(of: .discover) {
-            let discover = DiscoverCollectionViewController(coordinator: DiscoverCoordinator())
-            discover.tabBarItem = UITabBarItem(title: L10n.discover, image: UIImage(named: "discover_tab"), tag: discoverIndex)
-            discoverViewController = discover
-        }
-
         let profileViewController = ProfileViewController()
         profileViewController.tabBarItem = profileTabBarItem
 
         let upNextViewController = UpNextViewController(source: .tabBar, showingInTab: true)
         upNextViewController.tabBarItem = upNextTabBarItem
-        vcsInTab.append(contentsOf: [podcastsController, filtersViewController])
-        if let discoverViewController {
-            vcsInTab.append(discoverViewController)
-        }
-        vcsInTab.append(contentsOf: [upNextViewController, profileViewController])
+        vcsInTab.append(contentsOf: [podcastsController, filtersViewController, upNextViewController, profileViewController])
 
         displayEndOfYearBadgeIfNeeded()
 
@@ -188,7 +172,6 @@ class MainTabBarController: UITabBarController, NavigationProtocol, UIGestureRec
         NotificationCenter.default.addObserver(self, selector: #selector(refreshUpNextTabBadge), name: Constants.Notifications.upNextQueueChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(refreshUpNextTabBadge), name: Constants.Notifications.upNextEpisodeRemoved, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(refreshUpNextTabBadge), name: Constants.Notifications.playbackTrackChanged, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(refreshUpNextTabBadge), name: Constants.Notifications.upNextFilterChanged, object: nil)
         // The tab mirrors the active session (title + count), so session and playlist
         // changes both redraw it.
         NotificationCenter.default.addObserver(self, selector: #selector(refreshUpNextTabBadge), name: Constants.Notifications.playbackSessionChanged, object: nil)
@@ -363,7 +346,8 @@ class MainTabBarController: UITabBarController, NavigationProtocol, UIGestureRec
                 let count = InboxManager.shared.unseenCount()
                 DispatchQueue.main.async {
                     guard let self, let index = self.pcTabs.firstIndex(of: .inbox), let items = self.tabBar.items, let item = items[safe: index] else { return }
-                    item.badgeValue = count > 0 ? "\(count)" : nil
+                    // Same 99 cap as the podcast grid badges.
+                    item.badgeValue = count > 0 ? (count > 99 ? "99+" : "\(count)") : nil
                 }
             }
         }
@@ -1351,12 +1335,9 @@ extension MainTabBarController {
         guard #available(iOS 26.0, *) else { return }
 
         // Clamping lives in `composeUpNextTabImage`; track the true count here.
-        // With an Up Next filter active, count only the episodes that will play.
         let count: Int
         if let activeSession {
             count = activeSession.remainingEpisodes(excluding: nil).count
-        } else if FeatureFlag.upNextFilter.enabled, let filter = Settings.upNextFilter() {
-            count = filter.matchingEpisodeUuids(in: PlaybackManager.shared.queue.allEpisodes(includeNowPlaying: false)).count
         } else {
             count = PlaybackManager.shared.queue.upNextCount()
         }
