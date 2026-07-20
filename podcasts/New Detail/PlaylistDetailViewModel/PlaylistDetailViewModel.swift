@@ -617,8 +617,13 @@ class PlaylistDetailViewModel: ObservableObject {
             var lineup = [ListEpisode]()
             if let real = lensSession, let storeUuid = real.storePlaylistUuid,
                let store = DataManager.sharedManager.findPlaylist(uuid: storeUuid) {
+                // Finished episodes have left the session as far as playback and the session
+                // chooser are concerned ("N episodes · time left" counts what's still to
+                // play), so the tab must not count or list them either — a store that
+                // accumulated members historically would otherwise read in the thousands.
                 lineup = DataManager.sharedManager.positionedEpisodeUuids(for: store)
                     .compactMap { DataManager.sharedManager.findEpisode(uuid: $0) }
+                    .filter { !$0.played() }
                     .map { ListEpisode(episode: $0, tintColor: tint) }
             }
             let browse = episodes
