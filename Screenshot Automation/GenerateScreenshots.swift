@@ -221,10 +221,25 @@ final class ForkScreenshots: XCTestCase {
     /// so try the stock smart playlists first and otherwise take the first row that isn't
     /// the Inbox (which is a manual playlist and has no Play Session button).
     private func openSmartPlaylist() {
-        for name in ["Starred", "In Progress", "New Releases"] {
-            let row = element(labeled: name)
-            if row.exists {
-                row.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        // The Playlists tab restores its last-viewed DETAIL page on the nav stack, so it can
+        // land on a pushed playlist rather than the list. Pop back to the list first —
+        // otherwise the named-row match below never finds anything and the fallback captures
+        // whatever detail was restored.
+        for _ in 0 ..< 4 {
+            let back = app.buttons["Back"]
+            if back.exists, back.isHittable { back.tap(); sleep(1) } else { break }
+        }
+
+        // Prefer a genuinely small smart playlist so the Session count reads cleanly in the
+        // README. Match the row by its label PREFIX (the cell text is "<Name>, Smart
+        // playlist") and tap the static text itself — resolving `element(labeled:)` to a
+        // zero-size ancestor was why this used to fall through and open a huge playlist.
+        for name in ["Starred", "In Progress"] {
+            let label = app.staticTexts.matching(
+                NSPredicate(format: "label BEGINSWITH[c] %@", name + ",")
+            ).firstMatch
+            if label.waitForExistence(timeout: 5) {
+                label.tap()
                 return
             }
         }
@@ -257,10 +272,10 @@ final class ForkScreenshots: XCTestCase {
         sleep(2)
         snapshot("session-in-up-next")
 
-        // 3. The Switch Session sheet, off the Up Next tab's left nav button.
-        let switchButton = app.navigationBars.buttons["Switch"]
-        XCTAssert(switchButton.waitForExistence(timeout: 10), "Missing Switch button")
-        switchButton.tap()
+        // 3. The Switch Session sheet. There is no nav-bar Switch button any more (the
+        // chooser replaced it) — the sheet lives behind a long press on the Up Next /
+        // Session tab bar item.
+        app.tabBars.firstMatch.buttons.element(boundBy: ForkTab.upNext.rawValue).press(forDuration: 1.2)
         sleep(2)
         snapshot("switch-session")
         app.swipeDown(velocity: .fast)
