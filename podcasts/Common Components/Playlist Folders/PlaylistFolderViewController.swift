@@ -60,6 +60,7 @@ class PlaylistFolderViewController: PCViewController, UITableViewDataSource, UIT
             var playlists = PlaylistFolderManager.shared.playlists(inFolder: self.folderUuid)
             // The Playlists world's Session Playlists preferences apply inside folders too.
             playlists = playlists.filter { SessionManager.shared.sessionStoreVisible(playlistUuid: $0.uuid) }
+                .filter { !SessionManager.shared.storeHasVisibleSmartFeeder(playlistUuid: $0.uuid) }
                 .filter { !Settings.hideEmptySessions() || !SessionManager.shared.sessionIsEmpty(storePlaylistUuid: $0.uuid) }
             if LibrarySort(rawValue: Int32(UserDefaults.standard.integer(forKey: "SJPlaylistsSortOrder"))) == .titleAtoZ {
                 playlists.sort { $0.playlistName.localizedCaseInsensitiveCompare($1.playlistName) == .orderedAscending }

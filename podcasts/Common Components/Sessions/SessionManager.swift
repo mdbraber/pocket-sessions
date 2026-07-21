@@ -888,6 +888,18 @@ class SessionManager {
         return PlaybackSession(type: .playlist, uuid: storePlaylistUuid).orderedEpisodes().allSatisfy { $0.played() }
     }
 
+    /// Whether this playlist is the STORE of a smart-playlist session whose feeder is the user's
+    /// own VISIBLE smart playlist. That smart playlist is already the Playlists-tab entry and opens
+    /// the session, so its store is a redundant second row to hide *there* — the chooser still lists
+    /// the session via the store. A converted lens (feeder is a hidden "— feed" copy) returns false:
+    /// its store is the only entry and must stay.
+    func storeHasVisibleSmartFeeder(playlistUuid: String) -> Bool {
+        guard let session = SessionStore.shared.session(forStore: playlistUuid),
+              case .smartPlaylist(let feederUuid) = session.feeder,
+              let feeder = DataManager.sharedManager.findPlaylist(uuid: feederUuid) else { return false }
+        return !feeder.playlistName.hasSuffix(" — feed")
+    }
+
     // MARK: - Insert marker
 
     /// Whether a playlist should appear in the Playlists tab given the "Session Playlists" settings.

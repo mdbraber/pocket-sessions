@@ -322,6 +322,9 @@ class PlaylistsViewController: PCViewController, FilterCreatedDelegate {
         let playlists = DataManager.sharedManager.allPlaylists(includeDeleted: false)
             .filter { PlaylistFolderManager.shared.folderUuid(forPlaylist: $0.uuid) == nil && !feederUuids.contains($0.uuid) }
             .filter { SessionManager.shared.sessionStoreVisible(playlistUuid: $0.uuid) }
+            // A smart-playlist session's store is redundant with its visible smart playlist (which
+            // opens the session) — show only the smart playlist, not both.
+            .filter { !SessionManager.shared.storeHasVisibleSmartFeeder(playlistUuid: $0.uuid) }
             .filter { !Settings.hideEmptySessions() || !SessionManager.shared.sessionIsEmpty(storePlaylistUuid: $0.uuid) }
 
         let items: [PlaylistGridItem]
@@ -431,6 +434,7 @@ class PlaylistsViewController: PCViewController, FilterCreatedDelegate {
             var playlistRows = DataManager.sharedManager.allPlaylists(includeDeleted: false)
                 .filter { PlaylistFolderManager.shared.folderUuid(forPlaylist: $0.uuid) == nil && !feederUuids.contains($0.uuid) }
                 .filter { SessionManager.shared.sessionStoreVisible(playlistUuid: $0.uuid) }
+                .filter { !SessionManager.shared.storeHasVisibleSmartFeeder(playlistUuid: $0.uuid) }
                 .filter { !Settings.hideEmptySessions() || !SessionManager.shared.sessionIsEmpty(storePlaylistUuid: $0.uuid) }
                 .map { ListPlaylist(playlist: $0) }
             // Fork: fold the legacy folders-first/playlists-first split into one shared
