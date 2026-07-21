@@ -246,29 +246,38 @@ class SessionManager {
         let podcasts = DataManager.sharedManager.allPodcasts(includeUnsubscribed: false)
         var filed = false
 
-        // Folder-selected podcasts: session filed into a playlist folder with the folder's name.
-        let podcastFolders = DataManager.sharedManager.allFolders(includeDeleted: false).filter { selectedFolders.contains($0.uuid) }
-        for podcastFolder in podcastFolders {
-            let playlistFolder = PlaylistFolderManager.shared.allFolders().first { $0.name == podcastFolder.name }
-                ?? PlaylistFolderManager.shared.createFolder(name: podcastFolder.name, color: podcastFolder.color, playlistUuids: [])
-            for podcast in podcasts where podcast.folderUuid == podcastFolder.uuid {
-                let session = findOrCreateSession(forPodcast: podcast) // empty, auto-add off by default
-                guard let storeUuid = session.storePlaylistUuid else { continue }
-                if PlaylistFolderManager.shared.folderUuid(forPlaylist: storeUuid) != playlistFolder.uuid {
-                    PlaylistFolderManager.shared.setFolder(playlistFolder.uuid, forPlaylist: storeUuid)
-                    filed = true
-                }
+        for podcast in podcasts {
+            let inSelectedFolder = podcast.folderUuid.map(selectedFolders.contains) ?? false
+            guard inSelectedFolder || selectedPodcasts.contains(podcast.uuid) else { continue }
+            // empty, auto-add off by default; folder-covered ones are filed into the mirroring
+            // Playlists folder (individually-selected podcasts with no selected folder stay ungrouped).
+            let session = SessionStore.shared.session(forPodcast: podcast.uuid)
+                ?? createSession(name: podcast.title ?? L10n.filtersDefaultNewFilter, feeder: .podcast(uuid: podcast.uuid))
+            if let storeUuid = session.storePlaylistUuid, fileFolderScopedPodcastSession(podcast: podcast, storeUuid: storeUuid) {
+                filed = true
             }
-        }
-
-        // Individually-selected podcasts: just ensure the session exists (left ungrouped).
-        for podcast in podcasts where selectedPodcasts.contains(podcast.uuid) {
-            _ = findOrCreateSession(forPodcast: podcast)
         }
 
         if filed {
             NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged)
         }
+    }
+
+    /// Files a per-podcast session's store into the Playlists folder that mirrors the podcast's own
+    /// library folder, when that folder is a selected Session-Playlists folder — so the session lives
+    /// inside e.g. "Series" (where the podcast lives in the Podcasts tab) instead of sitting at the
+    /// Playlists top level looking like a stray. No-op (false) when the podcast has no selected folder
+    /// or the store is already filed there; returns true when it actually moved the store.
+    @discardableResult
+    func fileFolderScopedPodcastSession(podcast: Podcast, storeUuid: String) -> Bool {
+        guard let podcastFolderUuid = podcast.folderUuid,
+              Settings.showPodcastSessionFolders().contains(podcastFolderUuid),
+              let podcastFolder = DataManager.sharedManager.findFolder(uuid: podcastFolderUuid) else { return false }
+        let playlistFolder = PlaylistFolderManager.shared.allFolders().first { $0.name == podcastFolder.name }
+            ?? PlaylistFolderManager.shared.createFolder(name: podcastFolder.name, color: podcastFolder.color, playlistUuids: [])
+        guard PlaylistFolderManager.shared.folderUuid(forPlaylist: storeUuid) != playlistFolder.uuid else { return false }
+        PlaylistFolderManager.shared.setFolder(playlistFolder.uuid, forPlaylist: storeUuid)
+        return true
     }
 
     @objc private func podcastDeleted(_ notification: Notification) {
@@ -311,8 +320,14 @@ class SessionManager {
 
     /// The session for a podcast, created on first use (feeder = the podcast itself).
     func findOrCreateSession(forPodcast podcast: Podcast, seedEpisodeUuids: [String] = []) -> Session {
-        if let existing = SessionStore.shared.session(forPodcast: podcast.uuid) { return existing }
-        return createSession(name: podcast.title ?? L10n.filtersDefaultNewFilter, feeder: .podcast(uuid: podcast.uuid), seedEpisodeUuids: seedEpisodeUuids)
+        let session = SessionStore.shared.session(forPodcast: podcast.uuid)
+            ?? createSession(name: podcast.title ?? L10n.filtersDefaultNewFilter, feeder: .podcast(uuid: podcast.uuid), seedEpisodeUuids: seedEpisodeUuids)
+        // Mirror the podcast's folder immediately (even for sessions first created by playback or an
+        // "Add to Session"), so a folder-covered session never surfaces stray at the Playlists top level.
+        if let storeUuid = session.storePlaylistUuid, fileFolderScopedPodcastSession(podcast: podcast, storeUuid: storeUuid) {
+            NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged)
+        }
+        return session
     }
 
     /// Deletes the session, its store playlist, and (for rule sessions) its feeder playlist.
