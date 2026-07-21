@@ -117,11 +117,10 @@ enum SessionListRows {
     /// Visibility: the global Inbox is excluded (it has no store and isn't a lineup you
     /// play), as is any session whose store playlist is missing/deleted, and any session
     /// whose store is one of `SessionStore.feederPlaylistUuids` (the hidden "— feed"
-    /// machinery the Playlists tab also filters out). The "Session Playlists" settings
-    /// (`SessionManager.sessionStoreVisible`) are deliberately NOT applied: those govern
-    /// whether a session's store also shows up in the *Playlists* tab, and honouring them
-    /// here would make an existing session unreachable from the only screen that lists
-    /// sessions.
+    /// machinery the Playlists tab also filters out). The "Session Playlists" selection
+    /// (`SessionManager.sessionStoreVisible`) IS applied — the chooser's ⋯ opens that same
+    /// sheet, so it's one setting governing both surfaces — except that the active session
+    /// stays reachable even when deselected, so playback is never stranded.
     ///
     /// `sort` and `filters` default to the user's chooser preferences, which is what the
     /// Up Next tab wants; the Switch Session sheet passes `.recentlyPlayed` / `.unfiltered`
@@ -132,6 +131,7 @@ enum SessionListRows {
         let activeUuid = Settings.playbackSession()?.uuid
         let sessionPaused = Settings.playbackSessionPaused()
         let resumeUuid = Settings.playbackSessionLastEpisodeUuid()
+        let hideEmpty = Settings.hideEmptySessions()
         let feederUuids = SessionStore.shared.feederPlaylistUuids
 
         let sessions = SessionStore.shared.sessions
@@ -147,11 +147,18 @@ enum SessionListRows {
             else { return nil }
 
             let isActive = activeUuid == storeUuid
+            // Fork: honour the "Show Session Playlists" selection here too — the chooser's ⋯ opens
+            // that same sheet, so a deselected session must not appear here. The ACTIVE session is
+            // always kept reachable (you're playing it) even if its store is deselected.
+            if !isActive, !SessionManager.shared.sessionStoreVisible(playlistUuid: storeUuid) { return nil }
             // Exactly what playback reads: the store, in its own order.
             let ordered = PlaybackSession(type: .playlist, uuid: storeUuid).orderedEpisodes()
             // Episodes only leave a session when they finish — the same rule
             // `PlaybackSession.remainingEpisodes` uses.
             let remaining = ordered.filter { !$0.played() }
+
+            // Fork: "Hide empty sessions" — nothing left to play. The active session stays put.
+            if !isActive, hideEmpty, remaining.isEmpty { return nil }
 
             // The next episode is what playback would pick: the first unfinished episode,
             // except that the ACTIVE session resumes at its last-played episode while that
@@ -246,9 +253,14 @@ enum SessionListRows {
     /// decide whether the sort/filter controls are worth showing, so it applies the same
     /// visibility guards as `current()` but skips reading any lineup.
     static func unfilteredCount() -> Int {
+        // Counts the RAW set (only the permanent structural guards — inbox, hidden feeder store,
+        // missing store, per-playlist opt-out). The reversible sheet selections (sessionStoreVisible,
+        // hide-empty) are NOT applied: this decides whether the ⋯ control shows, and that control is
+        // exactly what re-opens the sheet — so a full deselection must never remove it.
         let feederUuids = SessionStore.shared.feederPlaylistUuids
         return SessionStore.shared.sessions.filter { session in
             session.uuid != SessionStore.globalInboxUuid
+                && !SessionManager.isOptedOut(feeder: session.feeder)
                 && session.storePlaylistUuid.map { !feederUuids.contains($0) && DataManager.sharedManager.findPlaylist(uuid: $0) != nil } == true
         }.count
     }

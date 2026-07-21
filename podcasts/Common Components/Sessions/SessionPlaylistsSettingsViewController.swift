@@ -9,7 +9,7 @@ import UIKit
 class SessionPlaylistsSettingsViewController: PCViewController, UITableViewDataSource, UITableViewDelegate {
     private static let cellId = "SessionPlaylistsCell"
 
-    private enum Row { case manual, smart, folder(Folder), podcast(Podcast) }
+    private enum Row { case hideEmpty, manual, smart, folder(Folder), podcast(Podcast) }
 
     private let onChange: () -> Void
     private let settingsTable = UITableView(frame: .zero, style: .plain)
@@ -33,7 +33,7 @@ class SessionPlaylistsSettingsViewController: PCViewController, UITableViewDataS
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     private var sections: [(header: String?, rows: [Row])] {
-        var result: [(String?, [Row])] = [(nil, [.manual, .smart])]
+        var result: [(String?, [Row])] = [(nil, [.hideEmpty]), (nil, [.manual, .smart])]
         if !folders.isEmpty { result.append((L10n.sessionPlaylistsFolders, folders.map { Row.folder($0) })) }
         result.append((L10n.sessionPlaylistsPodcasts, podcasts.map { Row.podcast($0) }))
         return result.map { (header: $0.0, rows: $0.1) }
@@ -72,6 +72,9 @@ class SessionPlaylistsSettingsViewController: PCViewController, UITableViewDataS
 
         let content: SessionPickerRow
         switch sections[indexPath.section].rows[indexPath.row] {
+        case .hideEmpty:
+            // A view filter, not a session — the tick reads as "empty sessions are hidden".
+            content = SessionPickerRow(label: L10n.sessionShowHideEmpty, selected: Settings.hideEmptySessions(), artwork: .none, dimmed: false)
         case .manual:
             content = SessionPickerRow(label: L10n.sessionPlaylistsManual, selected: Settings.showManualSessions(), artwork: .none, dimmed: false)
         case .smart:
@@ -90,6 +93,9 @@ class SessionPlaylistsSettingsViewController: PCViewController, UITableViewDataS
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: false)
         switch sections[indexPath.section].rows[indexPath.row] {
+        case .hideEmpty:
+            Settings.setHideEmptySessions(!Settings.hideEmptySessions())
+            tableView.reloadRows(at: [indexPath], with: .none)
         case .manual:
             Settings.setShowManualSessions(!Settings.showManualSessions())
             tableView.reloadRows(at: [indexPath], with: .none)

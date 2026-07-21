@@ -25,6 +25,7 @@ final class ForkSettingsSync {
         Settings.showSmartPlaylistSessionsKey,
         Settings.showPodcastSessionFoldersKey,
         Settings.showPodcastSessionPodcastsKey,
+        Settings.hideEmptySessionsKey,
         // Which smart playlists are NOT session playlists — a per-playlist opt-out, so it
         // has to travel with the playlist to every device or the Session tab reappears there.
         Settings.playlistsOptedOutOfSessionKey,

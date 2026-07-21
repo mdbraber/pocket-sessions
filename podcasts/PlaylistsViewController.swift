@@ -322,6 +322,7 @@ class PlaylistsViewController: PCViewController, FilterCreatedDelegate {
         let playlists = DataManager.sharedManager.allPlaylists(includeDeleted: false)
             .filter { PlaylistFolderManager.shared.folderUuid(forPlaylist: $0.uuid) == nil && !feederUuids.contains($0.uuid) }
             .filter { SessionManager.shared.sessionStoreVisible(playlistUuid: $0.uuid) }
+            .filter { !Settings.hideEmptySessions() || !SessionManager.shared.sessionIsEmpty(storePlaylistUuid: $0.uuid) }
 
         let items: [PlaylistGridItem]
         if playlistsSortOrder == .titleAtoZ {
@@ -430,6 +431,7 @@ class PlaylistsViewController: PCViewController, FilterCreatedDelegate {
             var playlistRows = DataManager.sharedManager.allPlaylists(includeDeleted: false)
                 .filter { PlaylistFolderManager.shared.folderUuid(forPlaylist: $0.uuid) == nil && !feederUuids.contains($0.uuid) }
                 .filter { SessionManager.shared.sessionStoreVisible(playlistUuid: $0.uuid) }
+                .filter { !Settings.hideEmptySessions() || !SessionManager.shared.sessionIsEmpty(storePlaylistUuid: $0.uuid) }
                 .map { ListPlaylist(playlist: $0) }
             // Fork: fold the legacy folders-first/playlists-first split into one shared
             // position space (once), so drag order can interleave the two kinds.

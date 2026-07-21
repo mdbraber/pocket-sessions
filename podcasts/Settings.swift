@@ -361,6 +361,14 @@ class Settings: NSObject {
     static let showManualSessionsKey = "SJShowManualSessions"
     static let showSmartPlaylistSessionsKey = "SJShowSmartPlaylistSessions"
     static let showPodcastSessionFoldersKey = "SJShowPodcastSessionFolders"
+    static let hideEmptySessionsKey = "SJHideEmptySessions"
+
+    /// Hide sessions/playlists that have nothing left to play (all episodes finished). Governs
+    /// both the Playlists grid and the Up Next session chooser, since they share the sheet.
+    class func hideEmptySessions() -> Bool {
+        UserDefaults.standard.bool(forKey: hideEmptySessionsKey)
+    }
+    class func setHideEmptySessions(_ on: Bool) { UserDefaults.standard.set(on, forKey: hideEmptySessionsKey) }
 
     /// Hand-built (manual) session playlists.
     class func showManualSessions() -> Bool {

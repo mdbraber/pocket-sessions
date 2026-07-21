@@ -880,6 +880,14 @@ class SessionManager {
         }
     }
 
+    /// Whether a session's lineup has nothing left to play (every episode finished, or none
+    /// present). Backs the "Hide empty sessions" toggle. A non-session playlist is never "empty"
+    /// by this rule, so the filter leaves plain playlists alone.
+    func sessionIsEmpty(storePlaylistUuid: String) -> Bool {
+        guard SessionStore.shared.session(forStore: storePlaylistUuid) != nil else { return false }
+        return PlaybackSession(type: .playlist, uuid: storePlaylistUuid).orderedEpisodes().allSatisfy { $0.played() }
+    }
+
     // MARK: - Insert marker
 
     /// Whether a playlist should appear in the Playlists tab given the "Session Playlists" settings.
