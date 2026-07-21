@@ -3,9 +3,13 @@ import PocketCastsDataModel
 
 /// Fork: the one grouping engine behind every "Group By" — the global Inbox and smart
 /// playlists share it so the groups (and their limits) come out identical everywhere.
+/// Fork: the playlist/session/inbox grouping vocabulary. Its `.season` overlaps the native
+/// podcast page's `PodcastGrouping` (Enums.swift) — if you add a case that a podcast page could
+/// also offer (season/downloaded/starred), add the paired case there too. See SortGroupParityTests.
 enum EpisodeGroupBy: Int, CaseIterable {
     case none = 0, releaseDate = 1, podcast = 2, folder = 3
     case archived = 4, session = 5, starred = 6, playing = 7, duration = 8
+    case season = 9, downloaded = 10
 
     var title: String {
         switch self {
@@ -18,12 +22,14 @@ enum EpisodeGroupBy: Int, CaseIterable {
         case .starred: return L10n.inboxGroupStarred
         case .playing: return L10n.inboxGroupPlaying
         case .duration: return L10n.inboxGroupDuration
+        case .season: return L10n.inboxGroupSeason
+        case .downloaded: return L10n.statusDownloaded
         }
     }
 
     /// Menu order: the useful groupings first, None last.
     static var menuOrder: [EpisodeGroupBy] {
-        [.releaseDate, .podcast, .folder, .playing, .duration, .starred, .archived, .session, .none]
+        [.releaseDate, .season, .podcast, .folder, .playing, .downloaded, .duration, .starred, .archived, .session, .none]
     }
 }
 
@@ -118,9 +124,28 @@ enum EpisodeGrouper {
         case .archived:
             groups = bucketed([L10n.podcastArchived, L10n.filterPresetNotArchived]) { $0.archived ? 0 : 1 }
 
+        case .downloaded:
+            groups = bucketed([L10n.statusDownloaded, L10n.statusNotDownloaded]) { $0.downloaded(pathFinder: DownloadManager.shared) ? 0 : 1 }
+
         case .session:
             let inSession = SessionMembership.shared.inAnySession
             groups = bucketed([L10n.filterPresetInSession, L10n.filterPresetNotInSession]) { inSession.contains($0.uuid) ? 0 : 1 }
+
+        case .season:
+            // Bucket by the episode's season; anything without one (a UserEpisode, or a
+            // seasonNumber < 1) lands in the No-Season bucket.
+            var bySeason = [Int64: [T]]()
+            for item in items {
+                let season = (episode(item) as? Episode)?.seasonNumber ?? 0
+                bySeason[season < 1 ? 0 : season, default: []].append(item)
+            }
+            // Season number ascending, with the No-Season bucket (0) LAST — mirror the native
+            // page's `9999` rule so unseasoned episodes sort after every real season.
+            groups = bySeason.keys
+                .sorted { ($0 < 1 ? 9999 : $0) < ($1 < 1 ? 9999 : $1) }
+                .map { season in
+                    (season > 0 ? L10n.podcastSeasonFormat(String(season)) : L10n.podcastNoSeason, capped(bySeason[season] ?? []))
+                }
         }
 
         return reversed ? groups.reversed() : groups

@@ -6,6 +6,8 @@ import SwiftUI
 
 extension PodcastViewController: UITableViewDataSource, UITableViewDelegate {
     private static let episodeCellId = "EpisodeCell"
+    // Fork: the now-playing episode in the Session tab borrows the exact Up Next now-playing card.
+    private static let sessionNowPlayingCardId = "SessionNowPlayingCard"
     private static let headerCellId = "HeaderCell"
     private static let limitCellId = "LimitCell"
     private static let noSearchResultsCell = "NoSearchResults"
@@ -44,6 +46,7 @@ extension PodcastViewController: UITableViewDataSource, UITableViewDelegate {
     func registerCells() {
         episodesTable.register(PodcastTableViewCell.self, forCellReuseIdentifier: PodcastTableViewCell.reuseIdentifier)
         episodesTable.register(UINib(nibName: "EpisodeCell", bundle: nil), forCellReuseIdentifier: PodcastViewController.episodeCellId)
+        episodesTable.register(UINib(nibName: "UpNextNowPlayingCell", bundle: nil), forCellReuseIdentifier: PodcastViewController.sessionNowPlayingCardId)
         episodesTable.register(UINib(nibName: "EpisodeLimitCell", bundle: nil), forCellReuseIdentifier: PodcastViewController.limitCellId)
         episodesTable.register(UINib(nibName: "HeadingCell", bundle: nil), forCellReuseIdentifier: PodcastViewController.groupHeadingCellId)
         episodesTable.register(UINib(nibName: "NoSearchResultsCell", bundle: nil), forCellReuseIdentifier: PodcastViewController.noSearchResultsCell)
@@ -150,6 +153,18 @@ extension PodcastViewController: UITableViewDataSource, UITableViewDelegate {
                 return UITableViewCell()
             }
             if let listEpisode = itemAtRow as? ListEpisode {
+                // Fork: in the Session tab, the now-playing episode (playing OR paused) renders as
+                // the exact Up Next now-playing card; every other row folds back into the normal
+                // session-row layout below. Multi-select uses the plain cell (the card has no tick).
+                if showingSession, !isMultiSelectEnabled,
+                   PlaybackManager.shared.isNowPlayingEpisode(episodeUuid: listEpisode.episode.uuid) {
+                    let card = tableView.dequeueReusableCell(withIdentifier: PodcastViewController.sessionNowPlayingCardId, for: indexPath) as! UpNextNowPlayingCell
+                    card.themeOverride = nil
+                    card.populateFrom(episode: listEpisode.episode)
+                    card.setSessionInfoLine(listEpisode.episode.displayableInfo(includeSize: false))
+                    return card
+                }
+
                 let cell = tableView.dequeueReusableCell(withIdentifier: PodcastViewController.episodeCellId, for: indexPath) as! EpisodeCell
                 cell.hidesArtwork = true
 
@@ -353,6 +368,15 @@ extension PodcastViewController: UITableViewDataSource, UITableViewDelegate {
 
                     if searchController?.searchBarActive() == true {
                         hideSearchKeyboard()
+                    }
+
+                    // Fork: tapping the row that's already sounding opens the Now Playing
+                    // player, matching the Up Next now-playing row.
+                    if PlaybackManager.shared.isNowPlayingEpisode(episodeUuid: episode.uuid) {
+                        if let miniPlayer = UIApplication.shared.appDelegate()?.miniPlayer(), miniPlayer.playerOpenState == .closed {
+                            miniPlayer.openFullScreenPlayer()
+                        }
+                        return
                     }
 
                     // Fork: Session rows behave like Up Next — the tap setting decides

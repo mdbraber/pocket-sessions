@@ -94,6 +94,44 @@ class EpisodeCell: ThemeableSwipeCell, MainEpisodeActionViewDelegate {
     private var lastAppliedSizeCategory: UIContentSizeCategory?
 
     @IBOutlet var videoIndicator: UIImageView!
+
+    /// Fork: the equalizer bars marking the row that's sounding right now. Positioned like the
+    /// Up Next now-playing card — trailing side, vertically centered, just before the action
+    /// button. Purely a marker: the episode stays in the list (unlike the Up Next tab, which
+    /// pulls the playing episode onto a dedicated Now Playing card).
+    private lazy var nowPlayingIndicator: NowPlayingIndicatorView = {
+        let view = NowPlayingIndicatorView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.setContentHuggingPriority(.required, for: .horizontal)
+        view.setContentCompressionResistancePriority(.required, for: .horizontal)
+        return view
+    }()
+
+    private func setNowPlaying(_ nowPlaying: Bool) {
+        if nowPlaying, nowPlayingIndicator.superview == nil {
+            // Match the Up Next now-playing card: the equalizer sits on the trailing side, vertically
+            // centered, just before the action button. Inserting it as a MEMBER of the main
+            // (center-aligned) stack — rather than floating it — makes the stack reserve its width so
+            // the title/info text shrinks to fit instead of running underneath it.
+            if let stack = actionButton.superview as? UIStackView,
+               let index = stack.arrangedSubviews.firstIndex(of: actionButton) {
+                stack.insertArrangedSubview(nowPlayingIndicator, at: index)
+                stack.setCustomSpacing(12, after: nowPlayingIndicator)
+            } else {
+                contentView.addSubview(nowPlayingIndicator)
+                NSLayoutConstraint.activate([
+                    nowPlayingIndicator.trailingAnchor.constraint(equalTo: actionButton.leadingAnchor, constant: -12),
+                    nowPlayingIndicator.centerYAnchor.constraint(equalTo: actionButton.centerYAnchor)
+                ])
+            }
+        }
+        // Gap between the text block and the equalizer — only while the equalizer is shown, so
+        // normal rows keep the text flush against the action button.
+        if let stack = actionButton.superview as? UIStackView {
+            stack.setCustomSpacing(nowPlaying ? 12 : 0, after: contentStackView)
+        }
+        nowPlayingIndicator.isHidden = !nowPlaying
+    }
     @IBOutlet var actionButton: MainEpisodeActionView! {
         didSet {
             actionButton.delegate = self
@@ -246,6 +284,7 @@ class EpisodeCell: ThemeableSwipeCell, MainEpisodeActionViewDelegate {
             // we show the video indicator without parsing the stream.
             videoIndicator.isHidden = !(episode.videoPodcast() || EpisodeManager.hasHLSStream(episode))
             videoIndicator.tintColor = ThemeColor.support01()
+            setNowPlaying(PlaybackManager.shared.isNowPlayingEpisode(episodeUuid: episode.uuid))
             setUpNextIndicator(visible: PlaybackManager.shared.inUpNext(episode: episode), animated: false)
             upNextIndicator.tintColor = ThemeColor.support01()
 
@@ -706,6 +745,7 @@ class EpisodeCell: ThemeableSwipeCell, MainEpisodeActionViewDelegate {
 
     override func prepareForReuse() {
         super.prepareForReuse()
+        setNowPlaying(false)
 
         unseenIndicator.isHidden = true
         unseenIndicatorVisible = false

@@ -830,7 +830,20 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
         }
         // Fork: the Session tab's per-podcast sort — lineup order by default, date
         // orders on request (display only).
-        episodes = TriageTabSort.arrange(episodes.compactMap { $0 as? ListEpisode }, tab: .session, pageUuid: podcast.uuid)
+        var listEpisodes = TriageTabSort.arrange(episodes.compactMap { $0 as? ListEpisode }, tab: .session, pageUuid: podcast.uuid)
+
+        // Fork: if you're listening to an episode of this podcast AS PART OF A SESSION,
+        // surface it at the top of this podcast's Session tab even when the store it's
+        // playing from is a different session (e.g. a smart-playlist session). Gated on
+        // session playback — a plain queue episode must NOT appear here.
+        if !(searchController?.searchInProgress() ?? false),
+           PlaybackManager.shared.isPlayingSessionEpisode,
+           let current = PlaybackManager.shared.currentEpisode() as? Episode,
+           current.parentPodcast()?.uuid == podcast.uuid,
+           !listEpisodes.contains(where: { $0.episode.uuid == current.uuid }) {
+            listEpisodes.insert(ListEpisode(episode: current, tintColor: AppTheme.appTintColor()), at: 0)
+        }
+        episodes = listEpisodes
         if episodes.isEmpty, !searchTerm.isEmpty {
             episodes = [NoSearchResultsPlaceholder()]
         }

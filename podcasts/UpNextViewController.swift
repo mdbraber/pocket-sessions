@@ -581,7 +581,9 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         // Starting or pausing playback changes both the chooser's Playing marker and
         // whether the lineup shows a Now Playing card, so both levels redraw.
         if showingSessionList {
-            sessionListRows = SessionListRows.current()
+            // Which sessions appear is governed entirely by the "Show Session Playlists" sheet
+            // (session existence), so the chooser applies no extra coarse category filters.
+            sessionListRows = SessionListRows.current(filters: .unfiltered)
             upNextTable.reloadData()
         } else {
             reloadTable()
@@ -1098,7 +1100,9 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         sessionListSortButton.imageView?.contentMode = .scaleAspectFit
         sessionListSortButton.accessibilityLabel = L10n.sessionSortTitle
 
-        let moreStyle: ThemeStyle = SessionListFilters.current.isDefault ? .primaryIcon02 : .primaryInteractive01
+        // The ⋯ opens the "Show Session Playlists" selector — a chooser, not a live filter on
+        // this list — so it rests in the neutral icon colour.
+        let moreStyle: ThemeStyle = .primaryIcon02
         let moreImage = UIImage(systemName: "ellipsis", withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold))?
             .withTintColor(AppTheme.colorForStyle(moreStyle, themeOverride: themeOverride), renderingMode: .alwaysOriginal)
         sessionListMoreButton.setImage(moreImage, for: .normal)
@@ -1121,31 +1125,22 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     }
 
     @objc private func sessionListMoreTapped() {
-        let picker = OptionsPicker(themeOverride: themeOverride)
-        picker.addSectionTitle(L10n.sessionShowHeading)
-        let filters = SessionListFilters.current
-        // Checkmark == "showing", so the row reads as the state it puts the list in.
-        picker.addAction(action: OptionAction(label: L10n.sessionShowHideEmpty, selected: filters.hideEmpty) { [weak self] in
-            Settings.setSessionListHideEmpty(!filters.hideEmpty)
+        // Fork: the same "Show Session Playlists" selector the Playlists screen uses — one place
+        // to choose which sessions exist (Manual / Smart / per-folder-or-podcast), reflected in
+        // both the Playlists grid and this chooser. Playlists pushes it; Up Next is a modal world,
+        // so present the identical controller wrapped in a nav sheet with a Done button.
+        let settings = SessionPlaylistsSettingsViewController { [weak self] in
             self?.reloadSessionListAndScrollToTop()
-        })
-        picker.addAction(action: OptionAction(label: L10n.sessionShowHideUnplayed, selected: filters.hideUnplayed) { [weak self] in
-            Settings.setSessionListHideUnplayed(!filters.hideUnplayed)
-            self?.reloadSessionListAndScrollToTop()
-        })
-        picker.addAction(action: OptionAction(label: L10n.sessionShowPodcasts, selected: filters.showPodcasts) { [weak self] in
-            Settings.setSessionListShowPodcasts(!filters.showPodcasts)
-            self?.reloadSessionListAndScrollToTop()
-        })
-        picker.addAction(action: OptionAction(label: L10n.sessionShowPlaylists, selected: filters.showPlaylists) { [weak self] in
-            Settings.setSessionListShowPlaylists(!filters.showPlaylists)
-            self?.reloadSessionListAndScrollToTop()
-        })
-        picker.addAction(action: OptionAction(label: L10n.sessionShowFolders, selected: filters.showFolders) { [weak self] in
-            Settings.setSessionListShowFolders(!filters.showFolders)
-            self?.reloadSessionListAndScrollToTop()
-        })
-        picker.present(from: self)
+        }
+        settings.navigationItem.rightBarButtonItem = UIBarButtonItem(barButtonSystemItem: .done, target: self, action: #selector(dismissSessionPlaylistsSheet))
+        let nav = UINavigationController(rootViewController: settings)
+        nav.modalPresentationStyle = .pageSheet
+        nav.sheetPresentationController?.detents = [.medium(), .large()]
+        present(nav, animated: true)
+    }
+
+    @objc private func dismissSessionPlaylistsSheet() {
+        dismiss(animated: true)
     }
 
     /// A re-sorted or re-filtered list is a different list — start it at the top rather than
@@ -1349,7 +1344,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     /// to whichever world owns playback.
     func refreshSessionState() {
         // The chooser reads straight through to the store — safe on every reload.
-        sessionListRows = SessionListRows.current()
+        sessionListRows = SessionListRows.current(filters: .unfiltered)
 
         if let active = Settings.playbackSession() {
             let paused = Settings.playbackSessionPaused()

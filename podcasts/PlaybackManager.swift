@@ -677,6 +677,13 @@ class PlaybackManager: ServerPlaybackDelegate {
         #else
         guard let episode else { return false }
 
+        // Fork: a session episode plays FROM its session, not from Up Next. Playback still parks
+        // the currently-playing episode at the head of the Up Next table as bookkeeping, so
+        // queue.contains() would report it as queued — don't light the Up Next indicator for it.
+        if currentEpisodeIsFromSession, episode.uuid == currentEpisode()?.uuid {
+            return false
+        }
+
         return queue.contains(episode: episode)
         #endif
     }
@@ -818,6 +825,10 @@ class PlaybackManager: ServerPlaybackDelegate {
 
         FileLog.shared.addMessage("Starting playback session from \(session.type.rawValue) \(session.uuid)")
         let interruptedEpisode = currentEpisode()
+        // Whether what we're interrupting was itself a session episode — captured before the
+        // flag flips below. A session episode belongs to ITS lineup; switching sessions must
+        // never spill it into Up Next.
+        let interruptedWasFromSession = currentEpisodeIsFromSession
         isLoadingSessionEpisode = true
         defer { isLoadingSessionEpisode = false }
         load(episode: first, autoPlay: autoPlay, overrideUpNext: false)
@@ -832,8 +843,8 @@ class PlaybackManager: ServerPlaybackDelegate {
         // which would silently drop what was playing — put it back at the top of the queue.
         // No add notification: this is session bookkeeping, not a user "Play Next" (the
         // genie animation would fly the wrong episode).
-        if let interruptedEpisode, interruptedEpisode.uuid != first.uuid, !queue.contains(episode: interruptedEpisode) {
-            FileLog.shared.addMessage("Playback session: returning interrupted episode \(interruptedEpisode.displayableTitle()) to Up Next")
+        if let interruptedEpisode, !interruptedWasFromSession, interruptedEpisode.uuid != first.uuid, !queue.contains(episode: interruptedEpisode) {
+            FileLog.shared.addMessage("Playback session: returning interrupted queue episode \(interruptedEpisode.displayableTitle()) to Up Next")
             queue.add(episode: interruptedEpisode, fireNotification: false, partOfBulkAdd: false, toTop: true)
             NotificationCenter.postOnMainThread(notification: Constants.Notifications.upNextQueueChanged)
         }

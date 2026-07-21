@@ -10,7 +10,52 @@ class UpNextNowPlayingCell: ThemeableSwipeCell {
             dateLabel.themeOverride = themeOverride
             timeRemainingLabel.themeOverride = themeOverride
             roundedBackgroundView.themeOverride = themeOverride
+            sessionInfoLabel?.themeOverride = themeOverride
         }
+    }
+
+    /// Fork: an optional metadata line rendered UNDER the card, matching the info line a normal
+    /// session row shows (season/episode · duration). Only the fork's session surfaces use it; the
+    /// Up Next tab never calls `setSessionInfoLine`, so the card there is unchanged.
+    private var sessionInfoLabel: ThemeableLabel?
+
+    func setSessionInfoLine(_ text: String?) {
+        guard let text, !text.isEmpty else {
+            sessionInfoLabel?.text = nil
+            sessionInfoLabel?.isHidden = true
+            return
+        }
+
+        if sessionInfoLabel == nil {
+            let label = ThemeableLabel()
+            label.translatesAutoresizingMaskIntoConstraints = false
+            label.style = .primaryText02
+            label.font = UIFont.font(ofSize: 13, scalingWith: .footnote)
+            label.numberOfLines = 1
+            label.themeOverride = themeOverride
+            contentView.addSubview(label)
+            sessionInfoLabel = label
+
+            // The card is pinned to the content view's bottom; break that so the card keeps its
+            // intrinsic height and the cell grows to fit the info line beneath it.
+            for constraint in contentView.constraints where
+                (constraint.firstItem as? UIView) === contentView
+                && constraint.firstAttribute == .bottom
+                && (constraint.secondItem as? UIView) === roundedBackgroundView
+                && constraint.secondAttribute == .bottom {
+                constraint.isActive = false
+            }
+
+            NSLayoutConstraint.activate([
+                label.leadingAnchor.constraint(equalTo: roundedBackgroundView.leadingAnchor, constant: 4),
+                label.trailingAnchor.constraint(lessThanOrEqualTo: roundedBackgroundView.trailingAnchor),
+                label.topAnchor.constraint(equalTo: roundedBackgroundView.bottomAnchor, constant: 6),
+                contentView.bottomAnchor.constraint(equalTo: label.bottomAnchor, constant: 10)
+            ])
+        }
+
+        sessionInfoLabel?.text = text
+        sessionInfoLabel?.isHidden = false
     }
 
     @IBOutlet var roundedBackgroundView: ThemeableView!

@@ -47,6 +47,9 @@ public enum UploadStatus: Int32 {
     case notUploaded = 1, queued = 2, uploading = 3, uploadFailed = 4, uploaded = 5, waitingForWifi = 6, missing = 7, deleteFromCloudPending = 8, deleteFromCloudAndLocalPending = 9
 }
 
+/// The podcast page grouping, persisted (DB `episodeGrouping`) and SYNCED to Pocket Casts
+/// servers. The fork mirrors the overlapping cases (none/season/starred/downloaded) as
+/// `EpisodeGroupBy` for playlist/session surfaces — keep them in step (see SortGroupParityTests).
 public enum PodcastGrouping: Int32, CaseIterable, Codable {
     case none = 0, downloaded = 1, unplayed = 2, season = 3, starred = 4
 }
@@ -114,6 +117,9 @@ public enum BadgeType: Int32, Codable {
     }
 }
 
+/// The podcast page sort, persisted (DB `episodeSortOrder` stores the `Old` raw) and SYNCED to
+/// Pocket Casts servers. The fork mirrors this as `TriageTabSortOrder` for playlist/session
+/// surfaces — keep the two in step (see SortGroupParityTests).
 public enum PodcastEpisodeSortOrder: Int32, Codable, CaseIterable {
     case titleAtoZ
     case titleZtoA

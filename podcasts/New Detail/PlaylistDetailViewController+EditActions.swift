@@ -20,9 +20,8 @@ extension PlaylistDetailViewController {
         let multiSelectAction = multiSelectAction()
         optionsPicker.addAction(action: multiSelectAction)
 
-        // Sort and Group By. Triage pages use the fork's per-tab sort (TriageTabSort); plain
-        // playlists use the stock playlist sort. Sort on every tab; Group By only where episodes
-        // are browsed (the Session lineup renders in play order and never groups). No group-limit.
+        // Sort. Triage pages use the fork's per-tab sort (TriageTabSort); plain playlists use the
+        // stock playlist sort. Sort is offered on every tab.
         if viewModel.usesTriageTabs {
             let sortTab = viewModel.selectedTriageTab.sortKey
             let triageSort = OptionAction(label: L10n.sortBy, secondaryLabel: TriageTabSort.order(sortTab, pageUuid: viewModel.playlist.uuid).title, icon: "podcastlist_sort") {}
@@ -39,47 +38,15 @@ extension PlaylistDetailViewController {
                 return picker
             }
             optionsPicker.addAction(action: triageSort)
-
-            if viewModel.selectedTriageTab != .lineup {
-                let groupAction = OptionAction(label: L10n.inboxGroupBy, secondaryLabel: viewModel.groupBy.title, icon: "option-group") {}
-                groupAction.submenu = { [weak self] in
-                    guard let self else { return nil }
-                    let picker = OptionsPicker(title: L10n.inboxGroupBy.localizedUppercase)
-                    for option in EpisodeGroupBy.menuOrder {
-                        picker.addAction(action: OptionAction(label: option.title, selected: self.viewModel.groupBy == option) {
-                            self.viewModel.groupBy = option
-                        })
-                    }
-                    return picker
-                }
-                optionsPicker.addAction(action: groupAction)
-
-                if viewModel.groupBy != .none {
-                    let limitAction = OptionAction(label: L10n.episodeGroupLimit, secondaryLabel: viewModel.groupLimit > 0 ? "\(viewModel.groupLimit)" : L10n.off, icon: "option-group") {}
-                    limitAction.submenu = { [weak self] in
-                        guard let self else { return nil }
-                        let picker = OptionsPicker(title: L10n.episodeGroupLimit.localizedUppercase)
-                        picker.addAction(action: OptionAction(label: L10n.off, selected: self.viewModel.groupLimit == 0) {
-                            self.viewModel.groupLimit = 0
-                        })
-                        for limit in EpisodeGrouper.limitOptions {
-                            picker.addAction(action: OptionAction(label: "\(limit)", selected: self.viewModel.groupLimit == limit) {
-                                self.viewModel.groupLimit = limit
-                            })
-                        }
-                        return picker
-                    }
-                    optionsPicker.addAction(action: limitAction)
-
-                    let reverseAction = OptionAction(label: L10n.inboxGroupReverse, selected: viewModel.reverseGroup) { [weak self] in
-                        guard let self else { return }
-                        self.viewModel.reverseGroup.toggle()
-                    }
-                    optionsPicker.addAction(action: reverseAction)
-                }
-            }
         } else {
             optionsPicker.addAction(action: sortAction())
+        }
+
+        // Group By is offered wherever episodes are browsed — any plain or smart playlist's
+        // episode list — but not on the hand-ordered Session lineup, which renders in play order
+        // and never groups.
+        if !viewModel.usesTriageTabs || viewModel.selectedTriageTab != .lineup {
+            addGroupByActions(to: optionsPicker)
         }
 
         // "Add to Session" (where adds land in the lineup) sits directly above Download All.
@@ -98,6 +65,48 @@ extension PlaylistDetailViewController {
         }
 
         optionsPicker.present(from: self)
+    }
+
+    // MARK: - Group By
+
+    /// The Group By picker plus its limit/reverse controls (the limit and reverse only appear once
+    /// something is grouped). Shared by every browsed episode list — plain and smart playlists alike.
+    private func addGroupByActions(to optionsPicker: OptionsPicker) {
+        let groupAction = OptionAction(label: L10n.inboxGroupBy, secondaryLabel: viewModel.groupBy.title, icon: "option-group") {}
+        groupAction.submenu = { [weak self] in
+            guard let self else { return nil }
+            let picker = OptionsPicker(title: L10n.inboxGroupBy.localizedUppercase)
+            for option in EpisodeGroupBy.menuOrder {
+                picker.addAction(action: OptionAction(label: option.title, selected: self.viewModel.groupBy == option) {
+                    self.viewModel.groupBy = option
+                })
+            }
+            return picker
+        }
+        optionsPicker.addAction(action: groupAction)
+
+        guard viewModel.groupBy != .none else { return }
+
+        let limitAction = OptionAction(label: L10n.episodeGroupLimit, secondaryLabel: viewModel.groupLimit > 0 ? "\(viewModel.groupLimit)" : L10n.off, icon: "option-group") {}
+        limitAction.submenu = { [weak self] in
+            guard let self else { return nil }
+            let picker = OptionsPicker(title: L10n.episodeGroupLimit.localizedUppercase)
+            picker.addAction(action: OptionAction(label: L10n.off, selected: self.viewModel.groupLimit == 0) {
+                self.viewModel.groupLimit = 0
+            })
+            for limit in EpisodeGrouper.limitOptions {
+                picker.addAction(action: OptionAction(label: "\(limit)", selected: self.viewModel.groupLimit == limit) {
+                    self.viewModel.groupLimit = limit
+                })
+            }
+            return picker
+        }
+        optionsPicker.addAction(action: limitAction)
+
+        let reverseAction = OptionAction(label: L10n.inboxGroupReverse, selected: viewModel.reverseGroup) { [weak self] in
+            self?.viewModel.reverseGroup.toggle()
+        }
+        optionsPicker.addAction(action: reverseAction)
     }
 
     // MARK: - Multiselect

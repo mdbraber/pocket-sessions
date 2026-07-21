@@ -158,7 +158,7 @@ struct FilterPresetEditorView: View {
                     set: { model.preset.sortOrder = $0 }
                 )) {
                     Text(L10n.none).tag(Int?.none)
-                    ForEach([TriageTabSortOrder.newestToOldest, .oldestToNewest, .shortestToLongest, .longestToShortest, .titleAtoZ, .titleZtoA], id: \.rawValue) {
+                    ForEach([TriageTabSortOrder.newestToOldest, .oldestToNewest, .shortestToLongest, .longestToShortest, .titleAtoZ, .titleZtoA, .serial], id: \.rawValue) {
                         Text($0.title).tag(Int?.some($0.rawValue))
                     }
                 }

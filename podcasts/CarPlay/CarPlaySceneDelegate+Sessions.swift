@@ -18,7 +18,7 @@ extension CarPlaySceneDelegate {
     /// sessions exist and how they're ordered (it already drops the global Inbox, the hidden
     /// feeder stores, and sessions whose store playlist is gone).
     private var sessionRows: [(session: Session, store: EpisodeFilter)] {
-        SessionListRows.current(sort: .recentlyPlayed, filters: .current)
+        SessionListRows.current(sort: .recentlyPlayed, filters: .unfiltered)
             .compactMap { row in
                 guard let session = SessionStore.shared.session(uuid: row.sessionUuid),
                       let storeUuid = row.storeUuid,

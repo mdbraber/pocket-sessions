@@ -204,7 +204,7 @@ extension UpNextViewController: SwipeTableViewCellDelegate, SwipeHandler {
             }
         }
         action.image = TriageSwipes.sessionAddImage
-        action.backgroundColor = ThemeColor.support02() // session green
+        action.backgroundColor = TriageSwipes.addToSessionGreen // deeper session green
         action.accessibilityLabel = L10n.playlistAddToLineup
         action.hidesWhenSelected = true
         return action

@@ -4,9 +4,14 @@ import PocketCastsDataModel
 /// Fork: a tab's sort order on the Episodes | Session strip.
 ///
 /// The full episode-sort set, so every episode list sorts the same way — the podcast page's stock
-/// per-podcast sort already offers all of these, and the Session/playlist tabs now match it. `custom`
-/// (the hand-ordered lineup) is offered only on the Session tab. Season is a *grouping*, not a sort,
-/// so it stays out of here (and stays podcast-only, where seasons exist).
+/// per-podcast sort already offers all of these (including `serial`, season-then-episode order), and
+/// the Session/playlist tabs now match it. `custom` (the hand-ordered lineup) is offered only on the
+/// Session tab.
+/// Fork: the playlist/session sort vocabulary. Cases 1-7 are byte-identical to
+/// `PodcastEpisodeSortOrder.Old` (Enums.swift) and this borrows its labels/semantics;
+/// `.custom` (0) is the fork-only drag order. If you add a sort here, add the paired
+/// case to PodcastEpisodeSortOrder too (the podcast page persists/syncs through it).
+/// SortGroupParityTests guards the alignment.
 enum TriageTabSortOrder: Int, CaseIterable {
     case custom = 0
     case newestToOldest = 1
@@ -15,6 +20,7 @@ enum TriageTabSortOrder: Int, CaseIterable {
     case longestToShortest = 4
     case titleAtoZ = 5
     case titleZtoA = 6
+    case serial = 7
 
     var title: String {
         switch self {
@@ -25,6 +31,7 @@ enum TriageTabSortOrder: Int, CaseIterable {
         case .longestToShortest: return PodcastEpisodeSortOrder.longestToShortest.description
         case .titleAtoZ: return PodcastEpisodeSortOrder.titleAtoZ.description
         case .titleZtoA: return PodcastEpisodeSortOrder.titleZtoA.description
+        case .serial: return PodcastEpisodeSortOrder.serial.description
         }
     }
 }
@@ -47,7 +54,7 @@ enum TriageTabSort {
 
         var options: [TriageTabSortOrder] {
             // The full set; the Session tab additionally offers its hand-ordered `custom`.
-            let sorts: [TriageTabSortOrder] = [.newestToOldest, .oldestToNewest, .shortestToLongest, .longestToShortest, .titleAtoZ, .titleZtoA]
+            let sorts: [TriageTabSortOrder] = [.newestToOldest, .oldestToNewest, .shortestToLongest, .longestToShortest, .titleAtoZ, .titleZtoA, .serial]
             return self == .session ? [.custom] + sorts : sorts
         }
     }
@@ -86,7 +93,20 @@ enum TriageTabSort {
             return episodes.sorted { sortableTitle($0.episode) < sortableTitle($1.episode) }
         case .titleZtoA:
             return episodes.sorted { sortableTitle($0.episode) > sortableTitle($1.episode) }
+        case .serial:
+            // Season then episode number ascending, tie-broken by publish date — the same
+            // `<1 → 9999` rule as the podcast page's SQL, so unnumbered episodes (and any
+            // non-`Episode`, e.g. a UserEpisode) sort to the end.
+            return episodes.sorted { serialKey($0.episode) < serialKey($1.episode) }
         }
+    }
+
+    /// The native page's serial ordering as a comparable tuple: (season, episode, publishedDate),
+    /// with season/episode < 1 pushed to 9999 so they land after every numbered episode.
+    private static func serialKey(_ episode: BaseEpisode) -> (Int64, Int64, Date) {
+        let season = (episode as? Episode)?.seasonNumber ?? -1
+        let number = (episode as? Episode)?.episodeNumber ?? -1
+        return (season < 1 ? 9999 : season, number < 1 ? 9999 : number, episode.publishedDate ?? .distantPast)
     }
 
     /// Mirrors the podcast page's title sort: ignore a leading "The "/"A "/"An ", case-insensitively.

@@ -6,6 +6,12 @@ import SwipeCellKit
 /// Left: Add to Session (green) · Add to… (green, a picker). Right: Remove Session
 /// (red) · Archive · Mark as (Un)Seen (blue). All state-aware.
 enum TriageSwipes {
+    /// Two shades of the session green so the two left-swipe adds read apart, the way
+    /// move-to-top and move-to-bottom use two blues. "Add to Session" (the specific verb)
+    /// keeps the base session green; "Add to…" (the picker) is a lighter tint of it.
+    static var addToSessionGreen: UIColor { ThemeColor.support02() }
+    static var addToPickerGreen: UIColor { ThemeColor.support02().lightened(by: 0.32) }
+
     /// Left swipe: Add to Session (green) — only when the episode is NOT in *this page's* session —
     /// then Add to… (the shared destination picker). (Remove from Session is the right
     /// swipe, shown when it IS.)
@@ -20,7 +26,7 @@ enum TriageSwipes {
                 addToSession()
             }
             add.image = sessionAddImage
-            add.backgroundColor = ThemeColor.support02() // session green
+            add.backgroundColor = addToSessionGreen // deeper session green
             add.accessibilityLabel = L10n.playlistAddToLineup
             add.hidesWhenSelected = true
             leading.append(add)
@@ -51,8 +57,10 @@ enum TriageSwipes {
                                themeOverride: themeOverride,
                                onPlaylistChooser: onPlaylistChooser)
         }
-        action.image = UIImage(named: "plus-circle")
-        action.backgroundColor = ThemeColor.support02()
+        // White glyph on the green, matching the "Add to Session" icon (the asset is
+        // otherwise its own colour, which muddies the lighter green).
+        action.image = UIImage(named: "plus-circle")?.withRenderingMode(.alwaysTemplate).withTintColor(.white, renderingMode: .alwaysOriginal)
+        action.backgroundColor = addToPickerGreen
         action.accessibilityLabel = L10n.swipeAddTo
         action.hidesWhenSelected = true
         return action
@@ -227,5 +235,16 @@ extension MultiSelectAction {
             return TriageSwipes.sessionRemoveImage(pointSize: 20)
         }
         return UIImage(named: iconName()) ?? UIImage(systemName: iconName())
+    }
+}
+
+private extension UIColor {
+    /// Blend toward white by `amount` (0 = unchanged, 1 = white) — a "lighter" tint that
+    /// reads apart from the base even at small values, unlike a plain brightness bump.
+    func lightened(by amount: CGFloat) -> UIColor {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        getRed(&r, green: &g, blue: &b, alpha: &a)
+        let t = min(1, max(0, amount))
+        return UIColor(red: r + (1 - r) * t, green: g + (1 - g) * t, blue: b + (1 - b) * t, alpha: a)
     }
 }

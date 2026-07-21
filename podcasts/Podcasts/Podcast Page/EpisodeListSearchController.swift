@@ -457,6 +457,9 @@ class EpisodeListSearchController: SimpleNotificationsViewController, UISearchBa
     /// Applies a preset's sort when the preset is selected — then the podcast's own sort control
     /// overrides it. The podcast page groups by its own taxonomy (season/status), which the preset's
     /// Group By (none/date/podcast/folder) doesn't map to, so only sort is applied here.
+    /// Boundary mapper: fork `TriageTabSortOrder` (preset) → native `PodcastEpisodeSortOrder`
+    /// (page). If you add a sort case to either enum, extend this switch too — SortGroupParityTests
+    /// guards the enums but this remap is where they actually meet.
     func applyPresetSortAndGroup(_ preset: FilterPreset) {
         guard let raw = preset.sortOrder, let order = TriageTabSortOrder(rawValue: raw) else { return }
         let mapped: PodcastEpisodeSortOrder? = switch order {
@@ -466,6 +469,7 @@ class EpisodeListSearchController: SimpleNotificationsViewController, UISearchBa
         case .longestToShortest: .longestToShortest
         case .titleAtoZ: .titleAtoZ
         case .titleZtoA: .titleZtoA
+        case .serial: .serial
         case .custom: nil
         }
         if let mapped { setSortSetting(mapped) }

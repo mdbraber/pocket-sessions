@@ -7057,3 +7057,6 @@
 
 /* Fork: footer under the Session Playlist toggle explaining what turning it off does. */
 "playlist_is_session_footer" = "Off: this playlist has no Session — it won't appear in the session list, on CarPlay, or as a Session tab. Its lineup is kept, so turning this back on restores it.";
+
+/* Fork: playlist/session Group By option — group episodes by season (matches the podcast page). */
+"inbox_group_season" = "Season";
