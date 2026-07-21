@@ -170,6 +170,10 @@ class EpisodeCell: ThemeableSwipeCell, MainEpisodeActionViewDelegate {
     /// session — same as tapping the row — instead of standalone in Up Next.
     var playInSession: Session?
 
+    /// Fork: hide the play/download action button entirely (session lists play via tap, long-press,
+    /// or the detail page, so the button is redundant clutter there).
+    var hidesActionButton = false { didSet { setNeedsLayout() } }
+
     private var inUpNext = false
     private var playlistUuid: String?
     private var podcastUuid: String?
@@ -248,7 +252,7 @@ class EpisodeCell: ThemeableSwipeCell, MainEpisodeActionViewDelegate {
             setNeedsLayout()
         }
         let wasDeleted = episode?.wasDeleted ?? false
-        let shouldHide = isMultiSelectEnabled || wasDeleted
+        let shouldHide = isMultiSelectEnabled || wasDeleted || hidesActionButton
 
         if actionButton.isHidden != shouldHide {
             actionButton.isHidden = shouldHide
@@ -799,7 +803,7 @@ class EpisodeCell: ThemeableSwipeCell, MainEpisodeActionViewDelegate {
         let isSelectable = isSelectableForMultiSelect
         selectView.isHidden = !shouldShowSelect || !isSelectable
         if isSelectable {
-            actionButton.isHidden = shouldShowSelect
+            actionButton.isHidden = shouldShowSelect || hidesActionButton
         }
     }
 

@@ -10,17 +10,16 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         tableData.count
     }
 
-    /// The Now Playing card shows in whichever world owns the playing episode: the
-    /// session while it plays, the queue otherwise. Peeking at the other world via the
-    /// pill shows that world's list without the card.
-    /// The session owns the card whenever the player is holding one of its episodes —
-    /// sounding or not. This must NOT be narrowed to "actually playing": `queueOwnsCard`
-    /// is its complement, so a session that disowns its own episode hands that episode to
-    /// the Up Next world as *its* Now Playing card, and the episode stops being tappable
-    /// (it is already the player's current episode, so a row tap has nothing to do).
+    /// The Now Playing card shows in whichever world owns the *playing episode*: the session
+    /// while the player is holding one of ITS episodes, the queue otherwise. Peeking at the other
+    /// world via the pill shows that world's list without the card.
+    /// "Holding one of its episodes" — sounding or not — so it is NOT narrowed to `playing()`; but
+    /// it IS narrowed to the source, so playing a queue episode (even mid-session) hands the card to
+    /// the Up Next world and the session drops back to regular rows.
     var sessionOwnsCard: Bool {
-        Settings.playbackSession() != nil
-            && !Settings.playbackSessionPaused() && PlaybackManager.shared.currentEpisode() != nil
+        !Settings.playbackSessionPaused()
+            && PlaybackManager.shared.currentEpisodeIsSessionSourced
+            && PlaybackManager.shared.currentEpisode() != nil
     }
 
     var queueOwnsCard: Bool {
@@ -73,9 +72,11 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         return queueOwnsCard || upNextShowsSessionHeadRow
     }
 
-    /// Fork: the Up Next world is surfacing a session's now-playing episode as its head row — a
-    /// plain player row (equalizer, info line on top), the counterpart to how a session list marks
-    /// an Up-Next-played episode. True only when a SESSION, not the queue, owns the current episode.
+    /// Fork: the Up Next world surfaces a session's now-playing episode as its head row — a plain
+    /// player row (equalizer), the counterpart to how a session list marks an Up-Next-played
+    /// episode. True only when a SESSION, not the queue, owns the current episode. (It's the queue's
+    /// position 0, which is the player's "current" — so it lives in the top block and isn't
+    /// reorderable; moving it would desync the current-episode cache.)
     var upNextShowsSessionHeadRow: Bool {
         displayedWorld == .upNext && !showingSessionList && sessionOwnsCard
     }
@@ -99,15 +100,12 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         return (topBlockHasCard ? 1 : 0) + PlaybackManager.shared.queue.upNextCount()
     }
 
-    /// Fork: while the session isn't sounding its card is just "what's next" — the head of
-    /// the list rather than something being listened to — so the counts/controls line
-    /// reads as the list's header and belongs above it. Sounding: card first, as before.
-    /// In the Up Next world, a session's episode surfaced as the head row is likewise just the
-    /// first list item, so the "Up Next · N" line sits above it (header, then all episodes).
+    /// Fork: the playing tab's Now Playing card always has its counts/controls line UNDER it (the
+    /// card is what you're listening to). Only the Up Next world's session HEAD ROW — a plain list
+    /// item in the non-playing tab — puts the "Up Next · N" line above it (header, then all items).
     var topBlockControlsAboveCard: Bool {
         guard topBlockHasCard else { return false }
-        if upNextShowsSessionHeadRow { return true }
-        return displayedWorld == .session && !sessionIsSounding
+        return upNextShowsSessionHeadRow
     }
 
     /// Row index of the Now Playing card inside the top block, or nil when there's no card.
@@ -231,6 +229,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
                     playerCell.setSessionIndicator(SessionIndicatorState.resolve(episode.uuid, thisSession: sessionMemberUuidsForDisplay))
                     playerCell.setUpNextIndicator(visible: false)
                     playerCell.setNowPlaying(true)
+                    playerCell.setNowPlayingAccent(nowPlayingWorldAccent)
                 }
                 playerCell.contentView.alpha = 1
                 return playerCell
@@ -241,6 +240,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
             nowPlayingCell.delegate = self
             if let episode = PlaybackManager.shared.currentEpisode() {
                 nowPlayingCell.populateFrom(episode: episode)
+                nowPlayingCell.setNowPlayingAccent(nowPlayingWorldAccent)
             }
             return nowPlayingCell
         }
@@ -270,22 +270,28 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
                                     icon: { Image(systemName: "rectangle.stack") })
                 return emptyCell
             }
-            let playerCell = tableView.dequeueReusableCell(withIdentifier: UpNextViewController.playerCell, for: indexPath) as! PlayerCell
-            playerCell.themeOverride = themeOverride
-            playerCell.shouldShowSelect(show: isMultiSelectEnabled, animate: false)
-            playerCell.delegate = self
+            // Fork: the session lineup uses the regular episode row (two-line title, info line
+            // beneath, progress via the background) — identical to a podcast/playlist list.
+            let cell = tableView.dequeueReusableCell(withIdentifier: UpNextViewController.episodeCell, for: indexPath) as! EpisodeCell
+            cell.themeOverride = themeOverride
+            cell.hidesArtwork = false
+            cell.episodeImageLeadConstraint.constant = 16.0
+            cell.delegate = self
+            // No play button on session rows — play via tap, long-press, or the detail page.
+            cell.hidesActionButton = true
+            cell.shouldShowSelect = isMultiSelectEnabled
             if let episode = sessionEpisodes?[safe: indexPath.row] {
-                playerCell.populateFrom(episode: episode)
-                // This IS the session tab — every row is a member, so the session badge is redundant.
-                playerCell.setSessionIndicator(.none)
-                playerCell.setUpNextIndicator(visible: PlaybackManager.shared.inUpNext(episode: episode))
-                playerCell.setNowPlaying(PlaybackManager.shared.isNowPlayingEpisode(episodeUuid: episode.uuid))
-                playerCell.showTick = selectedEpisodesContains(uuid: episode.uuid)
+                cell.playlist = browsedPlaybackSession.map { .filter(uuid: $0.uuid) }
+                cell.populateFrom(episode: episode, tintColor: nil)
+                // Every row here is a session member, so the in-session badge is redundant.
+                cell.setSessionIndicator(.none)
+                cell.setUnseenIndicator(visible: false)
+                cell.showTick = selectedEpisodesContains(uuid: episode.uuid)
             } else {
-                playerCell.showTick = false
+                cell.showTick = false
             }
-            playerCell.contentView.alpha = 1
-            return playerCell
+            cell.contentView.alpha = 1
+            return cell
         }
 
         if PlaybackManager.shared.queue.upNextCount() == 0 {
@@ -624,10 +630,20 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
                 return sessionListRows[safe: indexPath.row] == nil ? UpNextViewController.emptyStateRowHeight : UITableView.automaticDimension
             }
             if browsedPlaybackSession == nil { return UpNextViewController.emptyStateRowHeight }
-            return UpNextViewController.upNextRowHeight
+            // EpisodeCell rows self-size (two-line title + info line).
+            return UITableView.automaticDimension
         }
         if PlaybackManager.shared.queue.upNextCount() == 0 { return UpNextViewController.emptyStateRowHeight }
         return UpNextViewController.upNextRowHeight
+    }
+
+    func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
+        // The Up Next table is permanently in editing mode (for drag-reorder), which makes an
+        // EpisodeCell show its multi-select circle even at rest. Reflect the real multi-select
+        // state instead (PlayerCell already ignores editing and toggles select explicitly).
+        if let episodeCell = cell as? EpisodeCell {
+            episodeCell.setEditing(isMultiSelectEnabled, animated: false)
+        }
     }
 
     func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {

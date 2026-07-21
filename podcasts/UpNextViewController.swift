@@ -5,6 +5,7 @@ import UIKit
 
 class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, FilterCreatedDelegate {
     static let playerCell = "PlayerCell"
+    static let episodeCell = "EpisodeCell"
     static let nowPlayingCell = "UpNextNowPlayingCell"
     static let emptyStateCell = "EmptyStateCell"
     static let sessionInboxNoticeCell = "SessionInboxNoticeCell"
@@ -152,11 +153,20 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         return browsedPlaybackSession == active
     }
 
-    /// The lineup shows a Now Playing card only when the session it is browsing is the
-    /// active one AND the player is holding one of its episodes. `sessionOwnsCard` alone
-    /// is deliberately left un-narrowed (see its comment) — this is its lineup-level use.
+    /// The lineup shows a Now Playing card only when the session it is browsing is the active one
+    /// AND the player is holding one of its episodes — the card lives in whichever world owns
+    /// playback (green here in the Session world, blue in Up Next).
     var browsedSessionOwnsCard: Bool {
         sessionOwnsCard && browsingActiveSession
+    }
+
+    /// Fork: the now-playing accent for the Up Next sheet — green in the Session world, blue in the
+    /// Up Next world. Colours the card's (and Up Next head row's) title and equalizer by the world
+    /// you're viewing, not by playback source.
+    var nowPlayingWorldAccent: UIColor {
+        displayedWorld == .session
+            ? ThemeColor.support02(for: themeOverride)
+            : ThemeColor.support01(for: themeOverride)
     }
 
     /// Entering the Session world lands on the lineup whenever a session is active
@@ -188,6 +198,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     // (session title block or queue controls line). The list scrolls underneath it.
     private let stickyChrome = UIStackView()
     private let stickyChromeBackground = UIView()
+    private var sessionHeaderHeightConstraint: NSLayoutConstraint?
 
     private static let worldSwitcherFont = UIFont.systemFont(ofSize: 13, weight: .medium)
 
@@ -215,6 +226,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
 
         let metrics = UIFontMetrics(forTextStyle: .footnote)
         let inSession = displayedWorld == .session
+        var showsHeader = true
         if inSession, sessionLevel == .list {
             // The chooser gets the same title block as the lineup — same label, same font —
             // so stepping between the two levels only swaps the words, never the treatment.
@@ -225,28 +237,28 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
             sessionMetaLabel.text = sessionListCountsText()
             sessionSortButton.isHidden = true
             sessionInboxLabel.isHidden = true
-            sessionHeaderView.frame = CGRect(x: 0, y: 0, width: upNextTable.bounds.width, height: metrics.scaledValue(for: sessionHeaderHeight))
-            upNextTable.tableHeaderView = sessionHeaderView
         } else if inSession, browsedPlaybackSession != nil {
             updateSessionHeader()
-            sessionHeaderView.frame = CGRect(x: 0, y: 0, width: upNextTable.bounds.width, height: metrics.scaledValue(for: sessionHeaderHeight))
-            upNextTable.tableHeaderView = sessionHeaderView
         } else if !inSession {
             // The queue gets the same title block as the session — "Up Next".
             sessionHeaderLabel.text = L10n.upNext
             sessionHeaderLabel.style = .primaryText01
             sessionBackChevron.isHidden = true
             sessionInboxLabel.isHidden = true
-            sessionHeaderView.frame = CGRect(x: 0, y: 0, width: upNextTable.bounds.width, height: metrics.scaledValue(for: sessionHeaderHeight))
-            upNextTable.tableHeaderView = sessionHeaderView
         } else {
-            upNextTable.tableHeaderView = nil
+            showsHeader = false
         }
+
+        // The title block now lives ABOVE the pills in the sticky chrome (not the table header).
+        upNextTable.tableHeaderView = nil
+        sessionHeaderView.isHidden = !showsHeader
+        let headerHeight = showsHeader ? metrics.scaledValue(for: sessionHeaderHeight) : 0
+        sessionHeaderHeightConstraint?.constant = headerHeight
 
         // One call for every branch above: the chooser's controls only exist at `.list`.
         updateSessionListControls()
 
-        let chromeHeight: CGFloat = 52
+        let chromeHeight: CGFloat = headerHeight + 52
         guard upNextTable.contentInset.top != chromeHeight else { return }
         // The system adds the safe-area (nav bar) inset on top of contentInset, so all
         // offset math uses adjustedContentInset.
@@ -264,6 +276,11 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         let textColor = AppTheme.colorForStyle(.primaryText01, themeOverride: themeOverride)
         worldSwitcher.setTitleTextAttributes([.font: Self.worldSwitcherFont, .foregroundColor: textColor], for: .normal)
         worldSwitcher.setTitleTextAttributes([.font: Self.worldSwitcherFont, .foregroundColor: textColor], for: .selected)
+
+        // Liquid-glass track: a barely-there translucent trough with a lighter frosted chip for the
+        // selected world, derived from the text colour so it reads on both themes.
+        worldSwitcher.backgroundColor = textColor.withAlphaComponent(0.06)
+        worldSwitcher.selectedSegmentTintColor = textColor.withAlphaComponent(0.16)
 
         // The Up Next world surfaces a head row for whichever episode is current — the queue's own,
         // or a session's now-playing episode — so count it either way.
@@ -288,22 +305,35 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
             worldSwitcher.setTitle(title, forSegmentAt: index)
             return
         }
-        worldSwitcher.setImage(nowPlayingSegmentImage(title: title), forSegmentAt: index)
+        // The playing world's equalizer glyph is source-coloured: green when the Session owns
+        // playback, blue when Up Next does — the same language as the row equalizers.
+        let color = index == DisplayedWorld.session.rawValue
+            ? ThemeColor.support02(for: themeOverride)
+            : ThemeColor.support01(for: themeOverride)
+        worldSwitcher.setImage(nowPlayingSegmentImage(title: title, color: color), forSegmentAt: index)
     }
 
-    /// A segment can hold a title or an image, not both, so the glyph+title combination
-    /// is rendered into an image matching the plain segments' font and color.
-    private func nowPlayingSegmentImage(title: String) -> UIImage {
+    /// A segment can hold a title or an image, not both, so the equalizer glyph + title is rendered
+    /// into one image matching the plain segments' font and colour.
+    private func nowPlayingSegmentImage(title: String, color: UIColor) -> UIImage {
         let font = Self.worldSwitcherFont
         let textColor = AppTheme.colorForStyle(.primaryText01, themeOverride: themeOverride)
-        let accent = AppTheme.colorForStyle(.primaryInteractive01, themeOverride: themeOverride)
+
+        // A tiny three-bar equalizer in the source colour, sitting on the text baseline.
+        let barWidth: CGFloat = 2.5, gap: CGFloat = 2, maxHeight = font.capHeight
+        let heights: [CGFloat] = [maxHeight * 0.55, maxHeight, maxHeight * 0.78]
+        let glyphWidth = barWidth * 3 + gap * 2
+        let glyph = UIGraphicsImageRenderer(size: CGSize(width: glyphWidth, height: maxHeight)).image { _ in
+            color.setFill()
+            for (i, height) in heights.enumerated() {
+                let rect = CGRect(x: CGFloat(i) * (barWidth + gap), y: maxHeight - height, width: barWidth, height: height)
+                UIBezierPath(roundedRect: rect, cornerRadius: barWidth / 2).fill()
+            }
+        }
 
         let attachment = NSTextAttachment()
-        if let symbol = UIImage(systemName: "speaker.wave.2.fill", withConfiguration: UIImage.SymbolConfiguration(pointSize: 10, weight: .semibold))?
-            .withTintColor(accent, renderingMode: .alwaysOriginal) {
-            attachment.image = symbol
-            attachment.bounds = CGRect(x: 0, y: (font.capHeight - symbol.size.height) / 2, width: symbol.size.width, height: symbol.size.height)
-        }
+        attachment.image = glyph
+        attachment.bounds = CGRect(x: 0, y: 0, width: glyphWidth, height: maxHeight)
 
         let content = NSMutableAttributedString(attachment: attachment)
         content.append(NSAttributedString(string: " " + title, attributes: [.font: font, .foregroundColor: textColor]))
@@ -819,6 +849,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         didSet {
             upNextTable.themeOverride = themeOverride
             upNextTable.register(UINib(nibName: "PlayerCell", bundle: nil), forCellReuseIdentifier: UpNextViewController.playerCell)
+            upNextTable.register(UINib(nibName: "EpisodeCell", bundle: nil), forCellReuseIdentifier: UpNextViewController.episodeCell)
             upNextTable.register(UINib(nibName: "UpNextNowPlayingCell", bundle: nil), forCellReuseIdentifier: UpNextViewController.nowPlayingCell)
             upNextTable.register(EmptyStateCell.self, forCellReuseIdentifier: UpNextViewController.emptyStateCell)
             upNextTable.register(SessionPausedBannerCell.self, forCellReuseIdentifier: UpNextViewController.sessionPausedBannerCell)
@@ -868,7 +899,8 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     override func viewDidLoad() {
         super.viewDidLoad()
 
-        title = L10n.upNext
+        // No nav-bar title — the world's name lives in the title block above the pills.
+        title = nil
 
         (view as? ThemeableView)?.style = .primaryUi04
         (view as? ThemeableView)?.themeOverride = themeOverride
@@ -921,7 +953,13 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         ])
 
         stickyChrome.axis = .vertical
+        // Title block above the pills (both sticky above the table).
+        sessionHeaderView.translatesAutoresizingMaskIntoConstraints = false
+        stickyChrome.addArrangedSubview(sessionHeaderView)
         stickyChrome.addArrangedSubview(pillContainer)
+        let headerHeightConstraint = sessionHeaderView.heightAnchor.constraint(equalToConstant: Self.titleBlockHeight)
+        headerHeightConstraint.isActive = true
+        sessionHeaderHeightConstraint = headerHeightConstraint
 
         stickyChrome.translatesAutoresizingMaskIntoConstraints = false
         // Opaque backing that also covers the status/nav area above the pill, so

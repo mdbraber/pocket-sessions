@@ -318,7 +318,14 @@ class PlayerCell: ThemeableSwipeCell {
             ? ThemeColor.support02(for: themeOverride)
             : ThemeColor.support01(for: themeOverride)
         nowPlayingIndicator.isHidden = !nowPlaying
-        episodeTitle.style = nowPlaying ? .primaryInteractive01 : .primaryText01
+        // The title keeps its regular colour — only the equalizer marks the playing row.
+        episodeTitle.style = .primaryText01
+    }
+
+    /// Fork: colour just the now-playing equalizer by the world the row is shown in (green Session /
+    /// blue Up Next) — used by the Up Next world's session head row. The title stays unaccented.
+    func setNowPlayingAccent(_ color: UIColor) {
+        nowPlayingIndicator.color = color
     }
 
     /// Tracked so labelForAccessibility can speak the session badge; VoiceOver can't see the glyph.

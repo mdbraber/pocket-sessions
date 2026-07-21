@@ -19,6 +19,14 @@ class UpNextNowPlayingCell: ThemeableSwipeCell {
     /// Up Next tab never calls `setSessionInfoLine`, so the card there is unchanged.
     private var sessionInfoLabel: ThemeableLabel?
 
+    /// Fork: the now-playing equalizer accent — green in the Session world, blue in Up Next.
+    /// The title text keeps its regular colour (no accent).
+    private var worldAccent: UIColor?
+    func setNowPlayingAccent(_ color: UIColor) {
+        worldAccent = color
+        playingAnimationView.setFillColor(color)
+    }
+
     func setSessionInfoLine(_ text: String?) {
         guard let text, !text.isEmpty else {
             sessionInfoLabel?.text = nil
@@ -117,9 +125,10 @@ class UpNextNowPlayingCell: ThemeableSwipeCell {
         NotificationCenter.default.removeObserver(self)
     }
 
-    /// Green when the current episode plays as part of a session, blue when it plays from Up Next.
+    /// The world accent (green Session / blue Up Next) when the host sets one, else source-based.
     private var playingEqualizerColor: UIColor {
-        PlaybackManager.shared.currentEpisodeIsSessionSourced
+        if let worldAccent { return worldAccent }
+        return PlaybackManager.shared.currentEpisodeIsSessionSourced
             ? ThemeColor.support02(for: themeOverride)
             : ThemeColor.support01(for: themeOverride)
     }
