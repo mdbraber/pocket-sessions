@@ -806,6 +806,13 @@ class PlaybackManager: ServerPlaybackDelegate {
         Settings.playbackSession() != nil && !Settings.playbackSessionPaused() && currentEpisodeIsFromSession
     }
 
+    /// Fork: the current episode's playback SOURCE, for the now-playing equalizer's colour — green
+    /// when it plays as part of a session, blue when it plays from the Up Next queue. Independent of
+    /// play/pause, since a paused session episode is still session-sourced.
+    var currentEpisodeIsSessionSourced: Bool {
+        Settings.playbackSession() != nil && currentEpisodeIsFromSession
+    }
+
     /// Starts a playback session: plays its first unfinished episode now (the interrupted
     /// episode moves to the top of Up Next, like any "play now") and advances through the
     /// session's list until it runs dry, then playback returns to the queue.

@@ -583,12 +583,7 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
     /// and top up exactly the part the safe area misses (zero when it's already covered,
     /// so this can never double-pad).
     private func miniPlayerClearance() -> CGFloat {
-        guard LiquidGlass.isEnabled else { return Constants.effectiveMiniPlayerOffset }
-        guard let pill = appDelegate()?.miniPlayer()?.view, pill.window != nil,
-              let container = episodesTable.superview else { return 0 }
-        let pillFrame = container.convert(pill.bounds, from: pill)
-        let overlap = episodesTable.frame.maxY - pillFrame.minY
-        return max(0, overlap - episodesTable.safeAreaInsets.bottom)
+        LiquidGlass.isEnabled ? episodesTable.miniPlayerOverlapClearance() : Constants.effectiveMiniPlayerOffset
     }
 
     override var preferredStatusBarStyle: UIStatusBarStyle {
@@ -1021,6 +1016,9 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
 
     @objc private func miniPlayerStatusDidChange() {
         updateBookmarksActionBarBottomConstraint()
+        // The pill appears/disappears without changing the table's bounds, so nothing would
+        // recompute its bottom clearance — force a layout pass so the last row clears the pill.
+        view.setNeedsLayout()
     }
 
     func tableView() -> UITableView {

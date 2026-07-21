@@ -313,7 +313,10 @@ class PlayerCell: ThemeableSwipeCell {
                 ])
             }
         }
-        nowPlayingIndicator.color = ThemeColor.primaryInteractive01(for: themeOverride)
+        // Green when the episode plays as part of a session, blue when it plays from Up Next.
+        nowPlayingIndicator.color = PlaybackManager.shared.currentEpisodeIsSessionSourced
+            ? ThemeColor.support02(for: themeOverride)
+            : ThemeColor.support01(for: themeOverride)
         nowPlayingIndicator.isHidden = !nowPlaying
         episodeTitle.style = nowPlaying ? .primaryInteractive01 : .primaryText01
     }

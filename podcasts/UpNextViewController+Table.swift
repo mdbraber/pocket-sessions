@@ -67,7 +67,17 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         if showingSessionList { return false }
         // The card belongs to the lineup only when the browsed session IS the active one:
         // browsing another session must show no card at all.
-        return displayedWorld == .session ? browsedSessionOwnsCard : queueOwnsCard
+        if displayedWorld == .session { return browsedSessionOwnsCard }
+        // Up Next world: the head is the queue's own Now Playing card, OR — when a session owns
+        // playback — that session's episode surfaced as the queue head (a plain player row, below).
+        return queueOwnsCard || upNextShowsSessionHeadRow
+    }
+
+    /// Fork: the Up Next world is surfacing a session's now-playing episode as its head row — a
+    /// plain player row (equalizer, info line on top), the counterpart to how a session list marks
+    /// an Up-Next-played episode. True only when a SESSION, not the queue, owns the current episode.
+    var upNextShowsSessionHeadRow: Bool {
+        displayedWorld == .upNext && !showingSessionList && sessionOwnsCard
     }
 
     var topBlockHasControls: Bool {
@@ -86,14 +96,18 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         if displayedWorld == .session {
             return (browsedSessionOwnsCard ? 1 : 0) + (sessionEpisodes?.count ?? 0)
         }
-        return (queueOwnsCard ? 1 : 0) + PlaybackManager.shared.queue.upNextCount()
+        return (topBlockHasCard ? 1 : 0) + PlaybackManager.shared.queue.upNextCount()
     }
 
     /// Fork: while the session isn't sounding its card is just "what's next" — the head of
     /// the list rather than something being listened to — so the counts/controls line
     /// reads as the list's header and belongs above it. Sounding: card first, as before.
+    /// In the Up Next world, a session's episode surfaced as the head row is likewise just the
+    /// first list item, so the "Up Next · N" line sits above it (header, then all episodes).
     var topBlockControlsAboveCard: Bool {
-        topBlockHasCard && displayedWorld == .session && !sessionIsSounding
+        guard topBlockHasCard else { return false }
+        if upNextShowsSessionHeadRow { return true }
+        return displayedWorld == .session && !sessionIsSounding
     }
 
     /// Row index of the Now Playing card inside the top block, or nil when there's no card.
@@ -206,6 +220,22 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
                 ])
                 return cell
             }
+            // Fork: a session's now-playing episode surfaced into the Up Next world reads as the
+            // head of the queue — a plain player row with the equalizer, not the big card.
+            if upNextShowsSessionHeadRow {
+                let playerCell = tableView.dequeueReusableCell(withIdentifier: UpNextViewController.playerCell, for: indexPath) as! PlayerCell
+                playerCell.themeOverride = themeOverride
+                playerCell.delegate = self
+                if let episode = PlaybackManager.shared.currentEpisode() {
+                    playerCell.populateFrom(episode: episode)
+                    playerCell.setSessionIndicator(SessionIndicatorState.resolve(episode.uuid, thisSession: sessionMemberUuidsForDisplay))
+                    playerCell.setUpNextIndicator(visible: false)
+                    playerCell.setNowPlaying(true)
+                }
+                playerCell.contentView.alpha = 1
+                return playerCell
+            }
+
             let nowPlayingCell = tableView.dequeueReusableCell(withIdentifier: UpNextViewController.nowPlayingCell, for: indexPath) as! UpNextNowPlayingCell
             nowPlayingCell.themeOverride = themeOverride
             nowPlayingCell.delegate = self

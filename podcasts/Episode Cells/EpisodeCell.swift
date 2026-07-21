@@ -130,6 +130,8 @@ class EpisodeCell: ThemeableSwipeCell, MainEpisodeActionViewDelegate {
         if let stack = actionButton.superview as? UIStackView {
             stack.setCustomSpacing(nowPlaying ? 12 : 0, after: contentStackView)
         }
+        // Green when the episode plays as part of a session, blue when it plays from Up Next.
+        nowPlayingIndicator.color = PlaybackManager.shared.currentEpisodeIsSessionSourced ? ThemeColor.support02() : ThemeColor.support01()
         nowPlayingIndicator.isHidden = !nowPlaying
     }
     @IBOutlet var actionButton: MainEpisodeActionView! {

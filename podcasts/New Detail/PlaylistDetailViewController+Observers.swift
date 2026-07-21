@@ -45,6 +45,14 @@ extension PlaylistDetailViewController {
         addCustomObserver(FilterPresets.resetAll, selector: #selector(filtersWereReset))
         addCustomObserver(UIResponder.keyboardWillShowNotification, selector: #selector(keyboardWillShow(_:)))
         addCustomObserver(UIResponder.keyboardWillHideNotification, selector: #selector(keyboardWillHide(_:)))
+        // The pill appears/disappears without changing the table's bounds — force a layout pass so
+        // the bottom clearance recomputes and the last row clears the pill.
+        addCustomObserver(Constants.Notifications.miniPlayerDidAppear, selector: #selector(miniPlayerVisibilityChanged))
+        addCustomObserver(Constants.Notifications.miniPlayerDidDisappear, selector: #selector(miniPlayerVisibilityChanged))
+    }
+
+    @objc private func miniPlayerVisibilityChanged() {
+        view.setNeedsLayout()
     }
 
     @objc func keyboardWillShow(_ notification: Notification) {

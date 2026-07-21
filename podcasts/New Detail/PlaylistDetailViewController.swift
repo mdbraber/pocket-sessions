@@ -227,7 +227,9 @@ class PlaylistDetailViewController: PCViewController, UIScrollViewDelegate {
 
         let multiSelectFooterOffset: CGFloat = isMultiSelectEnabled ? 80 : 0
         let keyBoardHeight = viewModel.isSearching ? keyBoardHeight : 0
-        tableView.contentInset.bottom = Constants.effectiveMiniPlayerOffset + multiSelectFooterOffset + keyBoardHeight
+        // Under Liquid Glass effectiveMiniPlayerOffset is 0 (the pill rides the safe area), but it
+        // overhangs the table here — top up the measured overlap so the last row clears the pill.
+        tableView.contentInset.bottom = Constants.effectiveMiniPlayerOffset + tableView.miniPlayerOverlapClearance() + multiSelectFooterOffset + keyBoardHeight
         tableView.verticalScrollIndicatorInsets.bottom = tableView.contentInset.bottom
     }
 

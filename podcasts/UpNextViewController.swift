@@ -265,7 +265,9 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         worldSwitcher.setTitleTextAttributes([.font: Self.worldSwitcherFont, .foregroundColor: textColor], for: .normal)
         worldSwitcher.setTitleTextAttributes([.font: Self.worldSwitcherFont, .foregroundColor: textColor], for: .selected)
 
-        let queueCount = PlaybackManager.shared.queue.upNextCount() + (queueOwnsCard ? 1 : 0)
+        // The Up Next world surfaces a head row for whichever episode is current — the queue's own,
+        // or a session's now-playing episode — so count it either way.
+        let queueCount = PlaybackManager.shared.queue.upNextCount() + ((queueOwnsCard || sessionOwnsCard) ? 1 : 0)
         setWorldSegment(title: "\(L10n.upNext) · \(queueCount)", playing: queueOwnsCard, at: DisplayedWorld.upNext.rawValue)
 
         // The count describes the session the view is showing (the browsed one); the
@@ -323,34 +325,42 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         sessionHeaderLabel.textAlignment = .center
         sessionHeaderLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
-        // Chevron + name is the breadcrumb back to the session chooser.
-        let titleRow = UIStackView(arrangedSubviews: [sessionBackChevron, sessionHeaderLabel])
+        // The title stays centred at every level; the back arrow is a separate top-left button.
+        let titleRow = UIStackView(arrangedSubviews: [sessionHeaderLabel])
         titleRow.axis = .horizontal
         titleRow.alignment = .center
         titleRow.spacing = 4
         titleRow.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(titleRow)
 
+        // Fork: the way back up to the chooser is a top-left back arrow, like navigating out of a
+        // folder — not an inline chevron beside the centred title.
+        sessionBackChevron.isUserInteractionEnabled = true
+        sessionBackChevron.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(sessionBreadcrumbTapped)))
+        view.addSubview(sessionBackChevron)
+
         sessionInboxLabel.font = UIFont.font(ofSize: 13, weight: .medium, scalingWith: .footnote)
         view.addSubview(sessionInboxLabel)
         sessionInboxLabel.translatesAutoresizingMaskIntoConstraints = false
 
         NSLayoutConstraint.activate([
-            // Centred at every level. The chevron rides inside this row, so a leading-aligned
-            // title would sit further right at the lineup than at the chooser — centring keeps
-            // "Up Next", "Sessions" and a session's own name in the same place.
+            // Centred at every level so "Up Next", "Sessions" and a session's own name stay put.
             titleRow.topAnchor.constraint(equalTo: view.topAnchor, constant: 8),
             titleRow.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            titleRow.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 20),
+            titleRow.leadingAnchor.constraint(greaterThanOrEqualTo: sessionBackChevron.trailingAnchor, constant: 8),
             titleRow.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -20),
+
+            // Top-left back arrow, vertically centred on the title.
+            sessionBackChevron.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            sessionBackChevron.centerYAnchor.constraint(equalTo: titleRow.centerYAnchor),
 
             sessionInboxLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             sessionInboxLabel.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 20),
             sessionInboxLabel.topAnchor.constraint(equalTo: titleRow.bottomAnchor, constant: 3)
         ])
 
-        // The title steps back up to the session chooser; the inbox line opens the
-        // session's source to triage.
+        // The title also steps back up to the session chooser (a larger tap target than the arrow
+        // alone); the inbox line opens the session's source to triage.
         titleRow.isUserInteractionEnabled = true
         titleRow.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(sessionBreadcrumbTapped)))
         sessionInboxLabel.isUserInteractionEnabled = true
@@ -529,8 +539,8 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         let showsChevron = displayedWorld == .session && sessionLevel == .lineup && session != nil
         sessionBackChevron.isHidden = !showsChevron
         if showsChevron {
-            sessionBackChevron.image = UIImage(systemName: "chevron.backward", withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold))?
-                .withTintColor(AppTheme.colorForStyle(.primaryText02, themeOverride: themeOverride), renderingMode: .alwaysOriginal)
+            sessionBackChevron.image = UIImage(systemName: "arrow.backward", withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .semibold))?
+                .withTintColor(AppTheme.colorForStyle(.primaryText01, themeOverride: themeOverride), renderingMode: .alwaysOriginal)
         }
 
         // With no session the view shows a dimmed "Session" bar with the switcher

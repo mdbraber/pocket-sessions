@@ -117,6 +117,13 @@ class UpNextNowPlayingCell: ThemeableSwipeCell {
         NotificationCenter.default.removeObserver(self)
     }
 
+    /// Green when the current episode plays as part of a session, blue when it plays from Up Next.
+    private var playingEqualizerColor: UIColor {
+        PlaybackManager.shared.currentEpisodeIsSessionSourced
+            ? ThemeColor.support02(for: themeOverride)
+            : ThemeColor.support01(for: themeOverride)
+    }
+
     func populateFrom(episode: BaseEpisode) {
         self.episode = DataManager.sharedManager.findBaseEpisode(uuid: episode.uuid) // this is a bit hacky, but we're likely to be passed the cached version here from the player, so reload it from the database to get the latest version with the correct download stats
 
@@ -135,6 +142,8 @@ class UpNextNowPlayingCell: ThemeableSwipeCell {
         }
         progressUpdated(animated: false)
         updateDownloadStatus()
+        // Green when the episode plays as part of a session, blue when it plays from Up Next.
+        playingAnimationView.setFillColor(playingEqualizerColor)
     }
 
     @objc func progressUpdated(animated: Bool = true) {
@@ -216,7 +225,7 @@ class UpNextNowPlayingCell: ThemeableSwipeCell {
             disclosureImageView.tintColor = AppTheme.colorForStyle(.primaryInteractive01, themeOverride: themeOverride)
         }
         downloadingIndicator.color = AppTheme.colorForStyle(.primaryIcon01, themeOverride: themeOverride)
-        playingAnimationView.setFillColor(AppTheme.colorForStyle(.primaryText01, themeOverride: themeOverride))
+        playingAnimationView.setFillColor(playingEqualizerColor)
     }
 
     func updateDownloadStatus() {
