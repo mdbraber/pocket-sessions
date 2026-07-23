@@ -361,17 +361,10 @@ extension MainEpisodeActionView {
     }
 
     private func drawDownloadPlayingProgress(context: CGContext) {
-        context.setLineWidth(MainEpisodeActionView.circleStrokeWidth)
-        context.setStrokeColor(circleProgressColor().cgColor)
-        context.addArc(center: circleCenter, radius: MainEpisodeActionView.circleRadius * enlargementScale, startAngle: MainEpisodeActionView.startingAngle.degreesToRadians, endAngle: playedAngle.degreesToRadians, clockwise: false)
-        context.drawPath(using: .stroke)
-
-        // at 270 degrees the episode is finished, so only draw the download circle if it's less than finished
-        if playedAngle < 270 {
-            context.setStrokeColor(circleProgressLeftColor().cgColor)
-            context.addArc(center: circleCenter, radius: MainEpisodeActionView.circleRadius * enlargementScale, startAngle: playedAngle.degreesToRadians, endAngle: MainEpisodeActionView.endingAngle.degreesToRadians, clockwise: false)
-            context.drawPath(using: .stroke)
-        }
+        // Fork: the shared ring (also used by the session list's play buttons), so they're identical.
+        PlaybackProgressRing.draw(in: context, center: circleCenter,
+                                  radius: MainEpisodeActionView.circleRadius * enlargementScale,
+                                  playedAngle: playedAngle, tint: tintColor)
     }
 
     private func drawPlayTriangle(context: CGContext, color: UIColor) {

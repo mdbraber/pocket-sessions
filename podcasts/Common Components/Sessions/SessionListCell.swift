@@ -116,40 +116,19 @@ class SessionListCell: ThemeableSwipeCell {
         // Fork: long-pressing the play button makes the session current and INHERITS the play state
         // (paused stays paused), as opposed to a tap, which makes it current and plays.
         button.addGestureRecognizer(UILongPressGestureRecognizer(target: self, action: #selector(playLongPressed(_:))))
-        button.layer.addSublayer(playRingTrack)
-        button.layer.addSublayer(playRingRemaining)
+        // The progress ring overlay — the SHARED component, so it's identical to the details rows.
+        button.addSubview(playProgressRing)
         return button
     }()
 
-    /// Fork: the play-button progress ring — the SAME look as the details rows' MainEpisodeActionView:
-    /// a full circle (radius 14, 2pt) where the PLAYED portion is faint (tint @ 0.3) and the REMAINING
-    /// portion is solid tint, reflecting the top-most (next) episode's playback position.
-    private let playRingTrack: CAShapeLayer = {
-        let ring = CAShapeLayer()
-        ring.fillColor = UIColor.clear.cgColor
-        ring.lineWidth = 2
-        return ring
-    }()
-    private let playRingRemaining: CAShapeLayer = {
-        let ring = CAShapeLayer()
-        ring.fillColor = UIColor.clear.cgColor
-        ring.lineWidth = 2
-        ring.strokeStart = 0
-        ring.strokeEnd = 1
-        return ring
-    }()
+    /// Fork: the play-button progress ring, reflecting the top-most (next) episode's playback position.
+    /// Reuses `PlaybackProgressRingView` so it renders EXACTLY like the details rows' action button.
+    private let playProgressRing = PlaybackProgressRingView()
 
-    private var playProgress: CGFloat = 0 {
+    private var playProgress: Double = 0 {
         didSet {
             guard playProgress != oldValue else { return }
-            CATransaction.begin(); CATransaction.setDisableActions(true)
-            // The solid arc covers the REMAINING (unplayed) portion; the faint track shows through the
-            // played portion. Both hidden when there's no progress (a plain play button).
-            playRingRemaining.strokeStart = playProgress
-            let hidden = playProgress <= 0
-            playRingTrack.isHidden = hidden
-            playRingRemaining.isHidden = hidden
-            CATransaction.commit()
+            playProgressRing.progress = playProgress
         }
     }
 
@@ -315,7 +294,7 @@ class SessionListCell: ThemeableSwipeCell {
         rowProgress = row.progress
         refreshProgressFill()
         // The play-button ring reflects the top-most (next) episode's progress, on every session row.
-        playProgress = CGFloat(min(1, max(0, row.progress)))
+        playProgress = min(1, max(0, row.progress))
         setNeedsLayout()
 
         // The lane that owns the card shows the equalizer — animated while playing, frozen while
@@ -485,10 +464,8 @@ class SessionListCell: ThemeableSwipeCell {
             playButton.tintColor = AppTheme.colorForStyle(.primaryText01, themeOverride: themeOverride)
             surfaceView.backgroundColor = .clear
         }
-        // The play-button ring follows the button's own tint: solid on the remaining (unplayed) arc,
-        // faint (0.3) on the played arc — exactly the MainEpisodeActionView treatment.
-        playRingRemaining.strokeColor = playButton.tintColor.cgColor
-        playRingTrack.strokeColor = playButton.tintColor.withAlphaComponent(0.3).cgColor
+        // The ring follows the button's own tint (the shared view applies the played/remaining alphas).
+        playProgressRing.ringTint = playButton.tintColor
         // The border marks the actually-active LANE: Up Next when the queue is playing, otherwise the
         // active session. The top session keeps its background but takes no border unless it's the one
         // playing. A drag suppresses the active border too.
@@ -511,16 +488,9 @@ class SessionListCell: ThemeableSwipeCell {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         progressWidth?.constant = surfaceView.bounds.width * CGFloat(min(1, max(0, progress)))
-        // The play-button progress ring: a full circle from 12 o'clock, radius 14 (matching the
-        // details rows' MainEpisodeActionView), clamped to fit the button.
-        let b = playButton.bounds
-        if b.width > 0 {
-            let radius = min(14, min(b.width, b.height) / 2 - 1)
-            let path = UIBezierPath(arcCenter: CGPoint(x: b.midX, y: b.midY), radius: radius,
-                                    startAngle: -.pi / 2, endAngle: .pi * 1.5, clockwise: true).cgPath
-            for ring in [playRingTrack, playRingRemaining] { ring.frame = b; ring.path = path }
-        }
         CATransaction.commit()
+        // The play-button progress ring fills the button (radius clamped inside PlaybackProgressRingView).
+        playProgressRing.frame = playButton.bounds
     }
 
     override func prepareForReuse() {

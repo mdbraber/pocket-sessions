@@ -697,14 +697,13 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         sessionListRows = [upNextListRow()] + (currentRow.map { [$0] } ?? []) + pool
     }
 
-    /// Fork: a single tap on a session-list row opens that lane's page (its lineup) without playing.
-    /// The Up Next row opens the queue lineup; a session row opens its lineup — and becomes the
-    /// "current" session (row 1) so it's there when you come back.
+    /// Fork: a single tap on a session-list row PEEKS at that lane's page (its lineup) — pure
+    /// navigation, no playback change and NO promotion to the current session. A session only becomes
+    /// current when you actually play it (the play button).
     func openSessionLanePage(_ row: SessionListRow) {
         if row.isUpNext {
             enterUpNextWorld()
         } else {
-            makeCurrentSession(row.sessionUuid)
             openSessionFromList(row)
         }
     }
