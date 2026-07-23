@@ -92,9 +92,6 @@ class SessionManager {
         NotificationCenter.default.addObserver(self, selector: #selector(smartFeederRulesMayHaveChanged), name: ServerNotifications.syncCompleted, object: nil)
         smartFeederRulesMayHaveChanged()
         syncFolderScopedPodcastSessions()
-        // There is exactly one Inbox — drop any stray `.allPodcasts` session that isn't the canonical
-        // one (e.g. a legacy `fork-global-inbox-session` from before the Inbox was renamed).
-        SessionStore.shared.removeStrayInboxes()
     }
 
     private let eagerReconcileDebounce = Debounce(delay: 1.5)
