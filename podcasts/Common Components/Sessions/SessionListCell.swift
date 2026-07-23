@@ -116,8 +116,30 @@ class SessionListCell: ThemeableSwipeCell {
         // Fork: long-pressing the play button makes the session current and INHERITS the play state
         // (paused stays paused), as opposed to a tap, which makes it current and plays.
         button.addGestureRecognizer(UILongPressGestureRecognizer(target: self, action: #selector(playLongPressed(_:))))
+        button.layer.addSublayer(playProgressRing)
         return button
     }()
+
+    /// Fork: a thin ring around the play button showing the TOP-MOST (next) episode's playback
+    /// progress — the same at-a-glance cue the details rows get from their action button.
+    private let playProgressRing: CAShapeLayer = {
+        let ring = CAShapeLayer()
+        ring.fillColor = UIColor.clear.cgColor
+        ring.lineWidth = 2
+        ring.lineCap = .round
+        ring.strokeStart = 0
+        ring.strokeEnd = 0
+        return ring
+    }()
+
+    private var playProgress: CGFloat = 0 {
+        didSet {
+            guard playProgress != oldValue else { return }
+            CATransaction.begin(); CATransaction.setDisableActions(true)
+            playProgressRing.strokeEnd = playProgress
+            CATransaction.commit()
+        }
+    }
 
     /// The equalizer bars marking the lane that's sounding — the SAME view and intrinsic size as an
     /// episode-list row's now-playing indicator. Green for a session, blue for Up Next.
@@ -280,6 +302,9 @@ class SessionListCell: ThemeableSwipeCell {
         // drops it too (see refreshProgressFill).
         rowProgress = row.progress
         refreshProgressFill()
+        // The play-button ring reflects the top-most (next) episode's progress, on every session row.
+        playProgress = CGFloat(min(1, max(0, row.progress)))
+        setNeedsLayout()
 
         // The lane that owns the card shows the equalizer — animated while playing, frozen while
         // paused (NowPlayingIndicatorView manages that itself). Blue for the queue, green for a session.
@@ -448,6 +473,9 @@ class SessionListCell: ThemeableSwipeCell {
             playButton.tintColor = AppTheme.colorForStyle(.primaryText01, themeOverride: themeOverride)
             surfaceView.backgroundColor = .clear
         }
+        // The play-button progress ring follows the button's own tint (accent on the top cards, white
+        // elsewhere), shown at a low alpha so the play glyph stays the focus.
+        playProgressRing.strokeColor = playButton.tintColor.withAlphaComponent(0.9).cgColor
         // The border marks the actually-active LANE: Up Next when the queue is playing, otherwise the
         // active session. The top session keeps its background but takes no border unless it's the one
         // playing. A drag suppresses the active border too.
@@ -470,6 +498,15 @@ class SessionListCell: ThemeableSwipeCell {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         progressWidth?.constant = surfaceView.bounds.width * CGFloat(min(1, max(0, progress)))
+        // The play-button progress ring: a circle inset inside the 36pt button, starting at 12 o'clock.
+        let b = playButton.bounds
+        let inset = playProgressRing.lineWidth / 2 + 1
+        let radius = min(b.width, b.height) / 2 - inset
+        if radius > 0 {
+            playProgressRing.frame = b
+            playProgressRing.path = UIBezierPath(arcCenter: CGPoint(x: b.midX, y: b.midY), radius: radius,
+                                                 startAngle: -.pi / 2, endAngle: .pi * 1.5, clockwise: true).cgPath
+        }
         CATransaction.commit()
     }
 
@@ -478,6 +515,7 @@ class SessionListCell: ThemeableSwipeCell {
         artworkView.alpha = 1
         artworkView.clearArtwork()
         progress = 0
+        playProgress = 0
         ownsCard = false
         suppressActiveBoxForDrag = false
         isTopSession = false
