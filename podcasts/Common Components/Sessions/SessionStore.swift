@@ -42,6 +42,9 @@ struct Session: Codable, Equatable, Identifiable {
     /// only gathered members stay prunable. Pins never outlive membership: leaving the
     /// lineup unpins, so a later re-gather behaves normally.
     var pinnedEpisodeUuids: [String] = []
+    /// Fork: the user's manual position in the "recent/planned" session list. Synced (it rides
+    /// the CloudKit Session record). `Int.max` = never placed → falls to the end, in creation order.
+    var sortIndex = Int.max
 
     var id: String { uuid }
 
@@ -54,7 +57,8 @@ struct Session: Codable, Equatable, Identifiable {
         insertMode: Int32 = PlaylistInsertMode.top.rawValue,
         lastInsertedUuid: String = "",
         lastUsed: Date? = nil,
-        pinnedEpisodeUuids: [String] = []
+        pinnedEpisodeUuids: [String] = [],
+        sortIndex: Int = Int.max
     ) {
         self.uuid = uuid
         self.storePlaylistUuid = storePlaylistUuid
@@ -65,10 +69,11 @@ struct Session: Codable, Equatable, Identifiable {
         self.lastInsertedUuid = lastInsertedUuid
         self.lastUsed = lastUsed
         self.pinnedEpisodeUuids = pinnedEpisodeUuids
+        self.sortIndex = sortIndex
     }
 
     enum CodingKeys: String, CodingKey {
-        case uuid, storePlaylistUuid, feeder, autoAdd, autoFill, insertMode, lastInsertedUuid, lastUsed, pinnedEpisodeUuids
+        case uuid, storePlaylistUuid, feeder, autoAdd, autoFill, insertMode, lastInsertedUuid, lastUsed, pinnedEpisodeUuids, sortIndex
     }
 
     // CRITICAL: same rule as Document.init(from:) — decode every defaulted key with
@@ -89,6 +94,7 @@ struct Session: Codable, Equatable, Identifiable {
         lastInsertedUuid = try c.decodeIfPresent(String.self, forKey: .lastInsertedUuid) ?? ""
         lastUsed = try c.decodeIfPresent(Date.self, forKey: .lastUsed)
         pinnedEpisodeUuids = try c.decodeIfPresent([String].self, forKey: .pinnedEpisodeUuids) ?? []
+        sortIndex = try c.decodeIfPresent(Int.self, forKey: .sortIndex) ?? Int.max
     }
 }
 
@@ -122,10 +128,24 @@ final class SessionStore {
     static let changed = NSNotification.Name(rawValue: "SJSessionsChanged")
     static let globalInboxUuid = "global-inbox"
 
-    struct Document: Codable {
+    struct Document: Codable, Equatable {
         var sessions: [Session] = []
 
         init() {}
+
+        /// Insert-or-replace a session by uuid, in place (document-level so it can run inside a single
+        /// store-queue transaction — used by both local mutations and remote applies).
+        mutating func upsertSession(_ session: Session) {
+            if let index = sessions.firstIndex(where: { $0.uuid == session.uuid }) {
+                sessions[index] = session
+            } else {
+                sessions.append(session)
+            }
+        }
+
+        mutating func deleteSession(uuid: String) {
+            sessions.removeAll { $0.uuid == uuid }
+        }
 
         enum CodingKeys: String, CodingKey {
             case sessions
@@ -222,12 +242,19 @@ final class SessionStore {
     }
 
     func upsert(_ session: Session) {
+        mutate { $0.upsertSession(session) }
+    }
+
+    /// Mutate a session in ONE transaction, starting from the LIVE stored row when present (falling
+    /// back to the passed copy for a brand-new session). Re-reading inside the store queue means a
+    /// stale captured `session` can't clobber fields another mutation changed concurrently (e.g.
+    /// `lastUsed`, `sortIndex`), and lets a caller batch several field changes (lastInserted + pins)
+    /// into a single save + cloud diff instead of a chain of `upsert`/`pin`/`unpin` calls.
+    func mutateSession(_ session: Session, _ transform: (inout Session) -> Void) {
         mutate { document in
-            if let index = document.sessions.firstIndex(where: { $0.uuid == session.uuid }) {
-                document.sessions[index] = session
-            } else {
-                document.sessions.append(session)
-            }
+            var updated = document.sessions.first(where: { $0.uuid == session.uuid }) ?? session
+            transform(&updated)
+            document.upsertSession(updated)
         }
     }
 
@@ -275,43 +302,84 @@ final class SessionStore {
     /// Removes the session row. The store playlist and any feeder playlist are the
     /// caller's to delete (they're real synced objects).
     func delete(sessionUuid: String) {
+        mutate { $0.deleteSession(uuid: sessionUuid) }
+    }
+
+    /// Fork: the manual order for the "recent/planned" session list. Assigns each named session a
+    /// `sortIndex` matching its position in `orderedUuids`; every other session keeps its own. The
+    /// index rides the synced Session record, so the arrangement follows you across devices.
+    func reorderSessions(_ orderedUuids: [String]) {
+        // Build the uuid → offset map once (O(n)), then a single O(n) pass — not `firstIndex` inside
+        // a loop over all uuids (which was O(n²) per drag/sort-apply).
+        var offsets = [String: Int](minimumCapacity: orderedUuids.count)
+        for (index, uuid) in orderedUuids.enumerated() { offsets[uuid] = index }
         mutate { document in
-            document.sessions.removeAll { $0.uuid == sessionUuid }
+            for i in document.sessions.indices {
+                guard let index = offsets[document.sessions[i].uuid],
+                      document.sessions[i].sortIndex != index else { continue }
+                document.sessions[i].sortIndex = index
+            }
         }
     }
 
 
     // MARK: - Persistence
 
-    /// Cloud sync taps every mutation here: old and new snapshots, on the store
-    /// queue. Nil when sync is off; remote applications don't echo back.
+    /// Cloud sync taps every mutation here: old and new snapshots, on the store queue. Nil when sync
+    /// is off; remote applies (see `applyRemoteUpsert`/`applyRemoteDelete`) never echo back.
     var cloudDiffHandler: ((_ old: SessionStoreSnapshot, _ new: SessionStoreSnapshot) -> Void)?
-    private var applyingRemote = false
 
+    /// A LOCAL mutation: persist + notify the cloud diff. Skips the file write, the cloud diff, and
+    /// the change notification entirely when the block produced no change (many mutators are no-ops).
     private func mutate(_ block: (inout Document) -> Void) {
-        queue.sync {
+        let changed: Bool = queue.sync {
             let old = document
             block(&document)
+            guard old != document else { return false }
             save()
-            if !applyingRemote, let handler = cloudDiffHandler {
+            if let handler = cloudDiffHandler {
                 handler(SessionStoreSnapshot(document: old), SessionStoreSnapshot(document: document))
             }
+            return true
         }
-        NotificationCenter.postChangedWithoutBlocking(Self.changed)
+        if changed { NotificationCenter.postChangedWithoutBlocking(Self.changed) }
     }
 
-    /// Applies a remote change without echoing it back into the sync engine.
-    func applyRemote(_ block: @escaping () -> Void) {
-        applyingRemote = true
-        block()
-        applyingRemote = false
+    /// A REMOTE apply: mutate + persist in a single queue-confined transaction, WITHOUT invoking the
+    /// cloud diff (so it can't echo back to the sync engine). Replaces the old shared `applyingRemote`
+    /// bool, which was written off-queue and could make a concurrent local mutation silently skip its
+    /// own sync (a data race + lost-sync window).
+    private func applyRemote(_ block: (inout Document) -> Void) {
+        let changed: Bool = queue.sync {
+            let old = document
+            block(&document)
+            guard old != document else { return false }
+            save()
+            return true
+        }
+        if changed { NotificationCenter.postChangedWithoutBlocking(Self.changed) }
+    }
+
+    func applyRemoteUpsert(_ session: Session) {
+        applyRemote { $0.upsertSession(session) }
+    }
+
+    func applyRemoteDelete(sessionUuid: String) {
+        applyRemote { $0.deleteSession(uuid: sessionUuid) }
     }
 
     private func load() {
         queue.sync {
-            guard let data = try? Data(contentsOf: fileURL),
-                  let loaded = try? JSONDecoder().decode(Document.self, from: data) else { return }
-            document = loaded
+            guard let data = try? Data(contentsOf: fileURL) else { return } // no file yet — fresh store
+            do {
+                document = try JSONDecoder().decode(Document.self, from: data)
+            } catch {
+                // The file exists but won't decode (truncated / partial restore). Quarantine it before
+                // the next mutation overwrites it with an empty document and loses everything.
+                let quarantine = fileURL.deletingPathExtension().appendingPathExtension("corrupt.json")
+                try? FileManager.default.removeItem(at: quarantine)
+                try? FileManager.default.moveItem(at: fileURL, to: quarantine)
+            }
         }
     }
 

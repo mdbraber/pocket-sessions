@@ -299,9 +299,9 @@ class PlaylistDetailViewController: PCViewController, UIScrollViewDelegate {
         searchController.didMove(toParent: self)
 
         // Match the podcast page's search field exactly: 15pt subheadline-scaled font,
-        // 36pt pill (radius 18) vertically centered in the 56pt row.
+        // 36pt rounded-rect field (radius 8, not a pill) vertically centered in the 56pt row.
         searchController.searchTextField.font = UIFont.font(ofSize: 15, weight: .regular, scalingWith: .subheadline)
-        searchController.roundedBackgroundView.layer.cornerRadius = 18
+        searchController.roundedBackgroundView.layer.cornerRadius = 8
         var pillHeightAdjusted = false
         for constraint in searchController.roundedBackgroundView.constraints where constraint.firstAttribute == .height && constraint.relation == .equal {
             constraint.constant = 36

@@ -102,7 +102,7 @@ device: ## Builds, installs and launches on the personal iPhone (paid-team autom
 	    CODE_SIGN_STYLE=Automatic \
 	    PROVISIONING_PROFILE_SPECIFIER= \
 	    -allowProvisioningUpdates build
-	xcrun devicectl device install app --device $(DEVICE_ID) ~/Library/Developer/Xcode/DerivedData/podcasts-*/Build/Products/Debug-iphoneos/podcasts.app
+	xcrun devicectl device install app --device $(DEVICE_ID) "$$(ls -dt ~/Library/Developer/Xcode/DerivedData/podcasts-*/Build/Products/Debug-iphoneos/podcasts.app | head -1)"
 	xcrun devicectl device process launch --device $(DEVICE_ID) com.example.podcasts
 
 # --- TestFlight (fork, personal paid team) ---------------------------------
@@ -127,7 +127,6 @@ testflight: ## Archives a Release build and uploads it to TestFlight (paid-team 
 	    CODE_SIGN_STYLE=Automatic \
 	    "CODE_SIGN_IDENTITY=Apple Development" \
 	    PROVISIONING_PROFILE_SPECIFIER= \
-	    "CODE_SIGN_ENTITLEMENTS=$(CURDIR)/config/PocketCasts.device.entitlements" \
 	    -allowProvisioningUpdates archive
 	xcodebuild -exportArchive \
 	    -archivePath "$(TESTFLIGHT_ARCHIVE)" \

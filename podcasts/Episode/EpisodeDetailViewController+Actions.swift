@@ -109,10 +109,14 @@ extension EpisodeDetailViewController {
                 DataManager.sharedManager.save(episode: episode)
                 updateProgress()
             }
-            if let storeUuid = playFromSessionStoreUuid,
-               let session = SessionStore.shared.session(forStore: storeUuid) {
-                // Opened from a session's lineup: play it there, so the session becomes the
-                // active one instead of the episode landing in the queue.
+            // Opened from a session's lineup: play it there so the session becomes the active one
+            // instead of the episode landing in the queue. The uuid can be a store playlist, a
+            // podcast, or a smart-playlist feeder (a podcast session's active pointer is its podcast
+            // uuid, not its store), so resolve the session by any of them.
+            if let uuid = playFromSessionStoreUuid,
+               let session = SessionStore.shared.session(forStore: uuid)
+                   ?? SessionStore.shared.session(forPodcast: uuid)
+                   ?? SessionStore.shared.session(forSmartPlaylistFeeder: uuid) {
                 SessionManager.shared.play(episode: episode, in: session)
             } else {
                 PlaybackActionHelper.play(episode: episode, playlist: fromPlaylist)

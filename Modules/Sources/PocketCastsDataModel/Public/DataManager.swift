@@ -1120,6 +1120,11 @@ public class DataManager {
         playlistManager.insertIntoCustomOrder(episodeUuids: episodeUuids, for: playlist, dbQueue: dbQueue)
     }
 
+    /// Fork: atomic session add — see `PlaylistDataManager.insertSessionMembers`.
+    public func insertSessionMembers(episodeUuids: [String], insertMode: PlaylistInsertMode, anchorUuid: String, for playlist: EpisodeFilter) {
+        playlistManager.insertSessionMembers(episodeUuids: episodeUuids, insertMode: insertMode, anchorUuid: anchorUuid, for: playlist, dbQueue: dbQueue)
+    }
+
     public func pruneCustomOrder(keepingEpisodeUuids: [String], for playlist: EpisodeFilter) {
         playlistManager.pruneCustomOrder(keepingEpisodeUuids: keepingEpisodeUuids, for: playlist, dbQueue: dbQueue)
     }

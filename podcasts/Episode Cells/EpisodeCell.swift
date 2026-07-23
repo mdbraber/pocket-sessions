@@ -42,6 +42,12 @@ class EpisodeCell: ThemeableSwipeCell, MainEpisodeActionViewDelegate {
         }
     }
 
+    /// Fork: when true, `setEditing` leaves `shouldShowSelect` alone — the host drives the select
+    /// control explicitly. Needed in the Up Next / session table, which is PERMANENTLY in editing mode
+    /// (for drag reorder): UIKit re-calls `setEditing(true)` whenever a cell is re-inserted during a
+    /// reorder, which would otherwise flash the select circle even when multi-select is off.
+    var managesOwnSelectControl = false
+
     private var topDivider: ThemeDividerView?
 
     /// Shows a hairline divider along the top edge of the cell. Used by lists where the
@@ -116,11 +122,11 @@ class EpisodeCell: ThemeableSwipeCell, MainEpisodeActionViewDelegate {
             if let stack = actionButton.superview as? UIStackView,
                let index = stack.arrangedSubviews.firstIndex(of: actionButton) {
                 stack.insertArrangedSubview(nowPlayingIndicator, at: index)
-                stack.setCustomSpacing(12, after: nowPlayingIndicator)
+                stack.setCustomSpacing(Self.equalizerToButtonGap, after: nowPlayingIndicator)
             } else {
                 contentView.addSubview(nowPlayingIndicator)
                 NSLayoutConstraint.activate([
-                    nowPlayingIndicator.trailingAnchor.constraint(equalTo: actionButton.leadingAnchor, constant: -12),
+                    nowPlayingIndicator.trailingAnchor.constraint(equalTo: actionButton.leadingAnchor, constant: -Self.equalizerToButtonGap),
                     nowPlayingIndicator.centerYAnchor.constraint(equalTo: actionButton.centerYAnchor)
                 ])
             }
@@ -133,6 +139,66 @@ class EpisodeCell: ThemeableSwipeCell, MainEpisodeActionViewDelegate {
         // Green when the episode plays as part of a session, blue when it plays from Up Next.
         nowPlayingIndicator.color = PlaybackManager.shared.currentEpisodeIsSessionSourced ? ThemeColor.support02() : ThemeColor.support01()
         nowPlayingIndicator.isHidden = !nowPlaying
+    }
+
+    /// Fork: the gap between the now-playing equalizer and the trailing play/pause button.
+    private static let equalizerToButtonGap: CGFloat = 10
+
+    /// Fork: the rounded accent surface behind the ACTIVE (currently-playing) row — a faint tint
+    /// (0.18) plus a solid 1.5pt border, blue in Up Next / green in a session. It replaces the old
+    /// big now-playing card: the playing episode is a normal row now, just marked by this surface,
+    /// the equalizer, and its action button showing pause. Nil accent = a plain row (no surface).
+    private lazy var activeSurfaceView: UIView = {
+        let view = UIView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.layer.cornerRadius = 12
+        view.layer.masksToBounds = true
+        view.isUserInteractionEnabled = false
+        return view
+    }()
+
+    /// Fork: the backdrop progress fill inside the active surface — a faint band covering the played
+    /// fraction of the row, matching the now-playing card / overview row.
+    private lazy var activeProgressView: UIView = {
+        let view = UIView()
+        view.isUserInteractionEnabled = false
+        return view
+    }()
+
+    private var activeSurfaceAccent: UIColor?
+    private var activeProgressFraction: CGFloat = 0
+
+    func setActiveSurface(accent: UIColor?, progress: CGFloat = 0) {
+        activeSurfaceAccent = accent
+        activeProgressFraction = max(0, min(1, progress))
+        guard let accent else {
+            activeSurfaceView.isHidden = true
+            return
+        }
+        if activeSurfaceView.superview == nil {
+            contentView.insertSubview(activeSurfaceView, at: 0)
+            activeSurfaceView.addSubview(activeProgressView)
+            NSLayoutConstraint.activate([
+                activeSurfaceView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 8),
+                activeSurfaceView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -8),
+                activeSurfaceView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 2),
+                activeSurfaceView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -2)
+            ])
+        }
+        activeSurfaceView.isHidden = false
+        activeSurfaceView.backgroundColor = accent.withAlphaComponent(0.18)
+        activeSurfaceView.layer.borderColor = accent.cgColor
+        activeSurfaceView.layer.borderWidth = 1.5
+        // A slightly stronger band of the accent marks the played portion.
+        let theme = themeOverride ?? Theme.sharedTheme.activeTheme
+        activeProgressView.backgroundColor = theme.isDark ? UIColor.white.withAlphaComponent(0.08) : UIColor.black.withAlphaComponent(0.08)
+        setNeedsLayout()
+    }
+
+    private func layoutActiveProgress() {
+        guard !activeSurfaceView.isHidden, activeProgressView.superview != nil else { return }
+        let w = activeSurfaceView.bounds.width * activeProgressFraction
+        activeProgressView.frame = CGRect(x: 0, y: 0, width: w, height: activeSurfaceView.bounds.height)
     }
     @IBOutlet var actionButton: MainEpisodeActionView! {
         didSet {
@@ -170,6 +236,10 @@ class EpisodeCell: ThemeableSwipeCell, MainEpisodeActionViewDelegate {
     /// session — same as tapping the row — instead of standalone in Up Next.
     var playInSession: Session?
 
+    /// Fork: when set (the Up Next session lineup), the play button routes here instead of the standard
+    /// session play — the host moves the episode to the top of the lineup and makes it active.
+    var onSessionLineupPlay: ((BaseEpisode) -> Void)?
+
     /// Fork: hide the play/download action button entirely (session lists play via tap, long-press,
     /// or the detail page, so the button is redundant clutter there).
     var hidesActionButton = false { didSet { setNeedsLayout() } }
@@ -180,7 +250,15 @@ class EpisodeCell: ThemeableSwipeCell, MainEpisodeActionViewDelegate {
     private var listUuid: String?
     private var mainTintColor: UIColor? {
         didSet {
-            actionButton.tintColor = mainTintColor
+            actionButton.tintColor = playButtonTintOverride ?? mainTintColor
+        }
+    }
+
+    /// Fork: forces the play/pause action button to a specific colour (white in the Up Next / session
+    /// lineups) without recolouring the date/bookmark, which follow `mainTintColor`.
+    var playButtonTintOverride: UIColor? {
+        didSet {
+            actionButton.tintColor = playButtonTintOverride ?? mainTintColor
         }
     }
 
@@ -232,7 +310,9 @@ class EpisodeCell: ThemeableSwipeCell, MainEpisodeActionViewDelegate {
         super.setEditing(false, animated: animated)
         isMultiSelectEnabled = editing
 
-        shouldShowSelect = editing
+        if !managesOwnSelectControl {
+            shouldShowSelect = editing
+        }
         if editing {
             hideSwipe(animated: true)
         } else {
@@ -243,6 +323,7 @@ class EpisodeCell: ThemeableSwipeCell, MainEpisodeActionViewDelegate {
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        layoutActiveProgress()
 
         // Workaround for iOS issue. When a table transitions to editing mode
         // it takes over hiding/showing views and sometimes the selectivew doesn't
@@ -617,6 +698,13 @@ class EpisodeCell: ThemeableSwipeCell, MainEpisodeActionViewDelegate {
             AnalyticsHelper.podcastEpisodePlayedFromList(listId: listUuid, podcastUuid: podcastUuid)
         }
 
+        // Fork: the Up Next session lineup routes play through the host so the episode moves to the
+        // top and becomes the active (styled) item — matching how the queue pins its now-playing.
+        if let onSessionLineupPlay {
+            onSessionLineupPlay(episode)
+            return
+        }
+
         // Fork: on a session's lineup the play button joins the session rather than starting
         // standalone queue playback.
         if let playInSession {
@@ -752,6 +840,9 @@ class EpisodeCell: ThemeableSwipeCell, MainEpisodeActionViewDelegate {
     override func prepareForReuse() {
         super.prepareForReuse()
         setNowPlaying(false)
+        setActiveSurface(accent: nil)
+        onSessionLineupPlay = nil
+        playButtonTintOverride = nil
 
         unseenIndicator.isHidden = true
         unseenIndicatorVisible = false

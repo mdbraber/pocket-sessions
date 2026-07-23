@@ -370,6 +370,14 @@ class Settings: NSObject {
     }
     class func setHideEmptySessions(_ on: Bool) { UserDefaults.standard.set(on, forKey: hideEmptySessionsKey) }
 
+    static let upNextInSessionListKey = "SJUpNextInSessionList"
+    /// Fork: where the "Up Next" row sits on the session-list screen. False (default) = pinned at the
+    /// top with its own accent box. True = a normal session row in the list (no separate styling).
+    class func upNextInSessionList() -> Bool {
+        UserDefaults.standard.bool(forKey: upNextInSessionListKey)
+    }
+    class func setUpNextInSessionList(_ on: Bool) { UserDefaults.standard.set(on, forKey: upNextInSessionListKey) }
+
     /// Hand-built (manual) session playlists.
     class func showManualSessions() -> Bool {
         UserDefaults.standard.object(forKey: showManualSessionsKey) as? Bool ?? true

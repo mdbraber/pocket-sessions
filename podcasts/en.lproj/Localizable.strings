@@ -334,6 +334,9 @@
 /* Fork: CarPlay tab showing Up Next, the current session, and the other sessions to switch between. */
 "carplay_queue_tab" = "Queue";
 
+/* Fork: the main tab bar item for the queue screen, which holds the Up Next and Session worlds. */
+"tab_queue" = "Queue";
+
 /* CarPlay empty state when there are no sessions to show. */
 "carplay_no_sessions" = "No sessions — create one in the app";
 
@@ -2535,7 +2538,10 @@
 "settings_auto_add_podcasts" = "Auto-Add Podcasts";
 
 /* Fork: title of the global Auto Add to Session settings screen. */
-"settings_auto_add_session" = "Auto Add to Session";
+"settings_auto_add_session" = "Auto Add to Sessions";
+
+/* Fork: explanation shown at the top of the Auto Add to Sessions settings screen. */
+"settings_auto_add_session_explanation" = "When a podcast you choose publishes a new episode, it's added automatically to every session that includes that podcast — including smart playlists — ready and waiting to play.";
 
 /* Fork: title of the Settings section grouping Up Next and Session behavior. */
 "settings_up_next_and_session" = "Up Next & Session";
@@ -2547,7 +2553,7 @@
 "settings_mirror_session_to_up_next" = "Session Adds to Up Next";
 
 /* Fork: per-podcast toggle — auto-add new episodes of this podcast to its Session (mirrors "Auto Add to Up Next"). */
-"settings_auto_add_to_session" = "Auto Add to Session";
+"settings_auto_add_to_session" = "Auto Add to Sessions";
 
 /* Fork: header of the settings group holding the linked-adds switches. */
 "settings_linking" = "Linking";
@@ -7010,6 +7016,28 @@
 /* Fork: session chooser — title of the sort picker. */
 "session_sort_title" = "Sort Sessions";
 
+/* Fork: session list sort — the user's manual drag order. */
+"session_sort_manual" = "Drag and Drop";
+
+/* Fork: session list sort — most-progressed session first. */
+"session_sort_progress" = "Progress";
+
+/* Fork: session list search field placeholder. */
+"session_search_placeholder" = "Search Sessions";
+
+/* Fork: session list ⋯ menu — heading for the sort submenu. */
+"session_sort_heading" = "Sort";
+
+/* Fork: session list ⋯ menu — the Sort row label (mirrors "Sort Episodes" on a podcast page). */
+"session_sort_sessions" = "Sort Sessions";
+
+/* Fork: session list ⋯ menu — one-shot sort: re-arranges the drag order once, not a sticky sort mode. */
+"session_sort_once" = "Reorder Sessions";
+/* Session list ⋯ menu: where the Up Next row sits — pinned at the top, or as a normal row in the session list. */
+"session_up_next_position" = "Up Next Row";
+"session_up_next_position_top" = "Top";
+"session_up_next_position_in_list" = "In Session List";
+
 /* Fork: session chooser sort — most recently played first (the default). */
 "session_sort_recent" = "Recently Played";
 
@@ -7025,8 +7053,24 @@
 /* Fork: session chooser ⋯ menu — heading for the visibility toggles. */
 "session_show_heading" = "Show";
 
+
+/* Fork: session list ⋯ menu — enter drag-to-reorder mode for the manual pool order. */
+"session_reorder" = "Reorder Sessions";
+
+/* Fork: session list ⋯ menu — enter drag-to-reorder mode (sits under Sort). */
+"session_reorder_items" = "Reorder Items";
+
 /* Fork: session chooser ⋯ menu — hide sessions whose lineup is empty. */
 "session_show_hide_empty" = "Hide Empty Sessions";
+
+/* Fork: session chooser ⋯ menu — noun label for the empty-sessions visibility toggle (secondary label is Hide/Show). */
+"session_empty_sessions" = "Empty Sessions";
+
+/* Fork: session chooser ⋯ menu — noun label for the smart-playlist-podcast visibility toggle (secondary label is Hide/Show). */
+"session_podcasts_in_smart_playlists" = "Podcasts in Smart Playlists";
+
+/* Fork: session chooser ⋯ menu — hide a podcast's own session when that podcast is already covered by a smart-playlist session. */
+"session_hide_podcast_in_smart_playlist" = "Hide Podcasts in Smart Playlists";
 
 /* Fork: session chooser ⋯ menu — include sessions fed by a single podcast. */
 "session_show_podcasts" = "Podcast Sessions";

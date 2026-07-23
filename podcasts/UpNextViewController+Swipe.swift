@@ -9,13 +9,32 @@ extension UpNextViewController: SwipeTableViewCellDelegate, SwipeHandler {
     }
 
     func tableView(_ tableView: UITableView, editActionsForRowAt indexPath: IndexPath, for orientation: SwipeActionsOrientation) -> [SwipeAction]? {
-        // The chooser lists sessions, not episodes — nothing to swipe.
-        if showingSessionList { return nil }
+        // Fork: swipe a session away to remove it from the "recent/planned" list. A podcast/folder
+        // session's dedicated store is deleted (and "Play as Session" recreates it); a smart-playlist
+        // or manual session keeps its underlying playlist — only the session row goes. The pinned
+        // playing session isn't swipeable.
+        if showingSessionList {
+            guard !sessionListReorderMode, orientation == .right,
+                  let listIndex = sessionListIndex(forTableRow: indexPath.row),
+                  let row = sessionListRows[safe: listIndex], !row.isActive, !row.isUpNext else { return nil }
+            let remove = SwipeAction(style: .destructive, title: nil) { [weak self] _, _ in
+                guard let self, let session = SessionStore.shared.session(uuid: row.sessionUuid) else { return }
+                self.removeSessionFromList(session)
+                self.refreshSessionState()
+                self.reloadTable()
+            }
+            remove.image = UIImage(systemName: "trash")
+            remove.backgroundColor = ThemeColor.support05(for: themeOverride)
+            remove.accessibilityLabel = L10n.remove
+            return [remove]
+        }
         // The Now Playing card carries the same actions as its world's rows — acting
         // on the playing episode hands playback to whatever comes next.
         if tableData[indexPath.section] == .nowPlayingSection {
-            guard isTopBlockCardRow(indexPath),
-                  let episode = PlaybackManager.shared.currentEpisode() else { return nil }
+            // Fork: the session lineup's card is its pinned current episode (which — for a browsed,
+            // non-active session — is NOT the player's current episode), so resolve it directly.
+            let cardEpisode = displayedWorld == .session ? sessionCurrentEpisode : PlaybackManager.shared.currentEpisode()
+            guard isTopBlockCardRow(indexPath), let episode = cardEpisode else { return nil }
             if orientation == .left {
                 // The card *is* the playing episode, so "move to top/bottom" is a no-op —
                 // only the two add actions make sense here.
@@ -49,7 +68,7 @@ extension UpNextViewController: SwipeTableViewCellDelegate, SwipeHandler {
         // Session rows aren't queue rows — moves reorder the mirrored playlist on the
         // left; archive / mark played on the right.
         if tableData[indexPath.section] == .sessionSection {
-            guard let episode = sessionEpisodes?[safe: indexPath.row] else { return nil }
+            guard let episode = filteredSessionTail[safe: indexPath.row] else { return nil }
             switch orientation {
             case .left:
                 // Same left swipe as every other row: Add to Session (only when this

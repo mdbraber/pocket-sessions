@@ -167,8 +167,10 @@ final class SessionCloudSync {
         guard let engine else { return }
         var pending = [CKSyncEngine.PendingRecordZoneChange]()
 
-        let oldSessions = Dictionary(uniqueKeysWithValues: old.sessions.map { ($0.uuid, $0) })
-        let newSessions = Dictionary(uniqueKeysWithValues: new.sessions.map { ($0.uuid, $0) })
+        // `uniquingKeysWith` (not `uniqueKeysWithValues`) so a corrupt/merged document with a duplicate
+        // uuid can't trap the whole diff.
+        let oldSessions = Dictionary(old.sessions.map { ($0.uuid, $0) }, uniquingKeysWith: { _, last in last })
+        let newSessions = Dictionary(new.sessions.map { ($0.uuid, $0) }, uniquingKeysWith: { _, last in last })
         for (uuid, session) in newSessions where oldSessions[uuid] != session {
             pending.append(.saveRecord(recordID(session: uuid)))
         }
@@ -189,8 +191,8 @@ final class SessionCloudSync {
         guard let engine else { return }
         var pending = [CKSyncEngine.PendingRecordZoneChange]()
 
-        let oldPresets = Dictionary(uniqueKeysWithValues: old.presets.map { ($0.uuid, $0) })
-        let newPresets = Dictionary(uniqueKeysWithValues: new.presets.map { ($0.uuid, $0) })
+        let oldPresets = Dictionary(old.presets.map { ($0.uuid, $0) }, uniquingKeysWith: { _, last in last })
+        let newPresets = Dictionary(new.presets.map { ($0.uuid, $0) }, uniquingKeysWith: { _, last in last })
         for (uuid, preset) in newPresets where oldPresets[uuid] != preset {
             pending.append(.saveRecord(recordID(preset: uuid)))
         }
@@ -202,13 +204,14 @@ final class SessionCloudSync {
         engine.state.add(pendingRecordZoneChanges: pending)
     }
 
-    /// Builds the current record for a pending ID — nil if the item vanished since.
-    private func record(for recordID: CKRecord.ID) -> CKRecord? {
+    /// Builds the current record for a pending ID — nil if the item vanished since. `sessionsByUuid`
+    /// is a snapshot indexed ONCE per batch, so a reorder that dirties N session records doesn't
+    /// re-snapshot + linear-scan the whole store per record (which was O(N²) per sync).
+    private func record(for recordID: CKRecord.ID, sessionsByUuid: [String: Session]) -> CKRecord? {
         let parts = recordID.recordName.split(separator: "|", maxSplits: 2).map(String.init)
-        let snapshot = SessionStore.shared.snapshot
         switch parts.first {
         case "session":
-            guard parts.count == 2, let session = snapshot.sessions.first(where: { $0.uuid == parts[1] }),
+            guard parts.count == 2, let session = sessionsByUuid[parts[1]],
                   let payload = try? JSONEncoder().encode(session) else { return nil }
             let record = baseRecord(for: recordID, type: "ForkSession")
             record["payload"] = payload as NSData
@@ -259,15 +262,10 @@ final class SessionCloudSync {
 
     private func apply(record: CKRecord) {
         let parts = record.recordID.recordName.split(separator: "|", maxSplits: 2).map(String.init)
-        SessionStore.shared.applyRemote {
-            switch parts.first {
-            case "session":
-                guard let payload = record["payload"] as? Data,
-                      let session = try? JSONDecoder().decode(Session.self, from: payload) else { return }
-                SessionStore.shared.upsert(session)
-            default:
-                break
-            }
+        if parts.first == "session",
+           let payload = record["payload"] as? Data,
+           let session = try? JSONDecoder().decode(Session.self, from: payload) {
+            SessionStore.shared.applyRemoteUpsert(session)
         }
 
         if parts.first == "offered", parts.count == 2 {
@@ -296,14 +294,8 @@ final class SessionCloudSync {
 
     private func applyDeletion(recordID: CKRecord.ID) {
         let parts = recordID.recordName.split(separator: "|", maxSplits: 2).map(String.init)
-        SessionStore.shared.applyRemote {
-            switch parts.first {
-            case "session":
-                guard parts.count == 2 else { return }
-                SessionStore.shared.delete(sessionUuid: parts[1])
-            default:
-                break
-            }
+        if parts.first == "session", parts.count == 2 {
+            SessionStore.shared.applyRemoteDelete(sessionUuid: parts[1])
         }
 
         if parts.first == "offered", parts.count == 2 {
@@ -383,8 +375,11 @@ extension SessionCloudSync: CKSyncEngineDelegate {
 
     func nextRecordZoneChangeBatch(_ context: CKSyncEngine.SendChangesContext, syncEngine: CKSyncEngine) async -> CKSyncEngine.RecordZoneChangeBatch? {
         let pending = syncEngine.state.pendingRecordZoneChanges.filter { context.options.scope.contains($0) }
+        // Snapshot + index the sessions ONCE for the whole batch (see `record(for:sessionsByUuid:)`).
+        let sessionsByUuid = Dictionary(SessionStore.shared.snapshot.sessions.map { ($0.uuid, $0) },
+                                        uniquingKeysWith: { _, last in last })
         return await CKSyncEngine.RecordZoneChangeBatch(pendingChanges: pending) { [weak self] recordID in
-            self?.record(for: recordID)
+            self?.record(for: recordID, sessionsByUuid: sessionsByUuid)
         }
     }
 }

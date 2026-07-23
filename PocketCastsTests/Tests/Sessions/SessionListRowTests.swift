@@ -278,17 +278,19 @@ final class SessionListRowTests: DBTestCase {
         recentUsed.lastUsed = Date(timeIntervalSince1970: 2_000_000)
         SessionStore.shared.upsert(recentUsed)
 
-        // No session playing: recency, then never-played newest-first.
-        XCTAssertEqual(SessionListRows.current().map(\.name), ["Recent", "Older", "Never two", "Never one"])
+        // No session playing: recency, then never-played newest-first. (Explicit `.recentlyPlayed`:
+        // the list's DEFAULT sort is now `.manual`, so this pins the recency ordering it means to test.)
+        XCTAssertEqual(SessionListRows.current(sort: .recentlyPlayed).map(\.name), ["Recent", "Older", "Never two", "Never one"])
 
-        // Merely opening a session (active, no audio) must NOT reshuffle the list.
+        // Merely opening a session (active, no audio) must NOT reshuffle the list — `current()` no
+        // longer hoists the active session (it's surfaced by the Queue's own row-1 extraction instead).
         activate(older)
-        XCTAssertEqual(SessionListRows.current().map(\.name), ["Recent", "Older", "Never two", "Never one"])
+        XCTAssertEqual(SessionListRows.current(sort: .recentlyPlayed).map(\.name), ["Recent", "Older", "Never two", "Never one"])
 
         // Paused likewise leaves the order alone; a part-played episode would raise it via
         // the progress tier, not by being the active session.
         activate(older, paused: true)
-        XCTAssertEqual(SessionListRows.current().map(\.name), ["Recent", "Older", "Never two", "Never one"])
+        XCTAssertEqual(SessionListRows.current(sort: .recentlyPlayed).map(\.name), ["Recent", "Older", "Never two", "Never one"])
 
         XCTAssertNotNil(neverOne.storePlaylistUuid)
         XCTAssertNotNil(neverTwo.storePlaylistUuid)
@@ -471,8 +473,11 @@ final class SessionListRowTests: DBTestCase {
         Settings.setSessionListShowFolders(false)
         activate(folderSession)
 
-        XCTAssertEqual(SessionListRows.current().map(\.name), ["From folder", "From podcast"],
-                       "the playing session is exempt from the filters — and still leads")
+        // The playing session is exempt from the filters (so both still appear); its position is its
+        // normal sorted slot — `current()` no longer hoists the active session (the Queue surfaces it
+        // via its own row-1 extraction). Default sort is `.manual`, so this is creation order.
+        XCTAssertEqual(SessionListRows.current().map(\.name), ["From podcast", "From folder"],
+                       "the playing session is exempt from the filters (but is no longer hoisted)")
     }
 
     /// The Switch Session sheet's call: the persisted preferences must not reach it.

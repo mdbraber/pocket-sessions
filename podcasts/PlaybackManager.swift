@@ -855,19 +855,26 @@ class PlaybackManager: ServerPlaybackDelegate {
             queue.add(episode: interruptedEpisode, fireNotification: false, partOfBulkAdd: false, toTop: true)
             NotificationCenter.postOnMainThread(notification: Constants.Notifications.upNextQueueChanged)
         }
+
+        // The session pointer and the session flag are both set now (load() fired its
+        // notifications before either was) — refresh so the UI re-reads and frames the session's
+        // first episode as the head row rather than a freshly-added Up Next item.
+        NotificationCenter.postOnMainThread(notification: Constants.Notifications.playbackTrackChanged)
     }
 
     /// Deliberately ends the playback session (the ✕ in Up Next). If the playing episode
     /// belongs to the session it stops where it is, and playback hands over to the queue:
     /// Now Playing becomes the first (filter-matching) queued episode, playing if the
     /// session was. A paused session just clears — the queue is already playing.
-    func endPlaybackSession() {
+    func endPlaybackSession(showToast: Bool = true) {
         guard Settings.playbackSession() != nil else { return }
         let handOverToQueue = currentEpisodeIsFromSession && !Settings.playbackSessionPaused()
         Settings.setPlaybackSession(nil)
         #if !APPCLIP && !os(watchOS)
-        DispatchQueue.main.async {
-            Toast.show(L10n.sessionEndedToast)
+        if showToast {
+            DispatchQueue.main.async {
+                Toast.show(L10n.sessionEndedToast)
+            }
         }
         #endif
         guard handOverToQueue else { return }
@@ -894,13 +901,20 @@ class PlaybackManager: ServerPlaybackDelegate {
         if resumingFromQueue {
             Settings.setPlaybackSessionPaused(false)
         }
-        let interrupted = currentEpisodeIsFromSession && !resumingFromQueue ? currentEpisode() : nil
-        isLoadingSessionEpisode = true
-        defer { isLoadingSessionEpisode = false }
+        let wasFromSession = currentEpisodeIsFromSession
+        let interrupted = wasFromSession && !resumingFromQueue ? currentEpisode() : nil
         // Resuming from queue playback returns that queue episode to the top of Up Next;
         // jumping within the session must never push the session episode into the queue.
-        switchTo(episodeToPlay: episode, moveExistingToUpNext: resumingFromQueue && !currentEpisodeIsFromSession, autoPlay: autoPlay)
+        let moveExistingToUpNext = resumingFromQueue && !wasFromSession
+        isLoadingSessionEpisode = true
+        defer { isLoadingSessionEpisode = false }
+        // Mark the episode session-sourced BEFORE switchTo, so its upNextQueueChanged /
+        // playbackTrackChanged notifications already frame it as the session's head row and not a
+        // freshly-added Up Next item. (load() leaves the flag alone while isLoadingSessionEpisode,
+        // and switchTo's own switchingToDifferentUpNextEpisode guard keeps load off the
+        // interrupted-episode path, so setting it early is safe.)
         currentEpisodeIsFromSession = true
+        switchTo(episodeToPlay: episode, moveExistingToUpNext: moveExistingToUpNext, autoPlay: autoPlay)
         Settings.setPlaybackSessionLastEpisodeUuid(episode.uuid)
 
         // Symmetry with the queue: jumping within the session moves the interrupted
@@ -2804,6 +2818,15 @@ class PlaybackManager: ServerPlaybackDelegate {
     /// Autoplay the next episode
     private func autoplayIfNeeded() {
         #if !os(watchOS) && !APPCLIP
+        // Fork: an active (unpaused) session advances from its OWN list — see
+        // `advanceSessionIfNeeded`, which runs right after this. Autoplay must not step in and add
+        // the podcast's next episode to Up Next: for a podcast session that's the session's own next
+        // episode, and it would leak into the queue. (A paused/parked session is fine — the queue
+        // is what's playing then.)
+        if Settings.playbackSession() != nil, !Settings.playbackSessionPaused() {
+            return
+        }
+
         // If Autoplay is enabled we check if there's another episode to play
         if Settings.autoplay,
            queue.upNextCount() == 0,

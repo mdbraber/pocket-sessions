@@ -21,6 +21,14 @@ class InsetAdjuster {
         }
     }
 
+    /// Fork: extra bottom inset on top of the mini-player clearance — e.g. a bottom switcher bar
+    /// that sits above the pill and must not cover the last row.
+    var additionalBottomInset: CGFloat = 0 {
+        didSet {
+            miniPlayerVisibilityDidChange()
+        }
+    }
+
     private weak var scrollViewAdjustableToMiniPlayer: UIScrollView?
 
     func setupInsetAdjustmentsForMiniPlayer(scrollView: UIScrollView) {
@@ -40,6 +48,6 @@ class InsetAdjuster {
         guard let scrollView = scrollViewAdjustableToMiniPlayer else {
             return
         }
-        scrollView.updateContentInset(multiSelectEnabled: self.isMultiSelectEnabled, ignoreMiniPlayer: ignoreMiniPlayer)
+        scrollView.updateContentInset(multiSelectEnabled: self.isMultiSelectEnabled, ignoreMiniPlayer: ignoreMiniPlayer, extraBottom: additionalBottomInset)
     }
 }

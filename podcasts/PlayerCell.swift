@@ -105,6 +105,7 @@ class PlayerCell: ThemeableSwipeCell {
         NotificationCenter.default.addObserver(self, selector: #selector(updateCellForDownloadStatusChange(_:)), name: Constants.Notifications.episodeDownloadStatusChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(updateCellForStarredChange(_:)), name: Constants.Notifications.episodeStarredChanged, object: nil)
 
+        installPlayButton()
         updateSize()
     }
 
@@ -142,6 +143,7 @@ class PlayerCell: ThemeableSwipeCell {
 
         EpisodeDateHelper.setDate(episode: episode, on: dayName, tintColor: ThemeColor.primaryText01(for: themeOverride))
         accessibilityLabel = labelForAccessibility(episode: episode)
+        updatePlayButton()
     }
 
     private func updateStarStatus() {
@@ -328,6 +330,72 @@ class PlayerCell: ThemeableSwipeCell {
         nowPlayingIndicator.color = color
     }
 
+    // MARK: - Fork: action button + active surface (matches the session lineup rows)
+
+    /// Fork: the SAME episode action control the session lineup rows use (play / pause / download),
+    /// so the queue rows read identically. Sits at the trailing edge of the glyph stack.
+    private lazy var actionButton: MainEpisodeActionView = {
+        let view = MainEpisodeActionView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.delegate = self
+        view.setContentHuggingPriority(.required, for: .horizontal)
+        view.setContentCompressionResistancePriority(.required, for: .horizontal)
+        // A disabled marker recognizer so `addSubview(_:)` below doesn't mistake this for the reorder
+        // control (which it tags any gesture-less UIControl as).
+        let marker = UITapGestureRecognizer()
+        marker.isEnabled = false
+        view.addGestureRecognizer(marker)
+        return view
+    }()
+
+    /// Fork: the rounded accent surface behind the now-playing (active) row — tint + border, matching
+    /// the session lineup's active row. Nil accent = a plain row.
+    private lazy var activeSurfaceView: UIView = {
+        let view = UIView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.layer.cornerRadius = 12
+        view.isUserInteractionEnabled = false
+        return view
+    }()
+
+    private func installPlayButton() {
+        guard actionButton.superview == nil, let stack = downloadedIndicator.superview as? UIStackView else { return }
+        let size: CGFloat = max(44, UIFontMetrics(forTextStyle: .body).scaledValue(for: 44))
+        actionButton.updateSizeConstraints(to: size)
+        actionButton.enlargementScale = size / 44
+        stack.addArrangedSubview(actionButton)
+        stack.setCustomSpacing(8, after: downloadedIndicator)
+    }
+
+    /// Refreshes the action control from the current episode/playback state.
+    func updatePlayButton() {
+        guard let episode else { return }
+        actionButton.tintColor = AppTheme.colorForStyle(.primaryIcon01, themeOverride: themeOverride)
+        actionButton.populateFrom(episode: episode)
+    }
+
+    /// Styles the row as active (now-playing): rounded accent box + accent-tinted action button. Nil
+    /// clears it back to a plain row with the standard action-button colour.
+    func setActiveSurface(accent: UIColor?) {
+        if let accent {
+            if activeSurfaceView.superview == nil {
+                contentView.insertSubview(activeSurfaceView, at: 0)
+                NSLayoutConstraint.activate([
+                    activeSurfaceView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 8),
+                    activeSurfaceView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -8),
+                    activeSurfaceView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 2),
+                    activeSurfaceView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -2)
+                ])
+            }
+            activeSurfaceView.isHidden = false
+            activeSurfaceView.backgroundColor = accent.withAlphaComponent(0.18)
+            activeSurfaceView.layer.borderColor = accent.cgColor
+            activeSurfaceView.layer.borderWidth = 1.5
+        } else {
+            activeSurfaceView.isHidden = true
+        }
+    }
+
     /// Tracked so labelForAccessibility can speak the session badge; VoiceOver can't see the glyph.
     private var sessionIndicatorState: SessionIndicatorState = .none
 
@@ -364,6 +432,8 @@ class PlayerCell: ThemeableSwipeCell {
         nowPlayingIndicator.isHidden = true
         episodeTitle.style = .primaryText01
         showTick = false
+        setActiveSurface(accent: nil)
+        actionButton.isHidden = false
         setSelected(false, animated: false)
     }
 
@@ -374,6 +444,8 @@ class PlayerCell: ThemeableSwipeCell {
     }
 
     func shouldShowSelect(show: Bool, animate: Bool) {
+        // The action button gives way to the multi-select tick.
+        actionButton.isHidden = show
         if animate {
             if show {
                 selectView.layer.borderWidth = 2
@@ -447,5 +519,48 @@ private extension PlayerCell {
             NotificationCenter.default.post(name: .tableViewReorderDidEnd, object: nil)
         default: break
         }
+    }
+}
+
+// MARK: - Fork: the queue row's episode action button (play / pause / download)
+
+extension PlayerCell: MainEpisodeActionViewDelegate {
+    func downloadTapped() {
+        guard let uuid = episode?.uuid else { return }
+        PlaybackActionHelper.download(episodeUuid: uuid)
+    }
+
+    func stopDownloadTapped() {
+        guard let uuid = episode?.uuid else { return }
+        PlaybackActionHelper.stopDownload(episodeUuid: uuid)
+    }
+
+    func playTapped() {
+        guard let episode else { return }
+        // The queue plays standalone (unlike a session lineup row, which joins its session).
+        AnalyticsPlaybackHelper.shared.currentSource = .upNext
+        PlaybackActionHelper.play(episode: episode)
+    }
+
+    func pauseTapped() {
+        PlaybackActionHelper.pause()
+    }
+
+    func errorTapped() {
+        guard let episode else { return }
+        let picker = OptionsPicker(title: nil)
+        let isPlayback = episode.playbackError()
+        let retry = OptionAction(label: L10n.retry, icon: nil) { [weak self] in
+            isPlayback ? self?.playTapped() : self?.downloadTapped()
+        }
+        picker.addDescriptiveActions(title: isPlayback ? L10n.playbackFailed : L10n.downloadFailed,
+                                     message: isPlayback ? episode.playbackErrorDetails : episode.readableErrorMessage(),
+                                     icon: "option-alert", actions: [retry])
+        picker.present()
+    }
+
+    func waitingForWifiTapped() {
+        guard let uuid = episode?.uuid else { return }
+        PlaybackActionHelper.overrideWaitingForWifi(episodeUuid: uuid, autoDownloadStatus: .autoDownloaded)
     }
 }

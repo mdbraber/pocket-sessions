@@ -48,6 +48,27 @@ open class SubscriptionHelper: NSObject {
         return .plus
     }
 
+    /// Fork: when true, this build UNLOCKS every client-side Pocket Casts Plus/Patron feature
+    /// (Smart Playlists, folders, themes, app icons, bookmarks, extra filters, etc.) — but ONLY for
+    /// accounts that don't already have a real subscription. A genuine subscriber keeps their real
+    /// tier untouched, so the app reflects their actual account and the override never interferes
+    /// with it; a free account is topped up to Patron so nothing is gated.
+    ///
+    /// The override lives in the getters below, so a server sync can't undo it. It is intentionally
+    /// NOT gated on `#if DEBUG` — it must stay on in Release/TestFlight builds. Set to `false` to
+    /// restore normal gating.
+    ///
+    /// Caveat: features the Pocket Casts SERVER enforces per-account — Cloud Files upload/storage,
+    /// cross-device folder & filter sync, and the web player — still need a real subscription; the
+    /// client unlock alone can't grant them.
+    public static let forkUnlockAllPaidFeatures = true
+
+    /// The real, server-reported subscription state from UserDefaults, ignoring the fork override.
+    /// The override only kicks in when this is `false`, so real subscribers are left alone.
+    private static var realHasActiveSubscription: Bool {
+        UserDefaults.standard.bool(forKey: ServerConstants.UserDefaults.subscriptionPaid)
+    }
+
     /// The users subscription tier, or .none if there isn't one available
     public class var subscriptionTier: SubscriptionTier {
         set {
@@ -55,15 +76,20 @@ open class SubscriptionHelper: NSObject {
         }
 
         get {
-            UserDefaults.standard.string(forKey: ServerConstants.UserDefaults.subscriptionTier).flatMap {
+            let realTier = UserDefaults.standard.string(forKey: ServerConstants.UserDefaults.subscriptionTier).flatMap {
                 SubscriptionTier(rawValue: $0)
             } ?? .none
+            // Only top up accounts that aren't really subscribed; real subscribers keep their tier.
+            if forkUnlockAllPaidFeatures, !realHasActiveSubscription {
+                return .patron
+            }
+            return realTier
         }
     }
 
     public class func hasActiveSubscription() -> Bool {
-        let status = UserDefaults.standard.bool(forKey: ServerConstants.UserDefaults.subscriptionPaid)
-        return status
+        if forkUnlockAllPaidFeatures { return true }
+        return realHasActiveSubscription
     }
 
     public class func hasRenewingSubscription() -> Bool {

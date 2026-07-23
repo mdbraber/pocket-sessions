@@ -25,6 +25,28 @@ class UpNextNowPlayingCell: ThemeableSwipeCell {
     func setNowPlayingAccent(_ color: UIColor) {
         worldAccent = color
         playingAnimationView.setFillColor(color)
+        applyCardSurfaceColor()
+        updatePlayPauseButton()
+    }
+
+    /// Fork: the card's background is tinted like the chooser cards — faint blue in the Up Next
+    /// lineup, faint green in a session lineup (the world accent at 0.18, matching SessionListCell).
+    /// Falls back to the neutral themed surface when no world accent is set (stock Up Next tab).
+    private func applyCardSurfaceColor() {
+        if let worldAccent {
+            roundedBackgroundView.backgroundColor = worldAccent.withAlphaComponent(0.18)
+            // A solid accent border round the active card — green (session) / blue (Up Next).
+            roundedBackgroundView.layer.borderColor = worldAccent.cgColor
+            roundedBackgroundView.layer.borderWidth = 1.5
+            return
+        }
+        roundedBackgroundView.layer.borderWidth = 0
+        let activeTheme = themeOverride ?? Theme.sharedTheme.activeTheme
+        if activeTheme.isDark {
+            roundedBackgroundView.style = .playerContrast06
+        } else {
+            roundedBackgroundView.style = activeTheme == .contrastLight ? .primaryUi05 : .primaryUi02
+        }
     }
 
     func setSessionInfoLine(_ text: String?) {
@@ -107,9 +129,29 @@ class UpNextNowPlayingCell: ThemeableSwipeCell {
 
     private var episode: BaseEpisode? = nil
 
+    /// Fork: an explicit play/pause button on the now-playing card, sitting in front of the drag
+    /// handle (the card is a reorderable row like the others). Replaces the plain disclosure chevron.
+    private lazy var playPauseButton: UIButton = {
+        let button = UIButton(type: .system)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.addTarget(self, action: #selector(playPauseTapped), for: .touchUpInside)
+        return button
+    }()
+
     override func awakeFromNib() {
         super.awakeFromNib()
         style = .primaryUi04
+
+        // The card carries a real play/pause button (in place of the disclosure chevron); the drag
+        // handle draws to its right when the row is reorderable.
+        disclosureImageView.isHidden = true
+        contentView.addSubview(playPauseButton)
+        NSLayoutConstraint.activate([
+            playPauseButton.trailingAnchor.constraint(equalTo: roundedBackgroundView.trailingAnchor, constant: -12),
+            playPauseButton.centerYAnchor.constraint(equalTo: roundedBackgroundView.centerYAnchor),
+            playPauseButton.widthAnchor.constraint(equalToConstant: 36),
+            playPauseButton.heightAnchor.constraint(equalToConstant: 36)
+        ])
 
         NotificationCenter.default.addObserver(self, selector: #selector(progressUpdated), name: Constants.Notifications.playbackProgress, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(updatePlayingAnimation), name: Constants.Notifications.playbackPaused, object: nil)
@@ -178,7 +220,10 @@ class UpNextNowPlayingCell: ThemeableSwipeCell {
         let percentageLapsed = CGFloat(currentTime / duration)
         progressViewWidthConstraint.constant = percentageLapsed * roundedBackgroundView.frame.width
 
+        // The equalizer only shows while actually playing — hidden (not just frozen) when paused/idle.
         playingAnimationView.animating = PlaybackManager.shared.playing()
+        playingAnimationView.isHidden = !PlaybackManager.shared.playing()
+        updatePlayPauseButton()
 
         updateDownloadStatus()
 
@@ -191,6 +236,24 @@ class UpNextNowPlayingCell: ThemeableSwipeCell {
 
     @objc func updatePlayingAnimation() {
         playingAnimationView.animating = PlaybackManager.shared.playing()
+        playingAnimationView.isHidden = !PlaybackManager.shared.playing()
+        updatePlayPauseButton()
+    }
+
+    @objc private func playPauseTapped() {
+        if PlaybackManager.shared.playing() {
+            PlaybackManager.shared.pause()
+        } else {
+            PlaybackManager.shared.play()
+        }
+    }
+
+    private func updatePlayPauseButton() {
+        let playing = PlaybackManager.shared.playing()
+        let config = UIImage.SymbolConfiguration(pointSize: 30, weight: .regular)
+        playPauseButton.setImage(UIImage(systemName: playing ? "pause.circle" : "play.circle", withConfiguration: config), for: .normal)
+        playPauseButton.tintColor = worldAccent ?? playingEqualizerColor
+        playPauseButton.accessibilityLabel = playing ? L10n.pause : L10n.play
     }
 
     override func prepareForReuse() {
@@ -203,12 +266,8 @@ class UpNextNowPlayingCell: ThemeableSwipeCell {
 
         let activeTheme = themeOverride ?? Theme.sharedTheme.activeTheme
 
-        // Rounded background
-        if activeTheme.isDark {
-            roundedBackgroundView.style = .playerContrast06
-        } else {
-            roundedBackgroundView.style = activeTheme == .contrastLight ? .primaryUi05 : .primaryUi02
-        }
+        // Rounded background — tinted with the world accent (chooser-card look) when one is set.
+        applyCardSurfaceColor()
 
         // Progress view
         if activeTheme == .rosé {

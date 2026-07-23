@@ -112,7 +112,8 @@ class AutoAddToSessionViewController: PCViewController, UITableViewDelegate, UIT
     }
 
     func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        section == 0 || autoAddPodcasts.isEmpty ? nil : L10n.settingsAutoAddPodcasts
+        if section == 0 { return L10n.settingsAutoAddSessionExplanation }
+        return autoAddPodcasts.isEmpty ? nil : L10n.settingsAutoAddPodcasts
     }
 
     func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {

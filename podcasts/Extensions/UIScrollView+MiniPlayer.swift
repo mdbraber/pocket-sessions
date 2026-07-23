@@ -12,10 +12,13 @@ extension UIScrollView {
               let container = superview else { return 0 }
         let pillFrame = container.convert(pill.bounds, from: pill)
         let overlap = frame.maxY - pillFrame.minY - safeAreaInsets.bottom
-        // Never inset by more than the pill's own height (capped at the standard offset): a stale or
-        // cross-hierarchy frame can otherwise report a huge overlap and let the list scroll far past
-        // the pill instead of stopping just above it.
-        return min(max(0, overlap), min(pillFrame.height, Constants.Values.miniPlayerOffset))
+        guard overlap > 0 else { return 0 }
+        // Clear the pill fully (plus a little breathing room) so the last row isn't tucked under it.
+        // Bound by the pill's own height + margin so a stale or cross-hierarchy frame can't report a
+        // runaway overlap and let the list scroll far past the pill. (The old cap at the smaller
+        // `miniPlayerOffset` left the last row slightly obscured when the pill is taller than that.)
+        let margin: CGFloat = 8
+        return min(overlap, pillFrame.height) + margin
     }
 
     func applyInsetForMiniPlayer(additionalBottomInset: CGFloat = 0) {
@@ -28,23 +31,23 @@ extension UIScrollView {
         verticalScrollIndicatorInsets = UIEdgeInsets(top: existingScrollIndicatorInset.top, left: existingScrollIndicatorInset.left, bottom: existingScrollIndicatorInset.bottom + Constants.Values.miniPlayerOffset + additionalBottomInset, right: existingScrollIndicatorInset.right)
     }
 
-    func updateContentInset(multiSelectEnabled: Bool, ignoreMiniPlayer: Bool = false) {
+    func updateContentInset(multiSelectEnabled: Bool, ignoreMiniPlayer: Bool = false, extraBottom: CGFloat = 0) {
         if LiquidGlass.isEnabled {
             let multiSelectFooterOffset: CGFloat = multiSelectEnabled ? 60 : 0
             // The tab-accessory safe area doesn't always cover the pill on every screen — top up
             // the measured overhang so the last row clears it.
             let pillClearance = ignoreMiniPlayer ? 0 : miniPlayerOverlapClearance()
-            contentInset.bottom = multiSelectFooterOffset + pillClearance
-            verticalScrollIndicatorInsets.bottom = multiSelectFooterOffset + pillClearance
+            contentInset.bottom = multiSelectFooterOffset + pillClearance + extraBottom
+            verticalScrollIndicatorInsets.bottom = multiSelectFooterOffset + pillClearance + extraBottom
             return
         }
 
         let existingInset = contentInset
         let multiSelectFooterOffset: CGFloat = multiSelectEnabled ? 80 : 0
         let miniPlayerOffset: CGFloat = ignoreMiniPlayer ? 0 : Constants.effectiveMiniPlayerOffset
-        contentInset = UIEdgeInsets(top: existingInset.top, left: existingInset.left, bottom: miniPlayerOffset + multiSelectFooterOffset, right: existingInset.right)
+        contentInset = UIEdgeInsets(top: existingInset.top, left: existingInset.left, bottom: miniPlayerOffset + multiSelectFooterOffset + extraBottom, right: existingInset.right)
 
         let existingScrollIndicatorInset = verticalScrollIndicatorInsets
-        verticalScrollIndicatorInsets = UIEdgeInsets(top: existingScrollIndicatorInset.top, left: existingScrollIndicatorInset.left, bottom: miniPlayerOffset + multiSelectFooterOffset, right: existingScrollIndicatorInset.right)
+        verticalScrollIndicatorInsets = UIEdgeInsets(top: existingScrollIndicatorInset.top, left: existingScrollIndicatorInset.left, bottom: miniPlayerOffset + multiSelectFooterOffset + extraBottom, right: existingScrollIndicatorInset.right)
     }
 }

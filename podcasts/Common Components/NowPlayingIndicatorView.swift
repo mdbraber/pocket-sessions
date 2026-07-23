@@ -87,10 +87,12 @@ class NowPlayingIndicatorView: UIView {
     }
 
     private func stopAnimating() {
-        // Frozen mid-height bars read as "paused here".
-        for bar in bars {
+        // Paused → a single, CONSISTENT static equalizer glyph: always the same varied resting shape,
+        // never frozen at wherever the bounce happened to be (which made it depend on what was playing).
+        let restingHeights: [CGFloat] = [0.5, 1.0, 0.7]
+        for (index, bar) in bars.enumerated() {
             bar.removeAnimation(forKey: "bounce")
-            bar.transform = CATransform3DMakeScale(1, 0.55, 1)
+            bar.transform = CATransform3DMakeScale(1, restingHeights[index % restingHeights.count], 1)
         }
     }
 }

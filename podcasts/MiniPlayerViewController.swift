@@ -650,7 +650,9 @@ class MiniPlayerViewController: SimpleNotificationsViewController {
 
     @available(iOS 26.0, *)
     private func updateColorsLiquidGlass() {
-        let actionColor = currentPodcastTintColor()
+        // Fork: the progress + controls take the OWNING LANE's accent — green while the episode plays
+        // as part of a session, blue from the Up Next queue — matching the session list's cards.
+        let actionColor = currentLaneAccentColor()
         let bgColor = ThemeColor.primaryUi02()
 
         // System color so the vibrancy wrapper can modulate it.
@@ -664,6 +666,12 @@ class MiniPlayerViewController: SimpleNotificationsViewController {
         skipFwdBtn.tintColor = actionColor
 
         glassProgressView?.tintColorOverride = actionColor
+    }
+
+    /// Fork: the owning lane's accent — green when the current episode plays as part of a session,
+    /// blue from the Up Next queue.
+    private func currentLaneAccentColor() -> UIColor {
+        PlaybackManager.shared.currentEpisodeIsSessionSourced ? ThemeColor.support02() : ThemeColor.support01()
     }
 
     private func currentPodcastTintColor() -> UIColor {

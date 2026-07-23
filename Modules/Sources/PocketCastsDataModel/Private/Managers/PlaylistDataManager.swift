@@ -720,6 +720,45 @@ class PlaylistDataManager {
         }
     }
 
+    /// Fork: ATOMIC session add. In ONE transaction: read the current order, drop any incoming
+    /// episodes that are already positioned (a re-add is a move, not a duplicate), insert the block at
+    /// the index the SESSION's own marker resolves to (`insertMode` + `anchorUuid` — the session keeps
+    /// its own insert state, separate from the playlist's `customOrder` marker), rewrite positions,
+    /// denormalize title/podcast, and mark the playlist for sync. Doing read+compute+write together
+    /// closes the read-modify-write window `addToLineup` had across three separate statements.
+    func insertSessionMembers(episodeUuids: [String], insertMode: PlaylistInsertMode, anchorUuid: String, for playlist: EpisodeFilter, dbQueue: PCDBQueue) {
+        guard !episodeUuids.isEmpty else { return }
+        dbQueue.write { db in
+            do {
+                let rs = try db.executeQuery("SELECT episodeUuid FROM \(DataManager.playlistEpisodeTableName) WHERE playlist_uuid = ? ORDER BY episodePosition ASC", values: [playlist.uuid])
+                var order = [String]()
+                while rs.next() { order.append(DBUtils.nonNilStringFromColumn(resultSet: rs, columnName: "episodeUuid")) }
+
+                // Re-adding an already-positioned episode moves it: drop it from the base order first.
+                let incoming = Set(episodeUuids)
+                order.removeAll { incoming.contains($0) }
+
+                // Resolve the insert index from the session's marker — mirrors SessionManager.insertMarkerIndex.
+                let index: Int
+                switch insertMode {
+                case .top: index = 0
+                case .bottom: index = order.count
+                case .afterLastInserted: index = order.firstIndex(of: anchorUuid).map { $0 + 1 } ?? 0
+                case .beforeLastInserted: index = order.firstIndex(of: anchorUuid) ?? order.count
+                }
+                order.insert(contentsOf: episodeUuids, at: min(index, order.count))
+
+                try db.executeUpdate("DELETE FROM \(DataManager.playlistEpisodeTableName) WHERE playlist_uuid = ?", values: [playlist.uuid])
+                try self.insertPositionRows(episodeUuids: order, startingAt: 0, for: playlist, db: db)
+                // Membership changed → must sync (matches `add()`; `insertIntoCustomOrder` deliberately doesn't).
+                playlist.syncStatus = SyncStatus.notSynced.rawValue
+                try db.executeUpdate("UPDATE \(DataManager.playlistsTableName) SET syncStatus = ?, playlistUpdateDate = ? WHERE uuid = ?", values: [playlist.syncStatus, Date.now, playlist.uuid])
+            } catch {
+                FileLog.shared.addMessage("PlaylistDataManager.insertSessionMembers error: \(error)")
+            }
+        }
+    }
+
     /// Drops position rows for episodes that are no longer members of the playlist
     /// (its smart rules stopped matching them). Keeps rows for current members so a
     /// hand-made order survives switching sort away and back.

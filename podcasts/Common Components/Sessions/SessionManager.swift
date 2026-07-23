@@ -433,15 +433,12 @@ class SessionManager {
         guard let store = store(for: session), !episodeUuids.isEmpty else { return }
         unarchiveIfNeeded(episodeUuids: episodeUuids)
         unplayIfNeeded(episodeUuids: episodeUuids)
-        var order = DataManager.sharedManager.positionedEpisodeUuids(for: store).filter { !episodeUuids.contains($0) }
-        let index = insertMarkerIndex(for: session, inLineup: order)
-        order.insert(contentsOf: episodeUuids, at: min(index, order.count))
 
-        // Rows may not exist yet for new members — write titles/podcast uuids via the
-        // stock add first, then apply the full order.
-        let newEpisodes = episodeUuids.compactMap { DataManager.sharedManager.findEpisode(uuid: $0) }
-        _ = DataManager.sharedManager.add(episodes: newEpisodes, to: store)
-        DataManager.sharedManager.setCustomOrder(episodeUuids: order, for: store)
+        // One atomic transaction (read current order → insert at the session's marker → rewrite →
+        // denormalize title/podcast → mark for sync), replacing the former read + add() + setCustomOrder
+        // trio whose separate statements left a lost-update window for a concurrent reconcile/add.
+        let insertMode = PlaylistInsertMode(rawValue: session.insertMode) ?? .top
+        DataManager.sharedManager.insertSessionMembers(episodeUuids: episodeUuids, insertMode: insertMode, anchorUuid: session.lastInsertedUuid, for: store)
         markStoreChanged(store)
 
         // Deciding to play something is deciding about it: it leaves the Inbox.
@@ -451,14 +448,13 @@ class SessionManager {
         // a leaf. Calling a verb here is what would make recursion possible.
         InboxManager.shared.markSeen(episodeUuids: episodeUuids)
 
-        var updated = session
-        updated.lastInsertedUuid = episodeUuids.last ?? updated.lastInsertedUuid
-        SessionStore.shared.upsert(updated)
-
-        // Pin AFTER the lastInserted upsert: pin() re-fetches and re-upserts the row, and
-        // upserting the (possibly stale) `updated` copy afterwards would clobber the pins.
-        if pinning {
-            SessionStore.shared.pin(episodeUuids: episodeUuids, for: session.uuid)
+        // One transaction, re-reading the live row: sets lastInserted and (optionally) the pins
+        // together — no stale-copy clobber, and one save + cloud diff instead of upsert-then-pin.
+        SessionStore.shared.mutateSession(session) { updated in
+            if let last = episodeUuids.last { updated.lastInsertedUuid = last }
+            if pinning {
+                updated.pinnedEpisodeUuids.append(contentsOf: episodeUuids.filter { !updated.pinnedEpisodeUuids.contains($0) })
+            }
         }
     }
 
@@ -480,17 +476,16 @@ class SessionManager {
         markStoreChanged(store)
         InboxManager.shared.markSeen(episodeUuids: episodeUuids)
 
-        var updated = session
-        updated.lastInsertedUuid = episodeUuids.last ?? ""
-        SessionStore.shared.upsert(updated)
-
-        // After the upsert (see addToLineup): membership is now exactly `episodeUuids`,
-        // so pins on the replaced-away members must not outlive them.
-        if !current.isEmpty {
-            SessionStore.shared.unpin(episodeUuids: current, for: session.uuid)
-        }
-        if pinning {
-            SessionStore.shared.pin(episodeUuids: episodeUuids, for: session.uuid)
+        // One transaction, re-reading the live row: set lastInserted, drop pins on replaced-away
+        // members (membership is now exactly `episodeUuids`), and pin the new lineup if asked.
+        SessionStore.shared.mutateSession(session) { updated in
+            updated.lastInsertedUuid = episodeUuids.last ?? ""
+            if !current.isEmpty {
+                updated.pinnedEpisodeUuids.removeAll { current.contains($0) }
+            }
+            if pinning {
+                updated.pinnedEpisodeUuids.append(contentsOf: episodeUuids.filter { !updated.pinnedEpisodeUuids.contains($0) })
+            }
         }
     }
 
@@ -872,6 +867,36 @@ class SessionManager {
         SessionStore.shared.sessions.filter { $0.uuid != SessionStore.globalInboxUuid && feeder($0.feeder, coversPodcast: podcastUuid) }
     }
 
+    /// Fork: whether a SMART-PLAYLIST session covers this podcast via an EXPLICIT podcast scope —
+    /// backs the session list's "Hide Podcasts in Smart Playlists" toggle (a podcast already gathered
+    /// by a smart playlist doesn't need its own session row). An "all podcasts" smart playlist is
+    /// deliberately excluded: it would otherwise hide every per-podcast session.
+    func smartPlaylistSessionCovers(podcastUuid: String) -> Bool {
+        SessionStore.shared.sessions.contains { session in
+            guard case .smartPlaylist(let uuid) = session.feeder,
+                  !Settings.playlistOptedOutOfSession(uuid: uuid),
+                  let playlist = DataManager.sharedManager.findPlaylist(uuid: uuid),
+                  !playlist.filterAllPodcasts else { return false }
+            return playlist.podcastUuids.components(separatedBy: ",").contains(podcastUuid)
+        }
+    }
+
+    /// The union of every podcast covered by a smart-playlist session — computed ONCE so the session
+    /// list builder can test coverage with an O(1) `Set.contains` per podcast session, instead of
+    /// calling `smartPlaylistSessionCovers` (a full sessions scan + DB hit) inside its per-session
+    /// loop (which was O(sessions²)).
+    func smartPlaylistCoveredPodcastUuids() -> Set<String> {
+        var covered = Set<String>()
+        for session in SessionStore.shared.sessions {
+            guard case .smartPlaylist(let uuid) = session.feeder,
+                  !Settings.playlistOptedOutOfSession(uuid: uuid),
+                  let playlist = DataManager.sharedManager.findPlaylist(uuid: uuid),
+                  !playlist.filterAllPodcasts else { continue }
+            covered.formUnion(playlist.podcastUuids.components(separatedBy: ","))
+        }
+        return covered
+    }
+
     private func feeder(_ feeder: SessionFeeder, coversPodcast podcastUuid: String) -> Bool {
         switch feeder {
         case .none:
@@ -953,23 +978,6 @@ class SessionManager {
         }
     }
 
-    func insertMarkerIndex(for session: Session, inLineup lineup: [String]) -> Int {
-        // Every session keeps its own stored insert mode (edited on the session's own
-        // screen, or in podcast settings for podcast sessions).
-        let mode = PlaylistInsertMode(rawValue: session.insertMode) ?? .top
-        switch mode {
-        case .top:
-            return 0
-        case .bottom:
-            return lineup.count
-        case .afterLastInserted:
-            if let index = lineup.firstIndex(of: session.lastInsertedUuid) { return index + 1 }
-            return 0
-        case .beforeLastInserted:
-            if let index = lineup.firstIndex(of: session.lastInsertedUuid) { return index }
-            return lineup.count
-        }
-    }
 
     /// Play as Session on a podcast: plays the podcast's session lineup, nothing
     /// else — the Inbox and Episodes tabs never leak in. Created empty on first use.

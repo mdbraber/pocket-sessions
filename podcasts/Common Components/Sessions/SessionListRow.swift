@@ -32,6 +32,18 @@ struct SessionListRow: Equatable {
     let episodeCount: Int
     /// Remaining time across the whole lineup; nil when there is nothing left.
     let timeLeft: String?
+    /// Fork: the pinned "Up Next" entry that heads the session list — the queue as a special
+    /// always-first row. Not a real session; tapping it opens the queue world, not a lineup.
+    var isUpNext: Bool = false
+    /// Season/episode shorthand for the next episode (e.g. "S4 E2"), shown before its title. Nil
+    /// when the episode carries no season/episode numbering.
+    var nextEpisodeSeasonEpisode: String?
+    /// Fork: this session is fed by a smart playlist — the row shows a sparkles glyph before the name.
+    var isSmartPlaylist: Bool = false
+    /// Fork: this lane OWNS the now-playing card right now (drives the active border + play/pause
+    /// routing). Distinct from `isActive`: a session can hold the active pointer while parked behind
+    /// the queue — then the queue owns the card, not the session.
+    var ownsCard: Bool = false
 }
 
 /// Fork: how the session chooser orders its rows. Persisted (see `Settings.sessionListSort`);
@@ -41,6 +53,18 @@ enum SessionListSort: Int, CaseIterable {
     case name
     case timeLeft
     case recentlyUpdated
+    /// Fork: the user's own drag order (SessionStore array order) — the session list's default,
+    /// making it a manually-arranged "recent/planned" list.
+    case manual
+    /// Fork: the episode-style sorts offered in the session list's ⋯ Sort menu.
+    /// Newest/Oldest sort on the session's most-recently-published episode; Shortest/Longest on the
+    /// session's FULL length (every episode's duration, not just what's left).
+    case newestToOldest
+    case oldestToNewest
+    case shortestToLongest
+    case longestToShortest
+    /// Fork: most-progressed session first (the resume position of its next episode).
+    case progress
 
     var title: String {
         switch self {
@@ -48,8 +72,18 @@ enum SessionListSort: Int, CaseIterable {
         case .name: L10n.sessionSortName
         case .timeLeft: L10n.sessionSortTimeLeft
         case .recentlyUpdated: L10n.sessionSortUpdated
+        case .manual: L10n.sessionSortManual
+        case .newestToOldest: L10n.podcastsEpisodeSortNewestToOldest
+        case .oldestToNewest: L10n.podcastsEpisodeSortOldestToNewest
+        case .shortestToLongest: L10n.podcastsEpisodeSortShortestToLongest
+        case .longestToShortest: L10n.podcastsEpisodeSortLongestToShortest
+        case .progress: L10n.sessionSortProgress
         }
     }
+
+    /// Fork: the options the session list's ⋯ Sort menu offers, in order — Manual (the drag order)
+    /// plus the episode-style sorts (Serial deliberately excluded) and Progress.
+    static let sessionMenuOrder: [SessionListSort] = [.manual, .newestToOldest, .oldestToNewest, .shortestToLongest, .longestToShortest, .progress]
 }
 
 /// Fork: which sessions the chooser shows. Every `SessionFeeder` case maps to exactly one
@@ -133,6 +167,12 @@ enum SessionListRows {
         let resumeUuid = Settings.playbackSessionLastEpisodeUuid()
         let hideEmpty = Settings.hideEmptySessions()
         let feederUuids = SessionStore.shared.feederPlaylistUuids
+        // Hoisted out of the per-session loop: the toggle (read once) and, only when it's on, the
+        // covered-podcast set (computed once instead of an O(sessions) scan per podcast session).
+        let hidePodcastsInSmart = Settings.hidePodcastSessionsInSmartPlaylist()
+        let smartCoveredPodcasts = hidePodcastsInSmart ? SessionManager.shared.smartPlaylistCoveredPodcastUuids() : []
+        // One stateless episode reader for the whole build (EpisodesDataManager has no shared instance).
+        let episodeSource = EpisodesDataManager()
 
         let sessions = SessionStore.shared.sessions
         let built: [Entry] = sessions.enumerated().compactMap { index, session in
@@ -147,12 +187,19 @@ enum SessionListRows {
             else { return nil }
 
             let isActive = activeUuid == storeUuid
-            // Fork: honour the "Show Session Playlists" selection here too — the chooser's ⋯ opens
-            // that same sheet, so a deselected session must not appear here. The ACTIVE session is
-            // always kept reachable (you're playing it) even if its store is deselected.
-            if !isActive, !SessionManager.shared.sessionStoreVisible(playlistUuid: storeUuid) { return nil }
-            // Exactly what playback reads: the store, in its own order.
-            let ordered = PlaybackSession(type: .playlist, uuid: storeUuid).orderedEpisodes()
+            // Fork: the session list no longer mirrors the Playlists tab's "Show Session Playlists"
+            // selection — it's a manually-ordered "recent/planned" list of ALL your sessions, gated
+            // only by the two ⋯ toggles: "Hide empty sessions" (below) and this one, "Hide Podcasts
+            // in Smart Playlists" — a per-podcast session whose podcast a smart-playlist session
+            // already covers is redundant, so drop it (the active session always stays reachable).
+            if !isActive, hidePodcastsInSmart,
+               case .podcast(let podcastUuid) = session.feeder,
+               smartCoveredPodcasts.contains(podcastUuid) {
+                return nil
+            }
+            // Exactly what playback reads: the store, in its own order. Uses the already-fetched
+            // `store` filter so this doesn't re-run `findPlaylist(uuid:)` a second time per session.
+            let ordered = episodeSource.playlistEpisodes(for: store).map { $0.episode }
             // Episodes only leave a session when they finish — the same rule
             // `PlaybackSession.remainingEpisodes` uses.
             let remaining = ordered.filter { !$0.played() }
@@ -171,25 +218,37 @@ enum SessionListRows {
 
             let totalRemaining = remaining.reduce(0.0) { $0 + max(0, $1.duration - $1.playedUpTo) }
 
+            let isSmartPlaylist: Bool
+            if case .smartPlaylist = session.feeder { isSmartPlaylist = true } else { isSmartPlaylist = false }
+
             let row = SessionListRow(
                 sessionUuid: session.uuid,
                 storeUuid: storeUuid,
                 name: store.playlistName,
                 nextEpisodePodcastUuid: (next as? Episode)?.podcastUuid,
-                isPlaying: isActive && !sessionPaused && PlaybackManager.shared.playing(),
+                isPlaying: isActive && !sessionPaused && PlaybackManager.shared.currentEpisodeIsSessionSourced && PlaybackManager.shared.playing(),
                 isActive: isActive,
                 nextEpisodeTitle: next?.displayableTitle(),
                 nextEpisodePodcast: next.flatMap { podcastName(for: $0) },
                 nextEpisodeDuration: next.map { durationText(for: $0) },
                 progress: next.map { progress(for: $0) } ?? 0,
                 episodeCount: remaining.count,
-                timeLeft: remaining.isEmpty ? nil : TimeFormatter.shared.multipleUnitFormattedShortTime(time: totalRemaining)
+                timeLeft: remaining.isEmpty ? nil : TimeFormatter.shared.multipleUnitFormattedShortTime(time: totalRemaining),
+                nextEpisodeSeasonEpisode: (next as? Episode).flatMap { seasonEpisodeShorthand(for: $0) },
+                isSmartPlaylist: isSmartPlaylist,
+                // Owns the card only when active, not parked, AND the current card is actually this
+                // session's episode — otherwise a session holding the pointer while the queue plays
+                // would wrongly read as owning the card (both lanes then look like they're playing).
+                ownsCard: isActive && !sessionPaused && PlaybackManager.shared.currentEpisodeIsSessionSourced
             )
             return Entry(
                 row: row,
                 session: session,
                 index: index,
                 remainingSeconds: totalRemaining,
+                // Full session length = every episode's duration (not just what's left) — the
+                // Shortest/Longest sort key.
+                fullLength: ordered.reduce(0.0) { $0 + $1.duration },
                 // `.recentlyUpdated` signal: the newest publish date in the lineup. The store
                 // (PlaylistEpisode) records no added-at date, and the feeder engine keeps no
                 // per-session timestamp, so there is no cheaper store-side signal — and this
@@ -214,12 +273,20 @@ enum SessionListRows {
         }
 
         return visible.sorted { lhs, rhs in
-            // Only a SOUNDING session leads. Opening a session is navigation, not listening,
-            // so merely stepping into one must not reshuffle the list you stepped out of.
-            // A session paused mid-episode still rises via the progress tier below.
-            if lhs.row.isPlaying != rhs.row.isPlaying { return lhs.row.isPlaying }
-
+            // NOTE: `current()` is a PURE sorted builder — it no longer hoists the active session to
+            // the top. The Queue surfaces the current session by extracting it into its own row-1
+            // card (so hoisting here would double-handle it and reshuffle the pool on activation), and
+            // the recency-ordered consumers (Switch Session sheet, CarPlay) already float the playing
+            // session up via its `lastUsed` (bumped to now on playbackStarted). Any consumer that wants
+            // the active session first should hoist it at its own layer.
             switch sort {
+            case .manual:
+                // The user's own drag order (synced `sortIndex`); never-placed sessions (Int.max)
+                // fall to the end in creation order (the array index).
+                if lhs.session.sortIndex != rhs.session.sortIndex {
+                    return lhs.session.sortIndex < rhs.session.sortIndex
+                }
+                return lhs.index < rhs.index
             case .recentlyPlayed:
                 return byRecency(lhs, rhs)
             case .name:
@@ -244,6 +311,24 @@ enum SessionListRows {
                 case (.none, .none):
                     break
                 }
+                return byName(lhs, rhs)
+            case .newestToOldest, .oldestToNewest:
+                switch (lhs.newestPublished, rhs.newestPublished) {
+                case (let left?, let right?):
+                    if left != right { return sort == .newestToOldest ? left > right : left < right }
+                case (.some, .none): return true   // a dated session sorts above an undated one
+                case (.none, .some): return false
+                case (.none, .none): break
+                }
+                return byName(lhs, rhs)
+            case .shortestToLongest, .longestToShortest:
+                if lhs.fullLength != rhs.fullLength {
+                    return sort == .shortestToLongest ? lhs.fullLength < rhs.fullLength : lhs.fullLength > rhs.fullLength
+                }
+                return byName(lhs, rhs)
+            case .progress:
+                // Most progress first (the resume position of the session's next episode).
+                if lhs.row.progress != rhs.row.progress { return lhs.row.progress > rhs.row.progress }
                 return byName(lhs, rhs)
             }
         }.map(\.row)
@@ -271,6 +356,7 @@ enum SessionListRows {
         let session: Session
         let index: Int
         let remainingSeconds: Double
+        let fullLength: Double
         let newestPublished: Date?
     }
 
@@ -328,6 +414,13 @@ enum SessionListRows {
         let title = episode.subTitle()
         return title.isEmpty ? nil : title
     }
+
+    /// "S4 E2" (or "S4") — only when SEASON info is present. Episode-only numbering shows nothing.
+    private static func seasonEpisodeShorthand(for episode: Episode) -> String? {
+        guard episode.seasonNumber > 0 else { return nil }
+        let text = L10n.seasonEpisodeShorthand(seasonNumber: episode.seasonNumber, episodeNumber: episode.episodeNumber)
+        return text.isEmpty ? nil : text
+    }
 }
 
 
@@ -343,7 +436,8 @@ extension Settings {
         guard let raw = UserDefaults.standard.object(forKey: Settings.sessionListSortKey) as? Int,
               let sort = SessionListSort(rawValue: raw)
         else {
-            return .recentlyPlayed
+            // Fork: the session list defaults to the manual drag order.
+            return .manual
         }
         return sort
     }
@@ -360,6 +454,18 @@ extension Settings {
 
     /// The chooser's "Show" toggles. The three type toggles default to on (show
     /// everything); hiding empty sessions is opt-in.
+    static let hidePodcastSessionsInSmartPlaylistKey = "SJHidePodcastSessionsInSmartPlaylist"
+
+    /// Fork: the session list's "Hide Podcasts in Smart Playlists" toggle — drops a per-podcast
+    /// session when that podcast is already covered by a smart-playlist session (redundant).
+    class func hidePodcastSessionsInSmartPlaylist() -> Bool {
+        UserDefaults.standard.bool(forKey: Settings.hidePodcastSessionsInSmartPlaylistKey)
+    }
+
+    class func setHidePodcastSessionsInSmartPlaylist(_ hide: Bool) {
+        UserDefaults.standard.set(hide, forKey: Settings.hidePodcastSessionsInSmartPlaylistKey)
+    }
+
     class func sessionListHideEmpty() -> Bool {
         UserDefaults.standard.bool(forKey: Settings.sessionListHideEmptyKey)
     }

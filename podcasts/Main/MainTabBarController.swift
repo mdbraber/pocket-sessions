@@ -24,11 +24,16 @@ class MainTabBarController: UITabBarController, NavigationProtocol, UIGestureRec
 
     private lazy var profileTabBarItem = UITabBarItem(title: L10n.profile, image: UIImage(named: "profile_tab"), tag: pcTabs.firstIndex(of: .profile) ?? -1)
 
-    private lazy var upNextTabBarItem = UITabBarItem(title: L10n.upNext, image: UIImage(named: "upnext_tab"), tag: pcTabs.firstIndex(of: .upNext) ?? -1)
+    private lazy var upNextTabBarItem = UITabBarItem(title: L10n.tabQueue, image: UIImage(named: "upnext_tab"), tag: pcTabs.firstIndex(of: .upNext) ?? -1)
 
     /// The last Up Next count rendered into the tab, used to pulse the tab only
     /// when the queue actually changes (not on every refresh notification).
     private var previousUpNextCount: Int?
+
+    /// Fork: the untinted Queue-tab images (icon, optionally with a count badge). Kept so the green
+    /// "a session owns the now-playing card" tint can be applied/removed without rebuilding them.
+    private var upNextTabBaseImage: UIImage?
+    private var upNextTabBaseSelectedImage: UIImage?
 
     /// `true` while the Up Next "pulse" spring is in flight, so a burst of
     /// rapid adds doesn't stack overlapping transforms on the target (the tab
@@ -172,6 +177,12 @@ class MainTabBarController: UITabBarController, NavigationProtocol, UIGestureRec
         NotificationCenter.default.addObserver(self, selector: #selector(refreshUpNextTabBadge), name: Constants.Notifications.upNextQueueChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(refreshUpNextTabBadge), name: Constants.Notifications.upNextEpisodeRemoved, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(refreshUpNextTabBadge), name: Constants.Notifications.playbackTrackChanged, object: nil)
+        // Fork: the Queue tab turns green when a session owns the now-playing card — refresh that tint
+        // whenever playback starts/stops/switches source (count-independent, so it's its own hook).
+        NotificationCenter.default.addObserver(self, selector: #selector(refreshUpNextTabTint), name: Constants.Notifications.playbackTrackChanged, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(refreshUpNextTabTint), name: Constants.Notifications.playbackSessionChanged, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(refreshUpNextTabTint), name: Constants.Notifications.playbackStarted, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(refreshUpNextTabTint), name: Constants.Notifications.playbackEnded, object: nil)
         // The tab mirrors the active session (title + count), so session and playlist
         // changes both redraw it.
         NotificationCenter.default.addObserver(self, selector: #selector(refreshUpNextTabBadge), name: Constants.Notifications.playbackSessionChanged, object: nil)
@@ -386,11 +397,19 @@ class MainTabBarController: UITabBarController, NavigationProtocol, UIGestureRec
     override func tabBar(_ tabBar: UITabBar, didSelect item: UITabBarItem) {
         let tabIndex = item.tag
         if tabIndex == selectedIndex, let navController = selectedViewController as? UINavigationController, navController.visibleViewController == navController.viewControllers.first {
-            // the user has tapped on a tab they are already at the root of, so trigger an action so we can handle this
-            NotificationCenter.postOnMainThread(notification: Constants.Notifications.tappedOnSelectedTab, object: tabIndex)
-            // Fork: re-tapping the Up Next/Session tab snaps back to the playing world.
-            if pcTabs[safe: tabIndex] == .upNext {
-                NotificationCenter.postOnMainThread(notification: Constants.Notifications.upNextTabActivated)
+            // Fork: re-tapping the Queue tab CYCLES between the overview and the active lane — from the
+            // session-list home it drills into the ACTIVE lane (the active session's lineup, else Up
+            // Next); from inside a lane it goes back to the overview. Other tabs keep scroll-to-top.
+            if pcTabs[safe: tabIndex] == .upNext,
+               let upNext = navController.viewControllers.first as? UpNextViewController {
+                if upNext.showingSessionList {
+                    upNext.openActiveLane()
+                } else {
+                    upNext.exitToSessionList()
+                }
+            } else {
+                // the user has tapped on a tab they are already at the root of, so trigger an action so we can handle this
+                NotificationCenter.postOnMainThread(notification: Constants.Notifications.tappedOnSelectedTab, object: tabIndex)
             }
         }
 
@@ -1327,10 +1346,10 @@ private extension MainTabBarController {
 
 extension MainTabBarController {
     @objc func refreshUpNextTabBadge() {
-        // While a session plays, the tab represents it: "Session" with the session's
-        // episode count instead of the queue's.
+        // Fork: the tab is always "Queue"; the Up Next / Session worlds live inside it as the
+        // bottom switcher, so the tab name no longer follows which world is playing.
         let activeSession = Settings.playbackSession()
-        upNextTabBarItem.title = activeSession != nil ? L10n.playbackSessionTabSession : L10n.upNext
+        upNextTabBarItem.title = L10n.tabQueue
 
         guard #available(iOS 26.0, *) else { return }
 
@@ -1355,15 +1374,51 @@ extension MainTabBarController {
         }
 
         // A template image so the tab bar tints it like every other item.
-        upNextTabBarItem.image = Self.composeUpNextTabImage(count: count)
-        upNextTabBarItem.selectedImage = Self.composeUpNextTabImage(count: count, isSelected: true)
+        setUpNextTabImage(Self.composeUpNextTabImage(count: count),
+                          selected: Self.composeUpNextTabImage(count: count, isSelected: true))
 
         // Only celebrate the queue growing — a drain (playing/removing) shouldn't pop.
         if previous.map({ count > $0 }) ?? false { pulseUpNextTarget() }
     }
 
     func resetUpNextTabImage() {
-        upNextTabBarItem.image = UIImage(named: "upnext_tab")
-        upNextTabBarItem.selectedImage = nil
+        setUpNextTabImage(UIImage(named: "upnext_tab"), selected: nil)
+    }
+
+    /// Fork: stores the untinted Queue-tab images, then applies the session-green tint if a session
+    /// currently owns the now-playing card.
+    func setUpNextTabImage(_ base: UIImage?, selected: UIImage?) {
+        upNextTabBaseImage = base
+        upNextTabBaseSelectedImage = selected
+        applyUpNextTabSessionTint()
+    }
+
+    /// Fork: re-apply the session tint over the stored base images (count-independent — driven by
+    /// playback source changes, which don't necessarily change the badge count).
+    @objc func refreshUpNextTabTint() {
+        applyUpNextTabSessionTint()
+    }
+
+    private func applyUpNextTabSessionTint() {
+        // "The active card is a Session" → tint the Queue tab green, ignoring selection/theme so it
+        // reads the same as the session accent everywhere. Otherwise the untinted template images
+        // let the tab bar tint them like every other tab. Falls back to the plain icon when no base
+        // has been composed yet (e.g. pre-iOS-26, where there's no count badge).
+        let base = upNextTabBaseImage ?? UIImage(named: "upnext_tab")
+        guard PlaybackManager.shared.currentEpisodeIsSessionSourced else {
+            upNextTabBarItem.image = base
+            upNextTabBarItem.selectedImage = upNextTabBaseSelectedImage
+            // nil attributes → the title follows the tab bar's normal tint again.
+            upNextTabBarItem.setTitleTextAttributes(nil, for: .normal)
+            upNextTabBarItem.setTitleTextAttributes(nil, for: .selected)
+            return
+        }
+        let green = ThemeColor.support02()
+        // Only the SELECTED Queue tab reads green when a session is playing; unselected keeps the
+        // normal (template) icon + title so it isn't coloured when you're on another tab.
+        upNextTabBarItem.image = base
+        upNextTabBarItem.selectedImage = (upNextTabBaseSelectedImage ?? base)?.withTintColor(green, renderingMode: .alwaysOriginal)
+        upNextTabBarItem.setTitleTextAttributes(nil, for: .normal)
+        upNextTabBarItem.setTitleTextAttributes([.foregroundColor: green], for: .selected)
     }
 }
