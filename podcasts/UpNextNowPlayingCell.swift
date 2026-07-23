@@ -97,6 +97,7 @@ class UpNextNowPlayingCell: ThemeableSwipeCell {
         didSet {
             dateLabel.style = .primaryText02
             dateLabel.font = UIFont.font(ofSize: 12, weight: .semibold, scalingWith: .caption1)
+            dateLabel.adjustsFontForContentSizeCategory = true
         }
     }
 
@@ -111,6 +112,7 @@ class UpNextNowPlayingCell: ThemeableSwipeCell {
         didSet {
             timeRemainingLabel.style = .primaryText02
             timeRemainingLabel.font = UIFont.font(ofSize: 13, scalingWith: .footnote)
+            timeRemainingLabel.adjustsFontForContentSizeCategory = true
         }
     }
 
@@ -118,6 +120,7 @@ class UpNextNowPlayingCell: ThemeableSwipeCell {
         didSet {
             episodeTitle.style = .primaryText01
             episodeTitle.font = UIFont.font(ofSize: 15, weight: .medium, scalingWith: .subheadline)
+            episodeTitle.adjustsFontForContentSizeCategory = true
         }
     }
 

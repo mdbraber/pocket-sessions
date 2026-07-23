@@ -432,21 +432,23 @@ class PlaylistDetailViewModel: ObservableObject {
             episodesDataManager: episodesDataManager,
             playlist: playlist
         ) { [weak self] newData, archivedEpisodeCount in
-            guard let self else { return }
-            DispatchQueue.main.async {
-                self.archivedEpisodesCount = archivedEpisodeCount
-                let isFirstReload = self.firstTimeLoading
-                self.firstTimeLoading = false
-                self.lastFetchedEpisodes = newData
-                let changeSetTuple = self.buildChangeSet(source: self.episodes, newData: newData)
-                let contentHasChanged = changeSetTuple.0
-                if contentHasChanged {
-                    self.dataManager.updatePlaylistUpdateDate(for: self.playlist)
-                }
-                self.onChange(changeSetTuple.1, animated && !isFirstReload, contentHasChanged)
-            }
+            self?.handleFetchCompletion(newData: newData, archivedEpisodeCount: archivedEpisodeCount, animated: animated)
         }
         operationQueue.addOperation(refreshOperation)
+    }
+
+    private func handleFetchCompletion(newData: [ListEpisode], archivedEpisodeCount: Int, animated: Bool) {
+        archivedEpisodesCount = archivedEpisodeCount
+        let isFirstReload = firstTimeLoading
+        firstTimeLoading = false
+        // Fork: keep the last fetched set so a live session/store change can rebuild the changeset.
+        lastFetchedEpisodes = newData
+        let changeSetTuple = buildChangeSet(source: episodes, newData: newData)
+        let contentHasChanged = changeSetTuple.0
+        if contentHasChanged {
+            dataManager.updatePlaylistUpdateDate(for: playlist)
+        }
+        onChange(changeSetTuple.1, animated && !isFirstReload, contentHasChanged)
     }
 
     func totalDuration() -> String? {
