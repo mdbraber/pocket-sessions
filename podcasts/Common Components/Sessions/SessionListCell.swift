@@ -302,9 +302,10 @@ class SessionListCell: ThemeableSwipeCell {
         nowPlayingIndicator.isHidden = !row.ownsCard
         nowPlayingIndicator.color = laneAccent(isUpNext: row.isUpNext)
 
-        // Play when idle/paused, pause when this lane is sounding. Outline (not filled) glyphs.
-        let symbol = row.isPlaying ? "pause.circle" : "play.circle"
-        let config = UIImage.SymbolConfiguration(pointSize: 22, weight: .regular)
+        // Just the play/pause GLYPH (no circle) — the progress ring supplies the circle, so this
+        // matches the details rows' triangle-in-a-ring exactly instead of doubling the circle.
+        let symbol = row.isPlaying ? "pause.fill" : "play.fill"
+        let config = UIImage.SymbolConfiguration(pointSize: 13, weight: .medium)
         playButton.setImage(UIImage(systemName: symbol, withConfiguration: config), for: .normal)
         playButton.accessibilityLabel = row.isPlaying ? L10n.pause : L10n.play
         // Normally every row shows its play button; in Reorder Items mode the pool rows show the
