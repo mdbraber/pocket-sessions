@@ -161,6 +161,8 @@ class PlaylistDetailViewController: PCViewController, UIScrollViewDelegate {
             switch buttonTag {
             case .playAll:
                 self.playAll()
+            case .queueSession:
+                self.queueSession()
             case .smartRules:
                 self.editPlaylist()
             case .addEpisodes:

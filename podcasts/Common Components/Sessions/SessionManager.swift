@@ -596,7 +596,7 @@ class SessionManager {
         // Smart playlists:
         for playlist in DataManager.sharedManager.allSmartPlaylists(includeDeleted: false)
         where SessionStore.shared.session(forSmartPlaylistFeeder: playlist.uuid) == nil {
-            if episodes.contains(where: { feeder(.smartPlaylist(uuid: playlist.uuid), coversPodcast: $0.podcastUuid) }) {
+            if episodes.contains(where: { feeder(.smartPlaylist(uuid: playlist.uuid), coversEpisode: $0) }) {
                 _ = findOrCreateSession(forSmartPlaylist: playlist)
             }
         }
@@ -627,7 +627,7 @@ class SessionManager {
                 continue
             }
             let existing = Set(SessionFeederEngine.storeMemberUuids(for: session))
-            let missing = episodes.filter { !existing.contains($0.uuid) && feeder(session.feeder, coversPodcast: $0.podcastUuid) }
+            let missing = episodes.filter { !existing.contains($0.uuid) && feeder(session.feeder, coversEpisode: $0) }
             FileLog.shared.addMessage("Backfill: '\(store.playlistName)' feeder=\(session.feeder) existing=\(existing.count) missing=\(missing.count)")
             guard !missing.isEmpty else { continue }
             // Bulk catch-up counts as gathered, NOT pinned — the feeder may prune these later.
@@ -654,7 +654,7 @@ class SessionManager {
             return 0
         }
         let existing = Set(SessionFeederEngine.storeMemberUuids(for: session))
-        let missing = episodes.filter { !existing.contains($0.uuid) && feeder(session.feeder, coversPodcast: $0.podcastUuid) }
+        let missing = episodes.filter { !existing.contains($0.uuid) && feeder(session.feeder, coversEpisode: $0) }
         FileLog.shared.addMessage("Backfill: '\(store.playlistName)' existing=\(existing.count) missing=\(missing.count)")
         guard !missing.isEmpty else { return 0 }
         // Bulk catch-up counts as gathered, NOT pinned — the feeder may prune these later.
@@ -668,7 +668,9 @@ class SessionManager {
         let holders = Set(episodeUuids.flatMap { DataManager.sharedManager.manualPlaylistUUIDs(for: $0) })
         guard !holders.isEmpty else { return [] }
         return SessionStore.shared.sessions.filter {
-            $0.uuid != SessionStore.globalInboxUuid && ($0.storePlaylistUuid.map(holders.contains) ?? false)
+            $0.uuid != SessionStore.globalInboxUuid
+                && !Self.isOptedOut(feeder: $0.feeder) // a frozen "not a session playlist" never lists
+                && ($0.storePlaylistUuid.map(holders.contains) ?? false)
         }
     }
 
@@ -752,7 +754,7 @@ class SessionManager {
         // Existing sessions whose feeder covers any of the episodes, current page first.
         var covering = SessionStore.shared.sessions.filter { session in
             session.uuid != SessionStore.globalInboxUuid && session.storePlaylistUuid != nil
-                && episodes.contains { self.feeder(session.feeder, coversPodcast: $0.podcastUuid) }
+                && episodes.contains { self.feeder(session.feeder, coversEpisode: $0) }
         }
         if let preferred {
             covering.removeAll { $0.uuid == preferred.uuid }
@@ -791,7 +793,7 @@ class SessionManager {
                 for session in targets {
                     let uuids = (session.uuid == preferred?.uuid || targets.count == 1)
                         ? episodeUuids
-                        : episodes.filter { self.feeder(session.feeder, coversPodcast: $0.podcastUuid) }.map(\.uuid)
+                        : episodes.filter { self.feeder(session.feeder, coversEpisode: $0) }.map(\.uuid)
                     guard !uuids.isEmpty else { continue }
                     // Every route through addToSessions is a USER verb (swipes, multi-select,
                     // episode card, Ask picker) — pin-everywhere: the episode is pinned in
@@ -918,6 +920,27 @@ class SessionManager {
             if playlist.filterAllPodcasts { return true }
             return playlist.podcastUuids.components(separatedBy: ",").contains(podcastUuid)
         }
+    }
+
+    /// Fork: whether a feeder covers a specific EPISODE. For a smart-playlist feeder this honours the
+    /// playlist's EPISODE-LEVEL rules (duration, release date, unplayed, …) — not just whether the
+    /// podcast is in scope. Without this, an "all podcasts, max 10 min" playlist would swallow a 40-min
+    /// episode on "Add to Session" or a backfill (the reported bug), because podcast coverage was true.
+    /// Non-smart feeders (podcast, folder, all-podcasts) have no episode rules, so they defer to
+    /// podcast coverage.
+    func feeder(_ feeder: SessionFeeder, coversEpisode episode: BaseEpisode) -> Bool {
+        guard case .smartPlaylist(let uuid) = feeder else {
+            return self.feeder(feeder, coversPodcast: episode.parentIdentifier())
+        }
+        guard !Settings.playlistOptedOutOfSession(uuid: uuid),
+              let playlist = DataManager.sharedManager.findPlaylist(uuid: uuid) else { return false }
+        // Run the playlist's own query constrained to this one episode: a hit means it matches the rules.
+        let query = PlaylistQueryBuilder.query(clause: .episode,
+                                               for: playlist,
+                                               limit: 1,
+                                               shouldShowArchived: true,
+                                               extraWhere: "episode.uuid = '\(episode.uuid)'")
+        return !DataManager.sharedManager.findPlaylistEpisodesWhere(query: query, arguments: nil).isEmpty
     }
 
     /// Whether a session's lineup has nothing left to play (every episode finished, or none

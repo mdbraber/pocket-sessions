@@ -176,9 +176,13 @@ enum SessionFeederEngine {
 
     // MARK: - Session membership
 
-    /// The union of every session's lineup — one query, not one per session.
+    /// The union of every session's lineup — one query, not one per session. A playlist that has
+    /// opted OUT of being a session playlist ("Session Playlist" unchecked) is frozen and must not
+    /// contribute membership, so the mini in-session icon doesn't mark its episodes.
     static func allStoreMemberUuids() -> Set<String> {
-        let storeUuids = SessionStore.shared.sessions.compactMap(\.storePlaylistUuid)
+        let storeUuids = SessionStore.shared.sessions
+            .filter { !SessionManager.isOptedOut(feeder: $0.feeder) }
+            .compactMap(\.storePlaylistUuid)
         return DataManager.sharedManager.playlistEpisodeUuids(forPlaylistUuids: storeUuids)
     }
 

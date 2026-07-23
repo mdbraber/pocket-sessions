@@ -35,6 +35,28 @@ extension PlaylistDetailViewController: UISheetPresentationControllerDelegate, P
         PlaybackManager.shared.startPlaybackSession(PlaybackSession(type: playlist.manual ? .playlist : .smartPlaylist, uuid: playlist.uuid))
     }
 
+    /// Fork: "Queue Session" — makes this the TOP session on the Queue page (the next one up) WITHOUT
+    /// starting playback. It resolves/creates the session, then floats it to the front of the session
+    /// order so it lands at the top of the session list; whatever is currently playing keeps playing.
+    func queueSession() {
+        let resolved: Session?
+        if let existing = viewModel.session {
+            resolved = existing
+        } else if viewModel.isLensPage {
+            resolved = SessionManager.shared.findOrCreateSession(forSmartPlaylist: viewModel.playlist)
+        } else {
+            resolved = nil
+        }
+        guard let session = resolved else { return }
+
+        // Float it to the front of the session order (its sortIndex becomes 0), so the Queue page
+        // shows it at the top of the session list. Keep every other session's relative order.
+        let order = [session.uuid] + SessionStore.shared.sessions.map(\.uuid).filter { $0 != session.uuid }
+        SessionStore.shared.reorderSessions(order)
+
+        Toast.show(L10n.playlistQueueSessionToast)
+    }
+
     func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
         track(.filterPlayAllDismissed)
     }

@@ -91,8 +91,16 @@ class PlaylistDetailViewModel: ObservableObject {
         case smartRules
         case addEpisodes
         case playAll
+        case queueSession
         case playlistFolder
         case playlistSettings
+    }
+
+    /// Fork: "Queue Session" — an outline button beside "Play Session" that floats this session to the
+    /// TOP of the session list on the Queue page (without playing). Needs a real session behind the
+    /// page: an existing one (manual session store) or a lens that can create one.
+    var showsQueueSession: Bool {
+        session != nil || isLensPage
     }
 
     let onButtonTapped: (ButtonTag) -> Void

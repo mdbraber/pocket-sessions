@@ -5301,7 +5301,7 @@
 "smart_rule_folder_count_plural" = "%1$@ folders";
 
 /* Title of the sort picker shown when sorting a smart playlist during a playback session */
-"playback_session_sort_title" = "Sort Playlist";
+"playback_session_sort_title" = "Sort Session";
 
 /* Swipe action that inserts a new (inbox) episode into the playlist lineup at the insert marker */
 "playlist_add_to_lineup" = "Add to Session";
@@ -5329,6 +5329,10 @@
 
 /* Playlist header button that starts a playback session from the playlist (replaces 'Play All' while sessions are enabled) */
 "playlist_play_as_session" = "Play Session";
+/* Fork: outline button beside Play Session — floats the session to the top of the Queue page. */
+"playlist_queue_session" = "Queue Session";
+/* Fork: toast confirming Queue Session moved it to the top of the session list. */
+"playlist_queue_session_toast" = "Queued — it's at the top of your sessions";
 
 /* Short nav bar button that opens the Switch Session sheet */
 "playback_session_switch_short" = "Switch";

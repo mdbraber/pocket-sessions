@@ -7,11 +7,7 @@ import Kingfisher
 import PocketCastsUtils
 import SwiftUI
 
-class MainTabBarController: UITabBarController, NavigationProtocol, UIGestureRecognizerDelegate {
-
-    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
-        true
-    }
+class MainTabBarController: UITabBarController, NavigationProtocol {
 
     // .discover never becomes a tab (Discover lives under Profile) but the case stays for exhaustive switches elsewhere.
     enum Tab: Int { case podcasts, filter, discover, profile, upNext, inbox }
@@ -110,12 +106,6 @@ class MainTabBarController: UITabBarController, NavigationProtocol, UIGestureRec
 
         // Fork tab bar: the global Inbox leads; Discover is parked under Profile.
         pcTabs = [.inbox, .podcasts, .filter, .upNext, .profile]
-
-        // Fork: long-pressing the Up Next/Session tab offers the Switch Session sheet.
-        let longPress = UILongPressGestureRecognizer(target: self, action: #selector(upNextTabLongPressed(_:)))
-        longPress.cancelsTouchesInView = false
-        longPress.delegate = self
-        tabBar.addGestureRecognizer(longPress)
 
         var vcsInTab = [UIViewController]()
 
@@ -362,34 +352,6 @@ class MainTabBarController: UITabBarController, NavigationProtocol, UIGestureRec
                 }
             }
         }
-    }
-
-    /// Fork: a long press on the Up Next/Session tab opens the Switch Session sheet
-    /// from anywhere in the app.
-    @objc private func upNextTabLongPressed(_ recognizer: UILongPressGestureRecognizer) {
-        guard recognizer.state == .began else { return }
-        let location = recognizer.location(in: tabBar)
-
-        // Tab buttons can be nested on newer tab bar styles, so collect controls
-        // recursively and hit-test in the tab bar's coordinate space; fall back to
-        // proportional math if none matches.
-        func controls(in view: UIView) -> [UIView] {
-            view.subviews.flatMap { $0 is UIControl ? [$0] : controls(in: $0) }
-        }
-        let buttons = controls(in: tabBar)
-            .map { ($0, $0.convert($0.bounds, to: tabBar)) }
-            .sorted { $0.1.minX < $1.1.minX }
-        var index = buttons.firstIndex { $0.1.insetBy(dx: -4, dy: -20).contains(location) }
-        if index == nil || buttons.count != pcTabs.count {
-            index = Int(location.x / max(tabBar.bounds.width, 1) * CGFloat(pcTabs.count))
-        }
-        guard let index, pcTabs[safe: index] == .upNext else { return }
-
-        let controller = SwitchSessionViewController(themeOverride: nil) { _ in }
-        let nav = UINavigationController(rootViewController: controller)
-        nav.modalPresentationStyle = .pageSheet
-        nav.sheetPresentationController?.detents = [.medium(), .large()]
-        (presentedViewController ?? self).present(nav, animated: true)
     }
 
     // MARK: - UITabBarDelegate

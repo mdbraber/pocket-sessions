@@ -10,7 +10,8 @@ enum TriageSwipes {
     /// move-to-top and move-to-bottom use two blues. "Add to Session" (the specific verb)
     /// keeps the base session green; "Add to…" (the picker) is a lighter tint of it.
     static var addToSessionGreen: UIColor { ThemeColor.support02() }
-    static var addToPickerGreen: UIColor { ThemeColor.support02().lightened(by: 0.32) }
+    /// "Add to…" (the picker) is blue — distinct from the green "Add to Session" verb.
+    static var addToPickerBlue: UIColor { ThemeColor.support01() }
 
     /// Left swipe: Add to Session (green) — only when the episode is NOT in *this page's* session —
     /// then Add to… (the shared destination picker). (Remove from Session is the right
@@ -60,7 +61,7 @@ enum TriageSwipes {
         // White glyph on the green, matching the "Add to Session" icon (the asset is
         // otherwise its own colour, which muddies the lighter green).
         action.image = UIImage(named: "plus-circle")?.withRenderingMode(.alwaysTemplate).withTintColor(.white, renderingMode: .alwaysOriginal)
-        action.backgroundColor = addToPickerGreen
+        action.backgroundColor = addToPickerBlue
         action.accessibilityLabel = L10n.swipeAddTo
         action.hidesWhenSelected = true
         return action

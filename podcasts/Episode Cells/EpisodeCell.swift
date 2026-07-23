@@ -332,15 +332,20 @@ class EpisodeCell: ThemeableSwipeCell, MainEpisodeActionViewDelegate {
         super.layoutSubviews()
         layoutActiveProgress()
 
-        // Workaround for iOS issue. When a table transitions to editing mode
-        // it takes over hiding/showing views and sometimes the selectivew doesn't
-        // appear.
-        if selectView.isHidden == isMultiSelectEnabled {
-            selectView.isHidden = !isMultiSelectEnabled
+        // Fork: in the always-editing Up Next / session table UIKit auto-toggles `isMultiSelectEnabled`
+        // to true whenever it re-inserts a cell (for drag reorder), which — via the stock workaround
+        // below — would flash the select circle even when multi-select is OFF. When the host drives the
+        // select control (`managesOwnSelectControl`), key visibility off `shouldShowSelect` instead so
+        // UIKit's editing state can't leak the circle in.
+        let selectVisible = managesOwnSelectControl ? (shouldShowSelect && isSelectableForMultiSelect) : isMultiSelectEnabled
+        // Workaround for iOS issue. When a table transitions to editing mode it takes over
+        // hiding/showing views and sometimes the select view doesn't appear.
+        if selectView.isHidden == selectVisible {
+            selectView.isHidden = !selectVisible
             setNeedsLayout()
         }
         let wasDeleted = episode?.wasDeleted ?? false
-        let shouldHide = isMultiSelectEnabled || wasDeleted || hidesActionButton
+        let shouldHide = selectVisible || wasDeleted || hidesActionButton
 
         if actionButton.isHidden != shouldHide {
             actionButton.isHidden = shouldHide

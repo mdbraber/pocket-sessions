@@ -169,9 +169,9 @@ extension UpNextViewController: SwipeTableViewCellDelegate, SwipeHandler {
         guard sessionType == .playlist || sessionType == .smartPlaylist else { return nil }
 
         let moveToTop = SwipeAction(style: .default, title: nil) { [weak self] _, indexPath in
-            // Shared with a drag dropped on row 0: while the session isn't sounding this
-            // reaches above the card and makes the row the session's next episode.
-            self?.moveSessionEpisodeToTop(fromRow: indexPath.row)
+            // Fork (Model B): move to the TOP OF THE TAIL — below the pinned current — rather than
+            // making it the now-playing item (that's a play-button gesture, not a reorder swipe).
+            self?.moveSessionEpisode(fromRow: indexPath.row, toRow: 0)
         }
         moveToTop.image = UIImage(named: "upnext-movetotop")
         moveToTop.backgroundColor = ThemeColor.support04()
