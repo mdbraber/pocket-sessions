@@ -137,7 +137,7 @@ class SessionListCell: ThemeableSwipeCell {
         stack.translatesAutoresizingMaskIntoConstraints = false
         stack.axis = .horizontal
         stack.alignment = .center
-        stack.spacing = 8
+        stack.spacing = 10 // match EpisodeCell's equalizer-to-button gap on the details cards
         return stack
     }()
 
@@ -194,10 +194,9 @@ class SessionListCell: ThemeableSwipeCell {
         surfaceTop = sTop; surfaceBottom = sBottom
         let pWidth = progressView.widthAnchor.constraint(equalToConstant: 0)
         progressWidth = pWidth
-        // Trailing controls sit at the surface edge (aligning the play button with the EpisodeCell
-        // rows on the details screens, whose action button hugs the same edge); in reorder mode they
-        // shift left to clear the drag handle the table draws at the trailing edge.
-        let tTrailing = trailingStack.trailingAnchor.constraint(equalTo: surfaceView.trailingAnchor, constant: 0)
+        // Trailing controls sit at the inner edge; in reorder mode they shift left to clear the drag
+        // handle the table draws at the trailing edge. (Reference position the details card matches.)
+        let tTrailing = trailingStack.trailingAnchor.constraint(equalTo: surfaceView.trailingAnchor, constant: -(Self.innerPad - 4))
         trailingStackTrailing = tTrailing
         // In reorder mode the card stretches to the trailing edge so the drag handle sits ON the
         // background rather than out in the margin.
@@ -389,11 +388,11 @@ class SessionListCell: ThemeableSwipeCell {
         refreshProgressFill()
     }
 
-    /// The backdrop progress fill shows only on the active row, and drops while a drag suppresses
-    /// the active styling.
+    /// The backdrop progress fill shows on every BOXED top card (Up Next + current session) — matching
+    /// the details-screen cards — and drops while a drag suppresses the active styling.
     private var rowProgress: CGFloat = 0
     private func refreshProgressFill() {
-        progress = (ownsCard && !suppressActiveBoxForDrag) ? rowProgress : 0
+        progress = showsAccentBox ? rowProgress : 0
     }
 
     /// Monospaced digits so the counts line doesn't jitter as its time ticks down.

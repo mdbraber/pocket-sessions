@@ -147,6 +147,28 @@ class EpisodeCell: ThemeableSwipeCell, MainEpisodeActionViewDelegate {
     /// Fork: whether this row is the currently-playing one (drives the equalizer, hidden in select).
     private var isNowPlayingRow = false
 
+    /// Fork: an 8pt trailing spacer added AFTER the action button in the main stack, used by the
+    /// Up Next / Session lineup rows so their play button lands at the same inset as the Queue
+    /// screen's session cards (the details rows otherwise hug the edge 8pt further right).
+    private lazy var lineupTrailingSpacer: UIView = {
+        let v = UIView()
+        v.translatesAutoresizingMaskIntoConstraints = false
+        v.widthAnchor.constraint(equalToConstant: 8).isActive = true
+        v.setContentHuggingPriority(.required, for: .horizontal)
+        v.setContentCompressionResistancePriority(.required, for: .horizontal)
+        return v
+    }()
+
+    var addsLineupTrailingInset = false {
+        didSet {
+            guard addsLineupTrailingInset != oldValue, let stack = actionButton.superview as? UIStackView else { return }
+            if addsLineupTrailingInset, lineupTrailingSpacer.superview == nil {
+                stack.addArrangedSubview(lineupTrailingSpacer)
+            }
+            lineupTrailingSpacer.isHidden = !addsLineupTrailingInset
+        }
+    }
+
     /// Fork: the gap between the now-playing equalizer and the trailing play/pause button.
     private static let equalizerToButtonGap: CGFloat = 10
 
@@ -883,6 +905,7 @@ class EpisodeCell: ThemeableSwipeCell, MainEpisodeActionViewDelegate {
         setActiveSurface(accent: nil)
         onSessionLineupPlay = nil
         onLineupLongPressPlay = nil
+        addsLineupTrailingInset = false
         playButtonTintOverride = nil
 
         unseenIndicator.isHidden = true

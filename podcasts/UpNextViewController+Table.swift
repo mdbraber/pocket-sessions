@@ -353,9 +353,11 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         // The host drives the select control (this table is always editing — see the flag docs),
         // so UIKit's reorder setEditing(true) can't flash the select circle mid-drag.
         cell.managesOwnSelectControl = true
+        cell.addsLineupTrailingInset = true
         cell.shouldShowSelect = isMultiSelectEnabled
         cell.playlist = browsedPlaybackSession.map { .filter(uuid: $0.uuid) }
-        cell.playButtonTintOverride = AppTheme.colorForStyle(.primaryText01, themeOverride: themeOverride)
+        // The pinned card (the active session's current) takes the green world accent; tail rows white.
+        cell.playButtonTintOverride = active ? nowPlayingWorldAccent : AppTheme.colorForStyle(.primaryText01, themeOverride: themeOverride)
         // The play button moves the episode to the top of the lineup and makes it the active item
         // (see `playSessionEpisodeMovingToTop`) — matching how the queue pins its now-playing.
         cell.onSessionLineupPlay = { [weak self] ep in self?.playSessionEpisodeMovingToTop(ep) }
@@ -382,9 +384,12 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         cell.showsReorderControl = false
         cell.hidesActionButton = false
         cell.managesOwnSelectControl = true
+        cell.addsLineupTrailingInset = true
         cell.shouldShowSelect = isMultiSelectEnabled
         cell.playlist = nil
-        cell.playButtonTintOverride = AppTheme.colorForStyle(.primaryText01, themeOverride: themeOverride)
+        // The pinned card's play button takes the world accent (green session / blue Up Next); the
+        // tail rows keep the neutral white button.
+        cell.playButtonTintOverride = isCard ? nowPlayingWorldAccent : AppTheme.colorForStyle(.primaryText01, themeOverride: themeOverride)
         // Long-press the play button = switch the now-playing head, inheriting the play state.
         cell.onLineupLongPressPlay = { [weak self] ep in self?.switchLineupEpisodeInheritingPlayState(ep) }
         cell.populateFrom(episode: episode, tintColor: nil)
