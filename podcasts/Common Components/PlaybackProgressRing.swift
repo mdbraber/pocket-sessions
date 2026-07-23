@@ -47,7 +47,8 @@ final class PlaybackProgressRingView: UIView {
     }
 
     override func draw(_ rect: CGRect) {
-        guard progress > 0, let context = UIGraphicsGetCurrentContext() else { return }
+        // Always draw — at 0 progress this is a full SOLID ring, exactly like MainEpisodeActionView.
+        guard let context = UIGraphicsGetCurrentContext() else { return }
         let center = CGPoint(x: bounds.midX, y: bounds.midY)
         let radius = min(PlaybackProgressRing.circleRadius, min(bounds.width, bounds.height) / 2 - 1)
         PlaybackProgressRing.draw(in: context, center: center, radius: radius,

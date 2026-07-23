@@ -62,6 +62,12 @@ class InboxSettingsViewController: PCViewController, UITableViewDataSource, UITa
         settingsTable.reloadData()
     }
 
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        // Keep the Backfill footer button clear of the mini player pill overlapping the bottom.
+        settingsTable.updateContentInset(multiSelectEnabled: false)
+    }
+
     @objc private func backfillTapped() {
         // Domain queries + store writes for every session — off the main thread, or the
         // screen (including the back button) freezes for the duration.
