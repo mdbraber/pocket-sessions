@@ -252,9 +252,9 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
                 return sessionEpisodeCell(for: episode, active: browsingActiveSession && !activeBoxSuppressed, at: indexPath)
             }
             if let episode = lineupHeadEpisode {
-                // Active only when the queue actually owns playback; while a session plays it's the
-                // queue's own next episode, shown inactive.
-                return queueEpisodeCell(for: episode, active: queueOwnsCard && !activeBoxSuppressed, at: indexPath)
+                // Active (bordered) only when the queue actually owns playback; while a session plays
+                // it's the queue's own next episode — still carded (bg + progress), just not bordered.
+                return queueEpisodeCell(for: episode, active: queueOwnsCard && !activeBoxSuppressed, isCard: true, at: indexPath)
             }
             let blank = tableView.dequeueReusableCell(withIdentifier: UpNextViewController.episodeCell, for: indexPath) as! EpisodeCell
             blank.themeOverride = themeOverride
@@ -373,7 +373,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
     /// Fork: a queue (Up Next) row — the SAME EpisodeCell as the session lineup, so the rows read
     /// identically (proper 44pt action button, artwork, info line). The queue plays standalone, so it
     /// sets neither `playInSession` nor `onSessionLineupPlay`. The now-playing episode is `active`.
-    private func queueEpisodeCell(for episode: BaseEpisode, active: Bool, at indexPath: IndexPath) -> EpisodeCell {
+    private func queueEpisodeCell(for episode: BaseEpisode, active: Bool, isCard: Bool = false, at indexPath: IndexPath) -> EpisodeCell {
         let cell = upNextTable.dequeueReusableCell(withIdentifier: UpNextViewController.episodeCell, for: indexPath) as! EpisodeCell
         cell.themeOverride = themeOverride
         cell.hidesArtwork = false
@@ -390,8 +390,14 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         cell.populateFrom(episode: episode, tintColor: nil)
         cell.setSessionIndicator(SessionIndicatorState.resolve(episode.uuid, thisSession: sessionMemberUuidsForDisplay))
         cell.setUnseenIndicator(visible: false)
-        let showsAccent = active && !isMultiSelectEnabled && !activeBoxSuppressed
-        cell.setActiveSurface(accent: showsAccent ? nowPlayingWorldAccent : nil, progress: active ? episodeProgressFraction(episode) : 0)
+        if isCard, !isMultiSelectEnabled, !activeBoxSuppressed {
+            // The pinned card always shows its card surface (tint + progress backdrop); the accent
+            // BORDER marks it as the active/sounding item (only when the queue owns playback).
+            cell.setActiveSurface(accent: nowPlayingWorldAccent, progress: episodeProgressFraction(episode), bordered: active)
+        } else {
+            let showsAccent = active && !isMultiSelectEnabled && !activeBoxSuppressed
+            cell.setActiveSurface(accent: showsAccent ? nowPlayingWorldAccent : nil, progress: active ? episodeProgressFraction(episode) : 0)
+        }
         cell.showTick = selectedEpisodesContains(uuid: episode.uuid)
         cell.contentView.alpha = 1
         return cell

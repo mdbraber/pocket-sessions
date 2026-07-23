@@ -117,8 +117,19 @@ extension PlaylistDetailViewController: UITableViewDataSource {
             if let groupHeader = itemAtRow as? PlaylistGroupHeaderPlaceholder {
                 let cell = tableView.dequeueReusableCell(withIdentifier: "GroupHeading", for: indexPath) as! HeadingCell
                 cell.heading.text = groupHeader.title
-                cell.button.isHidden = true
-                cell.action = nil
+                // Fork: Podcast / Folder groups get a small right-side chevron that opens that
+                // podcast or folder. Other groupings (dates, "No Folder", …) have no destination.
+                if let target = groupHeader.target {
+                    let config = UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold)
+                    cell.button.isHidden = false
+                    cell.button.setTitle(nil, for: .normal)
+                    cell.button.setImage(UIImage(systemName: "chevron.right", withConfiguration: config), for: .normal)
+                    cell.button.tintColor = AppTheme.colorForStyle(.primaryIcon02)
+                    cell.action = { [weak self] in self?.navigateToGroup(target) }
+                } else {
+                    cell.button.isHidden = true
+                    cell.action = nil
+                }
                 return cell
             }
 
@@ -457,6 +468,22 @@ extension PlaylistDetailViewController: UITableViewDragDelegate, UITableViewDrop
 }
 
 extension PlaylistDetailViewController {
+    /// Fork: opens the podcast or folder behind a Group By header's chevron.
+    func navigateToGroup(_ target: PlaylistGroupHeaderPlaceholder.GroupNavTarget) {
+        switch target {
+        case .podcast(let uuid):
+            guard let podcast = DataManager.sharedManager.findPodcast(uuid: uuid, includeUnsubscribed: true) else { return }
+            if let nav = navigationController {
+                nav.pushViewController(PodcastViewController(podcast: podcast), animated: true)
+            } else {
+                NavigationManager.sharedManager.navigateTo(NavigationManager.podcastPageKey, data: [NavigationManager.podcastKey: podcast])
+            }
+        case .folder(let uuid):
+            guard let folder = DataManager.sharedManager.findFolder(uuid: uuid) else { return }
+            NavigationManager.sharedManager.navigateTo(NavigationManager.folderPageKey, data: [NavigationManager.folderKey: folder])
+        }
+    }
+
     /// The selected tab's "x episodes · time" line — nil when the tab is empty (the
     /// empty state already says so). Section headers survive row diffs, so reloads
     /// call this again to keep the line honest.

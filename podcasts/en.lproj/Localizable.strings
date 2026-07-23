@@ -2580,10 +2580,10 @@
 "session_playlists_show" = "Show Session Playlists";
 
 /* Fork: toggle — show hand-built (manual) session playlists in the Playlists tab. */
-"session_playlists_manual" = "Manual Sessions";
+"session_playlists_manual" = "Show Manual Playlist Sessions";
 
 /* Fork: toggle — show sessions fed by a smart playlist in the Playlists tab. */
-"session_playlists_smart" = "Smart Playlist Sessions";
+"session_playlists_smart" = "Show Smart Playlists Sessions";
 
 /* Fork: Show Session Playlists — folders block heading. */
 "session_playlists_folders" = "Folders";
@@ -6081,6 +6081,8 @@
 
 /* A common string used throughout the app. Often refers to the Smart Playlist. */
 "smart_playlist" = "Smart playlist";
+/* Fork: subtitle on a hand-built (manual) playlist row, paralleling "Smart playlist". */
+"manual_playlist" = "Manual playlist";
 
 /* The title shown in a Tip View when the user hasn't yet added a smart playlist */
 "smart_playlists_tip_view_title" = "Smart playlists, ready to go";
@@ -7077,7 +7079,7 @@
 "session_reorder_items" = "Reorder Items";
 
 /* Fork: session chooser ⋯ menu — hide sessions whose lineup is empty. */
-"session_show_hide_empty" = "Hide Empty Sessions";
+"session_show_hide_empty" = "Show Empty Playlists";
 
 /* Fork: session chooser ⋯ menu — noun label for the empty-sessions visibility toggle (secondary label is Hide/Show). */
 "session_empty_sessions" = "Empty Sessions";

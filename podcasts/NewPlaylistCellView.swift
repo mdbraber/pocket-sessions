@@ -29,7 +29,8 @@ struct NewPlaylistCellView: View {
             if viewModel.isSmartPlaylist {
                 return L10n.smartPlaylist
             }
-            return nil
+            // Fork: a normal (hand-built) playlist reads "Manual playlist", paralleling Smart/Session.
+            return L10n.manualPlaylist
         default:
             return nil
         }
@@ -81,8 +82,16 @@ struct NewPlaylistCellView: View {
                     .lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
                 if let subtitle {
-                    subtitleView(text: subtitle)
-                        .lineLimit(2)
+                    HStack(spacing: 4.0) {
+                        // Fork: smart playlists get a green sparkle before their subtitle.
+                        if viewModel.isSmartPlaylist {
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 12.0, weight: .semibold))
+                                .foregroundStyle(Color(ThemeColor.support02()))
+                        }
+                        subtitleView(text: subtitle)
+                    }
+                    .lineLimit(2)
                 }
             }
             Spacer()

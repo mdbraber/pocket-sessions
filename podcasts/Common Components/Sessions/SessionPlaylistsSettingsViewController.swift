@@ -73,8 +73,9 @@ class SessionPlaylistsSettingsViewController: PCViewController, UITableViewDataS
         let content: SessionPickerRow
         switch sections[indexPath.section].rows[indexPath.row] {
         case .hideEmpty:
-            // A view filter, not a session — the tick reads as "empty sessions are hidden".
-            content = SessionPickerRow(label: L10n.sessionShowHideEmpty, selected: Settings.hideEmptySessions(), artwork: .none, dimmed: false)
+            // A view filter, not a session — the tick reads as "empty playlists are shown" (the
+            // inverse of the underlying `hideEmptySessions` setting).
+            content = SessionPickerRow(label: L10n.sessionShowHideEmpty, selected: !Settings.hideEmptySessions(), artwork: .none, dimmed: false)
         case .manual:
             content = SessionPickerRow(label: L10n.sessionPlaylistsManual, selected: Settings.showManualSessions(), artwork: .none, dimmed: false)
         case .smart:

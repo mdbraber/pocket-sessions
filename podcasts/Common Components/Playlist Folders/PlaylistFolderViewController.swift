@@ -57,11 +57,9 @@ class PlaylistFolderViewController: PCViewController, UITableViewDataSource, UIT
                 return
             }
             self.title = folder.name
-            var playlists = PlaylistFolderManager.shared.playlists(inFolder: self.folderUuid)
-            // The Playlists world's Session Playlists preferences apply inside folders too.
-            playlists = playlists.filter { SessionManager.shared.sessionStoreVisible(playlistUuid: $0.uuid) }
-                .filter { !SessionManager.shared.storeHasVisibleSmartFeeder(playlistUuid: $0.uuid) }
-                .filter { !Settings.hideEmptySessions() || !SessionManager.shared.sessionIsEmpty(storePlaylistUuid: $0.uuid) }
+            // The Playlists world's Session Playlists preferences apply inside folders too — one
+            // shared filter drives both this list and the count under the folder row.
+            var playlists = PlaylistFolderManager.shared.visiblePlaylists(inFolder: self.folderUuid)
             if LibrarySort(rawValue: Int32(UserDefaults.standard.integer(forKey: "SJPlaylistsSortOrder"))) == .titleAtoZ {
                 playlists.sort { $0.playlistName.localizedCaseInsensitiveCompare($1.playlistName) == .orderedAscending }
             }
@@ -75,10 +73,13 @@ class PlaylistFolderViewController: PCViewController, UITableViewDataSource, UIT
     @objc private func folderOptionsTapped() {
         let optionsPicker = OptionsPicker(title: nil)
 
-        let hideSessions = UserDefaults.standard.bool(forKey: "SJPlaylistsHideSessions")
-        optionsPicker.addAction(action: OptionAction(label: L10n.playlistsHideSessions, icon: "option-multiselect", selected: hideSessions) { [weak self] in
-            UserDefaults.standard.set(!hideSessions, forKey: "SJPlaylistsHideSessions")
-            self?.reloadData()
+        // Same as the Playlists main screen: which session playlists appear (Manual / Smart /
+        // per-folder-or-podcast). Replaces the old, illogical per-folder "Hide Session Playlists".
+        optionsPicker.addAction(action: OptionAction(label: L10n.sessionPlaylistsShow, icon: "option-multiselect") { [weak self] in
+            DispatchQueue.main.async {
+                let settings = SessionPlaylistsSettingsViewController { [weak self] in self?.reloadData() }
+                self?.navigationController?.pushViewController(settings, animated: true)
+            }
         })
 
         let currentSort = LibrarySort(rawValue: Int32(UserDefaults.standard.integer(forKey: "SJPlaylistsSortOrder"))) ?? .custom

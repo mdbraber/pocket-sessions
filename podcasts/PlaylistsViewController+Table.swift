@@ -141,16 +141,20 @@ extension PlaylistsViewController: UITableViewDelegate, UITableViewDataSource {
     /// position space — a folder can sit anywhere among the playlists, not pinned on top.
     func persistListOrder() {
         var index: Int32 = 0
+        var updatedFolders: [PlaylistFolder] = []
         for item in listPlaylistItems {
             if let folderItem = item as? ListPlaylistFolder {
                 var folder = folderItem.folder
                 folder.sortPosition = index
-                PlaylistFolderManager.shared.save(folder: folder)
+                updatedFolders.append(folder)
             } else {
                 DataManager.sharedManager.updatePosition(playlist: item.playlist, newPosition: index)
             }
             index += 1
         }
+        // Batch-save folders so `foldersChanged` fires ONCE — a per-folder save reloads the table
+        // mid-reorder-commit and intermittently drops the move.
+        PlaylistFolderManager.shared.save(folders: updatedFolders)
     }
 }
 

@@ -225,8 +225,13 @@ enum SessionFeederEngine {
             .count
     }
 
-    /// The playlist page's Session count — its session's lineup size.
+    /// The playlist page's Session count — its session's lineup size. A MANUAL playlist IS its own
+    /// lineup, so its session count is simply its episode count (whether or not it's ever been played
+    /// as a session).
     static func sessionBadgeCount(forPlaylist playlist: EpisodeFilter) -> Int {
+        if playlist.manual {
+            return DataManager.sharedManager.episodeCount(for: playlist, episodeUuidToAdd: nil)
+        }
         let session = SessionStore.shared.session(forStore: playlist.uuid)
             ?? SessionStore.shared.session(forSmartPlaylistFeeder: playlist.uuid)
         guard let session else { return 0 }

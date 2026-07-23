@@ -48,11 +48,21 @@ class PlaylistFolderManager {
     }
 
     func save(folder: PlaylistFolder) {
+        save(folders: [folder])
+    }
+
+    /// Fork: batch upsert — persist every folder and notify ONCE. Reordering saved each folder
+    /// individually, so each `notifyChanged()` fired a table reload mid-drag-commit, intermittently
+    /// reverting the move ("folders don't stick"). One notification after all writes fixes that.
+    func save(folders updated: [PlaylistFolder]) {
+        guard !updated.isEmpty else { return }
         var folders = allFolders()
-        if let index = folders.firstIndex(where: { $0.uuid == folder.uuid }) {
-            folders[index] = folder
-        } else {
-            folders.append(folder)
+        for folder in updated {
+            if let index = folders.firstIndex(where: { $0.uuid == folder.uuid }) {
+                folders[index] = folder
+            } else {
+                folders.append(folder)
+            }
         }
         persist(folders: folders)
         notifyChanged()
@@ -98,6 +108,17 @@ class PlaylistFolderManager {
     func playlists(inFolder folderUuid: String) -> [EpisodeFilter] {
         let members = Set(playlistUuids(inFolder: folderUuid))
         return DataManager.sharedManager.allPlaylists(includeDeleted: false).filter { members.contains($0.uuid) }
+    }
+
+    /// Fork: the playlists actually SHOWN when the folder is opened — the "Session Playlists"
+    /// visibility prefs (hidden stores, mirrored smart feeders, empty sessions) apply inside folders
+    /// too. The count under the folder row must use THIS, not the raw membership, which otherwise
+    /// counts hidden session stores/feeders (the reported wrong count).
+    func visiblePlaylists(inFolder folderUuid: String) -> [EpisodeFilter] {
+        playlists(inFolder: folderUuid)
+            .filter { SessionManager.shared.sessionStoreVisible(playlistUuid: $0.uuid) }
+            .filter { !SessionManager.shared.storeHasVisibleSmartFeeder(playlistUuid: $0.uuid) }
+            .filter { !Settings.hideEmptySessions() || !SessionManager.shared.sessionIsEmpty(storePlaylistUuid: $0.uuid) }
     }
 
     // MARK: - Storage

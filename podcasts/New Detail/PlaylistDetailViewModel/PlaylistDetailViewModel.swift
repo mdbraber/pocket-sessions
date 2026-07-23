@@ -257,8 +257,26 @@ class PlaylistDetailViewModel: ObservableObject {
         guard groupBy != .none || groupLimit > 0 else { return episodes }
         return EpisodeGrouper.group(episodes, by: groupBy, limit: groupLimit, reversed: reverseGroup) { $0.episode }
             .flatMap { group -> [ListItem] in
-                (group.title.map { [PlaylistGroupHeaderPlaceholder(title: $0)] } ?? []) + group.items
+                guard let title = group.title else { return group.items }
+                let header = PlaylistGroupHeaderPlaceholder(title: title, target: Self.groupNavTarget(groupBy: groupBy, in: group.items))
+                return [header] + group.items
             }
+    }
+
+    /// Fork: the destination behind a Group By header's chevron — resolved from the group's own
+    /// episodes. Only Podcast and Folder groupings have a single place to go; a "No Folder" group
+    /// (no folder on its podcasts) and every other grouping have none.
+    private static func groupNavTarget(groupBy: EpisodeGroupBy, in items: [ListEpisode]) -> PlaylistGroupHeaderPlaceholder.GroupNavTarget? {
+        guard let podcast = items.first?.episode.parentPodcast() else { return nil }
+        switch groupBy {
+        case .podcast:
+            return .podcast(uuid: podcast.uuid)
+        case .folder:
+            guard let folderUuid = podcast.folderUuid, !folderUuid.isEmpty else { return nil }
+            return .folder(uuid: folderUuid)
+        default:
+            return nil
+        }
     }
 
     var hasSubscribedPodcasts: Bool {

@@ -427,7 +427,8 @@ class PlaylistsViewController: PCViewController, FilterCreatedDelegate {
             // the folder's own page instead of the top level.
             var folderRows: [ListPlaylist] = FeatureFlag.playlistFolders.enabled
                 ? PlaylistFolderManager.shared.allFolders().map { folder in
-                    ListPlaylistFolder(folder: folder, count: PlaylistFolderManager.shared.playlistUuids(inFolder: folder.uuid).count)
+                    // Count only what's visible when the folder is opened (not hidden session stores/feeders).
+                    ListPlaylistFolder(folder: folder, count: PlaylistFolderManager.shared.visiblePlaylists(inFolder: folder.uuid).count)
                 }
                 : []
             let feederUuids = SessionStore.shared.feederPlaylistUuids

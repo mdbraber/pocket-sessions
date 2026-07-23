@@ -168,7 +168,10 @@ class EpisodeCell: ThemeableSwipeCell, MainEpisodeActionViewDelegate {
     private var activeSurfaceAccent: UIColor?
     private var activeProgressFraction: CGFloat = 0
 
-    func setActiveSurface(accent: UIColor?, progress: CGFloat = 0) {
+    /// `bordered` draws the 1.5pt accent border (the "active" marker). Pass false to show just the
+    /// tinted background + progress backdrop with no border — e.g. the Up Next card while a session
+    /// plays: it keeps its card surface but isn't the active/sounding item.
+    func setActiveSurface(accent: UIColor?, progress: CGFloat = 0, bordered: Bool = true) {
         activeSurfaceAccent = accent
         activeProgressFraction = max(0, min(1, progress))
         guard let accent else {
@@ -188,7 +191,7 @@ class EpisodeCell: ThemeableSwipeCell, MainEpisodeActionViewDelegate {
         activeSurfaceView.isHidden = false
         activeSurfaceView.backgroundColor = accent.withAlphaComponent(0.18)
         activeSurfaceView.layer.borderColor = accent.cgColor
-        activeSurfaceView.layer.borderWidth = 1.5
+        activeSurfaceView.layer.borderWidth = bordered ? 1.5 : 0
         // A slightly stronger band of the accent marks the played portion.
         let theme = themeOverride ?? Theme.sharedTheme.activeTheme
         activeProgressView.backgroundColor = theme.isDark ? UIColor.white.withAlphaComponent(0.08) : UIColor.black.withAlphaComponent(0.08)
