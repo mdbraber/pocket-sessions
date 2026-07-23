@@ -92,11 +92,9 @@ class SessionManager {
         NotificationCenter.default.addObserver(self, selector: #selector(smartFeederRulesMayHaveChanged), name: ServerNotifications.syncCompleted, object: nil)
         smartFeederRulesMayHaveChanged()
         syncFolderScopedPodcastSessions()
-        // Folder sessions are retired — clear any that linger locally or arrive via a synced session
-        // document, deleting their orphaned server stores in the process.
-        NotificationCenter.default.addObserver(self, selector: #selector(retireFolderSessions), name: ServerNotifications.syncCompleted, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(retireFolderSessions), name: SessionStore.changed, object: nil)
-        retireFolderSessions()
+        // There is exactly one Inbox — drop any stray `.allPodcasts` session that isn't the canonical
+        // one (e.g. a legacy `fork-global-inbox-session` from before the Inbox was renamed).
+        SessionStore.shared.removeStrayInboxes()
     }
 
     private let eagerReconcileDebounce = Debounce(delay: 1.5)
@@ -605,7 +603,7 @@ class SessionManager {
                 _ = findOrCreateSession(forSmartPlaylist: playlist)
             }
         }
-        // Folders no longer get their own session — retired (see retireFolderSessions).
+        // Folders no longer get their own session — folder sessions are retired.
         // Per podcast: every podcast that has an in-session episode gets its own session.
         for podcastUuid in Set(episodes.map(\.podcastUuid))
         where SessionStore.shared.session(forPodcast: podcastUuid) == nil {
@@ -1052,29 +1050,6 @@ class SessionManager {
     }
 
     /// The folder's session, created lazily on first use.
-    /// Fork: folder sessions were retired — a folder no longer gets its own play-through session or a
-    /// synced store. Sweep any that still exist (created by older builds, or arriving via a synced
-    /// session document) and delete them; `deleteSession` marks each orphaned manual store
-    /// `wasDeleted + notSynced`, so the next sync also clears them from the Pocket Casts server (and
-    /// web). Idempotent — a no-op once none remain, so it can run on every launch/sync.
-    @objc func retireFolderSessions() {
-        // deleteSession posts SessionStore.changed synchronously on the main thread, which re-enters
-        // this observer mid-loop — guard against that (and against overlapping sync/launch triggers).
-        guard !isRetiringFolderSessions else { return }
-        let folderSessions = SessionStore.shared.sessions.filter {
-            if case .folder = $0.feeder { return true }
-            return false
-        }
-        guard !folderSessions.isEmpty else { return }
-        isRetiringFolderSessions = true
-        defer { isRetiringFolderSessions = false }
-        FileLog.shared.addMessage("Retiring \(folderSessions.count) folder session(s) and their synced stores")
-        for session in folderSessions {
-            deleteSession(session)
-        }
-    }
-    private var isRetiringFolderSessions = false
-
     /// Starts a session — the lineup only, never the Inbox or Episodes list. An
     /// empty lineup is a no-op with a hint; filling it is triage's job.
     func play(session: Session) {

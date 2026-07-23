@@ -217,6 +217,18 @@ final class SessionStore {
         return session
     }
 
+    /// Enforces the "exactly one Inbox" invariant: removes any `.allPodcasts` session whose uuid isn't
+    /// the canonical `globalInboxUuid` — e.g. a legacy `fork-global-inbox-session` left in the synced
+    /// document from before the Inbox was renamed. The Inbox has no store, so there's nothing else to
+    /// clean up. No-op once none remain.
+    func removeStrayInboxes() {
+        let strays = sessions.filter {
+            if case .allPodcasts = $0.feeder { return $0.uuid != Self.globalInboxUuid }
+            return false
+        }
+        for stray in strays { delete(sessionUuid: stray.uuid) }
+    }
+
     /// The smart playlist uuids acting as hidden feeders — filtered out of every
     /// fork-side playlist list. Only spawned "— feed" copies hide; a visible smart
     /// playlist feeding its own session stays where it is.
