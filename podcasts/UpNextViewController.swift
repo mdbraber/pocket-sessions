@@ -356,10 +356,13 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         search.translatesAutoresizingMaskIntoConstraints = false
         cell.contentView.addSubview(search)
         NSLayoutConstraint.activate([
-            search.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor, constant: 16),
-            search.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor, constant: -16),
-            search.topAnchor.constraint(equalTo: cell.contentView.topAnchor, constant: 4),
-            search.bottomAnchor.constraint(equalTo: cell.contentView.bottomAnchor, constant: -10),
+            // Full width — the search view's own XIB carries the 16pt side margins (matching the row
+            // artwork inset), so pin flush to the cell edges rather than adding a second inset.
+            search.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor),
+            search.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor),
+            // More breathing room above (below the card), tight to the info line below it.
+            search.topAnchor.constraint(equalTo: cell.contentView.topAnchor, constant: 18),
+            search.bottomAnchor.constraint(equalTo: cell.contentView.bottomAnchor, constant: 0),
             search.heightAnchor.constraint(equalToConstant: 36)
         ])
         return cell
@@ -706,11 +709,18 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         }
     }
 
-    /// Fork: make `newUuid` the current session (row 1). This is purely a POINTER change — the pool
-    /// keeps its chosen order (with Manual, the exact drag order). Playing/opening a session must not
-    /// rewrite the manual order, so the session it replaces simply returns to its place in the pool.
+    /// Fork: make `newUuid` the current session (row 1). The session it REPLACES floats to the TOP of
+    /// the pool (most-recently-current), rather than dropping back to wherever it previously sat — so
+    /// the last thing you were on is always the first session under the current one. The caller reloads
+    /// afterward (once the new session is actually active), which re-derives the rows from this order.
     private func makeCurrentSession(_ newUuid: String) {
+        let previous = currentSessionUuid
         currentSessionUuid = newUuid
+        guard let previous, previous != newUuid,
+              let idx = lastSessionSource.firstIndex(where: { $0.sessionUuid == previous }) else { return }
+        let row = lastSessionSource.remove(at: idx)
+        lastSessionSource.insert(row, at: 0)
+        SessionStore.shared.reorderSessions(lastSessionSource.map(\.sessionUuid))
     }
 
     /// Fork: the play/pause button on a session-list row. Sounding → pause; paused/idle → play,
@@ -752,9 +762,9 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         PlaybackManager.shared.startPlaybackSession(PlaybackSession(type: .playlist, uuid: storeUuid), autoPlay: true)
     }
 
-    /// Fork: long-pressing a session on the Queue screen makes it the current session and INHERITS
-    /// the current play state — if something was playing, the session plays; if paused, it becomes
-    /// current but stays paused. (The play button, by contrast, always makes-current-and-plays.)
+    /// Fork: long-pressing a session's play button on the Queue screen makes it the current session and
+    /// INHERITS the current play state — if something was playing, the session plays; if paused, it
+    /// becomes current but stays paused. (A TAP on the play button always makes-current-and-plays.)
     func makeSessionCurrentInheritingPlayState(_ row: SessionListRow) {
         guard !row.isUpNext else { return }
         let wasPlaying = PlaybackManager.shared.playing()
@@ -765,7 +775,11 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
             // Make it the current session but parked/paused (no autoplay).
             PlaybackManager.shared.startPlaybackSession(PlaybackSession(type: .playlist, uuid: storeUuid), autoPlay: false)
         }
-        reloadTable()
+        // Defer + coalesce the reload: a synchronous reloadData() here fires WHILE the play-button
+        // long-press is still active, which yanks the row out mid-gesture (the "row disappears and
+        // everything reflows" flash). setNeedsReload lets the gesture settle first and folds in the
+        // playback notification's reload so the rows rearrange exactly once.
+        setNeedsReload()
     }
 
     /// Fork: the chooser's counts line — "N sessions", plus "· k empty" when some
@@ -971,18 +985,39 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         sessionMetaLabel.text = sessionMetaText()
     }
 
-    /// The browsed session's remaining episodes BELOW the pinned current — the lineup "tail".
-    /// The current episode itself lives in `sessionCurrentEpisode` (pinned at the top of the
-    /// lineup, never in this array), so the tail's indices map cleanly onto reorder math.
+    // MARK: - Lineup (Model B: pinned head + reorderable tail)
+    //
+    // A "lineup" is a detail screen with a pinned head episode on a card and a reorderable tail
+    // below it. BOTH worlds are lineups with the SAME shape — Session details and Up Next details —
+    // so their display reads through one set of accessors (`lineupHeadEpisode` / `lineupTail` /
+    // `filteredLineupTail`). Only the backing store differs: Session details mirrors a playlist
+    // (`sessionEpisodes`, populated in `updateSessionEpisodes`); Up Next details reads the live
+    // PlaybackQueue below its pinned head. The write paths (reorder, multi-select) stay world-
+    // specific because those stores reorder differently (playlist move vs queue move).
+
+    /// Session details backing: the browsed session's remaining episodes BELOW its pinned current
+    /// (`sessionCurrentEpisode`), never including it, so tail indices map cleanly onto reorder math.
     var sessionEpisodes: [BaseEpisode]?
 
-    /// Fork (Model B): the pinned current episode at the very top of a session lineup — the
-    /// active session's now-playing/paused episode, or (for a browsed non-active session) its
-    /// next-up. Rendered as the top-block card; the sort/reorder below never moves it.
+    /// Session details backing: the pinned current episode (the active session's now-playing/paused
+    /// episode, or a browsed non-active session's next-up). Surfaced via `lineupHeadEpisode`.
     var sessionCurrentEpisode: BaseEpisode?
 
-    /// Fork: the lineup episode search (Session details / Up Next details). Filters the tail
-    /// episodes by title; the pinned current and the info line stay put.
+    /// The pinned head episode of the current lineup — the session's current (Session details) or the
+    /// queue's own head (Up Next details). Rendered as the top-block card; the tail never moves it.
+    var lineupHeadEpisode: BaseEpisode? {
+        displayedWorld == .session ? sessionCurrentEpisode : upNextCardEpisode
+    }
+
+    /// The reorderable tail below the head — one shape in both worlds. Session details reads its
+    /// populated `sessionEpisodes`; Up Next details reads the queue's own episodes below the head.
+    var lineupTail: [BaseEpisode] {
+        if displayedWorld == .session { return sessionEpisodes ?? [] }
+        return Array(PlaybackManager.shared.queue.allEpisodes(includeNowPlaying: false).dropFirst(upNextListOffset))
+    }
+
+    /// Fork: the lineup episode search (Session details / Up Next details). Filters the tail by
+    /// title; the pinned head and the info line stay put.
     var lineupSearchText = "" {
         didSet {
             guard oldValue != lineupSearchText else { return }
@@ -994,21 +1029,11 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         !lineupSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    /// The tail episodes after the lineup title filter — what the session section actually renders.
-    var filteredSessionTail: [BaseEpisode] {
-        guard let sessionEpisodes else { return [] }
+    /// The tail after the lineup title filter — what the list section renders in BOTH worlds.
+    var filteredLineupTail: [BaseEpisode] {
         let query = lineupSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return sessionEpisodes }
-        return sessionEpisodes.filter { $0.displayableTitle().localizedCaseInsensitiveContains(query) }
-    }
-
-    /// Up Next details, filtered by the lineup search — the queue's up-next episodes (excluding the
-    /// pinned now-playing card) matching the title query.
-    var filteredUpNextEpisodes: [BaseEpisode] {
-        let all = PlaybackManager.shared.queue.allEpisodes(includeNowPlaying: false)
-        let query = lineupSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return all }
-        return all.filter { $0.displayableTitle().localizedCaseInsensitiveContains(query) }
+        guard !query.isEmpty else { return lineupTail }
+        return lineupTail.filter { $0.displayableTitle().localizedCaseInsensitiveContains(query) }
     }
 
     /// Fork: untriaged (inbox) episode count of the session's custom-ordered smart playlist.
@@ -1927,12 +1952,18 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         if let session = browsedPlaybackSession {
             sessionInboxCount = Self.inboxCount(for: session)
 
-            // Fork (Model B): the current episode is PINNED at the top of the lineup (the card);
-            // the sort/reorder applies only to the tail below it. Split the remaining list so the
-            // head is rendered as the pinned card and the tail as the reorderable episode rows.
+            // Fork (Model B): only the ACTIVE session pins its current episode as the card — the
+            // sort/reorder then applies to the tail below it. A browsed, NON-active session has no
+            // "now playing", so there's no card, the search sits at the very top, and sorting applies
+            // to the whole list.
             let remaining = session.remainingEpisodes(excluding: nil)
-            sessionCurrentEpisode = remaining.first
-            sessionEpisodes = Array(remaining.dropFirst())
+            if browsingActiveSession {
+                sessionCurrentEpisode = remaining.first
+                sessionEpisodes = Array(remaining.dropFirst())
+            } else {
+                sessionCurrentEpisode = nil
+                sessionEpisodes = remaining
+            }
         } else {
             sessionEpisodes = nil
             sessionCurrentEpisode = nil

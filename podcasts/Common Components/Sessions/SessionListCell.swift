@@ -15,6 +15,9 @@ class SessionListCell: ThemeableSwipeCell {
     /// Tapped the play/pause button — play, resume, or pause this lane.
     var onPlayTapped: (() -> Void)?
 
+    /// Long-pressed the play button — make this session current, inheriting the current play state.
+    var onPlayLongPressed: (() -> Void)?
+
     // MARK: - Subviews
 
     /// The row's card (Up Next / current) or a flat clear backing (pool). Clips the progress fill to
@@ -105,6 +108,9 @@ class SessionListCell: ThemeableSwipeCell {
         let button = UIButton(type: .system)
         button.translatesAutoresizingMaskIntoConstraints = false
         button.addTarget(self, action: #selector(playTapped), for: .touchUpInside)
+        // Fork: long-pressing the play button makes the session current and INHERITS the play state
+        // (paused stays paused), as opposed to a tap, which makes it current and plays.
+        button.addGestureRecognizer(UILongPressGestureRecognizer(target: self, action: #selector(playLongPressed(_:))))
         return button
     }()
 
@@ -400,6 +406,20 @@ class SessionListCell: ThemeableSwipeCell {
         onPlayTapped?()
     }
 
+    @objc private func playLongPressed(_ gesture: UILongPressGestureRecognizer) {
+        guard gesture.state == .began else { return }
+        onPlayLongPressed?()
+    }
+
+    /// True when `point` (in this cell's coordinate space) lands on the play button — the table's
+    /// drag delegate uses this to refuse a row drag that begins on the play button, so a long-press
+    /// there is the "make current" gesture, not a lift.
+    func pointHitsPlayButton(_ point: CGPoint) -> Bool {
+        guard !playButton.isHidden else { return false }
+        let local = convert(point, to: playButton)
+        return playButton.bounds.insetBy(dx: -8, dy: -8).contains(local)
+    }
+
     // MARK: - Theming
 
     override func handleThemeDidChange() {
@@ -460,5 +480,6 @@ class SessionListCell: ThemeableSwipeCell {
         nowPlayingIndicator.isHidden = true
         playButton.isHidden = false
         onPlayTapped = nil
+        onPlayLongPressed = nil
     }
 }

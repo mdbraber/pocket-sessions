@@ -31,10 +31,9 @@ extension UpNextViewController: SwipeTableViewCellDelegate, SwipeHandler {
         // The Now Playing card carries the same actions as its world's rows — acting
         // on the playing episode hands playback to whatever comes next.
         if tableData[indexPath.section] == .nowPlayingSection {
-            // Fork: the session lineup's card is its pinned current episode (which — for a browsed,
-            // non-active session — is NOT the player's current episode), so resolve it directly.
-            let cardEpisode = displayedWorld == .session ? sessionCurrentEpisode : PlaybackManager.shared.currentEpisode()
-            guard isTopBlockCardRow(indexPath), let episode = cardEpisode else { return nil }
+            // Fork: the card is the lineup's pinned head — the session's current episode, or the
+            // queue's own head in Up Next (which, mid-session, is NOT the player's current episode).
+            guard isTopBlockCardRow(indexPath), let episode = lineupHeadEpisode else { return nil }
             if orientation == .left {
                 // The card *is* the playing episode, so "move to top/bottom" is a no-op —
                 // only the two add actions make sense here.
@@ -68,7 +67,7 @@ extension UpNextViewController: SwipeTableViewCellDelegate, SwipeHandler {
         // Session rows aren't queue rows — moves reorder the mirrored playlist on the
         // left; archive / mark played on the right.
         if tableData[indexPath.section] == .sessionSection {
-            guard let episode = filteredSessionTail[safe: indexPath.row] else { return nil }
+            guard let episode = filteredLineupTail[safe: indexPath.row] else { return nil }
             switch orientation {
             case .left:
                 // Same left swipe as every other row: Add to Session (only when this
@@ -87,11 +86,12 @@ extension UpNextViewController: SwipeTableViewCellDelegate, SwipeHandler {
         switch orientation {
         case .left:
             let moveToTopAction = SwipeAction(style: .default, title: nil) { [weak self] _, indexPath in
-                guard let self, let episode = PlaybackManager.shared.queue.episodeAt(index: indexPath.row) else { return }
+                guard let self, let episode = self.filteredLineupTail[safe: indexPath.row] else { return }
 
                 Analytics.track(.episodeSwipeActionPerformed, properties: ["action": "up_next_move_up", "source": "up_next"])
 
-                PlaybackManager.shared.queue.move(episode: episode, to: 0, fireNotification: false)
+                // The top of the visible tail sits below the pinned head (offset while a session plays).
+                PlaybackManager.shared.queue.move(episode: episode, to: self.upNextListOffset, fireNotification: false)
                 self.moveRow(at: indexPath, to: IndexPath(row: 0, section: indexPath.section), in: tableView)
             }
             moveToTopAction.image = UIImage(named: "upnext-movetotop")
@@ -99,18 +99,18 @@ extension UpNextViewController: SwipeTableViewCellDelegate, SwipeHandler {
             moveToTopAction.accessibilityLabel = L10n.moveToTop
             moveToTopAction.hidesWhenSelected = true
             let moveToBottomAction = SwipeAction(style: .default, title: nil) { [weak self] _, indexPath in
-                guard let self, let episode = PlaybackManager.shared.queue.episodeAt(index: indexPath.row) else { return }
+                guard let self, let episode = self.filteredLineupTail[safe: indexPath.row] else { return }
 
                 let queueCount = PlaybackManager.shared.queue.upNextCount()
                 PlaybackManager.shared.queue.move(episode: episode, to: queueCount - 1, fireNotification: false)
-                self.moveRow(at: indexPath, to: IndexPath(row: queueCount - 1, section: indexPath.section), in: tableView)
+                self.moveRow(at: indexPath, to: IndexPath(row: self.filteredLineupTail.count - 1, section: indexPath.section), in: tableView)
                 Analytics.track(.episodeSwipeActionPerformed, properties: ["action": "up_next_move_down", "source": "up_next"])
             }
             moveToBottomAction.image = UIImage(named: "upnext-movetobottom")
             moveToBottomAction.backgroundColor = ThemeColor.support03()
             moveToBottomAction.accessibilityLabel = L10n.moveToBottom
             moveToBottomAction.hidesWhenSelected = true
-            guard let episode = PlaybackManager.shared.queue.episodeAt(index: indexPath.row) else {
+            guard let episode = filteredLineupTail[safe: indexPath.row] else {
                 return [moveToTopAction, moveToBottomAction]
             }
             // Queue rows belong to no session, so Add to Session always shows here.
@@ -119,7 +119,7 @@ extension UpNextViewController: SwipeTableViewCellDelegate, SwipeHandler {
                 + [moveToTopAction, moveToBottomAction]
         case .right:
             let deleteAction = SwipeAction(style: .destructive, title: nil) { [weak self] _, indexPath in
-                guard let self, let episode = PlaybackManager.shared.queue.episodeAt(index: indexPath.row) else { return }
+                guard let self, let episode = self.filteredLineupTail[safe: indexPath.row] else { return }
 
                 Analytics.track(.episodeSwipeActionPerformed, properties: ["action": "delete", "source": "up_next"])
                 // The removal may be deferred behind a "keep in Session?" prompt, so the
@@ -142,7 +142,7 @@ extension UpNextViewController: SwipeTableViewCellDelegate, SwipeHandler {
             deleteAction.backgroundColor = ThemeColor.support05(for: themeOverride)
             deleteAction.accessibilityLabel = L10n.removeFromUpNext
 
-            guard let episode = PlaybackManager.shared.queue.episodeAt(index: indexPath.row) else {
+            guard let episode = filteredLineupTail[safe: indexPath.row] else {
                 return [deleteAction]
             }
             return [deleteAction, archiveSwipeAction(for: episode), markPlayedSwipeAction(for: episode)].compactMap { $0 }

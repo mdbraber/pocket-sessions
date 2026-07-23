@@ -203,6 +203,9 @@ class EpisodeCell: ThemeableSwipeCell, MainEpisodeActionViewDelegate {
     @IBOutlet var actionButton: MainEpisodeActionView! {
         didSet {
             actionButton.delegate = self
+            // Fork: long-pressing the play button in a lineup switches the current item and inherits
+            // the play state (paused stays paused), rather than the tap's make-current-and-play.
+            actionButton.addGestureRecognizer(UILongPressGestureRecognizer(target: self, action: #selector(actionLongPressed(_:))))
         }
     }
 
@@ -239,6 +242,10 @@ class EpisodeCell: ThemeableSwipeCell, MainEpisodeActionViewDelegate {
     /// Fork: when set (the Up Next session lineup), the play button routes here instead of the standard
     /// session play — the host moves the episode to the top of the lineup and makes it active.
     var onSessionLineupPlay: ((BaseEpisode) -> Void)?
+
+    /// Fork: long-press on the play button in a lineup — switch the current item and INHERIT the play
+    /// state (paused stays paused), as opposed to `onSessionLineupPlay`'s make-current-and-play.
+    var onLineupLongPressPlay: ((BaseEpisode) -> Void)?
 
     /// Fork: hide the play/download action button entirely (session lists play via tap, long-press,
     /// or the detail page, so the button is redundant clutter there).
@@ -715,6 +722,20 @@ class EpisodeCell: ThemeableSwipeCell, MainEpisodeActionViewDelegate {
         PlaybackActionHelper.play(episode: episode, playlistUuid: playlistUuid, podcastUuid: podcastUuid, playlist: playlist)
     }
 
+    @objc private func actionLongPressed(_ gesture: UILongPressGestureRecognizer) {
+        guard gesture.state == .began, let episode, let onLineupLongPressPlay else { return }
+        onLineupLongPressPlay(episode)
+    }
+
+    /// True when `point` (in this cell's space) lands on the play/action button — the lineup drag
+    /// delegate uses this to refuse a row drag beginning on the button, so a long-press there is the
+    /// "switch current" gesture, not a reorder lift.
+    func pointHitsActionButton(_ point: CGPoint) -> Bool {
+        guard !actionButton.isHidden else { return false }
+        let local = convert(point, to: actionButton)
+        return actionButton.bounds.insetBy(dx: -8, dy: -8).contains(local)
+    }
+
     func pauseTapped() {
         PlaybackActionHelper.pause()
     }
@@ -842,6 +863,7 @@ class EpisodeCell: ThemeableSwipeCell, MainEpisodeActionViewDelegate {
         setNowPlaying(false)
         setActiveSurface(accent: nil)
         onSessionLineupPlay = nil
+        onLineupLongPressPlay = nil
         playButtonTintOverride = nil
 
         unseenIndicator.isHidden = true

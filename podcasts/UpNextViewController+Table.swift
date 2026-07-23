@@ -27,6 +27,23 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         PlaybackManager.shared.currentEpisode() != nil && !sessionOwnsCard
     }
 
+    /// Fork: while a session owns playback its episode sits in the queue's now-playing slot (position
+    /// 0), so Up Next details lifts the queue's OWN head (position 1) onto an INACTIVE card and starts
+    /// the list one later — the queue keeps its own current, just not sounding. Both the session
+    /// episode (pos 0) and that pinned head (pos 1) stay OUT of the reorderable tail (Model B): the
+    /// tail moves, the head stays put. Only in Up Next details, only while a session is the source,
+    /// and only if the queue actually has an episode of its own to surface.
+    var upNextListOffset: Int {
+        (displayedWorld == .upNext && sessionOwnsCard && PlaybackManager.shared.queue.episodeAt(index: 0) != nil) ? 1 : 0
+    }
+
+    /// The episode shown on the Up Next details card: the queue's now-playing (position 0) when the
+    /// queue owns playback, else the queue's own head (position 1) while a session plays.
+    var upNextCardEpisode: BaseEpisode? {
+        if upNextListOffset == 1 { return PlaybackManager.shared.queue.episodeAt(index: 0) }
+        return PlaybackManager.shared.currentEpisode()
+    }
+
     /// Fork: the session is actually making noise — as opposed to merely holding an
     /// episode on the card (primed by opening the session, or paused mid-episode).
     /// When it isn't sounding the card is just "what's next", which changes what "top of
@@ -59,13 +76,10 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
     var topBlockHasCard: Bool {
         // The chooser is a list of sessions — no episode is "playing" at that level.
         if showingSessionList { return false }
-        // Fork (Model B): the Session world PINS the current episode as a top-block card — the
-        // sort/reorder below it never moves it. Its next-up (browsed session) or now-playing
-        // (active session) episode is the head.
-        if displayedWorld == .session { return sessionCurrentEpisode != nil }
-        // Up Next world: the head is the queue's own Now Playing card, OR — when a session owns
-        // playback — that session's episode surfaced as the queue head (a plain player row, below).
-        return queueOwnsCard || upNextShowsSessionHeadRow
+        // Fork (Model B): a lineup PINS its head episode as a top-block card — the sort/reorder below
+        // it never moves it. Session details pins the session's current; Up Next details pins the
+        // queue's OWN head (its next episode, shown inactive, while a session holds position 0).
+        return lineupHeadEpisode != nil
     }
 
     /// Fork: the lineup episode search — a row between the pinned card and the info line, on both
@@ -142,11 +156,12 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
             if browsedPlaybackSession == nil { return 1 } // empty state cell
             // The pinned current is the top-block card; this section is the reorderable tail
             // (filtered by the lineup search when a query is active).
-            return filteredSessionTail.count
+            return filteredLineupTail.count
         case .upNextSection:
-            if lineupSearchActive { return max(filteredUpNextEpisodes.count, 1) } // 1 = empty state cell
-            if PlaybackManager.shared.queue.upNextCount() == 0 { return 1 } // empty state cell
-            return PlaybackManager.shared.queue.upNextCount()
+            // Same shape as the session tail: the reorderable tail below the pinned head (the queue's
+            // own head sits on the card while a session plays), filtered by the lineup search.
+            if lineupSearchActive { return filteredLineupTail.count } // no empty-state during search
+            return filteredLineupTail.isEmpty ? 1 : filteredLineupTail.count // 1 = empty state cell
         }
     }
 
@@ -230,14 +245,16 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
                 ])
                 return cell
             }
-            // Fork (Model B): the pinned card. Session details pins the current session episode;
-            // Up Next details pins the queue's now-playing episode. Both use the SAME styled
-            // EpisodeCell as the lineup rows so the screens read identically.
-            if displayedWorld == .session, let episode = sessionCurrentEpisode {
+            // Fork (Model B): the pinned card is the lineup's head episode. Both worlds use the SAME
+            // styled EpisodeCell as the tail rows so the screens read identically; only the cell
+            // builder differs (session vs queue styling / play routing).
+            if displayedWorld == .session, let episode = lineupHeadEpisode {
                 return sessionEpisodeCell(for: episode, active: browsingActiveSession && !activeBoxSuppressed, at: indexPath)
             }
-            if let episode = PlaybackManager.shared.currentEpisode() {
-                return queueEpisodeCell(for: episode, active: true, at: indexPath)
+            if let episode = lineupHeadEpisode {
+                // Active only when the queue actually owns playback; while a session plays it's the
+                // queue's own next episode, shown inactive.
+                return queueEpisodeCell(for: episode, active: queueOwnsCard && !activeBoxSuppressed, at: indexPath)
             }
             let blank = tableView.dequeueReusableCell(withIdentifier: UpNextViewController.episodeCell, for: indexPath) as! EpisodeCell
             blank.themeOverride = themeOverride
@@ -265,8 +282,10 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
                 }
                 let sessionCell = tableView.dequeueReusableCell(withIdentifier: SessionListCell.reuseIdentifier, for: indexPath) as! SessionListCell
                 sessionCell.themeOverride = themeOverride
-                // Tapping the row opens the lane's page (see didSelect); the play button plays it.
+                // Tapping the row opens the lane's page (see didSelect); the play button plays it, and
+                // long-pressing the play button makes it current while inheriting the play state.
                 sessionCell.onPlayTapped = { [weak self] in self?.playSessionLane(row) }
+                sessionCell.onPlayLongPressed = { [weak self] in self?.makeSessionCurrentInheritingPlayState(row) }
                 sessionCell.upNextInSessionList = Settings.upNextInSessionList()
                 // The first session (list index 1, below the Up Next row) is the "top session".
                 sessionCell.isTopSession = listIndex == 1 && !row.isUpNext
@@ -286,7 +305,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
             // Fork: the session lineup tail — the reorderable episodes below the pinned current.
             // The pinned current is the top-block card (see nowPlayingSection), so no tail row is
             // ever "active"; the accent box lives on the card.
-            guard let episode = filteredSessionTail[safe: indexPath.row] else {
+            guard let episode = filteredLineupTail[safe: indexPath.row] else {
                 let cell = tableView.dequeueReusableCell(withIdentifier: UpNextViewController.episodeCell, for: indexPath) as! EpisodeCell
                 cell.themeOverride = themeOverride
                 cell.showsReorderControl = false
@@ -296,36 +315,24 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
             return sessionEpisodeCell(for: episode, active: false, at: indexPath)
         }
 
-        // Fork: while a lineup query is active, Up Next details render the filtered up-next episodes.
-        if lineupSearchActive {
-            guard let episode = filteredUpNextEpisodes[safe: indexPath.row] else {
-                let emptyCell = tableView.dequeueReusableCell(withIdentifier: UpNextViewController.emptyStateCell, for: indexPath) as! EmptyStateCell
-                emptyCell.configure(title: L10n.upNextEmptyTitle, icon: { Image("upnext") })
-                return emptyCell
-            }
-            return queueEpisodeCell(for: episode, active: false, at: indexPath)
-        }
-
-        if PlaybackManager.shared.queue.upNextCount() == 0 {
+        // Up Next details tail — the same tail-array shape as the session lineup (see filteredLineupTail).
+        guard let episode = filteredLineupTail[safe: indexPath.row] else {
+            // Empty tail (and not mid-search) → the "Up Next is empty" discover cell.
             let emptyCell = tableView.dequeueReusableCell(withIdentifier: UpNextViewController.emptyStateCell, for: indexPath) as! EmptyStateCell
-            emptyCell.configure(title: L10n.upNextEmptyTitle,
-                                message: L10n.upNextEmptyDescription,
-                                icon: { Image("upnext") },
-                actions: [
-                    .init(title: L10n.goToDiscover) {
-                        Analytics.track(.upNextDiscoverButtonTapped)
-                        NavigationManager.sharedManager.navigateTo(NavigationManager.discoverPageKey)
-                    }
-                ])
+            if lineupSearchActive {
+                emptyCell.configure(title: L10n.upNextEmptyTitle, icon: { Image("upnext") })
+            } else {
+                emptyCell.configure(title: L10n.upNextEmptyTitle,
+                                    message: L10n.upNextEmptyDescription,
+                                    icon: { Image("upnext") },
+                    actions: [
+                        .init(title: L10n.goToDiscover) {
+                            Analytics.track(.upNextDiscoverButtonTapped)
+                            NavigationManager.sharedManager.navigateTo(NavigationManager.discoverPageKey)
+                        }
+                    ])
+            }
             return emptyCell
-        }
-
-        guard let episode = PlaybackManager.shared.queue.episodeAt(index: indexPath.row) else {
-            let blank = tableView.dequeueReusableCell(withIdentifier: UpNextViewController.episodeCell, for: indexPath) as! EpisodeCell
-            blank.themeOverride = themeOverride
-            blank.showsReorderControl = false
-            blank.showTick = false
-            return blank
         }
         return queueEpisodeCell(for: episode, active: false, at: indexPath)
     }
@@ -352,6 +359,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         // The play button moves the episode to the top of the lineup and makes it the active item
         // (see `playSessionEpisodeMovingToTop`) — matching how the queue pins its now-playing.
         cell.onSessionLineupPlay = { [weak self] ep in self?.playSessionEpisodeMovingToTop(ep) }
+        cell.onLineupLongPressPlay = { [weak self] ep in self?.switchLineupEpisodeInheritingPlayState(ep) }
         cell.populateFrom(episode: episode, tintColor: nil)
         // Every row here is a session member, so the in-session badge is redundant.
         cell.setSessionIndicator(.none)
@@ -377,6 +385,8 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         cell.shouldShowSelect = isMultiSelectEnabled
         cell.playlist = nil
         cell.playButtonTintOverride = AppTheme.colorForStyle(.primaryText01, themeOverride: themeOverride)
+        // Long-press the play button = switch the now-playing head, inheriting the play state.
+        cell.onLineupLongPressPlay = { [weak self] ep in self?.switchLineupEpisodeInheritingPlayState(ep) }
         cell.populateFrom(episode: episode, tintColor: nil)
         cell.setSessionIndicator(SessionIndicatorState.resolve(episode.uuid, thisSession: sessionMemberUuidsForDisplay))
         cell.setUnseenIndicator(visible: false)
@@ -414,6 +424,34 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         reloadTable()
     }
 
+    /// Fork: long-press variant of the lineup play button (Up Next details + Session details). Switches
+    /// the current item — like the tap — but INHERITS the play state: playing keeps playing on the new
+    /// item; paused makes it current but stays paused. A deferred reload keeps the row from vanishing
+    /// mid-gesture.
+    func switchLineupEpisodeInheritingPlayState(_ episode: BaseEpisode) {
+        let wasPlaying = PlaybackManager.shared.playing()
+        if displayedWorld == .upNext {
+            AnalyticsPlaybackHelper.shared.currentSource = .upNext
+            PlaybackManager.shared.load(episode: episode, autoPlay: wasPlaying, overrideUpNext: false)
+            setNeedsReload()
+            return
+        }
+        if browsingActiveSession {
+            makeSessionEpisodeCurrentAtTop(episode, autoPlay: wasPlaying)
+            return
+        }
+        // Browsed, non-active session.
+        if wasPlaying {
+            playFromBrowsedSession(episode: episode)
+        } else if let (session, playlist) = sessionPlaylistPreparedForReorder() {
+            // Make it the session's current episode, but stay paused (no autoplay).
+            Self.writeSessionLineupTop(episodeUuid: episode.uuid, in: playlist)
+            PlaybackManager.shared.startPlaybackSession(session, autoPlay: false)
+            browsedSessionUuid = session.uuid
+            setNeedsReload()
+        }
+    }
+
     // MARK: - Selection
 
     func tableView(_ tableView: UITableView, willSelectRowAt indexPath: IndexPath) -> IndexPath? {
@@ -441,7 +479,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
             // The empty state is inert when there's no session to show a lineup for.
             if browsedPlaybackSession == nil { return nil }
             if isMultiSelectEnabled, !multiSelectGestureInProgress,
-               let episode = filteredSessionTail[safe: indexPath.row], selectedEpisodesContains(uuid: episode.uuid) {
+               let episode = filteredLineupTail[safe: indexPath.row], selectedEpisodesContains(uuid: episode.uuid) {
                 tableView.delegate?.tableView?(tableView, didDeselectRowAt: indexPath)
                 return nil
             }
@@ -452,7 +490,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
             return indexPath
         }
 
-        if let episode = DataManager.sharedManager.playlistEpisodeAt(index: indexPath.row + 1) {
+        if let episode = DataManager.sharedManager.playlistEpisodeAt(index: indexPath.row + 1 + upNextListOffset) {
             if selectedEpisodesContains(uuid: episode.episodeUuid) {
                 tableView.delegate?.tableView?(tableView, didDeselectRowAt: indexPath)
                 return nil
@@ -480,7 +518,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         }
 
         if isMultiSelectEnabled, tableData[indexPath.section] == .sessionSection {
-            guard let episode = filteredSessionTail[safe: indexPath.row] else { return }
+            guard let episode = filteredLineupTail[safe: indexPath.row] else { return }
             if !multiSelectGestureInProgress {
                 selectedEpisodesRemove(uuid: episode.uuid)
             }
@@ -511,7 +549,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
 
         if isMultiSelectEnabled, tableData[indexPath.section] == .upNextSection {
             // the cell below is optional because cellForRow only returns a cell if it's visible, and we don't need to tick cells that don't exist
-            if let episode = DataManager.sharedManager.playlistEpisodeAt(index: indexPath.row + 1) {
+            if let episode = DataManager.sharedManager.playlistEpisodeAt(index: indexPath.row + 1 + upNextListOffset) {
                 if !multiSelectGestureInProgress {
                     // If the episode is already selected move to the end of the array
                     selectedEpisodesRemove(uuid: episode.episodeUuid)
@@ -556,7 +594,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
                 // Clear the selection immediately — in this always-editing table a left-behind
                 // selection draws the leading multi-select control beside the artwork.
                 upNextTable.deselectRow(at: indexPath, animated: false)
-                if let episode = filteredSessionTail[safe: indexPath.row] {
+                if let episode = filteredLineupTail[safe: indexPath.row] {
                     // Browsing another session is pure navigation — playing from it is
                     // what makes it the active one.
                     if !browsingActiveSession {
@@ -593,8 +631,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
                 return
             }
 
-            let episodeForTap = lineupSearchActive ? filteredUpNextEpisodes[safe: indexPath.row] : PlaybackManager.shared.queue.episodeAt(index: indexPath.row)
-            guard let episode = episodeForTap else { return }
+            guard let episode = filteredLineupTail[safe: indexPath.row] else { return }
 
             let playOnTap = Settings.playUpNextOnTap()
 
@@ -612,7 +649,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
     func tableView(_ tableView: UITableView, didDeselectRowAt indexPath: IndexPath) {
         if showingSessionList { return }
         if tableData[indexPath.section] == .sessionSection {
-            guard let episode = filteredSessionTail[safe: indexPath.row] else { return }
+            guard let episode = filteredLineupTail[safe: indexPath.row] else { return }
             selectedEpisodesRemove(uuid: episode.uuid)
             if let cell = upNextTable.cellForRow(at: indexPath) as? EpisodeCell {
                 cell.showTick = false
@@ -630,7 +667,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
             return
         }
         guard tableData[indexPath.section] == .upNextSection else { return }
-        if let episode = DataManager.sharedManager.playlistEpisodeAt(index: indexPath.row + 1), let index = selectedPlayListEpisodes.firstIndex(of: episode) {
+        if let episode = DataManager.sharedManager.playlistEpisodeAt(index: indexPath.row + 1 + upNextListOffset), let index = selectedPlayListEpisodes.firstIndex(of: episode) {
             selectedPlayListEpisodes.remove(at: index)
             if let cell = upNextTable.cellForRow(at: indexPath) as? EpisodeCell {
                 cell.showTick = false
@@ -685,8 +722,10 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
             return
         }
 
-        let fromRow = sourceIndexPath.row
-        let toRow = destinationIndexPath.row
+        // The tail starts one later while a session's episode holds position 0 and the queue's head
+        // is pinned on the card, so map display rows to queue indices through the offset.
+        let fromRow = sourceIndexPath.row + upNextListOffset
+        let toRow = destinationIndexPath.row + upNextListOffset
 
         playQueue.moveEpisode(from: fromRow, to: toRow)
 
@@ -776,9 +815,10 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
     private func rowHeight(at indexPath: IndexPath) -> CGFloat {
         let section = tableData[indexPath.section]
         if section == .nowPlayingSection {
-            // The lineup episode search row (between the pinned card and the info line).
+            // The lineup episode search row (between the pinned card and the info line): 18 top (more
+            // gap below the card) + 36 field + 0 bottom, so it sits tight above the info line.
             if isTopBlockLineupSearchRow(indexPath) {
-                return UpNextViewController.sessionSearchRowHeight
+                return 54
             }
             if !isTopBlockCardRow(indexPath) {
                 let metrics = UIFontMetrics(forTextStyle: .footnote)
@@ -799,7 +839,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
             // EpisodeCell rows self-size (two-line title + info line).
             return UITableView.automaticDimension
         }
-        if PlaybackManager.shared.queue.upNextCount() == 0 { return UpNextViewController.emptyStateRowHeight }
+        if !lineupSearchActive, filteredLineupTail.isEmpty { return UpNextViewController.emptyStateRowHeight }
         // The queue rows are self-sizing EpisodeCells now (same as the session lineup).
         return UITableView.automaticDimension
     }
@@ -948,21 +988,17 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         let section = tableData[safe: indexPath.section]
 
         // Session LINEUP episode (the chooser's session rows aren't episodes, so they're excluded).
-        if section == .sessionSection, !showingSessionList, let episode = filteredSessionTail[safe: indexPath.row] {
+        // Fork: a long-press on the row body NEVER makes the episode active/playing — activation is a
+        // play-button gesture (tap = play, long-press = switch inheriting state). The row long-press
+        // just opens the episode's options.
+        if section == .sessionSection, !showingSessionList, let episode = filteredLineupTail[safe: indexPath.row] {
             guard !isMultiSelectEnabled else { return }
-            if Settings.playUpNextOnTap() {
-                showEpisodeDetailViewController(for: episode, fromSession: true)
-            } else if browsingActiveSession {
-                AnalyticsPlaybackHelper.shared.currentSource = .upNext
-                PlaybackManager.shared.play(sessionEpisode: episode)
-            } else {
-                playFromBrowsedSession(episode: episode)
-            }
+            showEpisodeDetailViewController(for: episode, fromSession: true)
             return
         }
 
         // Up Next queue episode.
-        guard section == .upNextSection, let episode = PlaybackManager.shared.queue.episodeAt(index: indexPath.row) else { return }
+        guard section == .upNextSection, let episode = filteredLineupTail[safe: indexPath.row] else { return }
         if isMultiSelectEnabled {
             showLongPressSelectOptions(indexPath: indexPath)
         } else if !Settings.playUpNextOnTap() {
@@ -988,9 +1024,10 @@ extension UpNextViewController: UITableViewDragDelegate, UITableViewDropDelegate
         guard let section = tableData[safe: indexPath.section] else { return false }
         switch section {
         case .nowPlayingSection:
-            // Fork (Model B): the SESSION lineup's current is PINNED — never draggable. The queue's
-            // now-playing card stays draggable (established Up Next behaviour). Never the search/info row.
-            return isTopBlockCardRow(indexPath) && topBlockHasCard && displayedWorld != .session
+            // Fork (Model B): the SESSION lineup's current is PINNED. So is Up Next's card while a
+            // session plays — it's the queue's own head, kept out of the reorder (offset == 1). The
+            // queue's now-playing card stays draggable when the queue owns playback. Never search/info.
+            return isTopBlockCardRow(indexPath) && topBlockHasCard && displayedWorld != .session && upNextListOffset == 0
         case .sessionSection:
             if showingSessionList {
                 guard !isSessionSearchRow(indexPath), let listIndex = sessionListIndex(forTableRow: indexPath.row) else { return false }
@@ -1003,7 +1040,8 @@ extension UpNextViewController: UITableViewDragDelegate, UITableViewDropDelegate
             let type = browsedPlaybackSession?.type
             return (type == .playlist || type == .smartPlaylist) && browsedSessionSortIsDragAndDrop
         case .upNextSection:
-            return PlaybackManager.shared.queue.upNextCount() > 0
+            // A live title filter can't be reordered (the tail is a subset), so drag is off then.
+            return !lineupSearchActive && !filteredLineupTail.isEmpty
         }
     }
 
@@ -1015,6 +1053,15 @@ extension UpNextViewController: UITableViewDragDelegate, UITableViewDropDelegate
 
     func tableView(_ tableView: UITableView, itemsForBeginning session: UIDragSession, at indexPath: IndexPath) -> [UIDragItem] {
         guard dragReorderAllowed(at: indexPath) else { return [] }
+        // A long-press ON the play button is the "make/switch current" gesture — never a row drag.
+        if showingSessionList, let cell = tableView.cellForRow(at: indexPath) as? SessionListCell,
+           cell.pointHitsPlayButton(session.location(in: cell)) {
+            return []
+        }
+        if !showingSessionList, let cell = tableView.cellForRow(at: indexPath) as? EpisodeCell,
+           cell.pointHitsActionButton(session.location(in: cell)) {
+            return []
+        }
         // Clear the DRAGGED cell's accent styling synchronously here — the lift preview is snapshotted
         // now, before `dragSessionWillBegin` runs, so this is what strips its bg/border/progress from
         // the floating copy too (not just the source row).
@@ -1077,10 +1124,11 @@ extension UpNextViewController: UITableViewDragDelegate, UITableViewDropDelegate
         let sourceSection = tableData[safe: source.section]
         let destSection = tableData[safe: dest.section]
 
-        // Onto the card → make current. Fork (Model B): only the QUEUE card accepts this; the session
-        // lineup's current is pinned, so a tail episode can never drop onto it.
+        // Onto the card → make current. Fork (Model B): only the QUEUE's OWN now-playing card accepts
+        // this. The session lineup's current is pinned, and so is Up Next's card while a session plays
+        // (it's the queue's head, not the now-playing) — neither is a drop target.
         if destSection == .nowPlayingSection {
-            guard isTopBlockCardRow(dest), topBlockHasCard, displayedWorld == .upNext else { return cancel }
+            guard isTopBlockCardRow(dest), topBlockHasCard, displayedWorld == .upNext, queueOwnsCard else { return cancel }
             return sourceSection == .upNextSection ? UITableViewDropProposal(operation: .move, intent: .insertIntoDestinationIndexPath) : cancel
         }
         // The queue card dragged down into its own list (session card is pinned).
@@ -1101,16 +1149,8 @@ extension UpNextViewController: UITableViewDragDelegate, UITableViewDropDelegate
         if showingSessionList {
             guard let from = sessionListIndex(forTableRow: source.row),
                   let to = sessionListIndex(forTableRow: dest.row) else { return }
-            if from == to {
-                // Fork: a long-press that lifts a session but drops it in place (no move) is the
-                // "make this session current" gesture — inheriting the current play state.
-                if let row = sessionListRows[safe: from] {
-                    makeSessionCurrentInheritingPlayState(row)
-                }
-                coordinator.drop(item.dragItem, toRowAt: dest)
-                return
-            }
-            // Otherwise it's a reorder — the POOL only (Up Next and the Current Session are pinned).
+            // Drag reorders the POOL only — Up Next and the Current Session are pinned. Making a session
+            // current is a play-button action (tap = play; long-press = inherit play state), not a drag.
             reorderSessionList(from: from, to: to)
             tableView.reloadData()
             coordinator.drop(item.dragItem, toRowAt: dest)
@@ -1152,7 +1192,8 @@ extension UpNextViewController: UITableViewDragDelegate, UITableViewDropDelegate
             return
         }
         if sourceSection == .upNextSection {
-            PlaybackManager.shared.queue.moveEpisode(from: source.row, to: dest.row)
+            // Map display rows to queue indices through the session-head offset (see upNextListOffset).
+            PlaybackManager.shared.queue.moveEpisode(from: source.row + upNextListOffset, to: dest.row + upNextListOffset)
             reloadTable()
         }
     }
