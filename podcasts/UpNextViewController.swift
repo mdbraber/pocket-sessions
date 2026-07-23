@@ -2001,15 +2001,18 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         let queue = PlaybackManager.shared.queue
         let current = PlaybackManager.shared.currentEpisode()
         let ownsCard = queueOwnsCard
-        let count = queue.upNextCount() + (ownsCard ? 1 : 0)
-        let next: BaseEpisode? = ownsCard ? current : queue.episodeAt(index: 0)
+        // A shared session episode is a genuine Up Next member at the head, even though the session (not
+        // the queue) is what's sounding — so the row frames it just like a queue-owned now-playing.
+        let headIsCurrent = ownsCard || PlaybackManager.shared.currentSessionEpisodeIsSharedToQueue
+        let count = queue.upNextCount() + (headIsCurrent ? 1 : 0)
+        let next: BaseEpisode? = headIsCurrent ? current : queue.episodeAt(index: 0)
         var totalDuration = queue.upNextTotalDuration(includePlayingEpisode: false)
-        if ownsCard, let current { totalDuration += max(0, current.duration - PlaybackManager.shared.currentTime()) }
+        if headIsCurrent, let current { totalDuration += max(0, current.duration - PlaybackManager.shared.currentTime()) }
         // The backdrop fill tracks this card's head episode: the now-playing's LIVE progress while the
-        // queue is active, otherwise the queue head's saved progress — so the Up Next top card still
-        // shows its fill while a session (not the queue) is the one sounding.
+        // queue is active (or a shared session episode is playing), otherwise the queue head's saved
+        // progress — so the Up Next top card still shows its fill while a session is the one sounding.
         let progress: Double
-        if ownsCard, let current, current.duration > 0 {
+        if headIsCurrent, let current, current.duration > 0 {
             progress = min(1, max(0, PlaybackManager.shared.currentTime() / current.duration))
         } else if let next, next.duration > 0, next.playedUpTo > 0 {
             progress = min(1, max(0, next.playedUpTo / next.duration))

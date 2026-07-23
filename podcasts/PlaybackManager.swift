@@ -180,6 +180,8 @@ class PlaybackManager: ServerPlaybackDelegate {
         FileLog.shared.addMessage("Loading \(episode.displayableTitle()) with UUID \(episode.uuid) autoPlay \(autoPlay) overrideUpNext: \(overrideUpNext)")
 
         let episodeIsChanging = episode.uuid != currentEpisode()?.uuid
+        // The "shared into Up Next" promotion is per-episode — a new current episode starts unshared.
+        if episodeIsChanging { sessionEpisodeSharedToQueueUuid = nil }
         // Captured before the reset below: an interrupted session episode must not be
         // pushed into Up Next — it stays in the (paused) session's own list.
         let interruptedEpisodeIsFromSession = currentEpisodeIsFromSession
@@ -679,9 +681,10 @@ class PlaybackManager: ServerPlaybackDelegate {
 
         // Fork: a session episode plays FROM its session, not from Up Next. Playback still parks
         // the currently-playing episode at the head of the Up Next table as bookkeeping, so
-        // queue.contains() would report it as queued — don't light the Up Next indicator for it.
+        // queue.contains() would report it as queued — don't light the Up Next indicator for it,
+        // UNLESS the user explicitly shared it into Up Next (then it's a genuine member of both).
         if currentEpisodeIsFromSession, episode.uuid == currentEpisode()?.uuid {
-            return false
+            return currentSessionEpisodeIsSharedToQueue
         }
 
         return queue.contains(episode: episode)
@@ -720,7 +723,14 @@ class PlaybackManager: ServerPlaybackDelegate {
             return
         }
 
-        if playingEpisode.uuid == episode.uuid { return }
+        if playingEpisode.uuid == episode.uuid {
+            // Fork: a session's currently-playing episode isn't really in Up Next — it plays from the
+            // session, parked/hidden at the queue head. "Add to Up Next" PROMOTES it to a genuine,
+            // visible Up Next member rather than doing nothing. (A normal now-playing episode already
+            // heads Up Next, so that stays a no-op.)
+            if currentEpisodeIsSessionSourced { shareCurrentSessionEpisodeToQueue() }
+            return
+        }
 
         // if the episode is somewhere in our future queue, ignore this add call
         if queue.contains(episode: episode), !toTop {
@@ -816,6 +826,28 @@ class PlaybackManager: ServerPlaybackDelegate {
     /// play/pause, since a paused session episode is still session-sourced.
     var currentEpisodeIsSessionSourced: Bool {
         Settings.playbackSession() != nil && currentEpisodeIsFromSession
+    }
+
+    /// Fork: the session episode the user explicitly added to Up Next. A session episode normally plays
+    /// FROM its session and is hidden from Up Next (parked at the queue head as bookkeeping); once
+    /// shared it counts as a genuine, visible Up Next member too, so the same episode legitimately heads
+    /// both worlds. Keyed to the episode uuid and cleared whenever the current episode changes.
+    private var sessionEpisodeSharedToQueueUuid: String?
+
+    var currentSessionEpisodeIsSharedToQueue: Bool {
+        guard let uuid = sessionEpisodeSharedToQueueUuid else { return false }
+        return uuid == currentEpisode()?.uuid && currentEpisodeIsFromSession
+    }
+
+    /// Fork: "Add to Up Next" on the session's currently-playing episode. It already sits at the head of
+    /// the queue (session parking), so this doesn't re-add it — it PROMOTES it to a genuine, visible Up
+    /// Next member, keeping it playing from the session. A NON-playing session episode goes through the
+    /// normal `addToUpNext` instead.
+    func shareCurrentSessionEpisodeToQueue() {
+        guard currentEpisodeIsSessionSourced, let uuid = currentEpisode()?.uuid, queue.contains(episodeUuid: uuid) else { return }
+        sessionEpisodeSharedToQueueUuid = uuid
+        NotificationCenter.postOnMainThread(notification: Constants.Notifications.upNextQueueChanged)
+        NotificationCenter.postOnMainThread(notification: Constants.Notifications.playbackTrackChanged)
     }
 
     /// Starts a playback session: plays its first unfinished episode now (the interrupted

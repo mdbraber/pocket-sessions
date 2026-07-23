@@ -34,7 +34,9 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
     /// tail moves, the head stays put. Only in Up Next details, only while a session is the source,
     /// and only if the queue actually has an episode of its own to surface.
     var upNextListOffset: Int {
-        (displayedWorld == .upNext && sessionOwnsCard && PlaybackManager.shared.queue.episodeAt(index: 0) != nil) ? 1 : 0
+        // Once the session episode is shared into Up Next it's a genuine member — don't lift the queue's
+        // own head onto the card; show the shared episode as the head like any queue-owned now-playing.
+        (displayedWorld == .upNext && sessionOwnsCard && !PlaybackManager.shared.currentSessionEpisodeIsSharedToQueue && PlaybackManager.shared.queue.episodeAt(index: 0) != nil) ? 1 : 0
     }
 
     /// The episode shown on the Up Next details card: the queue's now-playing (position 0) when the
