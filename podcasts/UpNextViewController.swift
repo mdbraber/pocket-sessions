@@ -2005,10 +2005,17 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         let next: BaseEpisode? = ownsCard ? current : queue.episodeAt(index: 0)
         var totalDuration = queue.upNextTotalDuration(includePlayingEpisode: false)
         if ownsCard, let current { totalDuration += max(0, current.duration - PlaybackManager.shared.currentTime()) }
-        // The now-playing episode's live progress drives Up Next's backdrop fill when the queue is active.
-        let progress: Double = (ownsCard && (current?.duration ?? 0) > 0)
-            ? min(1, max(0, PlaybackManager.shared.currentTime() / current!.duration))
-            : 0
+        // The backdrop fill tracks this card's head episode: the now-playing's LIVE progress while the
+        // queue is active, otherwise the queue head's saved progress — so the Up Next top card still
+        // shows its fill while a session (not the queue) is the one sounding.
+        let progress: Double
+        if ownsCard, let current, current.duration > 0 {
+            progress = min(1, max(0, PlaybackManager.shared.currentTime() / current.duration))
+        } else if let next, next.duration > 0, next.playedUpTo > 0 {
+            progress = min(1, max(0, next.playedUpTo / next.duration))
+        } else {
+            progress = 0
+        }
         return SessionListRow(
             sessionUuid: Self.upNextListRowUuid,
             storeUuid: nil,
