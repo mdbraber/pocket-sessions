@@ -737,9 +737,15 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         if row.isUpNext {
             if queueOwnsCard {
                 PlaybackManager.shared.play() // resume the paused queue
+            } else if let current = PlaybackManager.shared.currentEpisode(),
+                      upNextCardEpisode?.uuid == current.uuid, PlaybackManager.shared.playing() {
+                // The SAME episode heads both worlds and is already sounding — just move the pointer
+                // to the queue. No restart, and it stays in the session too (see adoptCurrentEpisodeIntoQueue).
+                PlaybackManager.shared.adoptCurrentEpisodeIntoQueue()
+                setNeedsReload()
             } else {
-                // A session owns the card — hand playback back to the queue. This is a SWITCH, not a
-                // deliberate end, so it doesn't toast "Session ended" (the session stays in the list).
+                // A session owns the card — hand playback back to the queue's OWN next episode. This is a
+                // SWITCH, not a deliberate end, so it doesn't toast "Session ended" (the session stays).
                 PlaybackManager.shared.endPlaybackSession(showToast: false)
                 if !PlaybackManager.shared.playing() { PlaybackManager.shared.play() }
             }

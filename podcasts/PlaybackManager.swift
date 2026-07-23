@@ -867,6 +867,20 @@ class PlaybackManager: ServerPlaybackDelegate {
         NotificationCenter.postOnMainThread(notification: Constants.Notifications.playbackTrackChanged)
     }
 
+    /// Fork: the same episode heads both worlds and is already playing. Hand the playhead from the
+    /// active session to the Up Next queue WITHOUT touching audio — no `load`, no `switchTo`, no
+    /// `playNextEpisode` — so it keeps playing from the exact same spot and is removed from neither
+    /// world; only the source pointer flips (session card → play, Up Next card → pause). Callers must
+    /// verify the queue's takeover episode is the same one first; otherwise use `endPlaybackSession`.
+    func adoptCurrentEpisodeIntoQueue() {
+        guard currentEpisode() != nil, Settings.playbackSession() != nil else { return }
+        FileLog.shared.addMessage("Adopting the current session episode into Up Next (pointer only, no restart)")
+        Settings.setPlaybackSession(nil)
+        currentEpisodeIsFromSession = false
+        NotificationCenter.postOnMainThread(notification: Constants.Notifications.playbackTrackChanged)
+        NotificationCenter.postOnMainThread(notification: Constants.Notifications.upNextQueueChanged)
+    }
+
     /// Deliberately ends the playback session (the ✕ in Up Next). If the playing episode
     /// belongs to the session it stops where it is, and playback hands over to the queue:
     /// Now Playing becomes the first (filter-matching) queued episode, playing if the
