@@ -5411,13 +5411,19 @@
 "session_remove_mode_ask" = "Ask Every Time";
 
 /* Settings action that reconciles every session from current session membership */
-"session_backfill_now" = "Add Existing Episodes";
+"session_backfill_now" = "Backfill Sessions";
 /* Footer explaining the Add/Remove routing and the Backfill action */
-"session_backfill_msg" = "“All Matching Sessions” adds an episode to every session that includes it. “Add Existing Episodes” catches sessions up with older episodes they cover but never received.";
+"session_backfill_msg" = "“All Matching Sessions” adds an episode to every session that includes it. “Backfill Sessions” catches sessions up with older episodes they cover but never received.";
 /* Toast after a backfill: how many episodes were added across sessions. %1$@ is a number. */
 "session_backfill_done" = "Added %1$@ episodes across sessions";
 /* Toast after a backfill when nothing needed adding */
 "session_backfill_none" = "Sessions are already up to date";
+/* Fork: footer clarifying the Add/Remove routing is a global default. */
+"session_settings_addremove_footer" = "Global defaults for how “Add to Session” and “Remove from Session” behave everywhere. “All Matching Sessions” adds an episode to every session that includes it; “Backfill Sessions” catches sessions up with older episodes they cover but never received.";
+/* Fork: footer for the Auto Add limits — global, with per-playlist / per-podcast overrides. */
+"session_settings_autoadd_footer" = "Global limits. Which podcasts auto-add is chosen per podcast, and each smart playlist can set its own fill mode (Auto or Manual) in its Session Playlist settings.";
+/* Fork: footer for the Linking switches — global, both directions. */
+"session_settings_linking_footer" = "Global. Mirrors the Up Next queue and the current session in both directions; this can’t be overridden per playlist or podcast.";
 
 /* Option in the Add to Session picker that adds the episode to every matching session */
 "inbox_add_all_sessions" = "All Sessions";

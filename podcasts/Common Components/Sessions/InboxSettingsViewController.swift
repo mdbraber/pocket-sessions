@@ -17,11 +17,12 @@ class InboxSettingsViewController: PCViewController, UITableViewDataSource, UITa
 
     private let settingsTable = ThemeableTable(frame: .zero, style: .grouped)
 
-    /// A plain, non-accented button pinned to the bottom of the screen (the table footer).
+    /// An accented, filled CTA pinned to the bottom of the screen (the table footer).
     private lazy var backfillButton: UIButton = {
-        let button = UIButton(type: .system)
+        let button = UIButton(type: .custom)
         button.setTitle(L10n.sessionBackfillNow, for: .normal)
-        button.titleLabel?.font = UIFont.systemFont(ofSize: 16, weight: .medium)
+        button.titleLabel?.font = UIFont.systemFont(ofSize: 16, weight: .semibold)
+        button.layer.cornerRadius = 8
         button.addTarget(self, action: #selector(backfillTapped), for: .touchUpInside)
         return button
     }()
@@ -41,20 +42,23 @@ class InboxSettingsViewController: PCViewController, UITableViewDataSource, UITa
             settingsTable.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
 
-        let footer = UIView(frame: CGRect(x: 0, y: 0, width: view.bounds.width, height: 64))
+        let footer = UIView(frame: CGRect(x: 0, y: 0, width: view.bounds.width, height: 76))
         backfillButton.translatesAutoresizingMaskIntoConstraints = false
         footer.addSubview(backfillButton)
         NSLayoutConstraint.activate([
-            backfillButton.centerXAnchor.constraint(equalTo: footer.centerXAnchor),
-            backfillButton.centerYAnchor.constraint(equalTo: footer.centerYAnchor)
+            backfillButton.leadingAnchor.constraint(equalTo: footer.leadingAnchor, constant: 20),
+            backfillButton.trailingAnchor.constraint(equalTo: footer.trailingAnchor, constant: -20),
+            backfillButton.centerYAnchor.constraint(equalTo: footer.centerYAnchor),
+            backfillButton.heightAnchor.constraint(equalToConstant: 44)
         ])
         settingsTable.tableFooterView = footer
     }
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        // Non-accented: a neutral text colour, not the interactive/accent tint.
-        backfillButton.setTitleColor(AppTheme.colorForStyle(.primaryText01), for: .normal)
+        // Accented, filled CTA.
+        backfillButton.backgroundColor = AppTheme.colorForStyle(.primaryInteractive01)
+        backfillButton.setTitleColor(AppTheme.colorForStyle(.primaryInteractive02), for: .normal)
         settingsTable.reloadData()
     }
 
@@ -88,7 +92,13 @@ class InboxSettingsViewController: PCViewController, UITableViewDataSource, UITa
     }
 
     func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        sections[section].first == .addToSessionMode ? L10n.sessionBackfillMsg : nil
+        // Each section notes whether it's global and where it can be overridden per playlist / podcast.
+        switch sections[section].first {
+        case .addToSessionMode: return L10n.sessionSettingsAddremoveFooter
+        case .autoAddToUpNext: return L10n.sessionSettingsAutoaddFooter
+        case .mirrorUpNextToSession: return L10n.sessionSettingsLinkingFooter
+        default: return nil
+        }
     }
 
     func numberOfSections(in tableView: UITableView) -> Int { sections.count }
