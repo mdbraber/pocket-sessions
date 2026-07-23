@@ -86,11 +86,8 @@ struct PlaylistHeaderView: View {
                 }
                 Spacer().frame(height: 12)
 
-                HStack(spacing: 10) {
+                HStack(spacing: 0) {
                     Spacer()
-                    if viewModel.showsQueueSession, !viewModel.isSearching {
-                        queueSessionButton
-                    }
                     actionButton(
                         type: .playAll,
                         color: viewModel.isSearching ? theme.primaryText01 : theme.primaryUi01,
@@ -100,6 +97,14 @@ struct PlaylistHeaderView: View {
                         stroke: viewModel.isSearching ? theme.primaryUi05 : nil) { type in
                             viewModel.onButtonTapped(type)
                     }
+                    // Fork: LONG-PRESS "Play Session" to Queue Session — float it to the top of the
+                    // Queue page's session list without playing. (Tap still starts the session.)
+                    .simultaneousGesture(
+                        LongPressGesture(minimumDuration: 0.5).onEnded { _ in
+                            guard viewModel.showsQueueSession, !viewModel.isSearching else { return }
+                            viewModel.onButtonTapped(.queueSession)
+                        }
+                    )
                     Spacer()
                 }
                 .animation(.easeInOut(duration: 0.2), value: viewModel.isSearching)
@@ -177,26 +182,19 @@ struct PlaylistHeaderView: View {
         .accessibilityLabel(title)
     }
 
-    /// Fork: "Queue Session" — a compact, outline-only button (accent border, no fill) with the list
-    /// icon, sitting left of "Play Session". Appends the session's lineup to Up Next.
+    /// Fork: "Queue Session" — an outline-only button (accent border, no fill) with the list icon and
+    /// its label, sitting left of "Play Session". Floats the session to the top of the Queue page.
     private var queueSessionButton: some View {
-        Button {
-            viewModel.onButtonTapped(.queueSession)
-        } label: {
-            Image(systemName: "list.bullet")
-                .renderingMode(.template)
-                .resizable()
-                .scaledToFit()
-                .frame(width: 20, height: 20)
-                .foregroundStyle(theme.primaryInteractive01)
-                .frame(minWidth: 48, minHeight: 40.0)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(theme.primaryInteractive01, lineWidth: 2)
-                )
+        actionButton(
+            type: .queueSession,
+            color: theme.primaryInteractive01,
+            image: Image(systemName: "list.bullet"),
+            title: L10n.playlistQueueSession,
+            background: .clear,
+            stroke: theme.primaryInteractive01
+        ) { type in
+            viewModel.onButtonTapped(type)
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(L10n.playlistQueueSession)
     }
 
     private func actionButton(

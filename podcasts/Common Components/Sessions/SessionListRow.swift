@@ -65,6 +65,8 @@ enum SessionListSort: Int, CaseIterable {
     case longestToShortest
     /// Fork: most-progressed session first (the resume position of its next episode).
     case progress
+    /// Fork: by session type — Smart playlist, then Podcast/Folder, then Manual.
+    case type
 
     var title: String {
         switch self {
@@ -78,12 +80,23 @@ enum SessionListSort: Int, CaseIterable {
         case .shortestToLongest: L10n.podcastsEpisodeSortShortestToLongest
         case .longestToShortest: L10n.podcastsEpisodeSortLongestToShortest
         case .progress: L10n.sessionSortProgress
+        case .type: L10n.sessionSortType
+        }
+    }
+
+    /// Fork: rank for the `.type` sort — Smart (0), Podcast/Folder (1/2), Manual (3).
+    static func typeRank(_ feeder: SessionFeeder) -> Int {
+        switch feeder {
+        case .smartPlaylist: return 0
+        case .podcast, .allPodcasts: return 1
+        case .folder: return 2
+        case .none: return 3
         }
     }
 
     /// Fork: the options the session list's ⋯ Sort menu offers, in order — Manual (the drag order)
-    /// plus the episode-style sorts (Serial deliberately excluded) and Progress.
-    static let sessionMenuOrder: [SessionListSort] = [.manual, .newestToOldest, .oldestToNewest, .shortestToLongest, .longestToShortest, .progress]
+    /// plus the episode-style sorts (Serial deliberately excluded), Progress, and Type.
+    static let sessionMenuOrder: [SessionListSort] = [.manual, .type, .newestToOldest, .oldestToNewest, .shortestToLongest, .longestToShortest, .progress]
 }
 
 /// Fork: which sessions the chooser shows. Every `SessionFeeder` case maps to exactly one
@@ -329,6 +342,12 @@ enum SessionListRows {
             case .progress:
                 // Most progress first (the resume position of the session's next episode).
                 if lhs.row.progress != rhs.row.progress { return lhs.row.progress > rhs.row.progress }
+                return byName(lhs, rhs)
+            case .type:
+                // Smart playlist → Podcast → Folder → Manual, then alphabetical within a type.
+                let l = SessionListSort.typeRank(lhs.session.feeder)
+                let r = SessionListSort.typeRank(rhs.session.feeder)
+                if l != r { return l < r }
                 return byName(lhs, rhs)
             }
         }.map(\.row)

@@ -582,7 +582,11 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
                 }
                 guard isTopBlockCardRow(indexPath) else { return }
                 if Settings.playUpNextOnTap(), !PlaybackManager.shared.playing() {
+                    // Fork: starting the queue/session from the top card in its own details screen is an
+                    // in-context action — no "Session paused/ended" toast for it.
+                    PlaybackManager.shared.suppressSessionSwitchToastOnce = true
                     PlaybackManager.shared.play()
+                    DispatchQueue.main.async { PlaybackManager.shared.suppressSessionSwitchToastOnce = false }
                     return
                 }
                 track(.upNextNowPlayingTapped)

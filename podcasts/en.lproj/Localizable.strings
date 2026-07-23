@@ -7039,6 +7039,8 @@
 
 /* Fork: session list sort — most-progressed session first. */
 "session_sort_progress" = "Progress";
+/* Fork: session-list sort option — by type (Smart, Podcast, Manual). */
+"session_sort_type" = "Type";
 
 /* Fork: session list search field placeholder. */
 "session_search_placeholder" = "Search Sessions";

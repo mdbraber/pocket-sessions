@@ -464,7 +464,22 @@ class PlaylistDetailViewController: PCViewController, UIScrollViewDelegate {
     }
 
     func reloadNavTitle() {
-        navTitleLabel.text = viewModel.playlist.playlistName
+        let name = viewModel.playlist.playlistName
+        // Fork: smart playlists carry a green sparkle after the nav-bar title too.
+        guard !viewModel.playlist.manual,
+              let symbol = UIImage(systemName: "sparkles", withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold))?
+                  .withTintColor(ThemeColor.support02(), renderingMode: .alwaysOriginal) else {
+            navTitleLabel.attributedText = nil
+            navTitleLabel.text = name
+            return
+        }
+        let attachment = NSTextAttachment()
+        attachment.image = symbol
+        attachment.bounds = CGRect(x: 0, y: (navTitleLabel.font.capHeight - symbol.size.height) / 2,
+                                   width: symbol.size.width, height: symbol.size.height)
+        let result = NSMutableAttributedString(string: name + "  ")
+        result.append(NSAttributedString(attachment: attachment))
+        navTitleLabel.attributedText = result
     }
 
     @objc func refreshFilterFromNotification(notification: Notification) {

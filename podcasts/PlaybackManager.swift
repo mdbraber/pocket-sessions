@@ -204,8 +204,12 @@ class PlaybackManager: ServerPlaybackDelegate {
             Settings.setPlaybackSessionPaused(true)
             #if !APPCLIP && !os(watchOS)
             let title = pausingSession.title ?? L10n.playbackSessionTabSession
-            DispatchQueue.main.async {
-                Toast.show(L10n.sessionPausedToast(title))
+            if suppressSessionSwitchToastOnce {
+                suppressSessionSwitchToastOnce = false
+            } else {
+                DispatchQueue.main.async {
+                    Toast.show(L10n.sessionPausedToast(title))
+                }
             }
             #endif
         }
@@ -787,6 +791,11 @@ class PlaybackManager: ServerPlaybackDelegate {
     /// steering-away check in `load` doesn't end the session it belongs to.
     private var isLoadingSessionEpisode = false
 
+    /// Fork: suppresses the "Session paused / ended" toast for ONE session switch — set by callers
+    /// like a tap on the Up Next / Session details top card, where the toast is just noise. Consumed
+    /// (reset) the moment a session-switch toast would have shown.
+    var suppressSessionSwitchToastOnce = false
+
     /// True while the now-playing episode came from the playback session rather than the
     /// queue. Session episodes never move into Up Next when interrupted — they stay in the
     /// (paused) session's own list instead. Seeded for app relaunch mid-session.
@@ -867,7 +876,9 @@ class PlaybackManager: ServerPlaybackDelegate {
         let handOverToQueue = currentEpisodeIsFromSession && !Settings.playbackSessionPaused()
         Settings.setPlaybackSession(nil)
         #if !APPCLIP && !os(watchOS)
-        if showToast {
+        if suppressSessionSwitchToastOnce {
+            suppressSessionSwitchToastOnce = false
+        } else if showToast {
             DispatchQueue.main.async {
                 Toast.show(L10n.sessionEndedToast)
             }

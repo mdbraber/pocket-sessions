@@ -2131,9 +2131,19 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         if displayedWorld == .session {
             // The chooser has no episode rows to select.
             guard !showingSessionList else { return }
-            guard let sectionIndex = tableData.firstIndex(of: .sessionSection), (sessionEpisodes?.count ?? 0) > 0 else { return }
             bulkSelecting = true
-            upNextTable.selectAllBelow(fromIndexPath: IndexPath(row: 0, section: sectionIndex))
+            // Fork: Select All includes the pinned current CARD (the session's now-playing episode),
+            // which lives in the top block rather than the tail — the tail-only selectAllBelow missed it.
+            if let card = sessionCurrentEpisode, !selectedEpisodesContains(uuid: card.uuid) {
+                selectedSessionEpisodes.append(card)
+                if let npSection = tableData.firstIndex(of: .nowPlayingSection), let cardRow = topBlockCardRow,
+                   let cardCell = upNextTable.cellForRow(at: IndexPath(row: cardRow, section: npSection)) as? EpisodeCell {
+                    cardCell.showTick = true
+                }
+            }
+            if let sectionIndex = tableData.firstIndex(of: .sessionSection), !filteredLineupTail.isEmpty {
+                upNextTable.selectAllBelow(fromIndexPath: IndexPath(row: 0, section: sectionIndex))
+            }
             bulkSelecting = false
             multiSelectActionBar.setSelectedCount(count: selectedSessionEpisodes.count)
             contentInseter.isMultiSelectEnabled = !selectedSessionEpisodes.isEmpty

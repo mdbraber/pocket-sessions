@@ -45,10 +45,10 @@ class SessionListCell: ThemeableSwipeCell {
         return view
     }()
 
-    /// Sparkles glyph before the name for smart-playlist-fed sessions.
+    /// Green sparkles glyph AFTER the name for smart-playlist-fed sessions.
     private lazy var smartIcon: UIImageView = {
         let config = UIImage.SymbolConfiguration(pointSize: 12, weight: .semibold)
-        let view = UIImageView(image: UIImage(systemName: "sparkles", withConfiguration: config))
+        let view = UIImageView(image: UIImage(systemName: "sparkles", withConfiguration: config)?.withRenderingMode(.alwaysTemplate))
         view.translatesAutoresizingMaskIntoConstraints = false
         view.setContentHuggingPriority(.required, for: .horizontal)
         view.setContentCompressionResistancePriority(.required, for: .horizontal)
@@ -67,7 +67,7 @@ class SessionListCell: ThemeableSwipeCell {
     }()
 
     private lazy var nameRow: UIStackView = {
-        let stack = UIStackView(arrangedSubviews: [smartIcon, nameLabel])
+        let stack = UIStackView(arrangedSubviews: [nameLabel, smartIcon])
         stack.translatesAutoresizingMaskIntoConstraints = false
         stack.axis = .horizontal
         stack.alignment = .center
@@ -189,9 +189,10 @@ class SessionListCell: ThemeableSwipeCell {
         surfaceTop = sTop; surfaceBottom = sBottom
         let pWidth = progressView.widthAnchor.constraint(equalToConstant: 0)
         progressWidth = pWidth
-        // Trailing controls sit at the inner edge normally; in reorder mode they shift left to clear
-        // the drag handle the table draws at the trailing edge (so the equalizer sits left of it).
-        let tTrailing = trailingStack.trailingAnchor.constraint(equalTo: surfaceView.trailingAnchor, constant: -(Self.innerPad - 4))
+        // Trailing controls sit at the surface edge (aligning the play button with the EpisodeCell
+        // rows on the details screens, whose action button hugs the same edge); in reorder mode they
+        // shift left to clear the drag handle the table draws at the trailing edge.
+        let tTrailing = trailingStack.trailingAnchor.constraint(equalTo: surfaceView.trailingAnchor, constant: 0)
         trailingStackTrailing = tTrailing
         // In reorder mode the card stretches to the trailing edge so the drag handle sits ON the
         // background rather than out in the margin.
@@ -428,7 +429,7 @@ class SessionListCell: ThemeableSwipeCell {
         // Line 2 and line 3 are dimmed.
         nextLabel.textColor = AppTheme.colorForStyle(.primaryText02, themeOverride: themeOverride)
         infoLabel.textColor = AppTheme.colorForStyle(.primaryText02, themeOverride: themeOverride)
-        smartIcon.tintColor = AppTheme.colorForStyle(.primaryIcon02, themeOverride: themeOverride)
+        smartIcon.tintColor = ThemeColor.support02(for: themeOverride) // green sparkle
         divider.backgroundColor = AppTheme.colorForStyle(.primaryUi05, themeOverride: themeOverride)
 
         // Fork: uniform list — only the ACTIVE (playing) row is styled. Its accent is blue when it's

@@ -116,19 +116,16 @@ extension PlaylistDetailViewController: UITableViewDataSource {
 
             if let groupHeader = itemAtRow as? PlaylistGroupHeaderPlaceholder {
                 let cell = tableView.dequeueReusableCell(withIdentifier: "GroupHeading", for: indexPath) as! HeadingCell
-                cell.heading.text = groupHeader.title
-                // Fork: Podcast / Folder groups get a small right-side chevron that opens that
-                // podcast or folder. Other groupings (dates, "No Folder", …) have no destination.
-                if let target = groupHeader.target {
-                    let config = UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold)
-                    cell.button.isHidden = false
-                    cell.button.setTitle(nil, for: .normal)
-                    cell.button.setImage(UIImage(systemName: "chevron.right", withConfiguration: config), for: .normal)
-                    cell.button.tintColor = AppTheme.colorForStyle(.primaryIcon02)
-                    cell.action = { [weak self] in self?.navigateToGroup(target) }
+                cell.button.isHidden = true
+                cell.action = nil
+                // Fork: Podcast / Folder groups get a small chevron right AFTER the title that opens
+                // that podcast/folder (tap the row — see didSelectRowAt). Other groupings (dates,
+                // "No Folder", …) have no destination, so plain title, no chevron.
+                if groupHeader.target != nil {
+                    cell.configureWithTrailingChevron(title: groupHeader.title)
                 } else {
-                    cell.button.isHidden = true
-                    cell.action = nil
+                    cell.heading.attributedText = nil
+                    cell.heading.text = groupHeader.title
                 }
                 return cell
             }
@@ -277,6 +274,10 @@ extension PlaylistDetailViewController: UITableViewDelegate {
     }
 
     func tableView(_ tableView: UITableView, willSelectRowAt indexPath: IndexPath) -> IndexPath? {
+        // Fork: a Podcast/Folder group header (with a destination) is tappable to open it.
+        if (viewModel.dataSource[safe: indexPath.section]?.elements[safe: indexPath.row] as? PlaylistGroupHeaderPlaceholder)?.target != nil {
+            return indexPath
+        }
         guard isEpisodeSection(at: indexPath.section), viewModel.listEpisode(at: indexPath) != nil else { return nil }
         if tableView.isEditing,
            let episode = viewModel.listEpisode(at: indexPath)?.episode,
@@ -292,6 +293,13 @@ extension PlaylistDetailViewController: UITableViewDelegate {
     }
 
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        // Fork: tapping a Podcast/Folder group header opens that podcast/folder.
+        if let groupHeader = viewModel.dataSource[safe: indexPath.section]?.elements[safe: indexPath.row] as? PlaylistGroupHeaderPlaceholder,
+           let target = groupHeader.target {
+            tableView.deselectRow(at: indexPath, animated: true)
+            navigateToGroup(target)
+            return
+        }
         if !isEpisodeSection(at: indexPath.section) { return }
         guard let selectedEpisode = viewModel.listEpisode(at: indexPath)?.episode, let parentPodcast = selectedEpisode.parentPodcast() else { return }
 

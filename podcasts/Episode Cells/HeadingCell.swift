@@ -40,4 +40,22 @@ class HeadingCell: ThemeableCell {
         result.append(NSAttributedString(string: "  " + title))
         heading.attributedText = result
     }
+
+    /// Fork: the title with a small chevron directly AFTER the text (a "tap to open" affordance for
+    /// Group By Podcast / Folder headers) — inline, not pinned to the far right.
+    func configureWithTrailingChevron(title: String) {
+        let config = UIImage.SymbolConfiguration(pointSize: 12, weight: .semibold)
+        guard let symbol = UIImage(systemName: "chevron.right", withConfiguration: config)?
+            .withTintColor(AppTheme.colorForStyle(.primaryIcon02), renderingMode: .alwaysOriginal) else {
+            heading.text = title
+            return
+        }
+        let attachment = NSTextAttachment()
+        attachment.image = symbol
+        attachment.bounds = CGRect(x: 0, y: (heading.font.capHeight - symbol.size.height) / 2,
+                                   width: symbol.size.width, height: symbol.size.height)
+        let result = NSMutableAttributedString(string: title + "  ")
+        result.append(NSAttributedString(attachment: attachment))
+        heading.attributedText = result
+    }
 }

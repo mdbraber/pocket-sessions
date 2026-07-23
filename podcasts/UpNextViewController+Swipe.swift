@@ -14,19 +14,46 @@ extension UpNextViewController: SwipeTableViewCellDelegate, SwipeHandler {
         // or manual session keeps its underlying playlist — only the session row goes. The pinned
         // playing session isn't swipeable.
         if showingSessionList {
-            guard !sessionListReorderMode, orientation == .right,
+            guard !sessionListReorderMode,
                   let listIndex = sessionListIndex(forTableRow: indexPath.row),
-                  let row = sessionListRows[safe: listIndex], !row.isActive, !row.isUpNext else { return nil }
-            let remove = SwipeAction(style: .destructive, title: nil) { [weak self] _, _ in
-                guard let self, let session = SessionStore.shared.session(uuid: row.sessionUuid) else { return }
-                self.removeSessionFromList(session)
-                self.refreshSessionState()
-                self.reloadTable()
+                  let row = sessionListRows[safe: listIndex], !row.isUpNext else { return nil }
+            switch orientation {
+            case .right:
+                guard !row.isActive else { return nil }
+                let remove = SwipeAction(style: .destructive, title: nil) { [weak self] _, _ in
+                    guard let self, let session = SessionStore.shared.session(uuid: row.sessionUuid) else { return }
+                    self.removeSessionFromList(session)
+                    self.refreshSessionState()
+                    self.reloadTable()
+                }
+                remove.image = UIImage(systemName: "trash")
+                remove.backgroundColor = ThemeColor.support05(for: themeOverride)
+                remove.accessibilityLabel = L10n.remove
+                return [remove]
+            case .left:
+                // Move to Top / Move to Bottom within the POOL — Up Next and the current session are
+                // pinned above it, so only pool sessions reorder.
+                guard sessionPlacement(at: listIndex) == .pool else { return nil }
+                let poolTop = 1 + (sessionListHasCurrent ? 1 : 0)
+                let poolBottom = max(sessionListRows.count - 1, poolTop)
+                let moveToTop = SwipeAction(style: .default, title: nil) { [weak self] _, _ in
+                    self?.reorderSessionList(from: listIndex, to: poolTop)
+                    self?.reloadTable()
+                }
+                moveToTop.image = UIImage(named: "upnext-movetotop")
+                moveToTop.backgroundColor = ThemeColor.support04()
+                moveToTop.accessibilityLabel = L10n.moveToTop
+                moveToTop.hidesWhenSelected = true
+                let moveToBottom = SwipeAction(style: .default, title: nil) { [weak self] _, _ in
+                    self?.reorderSessionList(from: listIndex, to: poolBottom)
+                    self?.reloadTable()
+                }
+                moveToBottom.image = UIImage(named: "upnext-movetobottom")
+                moveToBottom.backgroundColor = ThemeColor.support03()
+                moveToBottom.accessibilityLabel = L10n.moveToBottom
+                moveToBottom.hidesWhenSelected = true
+                return [moveToTop, moveToBottom]
             }
-            remove.image = UIImage(systemName: "trash")
-            remove.backgroundColor = ThemeColor.support05(for: themeOverride)
-            remove.accessibilityLabel = L10n.remove
-            return [remove]
         }
         // The Now Playing card carries the same actions as its world's rows — acting
         // on the playing episode hands playback to whatever comes next.

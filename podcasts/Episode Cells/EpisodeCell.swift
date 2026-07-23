@@ -138,8 +138,14 @@ class EpisodeCell: ThemeableSwipeCell, MainEpisodeActionViewDelegate {
         }
         // Green when the episode plays as part of a session, blue when it plays from Up Next.
         nowPlayingIndicator.color = PlaybackManager.shared.currentEpisodeIsSessionSourced ? ThemeColor.support02() : ThemeColor.support01()
-        nowPlayingIndicator.isHidden = !nowPlaying
+        isNowPlayingRow = nowPlaying
+        // Hidden in multi-select: the select circle on the left shifts the row and the (hidden) action
+        // button collapses, which otherwise flings the equalizer to the far-right edge.
+        nowPlayingIndicator.isHidden = !nowPlaying || shouldShowSelect
     }
+
+    /// Fork: whether this row is the currently-playing one (drives the equalizer, hidden in select).
+    private var isNowPlayingRow = false
 
     /// Fork: the gap between the now-playing equalizer and the trailing play/pause button.
     private static let equalizerToButtonGap: CGFloat = 10
@@ -353,6 +359,11 @@ class EpisodeCell: ThemeableSwipeCell, MainEpisodeActionViewDelegate {
         if actionButton.isHidden != shouldHide {
             actionButton.isHidden = shouldHide
             setNeedsLayout()
+        }
+        // Keep the now-playing equalizer hidden while the select control is shown (see setNowPlaying).
+        let equalizerHidden = !isNowPlayingRow || selectVisible
+        if nowPlayingIndicator.isHidden != equalizerHidden {
+            nowPlayingIndicator.isHidden = equalizerHidden
         }
     }
 
