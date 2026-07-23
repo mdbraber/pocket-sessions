@@ -129,6 +129,9 @@ extension PlaylistsViewController: UITableViewDelegate, UITableViewDataSource {
         listPlaylistItems.remove(at: sourceIndexPath.row)
         listPlaylistItems.insert(movedObject, at: destinationIndexPath.row)
 
+        // Fork: dragging defines a manual order — leave name-sort on and the next reload re-sorts
+        // alphabetically, springing the row back. Switch to Custom first so the new order sticks.
+        switchToCustomOrderForDrag()
         // ok, we've now sorted the list that needed sorting, update the sort positions in the DB and mark that list as not synced
         persistListOrder()
 

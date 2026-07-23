@@ -73,6 +73,16 @@ class PlaylistsViewController: PCViewController, FilterCreatedDelegate {
         }
     }
 
+    var isNameSorted: Bool { playlistsSortOrder == .titleAtoZ }
+
+    /// Fork: a drag defines a manual order, so switching off name-sort is required or the very next
+    /// reload re-sorts alphabetically and the dragged row springs back. Sets the sort WITHOUT a reload
+    /// (the caller's own persist + reload applies the new order).
+    func switchToCustomOrderForDrag() {
+        guard playlistsSortOrder != .custom else { return }
+        UserDefaults.standard.set(Int(LibrarySort.custom.rawValue), forKey: Self.sortOrderKey)
+    }
+
     private var playlistsLayout: LibraryType {
         get {
             guard UserDefaults.standard.object(forKey: Self.layoutKey) != nil else { return .list }

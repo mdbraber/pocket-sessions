@@ -96,7 +96,7 @@ enum SessionListSort: Int, CaseIterable {
 
     /// Fork: the options the session list's ⋯ Sort menu offers, in order — Manual (the drag order)
     /// plus the episode-style sorts (Serial deliberately excluded), Progress, and Type.
-    static let sessionMenuOrder: [SessionListSort] = [.manual, .type, .newestToOldest, .oldestToNewest, .shortestToLongest, .longestToShortest, .progress]
+    static let sessionMenuOrder: [SessionListSort] = [.manual, .newestToOldest, .oldestToNewest, .shortestToLongest, .longestToShortest, .progress, .type]
 }
 
 /// Fork: which sessions the chooser shows. Every `SessionFeeder` case maps to exactly one
