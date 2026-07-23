@@ -67,7 +67,12 @@ class SessionListCell: ThemeableSwipeCell {
     }()
 
     private lazy var nameRow: UIStackView = {
-        let stack = UIStackView(arrangedSubviews: [nameLabel, smartIcon])
+        // A trailing flexible spacer keeps the name + sparkle hugging the LEADING edge (the sparkle
+        // sits right after the title), instead of the sparkle being flung to the trailing edge.
+        let spacer = UIView()
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        spacer.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        let stack = UIStackView(arrangedSubviews: [nameLabel, smartIcon, spacer])
         stack.translatesAutoresizingMaskIntoConstraints = false
         stack.axis = .horizontal
         stack.alignment = .center
@@ -429,7 +434,7 @@ class SessionListCell: ThemeableSwipeCell {
         // Line 2 and line 3 are dimmed.
         nextLabel.textColor = AppTheme.colorForStyle(.primaryText02, themeOverride: themeOverride)
         infoLabel.textColor = AppTheme.colorForStyle(.primaryText02, themeOverride: themeOverride)
-        smartIcon.tintColor = ThemeColor.support02(for: themeOverride) // green sparkle
+        smartIcon.tintColor = AppTheme.colorForStyle(.primaryText01, themeOverride: themeOverride) // white sparkle
         divider.backgroundColor = AppTheme.colorForStyle(.primaryUi05, themeOverride: themeOverride)
 
         // Fork: uniform list — only the ACTIVE (playing) row is styled. Its accent is blue when it's

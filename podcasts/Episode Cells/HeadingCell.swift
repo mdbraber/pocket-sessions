@@ -54,7 +54,7 @@ class HeadingCell: ThemeableCell {
         attachment.image = symbol
         attachment.bounds = CGRect(x: 0, y: (heading.font.capHeight - symbol.size.height) / 2,
                                    width: symbol.size.width, height: symbol.size.height)
-        let result = NSMutableAttributedString(string: title + "  ")
+        let result = NSMutableAttributedString(string: title + " ")
         result.append(NSAttributedString(attachment: attachment))
         heading.attributedText = result
     }

@@ -82,11 +82,11 @@ struct NewPlaylistCellView: View {
                         .font(size: 15.0, style: .subheadline, weight: .medium)
                         .lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true)
-                    // Fork: smart playlists get a green sparkle after the TITLE.
+                    // Fork: smart playlists get a white sparkle after the TITLE.
                     if viewModel.isSmartPlaylist {
                         Image(systemName: "sparkles")
                             .font(.system(size: 12.0, weight: .semibold))
-                            .foregroundStyle(Color(ThemeColor.support02()))
+                            .foregroundStyle(theme.primaryText01)
                     }
                 }
                 if let subtitle {

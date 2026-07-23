@@ -1445,10 +1445,25 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     /// opens the session's source (its playlist / podcast / folder), via `openSessionSource`.
     private func makeTappableSessionTitleView(_ text: String?) -> UIView {
         let button = UIButton(type: .system)
-        button.setTitle(text, for: .normal)
-        button.titleLabel?.font = .systemFont(ofSize: 17, weight: .semibold)
+        let font = UIFont.systemFont(ofSize: 17, weight: .semibold)
+        let color = AppTheme.colorForStyle(.primaryText01, themeOverride: themeOverride)
+        let isSmart: Bool = { if case .smartPlaylist = browsedSession?.feeder { return true } else { return false } }()
+        // Fork: a smart-playlist session's nav title carries a white sparkle right after it (single space).
+        if isSmart, let text,
+           let symbol = UIImage(systemName: "sparkles", withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold))?
+               .withTintColor(AppTheme.colorForStyle(.primaryText01, themeOverride: themeOverride), renderingMode: .alwaysOriginal) {
+            let result = NSMutableAttributedString(string: text + " ", attributes: [.font: font, .foregroundColor: color])
+            let attachment = NSTextAttachment()
+            attachment.image = symbol
+            attachment.bounds = CGRect(x: 0, y: (font.capHeight - symbol.size.height) / 2, width: symbol.size.width, height: symbol.size.height)
+            result.append(NSAttributedString(attachment: attachment))
+            button.setAttributedTitle(result, for: .normal)
+        } else {
+            button.setTitle(text, for: .normal)
+            button.titleLabel?.font = font
+            button.setTitleColor(color, for: .normal)
+        }
         button.titleLabel?.adjustsFontForContentSizeCategory = true
-        button.setTitleColor(AppTheme.colorForStyle(.primaryText01, themeOverride: themeOverride), for: .normal)
         button.addTarget(self, action: #selector(openSessionSource), for: .touchUpInside)
         button.accessibilityTraits = [.button, .header]
         button.sizeToFit()

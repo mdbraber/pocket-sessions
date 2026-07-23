@@ -836,9 +836,10 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
                 // (see the controls' bottom constraint) before the first episode row.
                 return metrics.scaledValue(for: 34 + 14)
             }
-            // Fork: no big card anymore — the now-playing row is a self-sizing EpisodeCell in BOTH
-            // worlds now, so it uses automatic height like the rest of the list.
-            return UITableView.automaticDimension
+            // Fork: the pinned top card is a FIXED height matching the Queue screen's session cards
+            // (SessionListCell boxed row: 56 artwork + 12 top/bottom inset + 2/8 surface margins ≈ 90),
+            // so the card reads the same size across the Queue screen and the details screens.
+            return 90
         }
         if section == .sessionSection {
             if showingSessionList {
