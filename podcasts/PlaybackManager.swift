@@ -201,19 +201,10 @@ class PlaybackManager: ServerPlaybackDelegate {
         // collapsed in Up Next, and playing one of its episodes resumes it
         if episodeIsChanging, !isLoadingSessionEpisode,
            !jumpingWithinSession,
-           let pausingSession = Settings.playbackSession(), !Settings.playbackSessionPaused() {
+           Settings.playbackSession() != nil, !Settings.playbackSessionPaused() {
             FileLog.shared.addMessage("Playback session paused: a different episode was played explicitly")
             Settings.setPlaybackSessionPaused(true)
-            #if !APPCLIP && !os(watchOS)
-            let title = pausingSession.title ?? L10n.playbackSessionTabSession
-            if suppressSessionSwitchToastOnce {
-                suppressSessionSwitchToastOnce = false
-            } else {
-                DispatchQueue.main.async {
-                    Toast.show(L10n.sessionPausedToast(title))
-                }
-            }
-            #endif
+            // Fork: no "Session paused" toast — session/Up Next play/pause/switch toasts are disabled.
         }
 
         // if the user has built an Up Next list, preserve that but make this the currently playing episode
@@ -801,11 +792,6 @@ class PlaybackManager: ServerPlaybackDelegate {
     /// steering-away check in `load` doesn't end the session it belongs to.
     private var isLoadingSessionEpisode = false
 
-    /// Fork: suppresses the "Session paused / ended" toast for ONE session switch — set by callers
-    /// like a tap on the Up Next / Session details top card, where the toast is just noise. Consumed
-    /// (reset) the moment a session-switch toast would have shown.
-    var suppressSessionSwitchToastOnce = false
-
     /// True while the now-playing episode came from the playback session rather than the
     /// queue. Session episodes never move into Up Next when interrupted — they stay in the
     /// (paused) session's own list instead. Seeded for app relaunch mid-session.
@@ -917,19 +903,11 @@ class PlaybackManager: ServerPlaybackDelegate {
     /// belongs to the session it stops where it is, and playback hands over to the queue:
     /// Now Playing becomes the first (filter-matching) queued episode, playing if the
     /// session was. A paused session just clears — the queue is already playing.
-    func endPlaybackSession(showToast: Bool = true) {
+    func endPlaybackSession() {
         guard Settings.playbackSession() != nil else { return }
         let handOverToQueue = currentEpisodeIsFromSession && !Settings.playbackSessionPaused()
         Settings.setPlaybackSession(nil)
-        #if !APPCLIP && !os(watchOS)
-        if suppressSessionSwitchToastOnce {
-            suppressSessionSwitchToastOnce = false
-        } else if showToast {
-            DispatchQueue.main.async {
-                Toast.show(L10n.sessionEndedToast)
-            }
-        }
-        #endif
+        // Fork: no "Session ended" toast — session/Up Next play/pause/switch toasts are disabled.
         guard handOverToQueue else { return }
 
         let wasPlaying = playing()
@@ -1013,12 +991,7 @@ class PlaybackManager: ServerPlaybackDelegate {
         guard let next = session.nextEpisode(after: currentEpisode()?.uuid) else {
             FileLog.shared.addMessage("Playback session finished — returning to the Up Next queue")
             Settings.setPlaybackSession(nil)
-            #if !APPCLIP && !os(watchOS)
-            let title = session.title ?? L10n.playbackSessionTabSession
-            DispatchQueue.main.async {
-                Toast.show(L10n.sessionFinishedToast(title))
-            }
-            #endif
+            // Fork: no "Session finished" toast — session/Up Next play/pause/switch toasts are disabled.
             return false
         }
 

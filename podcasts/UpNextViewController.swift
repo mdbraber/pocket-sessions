@@ -746,7 +746,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
             } else {
                 // A session owns the card — hand playback back to the queue's OWN next episode. This is a
                 // SWITCH, not a deliberate end, so it doesn't toast "Session ended" (the session stays).
-                PlaybackManager.shared.endPlaybackSession(showToast: false)
+                PlaybackManager.shared.endPlaybackSession()
                 if !PlaybackManager.shared.playing() { PlaybackManager.shared.play() }
             }
             return
