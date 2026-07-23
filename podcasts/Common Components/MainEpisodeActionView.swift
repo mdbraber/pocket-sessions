@@ -210,23 +210,14 @@ extension MainEpisodeActionView {
 
         switch state {
         case .pause:
-            context.setLineWidth(1)
-
-            let width = 3 * enlargementScale
-            let height = 10 * enlargementScale
-            let gap = width
-
-            let startAt = circleCenter.x - width - (gap / 2.0)
-            let nextAt = startAt + width + gap
-            let y = circleCenter.y - (height / 2.0)
-            drawPauseButton(context: context, startingX: startAt, startingY: y, width: width, height: height)
-            drawPauseButton(context: context, startingX: nextAt, startingY: y, width: width, height: height)
-
+            // Shared glyph (also used by the session list), so the two match exactly.
+            PlaybackProgressRing.drawPauseBars(in: context, center: circleCenter, tint: tintColor, scale: enlargementScale)
             drawDownloadPlayingProgress(context: context)
 
             accessibilityLabel = L10n.podcastPausePlayback
         case .play:
-            drawPlayTriangle(context: context, color: tintColor)
+            // Shared glyph (also used by the session list), so the two match exactly.
+            PlaybackProgressRing.drawPlayTriangle(in: context, center: circleCenter, tint: tintColor, scale: enlargementScale)
             drawDownloadPlayingProgress(context: context)
 
             accessibilityLabel = L10n.play
@@ -367,24 +358,6 @@ extension MainEpisodeActionView {
                                   playedAngle: playedAngle, tint: tintColor)
     }
 
-    private func drawPlayTriangle(context: CGContext, color: UIColor) {
-        let path = CGMutablePath()
-
-        let playTriangleHeight = 10 * enlargementScale
-        let playTriangleWidth = 9 * enlargementScale
-        let startingY = circleCenter.y - (playTriangleHeight / 2.0)
-        // triangles are not weighted to be visually centered, so we need to adjust the starting point to compensate for that
-        let startingX = circleCenter.x - (playTriangleWidth / 2.0) + (playTriangleWidth / 6.0)
-        path.move(to: CGPoint(x: startingX, y: startingY))
-        path.addLine(to: CGPoint(x: startingX + playTriangleWidth, y: startingY + (playTriangleHeight / 2.0)))
-        path.addLine(to: CGPoint(x: startingX, y: startingY + playTriangleHeight))
-        path.addLine(to: CGPoint(x: startingX, y: startingY))
-        path.closeSubpath()
-        context.addPath(path)
-        context.setFillColor(color.cgColor)
-        context.fillPath()
-    }
-
     private func drawDownloadArrow(context: CGContext, color: UIColor) {
         context.setLineWidth(2)
         context.setStrokeColor(color.cgColor)
@@ -414,20 +387,6 @@ extension MainEpisodeActionView {
         bezier2Path.usesEvenOddFillRule = true
         color.setFill()
         bezier2Path.fill()
-    }
-
-    private func drawPauseButton(context: CGContext, startingX: CGFloat, startingY: CGFloat, width: CGFloat, height: CGFloat) {
-        let path = CGMutablePath()
-
-        path.move(to: CGPoint(x: startingX, y: startingY))
-        path.addLine(to: CGPoint(x: startingX + width, y: startingY))
-        path.addLine(to: CGPoint(x: startingX + width, y: startingY + height))
-        path.addLine(to: CGPoint(x: startingX, y: startingY + height))
-        path.addLine(to: CGPoint(x: startingX, y: startingY))
-        path.closeSubpath()
-        context.addPath(path)
-        context.setFillColor(tintColor.cgColor)
-        context.fillPath()
     }
 
     private func circleProgressColor() -> UIColor {

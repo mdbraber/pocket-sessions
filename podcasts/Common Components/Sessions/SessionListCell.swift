@@ -302,11 +302,11 @@ class SessionListCell: ThemeableSwipeCell {
         nowPlayingIndicator.isHidden = !row.ownsCard
         nowPlayingIndicator.color = laneAccent(isUpNext: row.isUpNext)
 
-        // Just the play/pause GLYPH (no circle) — the progress ring supplies the circle, so this
-        // matches the details rows' triangle-in-a-ring exactly instead of doubling the circle.
-        let symbol = row.isPlaying ? "pause.fill" : "play.fill"
-        let config = UIImage.SymbolConfiguration(pointSize: 13, weight: .medium)
-        playButton.setImage(UIImage(systemName: symbol, withConfiguration: config), for: .normal)
+        // The play/pause glyph AND the ring are both drawn by PlaybackProgressRingView from the exact
+        // same code MainEpisodeActionView uses on the details card — no SF Symbol, so they're identical.
+        playButton.setImage(nil, for: .normal)
+        playProgressRing.drawsGlyph = true
+        playProgressRing.isPlaying = row.isPlaying
         playButton.accessibilityLabel = row.isPlaying ? L10n.pause : L10n.play
         // Normally every row shows its play button; in Reorder Items mode the pool rows show the
         // table's trailing drag handle instead, so hide the button and clear space for the handle.

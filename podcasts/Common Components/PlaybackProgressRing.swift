@@ -30,6 +30,47 @@ enum PlaybackProgressRing {
             context.drawPath(using: .stroke)
         }
     }
+
+    /// The play triangle — the EXACT path MainEpisodeActionView draws (9×10 at scale 1), including its
+    /// optical-centering nudge, so the session list's glyph is pixel-identical to the details rows.
+    static func drawPlayTriangle(in context: CGContext, center: CGPoint, tint: UIColor, scale: CGFloat) {
+        let path = CGMutablePath()
+        let height = 10 * scale
+        let width = 9 * scale
+        let startingY = center.y - (height / 2.0)
+        // Triangles aren't weighted to be visually centered, so nudge right to compensate.
+        let startingX = center.x - (width / 2.0) + (width / 6.0)
+        path.move(to: CGPoint(x: startingX, y: startingY))
+        path.addLine(to: CGPoint(x: startingX + width, y: startingY + (height / 2.0)))
+        path.addLine(to: CGPoint(x: startingX, y: startingY + height))
+        path.addLine(to: CGPoint(x: startingX, y: startingY))
+        path.closeSubpath()
+        context.addPath(path)
+        context.setFillColor(tint.cgColor)
+        context.fillPath()
+    }
+
+    /// The two pause bars — the EXACT geometry MainEpisodeActionView draws (3×10 bars, one bar-width gap).
+    static func drawPauseBars(in context: CGContext, center: CGPoint, tint: UIColor, scale: CGFloat) {
+        let width = 3 * scale
+        let height = 10 * scale
+        let gap = width
+        let startAt = center.x - width - (gap / 2.0)
+        let nextAt = startAt + width + gap
+        let y = center.y - (height / 2.0)
+        for barX in [startAt, nextAt] {
+            let path = CGMutablePath()
+            path.move(to: CGPoint(x: barX, y: y))
+            path.addLine(to: CGPoint(x: barX + width, y: y))
+            path.addLine(to: CGPoint(x: barX + width, y: y + height))
+            path.addLine(to: CGPoint(x: barX, y: y + height))
+            path.addLine(to: CGPoint(x: barX, y: y))
+            path.closeSubpath()
+            context.addPath(path)
+            context.setFillColor(tint.cgColor)
+            context.fillPath()
+        }
+    }
 }
 
 /// A standalone view that draws the shared played-progress ring — overlaid on the session list's
@@ -37,6 +78,10 @@ enum PlaybackProgressRing {
 final class PlaybackProgressRingView: UIView {
     var progress: Double = 0 { didSet { if progress != oldValue { setNeedsDisplay() } } }
     var ringTint: UIColor = .white { didSet { if ringTint != oldValue { setNeedsDisplay() } } }
+    /// When true draws the pause bars, otherwise the play triangle — same glyphs as MainEpisodeActionView.
+    var isPlaying: Bool = false { didSet { if isPlaying != oldValue { setNeedsDisplay() } } }
+    /// Draw the play/pause glyph in the centre (the session list opts in; a bare ring stays glyph-less).
+    var drawsGlyph: Bool = false { didSet { setNeedsDisplay() } }
 
     override init(frame: CGRect) { super.init(frame: frame); commonInit() }
     required init?(coder: NSCoder) { super.init(coder: coder); commonInit() }
@@ -53,5 +98,13 @@ final class PlaybackProgressRingView: UIView {
         let radius = min(PlaybackProgressRing.circleRadius, min(bounds.width, bounds.height) / 2 - 1)
         PlaybackProgressRing.draw(in: context, center: center, radius: radius,
                                   playedAngle: PlaybackProgressRing.playedAngle(forProgress: progress), tint: ringTint)
+        guard drawsGlyph else { return }
+        // Scale the glyph off the ring radius so it always matches whatever ring we actually drew.
+        let scale = radius / PlaybackProgressRing.circleRadius
+        if isPlaying {
+            PlaybackProgressRing.drawPauseBars(in: context, center: center, tint: ringTint, scale: scale)
+        } else {
+            PlaybackProgressRing.drawPlayTriangle(in: context, center: center, tint: ringTint, scale: scale)
+        }
     }
 }
