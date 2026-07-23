@@ -13,6 +13,8 @@ class ShortcutManager: CustomObserver {
         let notifications: [NSNotification.Name] = [Constants.Notifications.playbackStarted,
                                                     Constants.Notifications.playbackPaused,
                                                     Constants.Notifications.playbackEnded,
+                                                    // Fork: the playback SOURCE flipping (session ⇄ Up Next) re-orders the shortcuts.
+                                                    Constants.Notifications.playbackTrackChanged,
                                                     Constants.Notifications.playlistChanged,
                                                     Constants.Notifications.podcastAdded,
                                                     Constants.Notifications.episodePlayStatusChanged,
@@ -58,18 +60,17 @@ class ShortcutManager: CustomObserver {
         let upNextEpisode: BaseEpisode? = session == nil
             ? (PlaybackManager.shared.currentEpisode() ?? PlaybackManager.shared.queue.allEpisodes(includeNowPlaying: false).first)
             : PlaybackManager.shared.queue.allEpisodes(includeNowPlaying: false).first
-        if let upNextEpisode {
-            shortcutItems.append(
-                UIMutableApplicationShortcutItem(
-                    type: "au.com.shiftyjelly.podcasts",
-                    localizedTitle: L10n.upNext,
-                    localizedSubtitle: upNextEpisode.displayableTitle(),
-                    icon: UIApplicationShortcutIcon(type: .play),
-                    userInfo: ["url": "pktc://shortcuts/play-upnext" as NSSecureCoding]
-                )
+        let upNextItem: UIMutableApplicationShortcutItem? = upNextEpisode.map { episode in
+            UIMutableApplicationShortcutItem(
+                type: "au.com.shiftyjelly.podcasts",
+                localizedTitle: L10n.upNext,
+                localizedSubtitle: episode.displayableTitle(),
+                icon: UIApplicationShortcutIcon(type: .play),
+                userInfo: ["url": "pktc://shortcuts/play-upnext" as NSSecureCoding]
             )
         }
 
+        var sessionItem: UIMutableApplicationShortcutItem?
         if let session {
             let sessionName: String?
             switch session.type {
@@ -80,16 +81,22 @@ class ShortcutManager: CustomObserver {
             }
             let sessionEpisode = PlaybackManager.shared.currentEpisode() ?? session.nextEpisode(after: nil)
             if let sessionName {
-                shortcutItems.append(
-                    UIMutableApplicationShortcutItem(
-                        type: "au.com.shiftyjelly.podcasts",
-                        localizedTitle: sessionName,
-                        localizedSubtitle: sessionEpisode?.displayableTitle(),
-                        icon: UIApplicationShortcutIcon(type: .play),
-                        userInfo: ["url": "pktc://shortcuts/play-session" as NSSecureCoding]
-                    )
+                sessionItem = UIMutableApplicationShortcutItem(
+                    type: "au.com.shiftyjelly.podcasts",
+                    localizedTitle: sessionName,
+                    localizedSubtitle: sessionEpisode?.displayableTitle(),
+                    icon: UIApplicationShortcutIcon(type: .play),
+                    userInfo: ["url": "pktc://shortcuts/play-session" as NSSecureCoding]
                 )
             }
+        }
+
+        // Lead with whichever world is the current playback SOURCE, so a right-press → first option
+        // resumes what's actually sounding: the session while it's the source, otherwise Up Next.
+        if PlaybackManager.shared.currentEpisodeIsSessionSourced {
+            shortcutItems.append(contentsOf: [sessionItem, upNextItem].compactMap { $0 })
+        } else {
+            shortcutItems.append(contentsOf: [upNextItem, sessionItem].compactMap { $0 })
         }
 
         if shortcutItems.isEmpty {
