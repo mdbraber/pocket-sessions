@@ -281,32 +281,21 @@ class PlaybackManager: ServerPlaybackDelegate {
     func seekToStartingPosition() {
         let startingTime = requiredStartingPosition()
         player?.play { [weak self] in
+            self?.analyticsPlaybackHelper.currentSource = .sync
             self?.seekTo(time: startingTime, startPlaybackAfterSeek: false)
             self?.player?.pause()
         }
     }
 
-    func ensureAudioSessionActivated() {
+    func ensureBackgroundMediaSessionConfiguration() {
         guard let currEpisode = currentEpisode() else { return }
-        activateAudioSession(completion: { activated in
-            if !activated {
-                self.aboutToPlay.value = false
-                return
-            }
-
-            self.startUpdateTimer()
+        refreshNowPlayingInfo(forceFullRebuild: true)
+        activateAudioSession(completion: { _ in
             self.updateCommandCenterSkipTimes(addTarget: false)
             self.updateExtraActions()
-
-            NotificationCenter.postOnMainThread(notification: Constants.Notifications.playbackStarted)
-
             if currEpisode.videoPodcast() {
                 self.setAudioSessionVideoProperties()
             }
-
-            self.updateIdleTimer()
-
-            self.sleepTimerManager.restartSleepTimerIfNeeded()
         })
     }
 
@@ -506,6 +495,13 @@ class PlaybackManager: ServerPlaybackDelegate {
 
     var chaptersAreGenerated: Bool {
         return chapterManager.chaptersOrigin == .generated
+    }
+
+    /// The loaded chapters' origin as its Tracks value (e.g. "generated",
+    /// "native_media"). Exposed for events that are tracked outside
+    /// `trackChapterEvent` but still carry the chapter origin.
+    var chaptersOriginAnalyticsValue: String {
+        chapterManager.chaptersOrigin.analyticsDescription
     }
 
     func index(for chapter: Chapters) -> Int? {
@@ -1319,7 +1315,7 @@ class PlaybackManager: ServerPlaybackDelegate {
         if playbackEffects.playbackSpeed > 4.9 { return }
 
         // HLS streams can't sustain playback above 2x, so don't let the speed be raised past it.
-        if let episode = currentEpisode(), EpisodeManager.willPlayViaHLS(episode), playbackEffects.playbackSpeed >= 2 { return }
+        if let episode = currentEpisode(), EpisodeManager.willPlayViaHLS(episode), playbackEffects.playbackSpeed >= SharedConstants.PlaybackEffects.maximumHlsPlaybackSpeed { return }
 
         playbackEffects.playbackSpeed = playbackEffects.playbackSpeed + 0.1
         changeEffects(playbackEffects)
@@ -2986,24 +2982,28 @@ extension PlaybackManager {
         bookmarkManager.playTone()
     }
 
+    enum BookmarkPlayError: Error {
+        case episodeNotFound
+    }
+
     /// Plays the given bookmark
     /// - if the episode is not currently playing we'll load it and then play at the bookmark time
     /// - if the episode is playing, we trigger a seek to the bookmark time
-    func playBookmark(_ bookmark: Bookmark, source: BookmarkAnalyticsSource, firstTry: Bool = true) {
+    @MainActor
+    func playBookmark(_ bookmark: Bookmark, source: BookmarkAnalyticsSource) async throws {
         guard bookmarksEnabled else { return }
 
         let dataManager = DataManager.sharedManager
 
-        // Get the bookmark's BaseEpisode so we can load it
-        guard let episode = bookmark.episode ?? dataManager.findBaseEpisode(uuid: bookmark.episodeUuid) else {
-            if firstTry, let podcastUuid = bookmark.podcastUuid {
-                ServerPodcastManager.shared.addMissingPodcastAndEpisode(episodeUuid: bookmark.episodeUuid, podcastUuid: podcastUuid) { [weak self] episode in
-                    if episode != nil {
-                        self?.playBookmark(bookmark, source: source, firstTry: false)
-                    }
-                }
-            }
-            return
+        // Get the bookmark's BaseEpisode so we can load it, fetching it from the server if it's missing
+        var foundEpisode = bookmark.episode ?? dataManager.findBaseEpisode(uuid: bookmark.episodeUuid)
+
+        if foundEpisode == nil, let podcastUuid = bookmark.podcastUuid {
+            foundEpisode = try await ServerPodcastManager.shared.addMissingPodcastAndEpisode(episodeUuid: bookmark.episodeUuid, podcastUuid: podcastUuid)
+        }
+
+        guard let episode = foundEpisode else {
+            throw BookmarkPlayError.episodeNotFound
         }
 
         Analytics.track(.bookmarkPlayTapped, source: source)
@@ -3029,18 +3029,21 @@ extension PlaybackManager {
 // MARK: - SearchResults
 extension PlaybackManager {
 
-    func playEpisodeSearchResult(_ searchEpisode: EpisodeSearchResult, firstTry: Bool = true) {
-        let dataManager = DataManager.sharedManager
+    enum SearchResultPlayError: Error {
+        case episodeNotFound
+    }
 
-        // Get the bookmark's BaseEpisode so we can load it
-        guard let episode = dataManager.findBaseEpisode(uuid: searchEpisode.uuid) else {
-            guard firstTry else { return }
-            ServerPodcastManager.shared.addMissingPodcastAndEpisode(episodeUuid: searchEpisode.uuid, podcastUuid: searchEpisode.podcastUuid) { [weak self] episode in
-                if episode != nil {
-                    self?.playEpisodeSearchResult(searchEpisode, firstTry: false)
-                }
-            }
-            return
+    @MainActor
+    func playEpisodeSearchResult(_ searchEpisode: EpisodeSearchResult) async throws {
+        // Get the search result's BaseEpisode so we can load it, fetching it from the server if it's missing
+        var foundEpisode = DataManager.sharedManager.findBaseEpisode(uuid: searchEpisode.uuid)
+
+        if foundEpisode == nil {
+            foundEpisode = try await ServerPodcastManager.shared.addMissingPodcastAndEpisode(episodeUuid: searchEpisode.uuid, podcastUuid: searchEpisode.podcastUuid)
+        }
+
+        guard let episode = foundEpisode else {
+            throw SearchResultPlayError.episodeNotFound
         }
 
         #if !os(watchOS)

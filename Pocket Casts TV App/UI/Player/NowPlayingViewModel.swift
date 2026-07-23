@@ -27,7 +27,7 @@ class NowPlayingViewModel: Identifiable {
     /// `MediaOverlayView` and lets `NowPlayingView` suppress AVKit's system
     /// spinner by toggling `showsPlaybackControls`.
     var isLoading: Bool = true
-
+    var isFirstLoad: Bool = false
     var isFailed: Bool = false
 
     @ObservationIgnored private var timeControlStatusObservation: NSKeyValueObservation?
@@ -57,6 +57,7 @@ class NowPlayingViewModel: Identifiable {
             return
         }
         episode = newEpisode
+        isFirstLoad = true
         podcast = playbackManager.currentPodcast
         player = playbackManager.avPlayer
         if !playbackManager.playing(), !playbackManager.isReadyToPlay {
@@ -114,12 +115,17 @@ class NowPlayingViewModel: Identifiable {
         let itemNotReady = status == .unknown
         isLoading = waiting || itemNotReady
         isFailed = status == .failed
+        if !isLoading {
+            isFirstLoad = false
+        }
         if !isLoading, seekAfterLoad {
             seekAfterLoad = false
             // The delay is needed only for videos episodes.
             // For some reason the AVPlayerViewController does not accept seeks immediately after loading, and resets the position to zero
             DispatchQueue.main.asyncAfter(deadline: DispatchTime.now().advanced(by: .seconds(1))) { [weak self] in
-                self?.playbackManager.seekToStartingPosition()
+                guard let self else { return }
+                PlayerStatusObserver.shared.skipNextEvents(2)
+                playbackManager.seekToStartingPosition()
             }
         }
     }
@@ -137,7 +143,10 @@ class NowPlayingViewModel: Identifiable {
     }
 
     var isVideo: Bool {
-        return episode?.videoPodcast() ?? false
+        guard let episode else {
+            return false
+        }
+        return EpisodeManager.isVideo(episode)
     }
 
     var displayTitle: String {
@@ -244,6 +253,21 @@ class NowPlayingViewModel: Identifiable {
 
     var isTrimSilenceAvailable: Bool {
         return playbackManager.silenceRemovalAvailable()
+    }
+
+    var isVolumeBoostAvailable: Bool {
+        return playbackManager.volumeBoostAvailable()
+    }
+
+    var maxPlaybackSpeed: Double {
+        var maxSpeed = SharedConstants.PlaybackEffects.maximumPlaybackSpeed
+        guard let episode else {
+            return maxSpeed
+        }
+        if EpisodeManager.hasHLSStream(episode) {
+            maxSpeed = SharedConstants.PlaybackEffects.maximumHlsPlaybackSpeed
+        }
+        return maxSpeed
     }
 
     fileprivate func observeUpNextChanges() {

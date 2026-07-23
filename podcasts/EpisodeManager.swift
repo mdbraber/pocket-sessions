@@ -402,7 +402,6 @@ class EpisodeManager: NSObject {
             let fileSize = attributes[.size] as? UInt64 ?? 0
             let fullFilePath = (folderPath as NSString).appendingPathComponent(tmpFile)
             FileLog.shared.addMessage("Episode Manager: Removing the following orphan file \(tmpFile)")
-            StorageManager.removeItem(at: URL(fileURLWithPath: fullFilePath))
             if StorageManager.removeItem(at: URL(fileURLWithPath: fullFilePath)) {
                 totalFilesSize += fileSize
             } else {
@@ -432,6 +431,12 @@ class EpisodeManager: NSObject {
             return false
         }
         return URL(string: hlsUrl) != nil
+    }
+
+    /// Whether the episode should be presented as video in the UI: either a native video podcast or an
+    /// episode that advertises an HLS stream (which may carry video).
+    class func isVideo(_ episode: BaseEpisode) -> Bool {
+        episode.videoPodcast() || hasHLSStream(episode)
     }
 
     /// Whether the episode will actually play via HLS right now. Downloaded copies take precedence over
