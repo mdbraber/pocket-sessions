@@ -2,7 +2,7 @@ import PocketCastsUtils
 import UIKit
 
 /// Fork: Settings → Synchronization — how Sessions data syncs. Three modes: the user's own
-/// Pocket Sessions server, iCloud, or this device only. Deliberately separate from (and
+/// Pocket Casts Sessions (PCS) server, iCloud, or this device only. Deliberately separate from (and
 /// explained against) the Pocket Casts account, which always keeps syncing podcasts,
 /// progress, playlists and Up Next regardless of what's chosen here.
 class SyncSettingsViewController: PCViewController, UITableViewDataSource, UITableViewDelegate {

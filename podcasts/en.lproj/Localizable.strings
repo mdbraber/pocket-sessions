@@ -7134,8 +7134,8 @@
 /* Fork: Synchronization screen — header over the three sync-mode choices. */
 "session_sync_mode_header" = "Sessions Data";
 
-/* Fork: sync mode — the user's own Pocket Sessions server. */
-"session_sync_mode_server" = "Pocket Sessions Server";
+/* Fork: sync mode — the user's own Pocket Casts Sessions (PCS) server. */
+"session_sync_mode_server" = "PCS Server";
 
 /* Fork: sync mode — Apple iCloud. */
 "session_sync_mode_icloud" = "iCloud";
@@ -7144,19 +7144,19 @@
 "session_sync_mode_local" = "This Device Only";
 
 /* Fork: Synchronization screen footer explaining how this differs from the Pocket Casts account. */
-"session_sync_footer" = "Your Pocket Casts account keeps syncing podcasts, playback progress, playlists and Up Next as always. Sessions data — your sessions, seen episodes and filter presets — is this app's own, and syncs separately: through your own Pocket Sessions server, through iCloud, or not at all. Changing the sync mode takes effect the next time the app launches.";
+"session_sync_footer" = "Your Pocket Casts account keeps syncing podcasts, playback progress, playlists and Up Next as always. Sessions data — your sessions, seen episodes and filter presets — is this app's own, and syncs separately: through your own Pocket Casts Sessions (PCS) server, through iCloud, or not at all. Changing the sync mode takes effect the next time the app launches.";
 
 /* Fork: Synchronization screen — the server's base URL row. */
 "session_sync_server_url" = "Server URL";
 
 /* Fork: prompt text when entering the server URL. */
-"session_sync_server_url_message" = "The base URL of your Pocket Sessions server, including http(s):// — for example https://sessions.example.com, or http://localhost:8080 for local testing.";
+"session_sync_server_url_message" = "The base URL of your PCS server, including http(s):// — for example https://sessions.example.com, or http://localhost:8080 for local testing.";
 
 /* Fork: Synchronization screen — the server's access token row. */
 "session_sync_server_token" = "Access Token";
 
 /* Fork: prompt text when entering the server access token. */
-"session_sync_server_token_message" = "The bearer token your server expects (PCC_AUTH_TOKEN). Leave empty if your server runs in open mode.";
+"session_sync_server_token_message" = "The bearer token your server expects (PCS_AUTH_TOKEN). Leave empty if your server runs in open mode.";
 
 /* Fork: Synchronization screen — footer under the server section. */
 "session_sync_server_footer" = "The server can run anywhere the phone can reach — a Mac on your network for testing, or your own VPS. Changes take effect the next time the app launches.";

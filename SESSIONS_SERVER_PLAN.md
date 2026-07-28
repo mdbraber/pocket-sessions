@@ -1,4 +1,4 @@
-# Pocket Sessions — Server Design & Plan
+# Pocket Casts Sessions (PCS) — Server Design & Plan
 
 Decided 2026-07-28 (supersedes the true-proxy shape discussed the same day).
 **Architecture: side-service + server-side PC mirror + query API, one host.**

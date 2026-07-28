@@ -398,7 +398,7 @@ class Settings: NSObject {
         UserDefaults.standard.set(mode.rawValue, forKey: sessionSyncModeKey)
     }
 
-    /// The Pocket Sessions server base URL. Also settable from the terminal for simulator testing:
+    /// The Pocket Casts Sessions (PCS) server base URL. Also settable from the terminal for simulator testing:
     ///   xcrun simctl spawn booted defaults write com.example.podcasts SJSessionServerURL http://localhost:8080
     private static let sessionServerURLKey = "SJSessionServerURL"
     class func sessionServerURL() -> URL? {

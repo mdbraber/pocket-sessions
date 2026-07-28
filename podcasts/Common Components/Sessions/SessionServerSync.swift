@@ -3,7 +3,7 @@ import PocketCastsServer
 import PocketCastsUtils
 import UIKit
 
-/// Fork: Pocket Sessions server sync — `SessionCloudSync`'s sibling for the self-hosted
+/// Fork: Pocket Casts Sessions (PCS) server sync — `SessionCloudSync`'s sibling for the self-hosted
 /// server (see SESSIONS_SERVER_PLAN.md; server repo: pocket-sessions-server). Same store
 /// seams: local mutations arrive through the stores' `cloudDiffHandler`s and upload as
 /// JSON records; remote changes fetch by cursor and land through the stores' `applyRemote*`
