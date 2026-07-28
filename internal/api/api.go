@@ -40,6 +40,7 @@ func New(st *store.Store, pusher push.Pusher, logger *slog.Logger) http.Handler 
 	mux.Handle("GET /api/v1/up-next", s.authed(s.handleUpNext))
 	mux.Handle("POST /api/v1/pull", s.authed(s.handlePullMirror))
 	mux.Handle("POST /api/v1/up-next", s.authed(s.handleUpNextChange))
+	mux.Handle("GET /api/v1/history", s.authed(s.handleHistory))
 
 	return s.logged(mux)
 }

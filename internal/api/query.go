@@ -68,5 +68,28 @@ func (s *Server) refreshMirror(ctx context.Context, userID int64) error {
 			return err
 		}
 	}
-	return s.store.SaveMirror(userID, "up_next", upNext)
+	if err := s.store.SaveMirror(userID, "up_next", upNext); err != nil {
+		return err
+	}
+	// History is bigger and changes more slowly; a failure here must not lose the
+	// queue we just stored, so it only warns.
+	if history, hErr := pc.FetchHistory(ctx, link.AccessToken); hErr == nil {
+		if sErr := s.store.SaveMirror(userID, "history", history); sErr != nil {
+			s.logger.Warn("mirror save (history)", "err", sErr)
+		}
+	} else {
+		s.logger.Warn("mirror fetch (history)", "err", hErr)
+	}
+	return nil
+}
+
+func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request, userID int64) {
+	payload, fetchedAt, err := s.store.Mirror(userID, "history")
+	if err != nil {
+		http.Error(w, "no mirrored history yet — POST /api/v1/pull first", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Mirror-Fetched-At", fetchedAt)
+	_, _ = w.Write(payload)
 }
