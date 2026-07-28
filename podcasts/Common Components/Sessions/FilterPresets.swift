@@ -69,22 +69,4 @@ enum FilterPresets {
             columns: columns
         )
     }
-
-    /// Filters an **ordered** uuid list through the scope's active preset, preserving its order.
-    ///
-    /// This is how the Session tab applies a preset: a lineup is a hand-made order, so it can't be
-    /// re-queried — but it can be sieved. Going back through the same SQL keeps one source of truth
-    /// for what a rule *means*, rather than growing a second, in-memory matcher that drifts from it.
-    static func filtering(_ orderedUuids: [String], scope: FilterScope = .session, applyScope: Bool = true) -> [String] {
-        guard !orderedUuids.isEmpty, let predicate = predicate(scope, applyScope: applyScope) else { return orderedUuids }
-
-        let placeholders = orderedUuids.map { _ in "?" }.joined(separator: ",")
-        let matching = Set(
-            DataManager.sharedManager.findEpisodesWhere(
-                customWhere: "uuid IN (\(placeholders)) AND \(predicate.sql)",
-                arguments: orderedUuids + predicate.arguments
-            ).map(\.uuid)
-        )
-        return orderedUuids.filter { matching.contains($0) }
-    }
 }

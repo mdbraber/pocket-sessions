@@ -45,9 +45,10 @@ class PlaylistDetailViewModel: ObservableObject {
     private(set) var triageBrowseCount = 0
     private(set) var triageBrowseDuration: TimeInterval = 0
 
-    /// The scope of the currently-shown tab: the Episodes list and the Session lineup keep
-    /// independent presets, so the control on each edits its own.
-    var filterScope: FilterScope { selectedTriageTab == .lineup ? .session : .episodes }
+    /// The preset scope for this page — always the Episodes scope. The Session lineup is a
+    /// hand-made list that presets never narrow (matching the podcast page's Session tab),
+    /// so the funnel only ever shows on, and edits, the Episodes/Browse views.
+    var filterScope: FilterScope { .episodes }
 
     /// Fork: the active Filter Preset for the current tab.
     var activePreset: FilterPreset { FilterPresets.active(filterScope) }
@@ -112,17 +113,6 @@ class PlaylistDetailViewModel: ObservableObject {
         dataSource
             .filter { $0.model == .episodes }
             .flatMap { $0.elements.compactMap { $0 as? ListEpisode } }
-    }
-
-    /// Fork: applies the active Filter Preset to a hand-ordered list, preserving its order. Used
-    /// on the Session tab, where the lineup cannot be re-queried but can be sieved.
-    private func sieved(_ episodes: [ListEpisode]) -> [ListEpisode] {
-        guard FilterPresets.isNarrowing(.session) else { return episodes }
-        // A podcast session's lineup is single-podcast, so it ignores the preset's podcast/folder
-        // scope — same exemption as the podcast page (see FilterPreset.podcastUuids).
-        let applyScope = !(session?.feeder.isSinglePodcast ?? false)
-        let kept = Set(FilterPresets.filtering(episodes.map(\.episode.uuid), scope: .session, applyScope: applyScope))
-        return episodes.filter { kept.contains($0.episode.uuid) }
     }
 
     /// Fork: the positioned episodes (the "Lineup").
@@ -608,9 +598,9 @@ class PlaylistDetailViewModel: ObservableObject {
             let model: Section
             switch selectedTriageTab {
             case .lineup:
-                // The preset is a LENS over the lineup: it sieves which members show, and never
-                // reorders or rewrites the hand-made order underneath.
-                shown = sieved(lineup)
+                // The lineup is a hand-made list — presets never narrow it (matching the
+                // podcast page's Session tab); they shape the Browse view only.
+                shown = lineup
                 model = .episodes
             case .browse:
                 shown = SessionFeederEngine.domainEpisodes(for: session, preset: activePreset)
@@ -671,7 +661,8 @@ class PlaylistDetailViewModel: ObservableObject {
             let model: Section
             switch selectedTriageTab {
             case .lineup:
-                shown = sieved(lineup)
+                // Same rule as the session-store page: the lineup is never preset-filtered.
+                shown = lineup
                 model = .episodes
             case .browse:
                 shown = browse
@@ -807,7 +798,9 @@ extension PlaylistDetailViewModel {
         }
         self.searchTerm = searchTerm
         let escapedSearch = searchTerm.escapeLike(escapeChar: "\\")
-        let newData = episodesDataManager.playlistEpisodes(for: playlist, limit: 0, search: escapedSearch, preset: FilterPresets.active())
+        // Session store pages: no Episodes-scope preset on the store query (see
+        // PlaylistDetailFetchOperation — same cross-scope reasoning).
+        let newData = episodesDataManager.playlistEpisodes(for: playlist, limit: 0, search: escapedSearch, preset: session == nil ? FilterPresets.active() : nil)
         let changeSetTuple = buildChangeSet(source: episodes, newData: newData)
         DispatchQueue.main.async { [weak self] in
             // Avoid animation as long we use the current diffable framework

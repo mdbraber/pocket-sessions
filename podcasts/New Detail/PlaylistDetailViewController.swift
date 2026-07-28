@@ -14,6 +14,9 @@ class PlaylistDetailViewController: PCViewController, UIScrollViewDelegate {
     /// Fork: the counts line inside the section header. Row diffs never rebuild
     /// section headers, so data reloads refresh this label in place.
     weak var triageCountsLabel: UILabel?
+    /// Fork: the preset funnel in the triage-tabs header — kept so a preset switch can repaint
+    /// its label immediately (row diffs never re-query section header views).
+    weak var presetFunnelButton: UIButton?
 
     private(set) var viewModel: PlaylistDetailViewModel!
 
@@ -487,6 +490,21 @@ class PlaylistDetailViewController: PCViewController, UIScrollViewDelegate {
     }
 
     @objc func refreshEpisodesFromNotification(notification: Notification) {
+        reloader.request(.episodes)
+    }
+
+    /// Fork: a preset switch repaints the funnel label and counts line immediately — the
+    /// data reload goes through the coalescing reloader, whose row diff never re-queries
+    /// the section header, so without this the old preset name can stay up ("the preset
+    /// doesn't seem to update").
+    @objc func presetStoreChanged(notification: Notification) {
+        if let button = presetFunnelButton {
+            UIView.performWithoutAnimation {
+                FilterPresetPicker.style(button, scope: viewModel.filterScope)
+                button.layoutIfNeeded()
+            }
+        }
+        refreshTriageCountsLine()
         reloader.request(.episodes)
     }
 

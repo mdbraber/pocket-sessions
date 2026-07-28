@@ -39,9 +39,9 @@ extension PlaylistDetailViewController {
         // Fork: seen marks and dismissals live in the session store — without this,
         // a mark-as-seen never refreshes the Inbox tab.
         addCustomObserver(SessionStore.changed, selector: #selector(refreshEpisodesFromNotification))
-        // Fork: the active Filter Preset drives both tabs; re-fetch when it changes, and clear the
-        // search term on "Reset all filters".
-        addCustomObserver(FilterPresetStore.changed, selector: #selector(refreshEpisodesFromNotification))
+        // Fork: the active Filter Preset drives both tabs; repaint the funnel label and re-fetch
+        // when it changes, and clear the search term on "Reset all filters".
+        addCustomObserver(FilterPresetStore.changed, selector: #selector(presetStoreChanged))
         addCustomObserver(FilterPresets.resetAll, selector: #selector(filtersWereReset))
         addCustomObserver(UIResponder.keyboardWillShowNotification, selector: #selector(keyboardWillShow(_:)))
         addCustomObserver(UIResponder.keyboardWillHideNotification, selector: #selector(keyboardWillHide(_:)))

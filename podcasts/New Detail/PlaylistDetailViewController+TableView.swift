@@ -620,11 +620,13 @@ private extension PlaylistDetailViewController {
             countsLabel.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -16)
         ]
 
-        // Fork: the Filter Preset control belongs on every episode list — the triage-tab pages
-        // (where it sieves the Session lineup, and narrows Episodes) AND plain manual playlists
-        // (filter-only there, so the hand-drag order is never reordered or grouped).
+        // Fork: the Filter Preset control belongs on every episode list EXCEPT a session
+        // lineup — matching the podcast page's Session tab: the lineup is a hand-made list
+        // presets never narrow, so the funnel hides there and shapes the Episodes/Browse
+        // views only. Plain manual playlists keep it (filter-only, order untouched).
         var funnelButton: UIButton?
-        if viewModel.usesTriageTabs || viewModel.isManualPlaylist {
+        let onLineupTab = viewModel.usesTriageTabs && viewModel.selectedTriageTab == .lineup
+        if !onLineupTab, viewModel.usesTriageTabs || viewModel.isManualPlaylist {
             let funnel = FilterPresetPicker.makeButton(
                 target: self,
                 scope: viewModel.filterScope,
@@ -634,6 +636,7 @@ private extension PlaylistDetailViewController {
                 self?.viewModel.reloadEpisodeList(animated: false)
             }
             funnel.translatesAutoresizingMaskIntoConstraints = false
+            presetFunnelButton = funnel
             container.addSubview(funnel)
             constraints.append(contentsOf: [
                 funnel.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
