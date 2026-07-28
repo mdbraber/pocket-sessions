@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import PocketCastsDataModel
 import PocketCastsUtils
@@ -16,6 +17,35 @@ enum SessionFeeder: Codable, Equatable {
     var isSinglePodcast: Bool {
         if case .podcast = self { return true }
         return false
+    }
+
+    /// Fork: the stable identity of "this session" across devices — nil for manual sessions,
+    /// whose only identity is the store playlist they were created with.
+    var identityKey: String? {
+        switch self {
+        case .podcast(let uuid): return "podcast:\(uuid)"
+        case .folder(let uuid): return "folder:\(uuid)"
+        case .smartPlaylist(let uuid): return "smart:\(uuid)"
+        case .allPodcasts: return "allPodcasts"
+        case .none: return nil
+        }
+    }
+
+    /// Fork: the canonical session uuid for an identity-bearing feeder — a deterministic
+    /// UUIDv5-style hash (SHA-1 over a fixed namespace + the identity key), so every device
+    /// minting "podcast X's session" creates the SAME record and diverged lineages can't
+    /// happen by construction. Manual sessions keep random uuids: two hand-made sessions
+    /// are genuinely two different sessions.
+    var canonicalSessionUuid: String? {
+        guard let identityKey else { return nil }
+        var hasher = Insecure.SHA1()
+        hasher.update(data: Data("pocket-casts-sessions:".utf8))
+        hasher.update(data: Data(identityKey.utf8))
+        var bytes = Array(hasher.finalize().prefix(16))
+        bytes[6] = (bytes[6] & 0x0F) | 0x50 // version 5
+        bytes[8] = (bytes[8] & 0x3F) | 0x80 // RFC 4122 variant
+        let hex = bytes.map { String(format: "%02X", $0) }.joined()
+        return "\(hex.prefix(8))-\(hex.dropFirst(8).prefix(4))-\(hex.dropFirst(12).prefix(4))-\(hex.dropFirst(16).prefix(4))-\(hex.dropFirst(20))"
     }
 }
 

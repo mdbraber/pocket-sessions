@@ -342,6 +342,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         case .icloud: SessionCloudSync.start()
         case .local: break
         }
+        // After the engine hooks the stores, so the re-key's records and tombstones upload.
+        SessionManager.shared.migrateSessionsToCanonicalUuids()
         DispatchQueue.main.async {
             ForkSettingsSync.shared.start()
         }

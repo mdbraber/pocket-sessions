@@ -294,6 +294,11 @@ class SessionManager {
     /// A new session wrapping a fresh manual store. The store is a real synced playlist.
     @discardableResult
     func createSession(name: String, feeder: SessionFeeder, seedEpisodeUuids: [String] = []) -> Session {
+        // Identity-bearing feeders mint one canonical uuid everywhere — if the record
+        // already exists (raced in from another device), adopt it instead of forking.
+        if let canonical = feeder.canonicalSessionUuid, let existing = SessionStore.shared.session(uuid: canonical) {
+            return existing
+        }
         let store = PlaylistManager.createNewPlaylist()
         store.playlistName = name
         store.manual = true
@@ -309,7 +314,10 @@ class SessionManager {
             _ = DataManager.sharedManager.add(episodes: episodes, to: store)
         }
 
-        var session = Session(uuid: UUID().uuidString, storePlaylistUuid: store.uuid, feeder: feeder)
+        // Fork: deterministic uuid for identity-bearing feeders — every device creates the
+        // SAME record for "podcast X's session" (manual sessions stay random; their store
+        // IS their identity).
+        var session = Session(uuid: feeder.canonicalSessionUuid ?? UUID().uuidString, storePlaylistUuid: store.uuid, feeder: feeder)
         // New sessions start from the model default; each session's Position is edited on
         // its own surfaces (the playlist's ⋯ menu, or podcast settings for podcast sessions).
         session.insertMode = PlaylistInsertMode.top.rawValue
@@ -365,20 +373,22 @@ class SessionManager {
     func dedupeSessionsByIdentity() -> Int {
         var groups: [String: [Session]] = [:]
         for session in SessionStore.shared.sessions where session.uuid != SessionStore.globalInboxUuid {
-            let key: String
-            switch session.feeder {
-            case .podcast(let uuid): key = "podcast:\(uuid)"
-            case .folder(let uuid): key = "folder:\(uuid)"
-            case .smartPlaylist(let uuid): key = "smart:\(uuid)"
-            case .allPodcasts: key = "allPodcasts"
-            case .none: key = "store:\(session.storePlaylistUuid ?? session.uuid)"
-            }
+            let key = session.feeder.identityKey ?? "store:\(session.storePlaylistUuid ?? session.uuid)"
             groups[key, default: []].append(session)
         }
 
         var removed = 0
         for group in groups.values where group.count > 1 {
-            let sorted = group.sorted { $0.uuid < $1.uuid }
+            // The canonical (deterministic) uuid wins outright when present; otherwise the
+            // lowest uuid — either rule is computable on every device without coordination.
+            let canonical = group.first?.feeder.canonicalSessionUuid
+            let sorted = group.sorted { a, b in
+                if let canonical {
+                    if a.uuid == canonical { return true }
+                    if b.uuid == canonical { return false }
+                }
+                return a.uuid < b.uuid
+            }
             guard let winner = sorted.first else { continue }
             for loser in sorted.dropFirst() {
                 if let loserStore = store(for: loser) {
@@ -399,6 +409,44 @@ class SessionManager {
             FileLog.shared.addMessage("SessionManager: merged \(removed) duplicate session(s) by identity")
         }
         return removed
+    }
+
+    /// Fork: one-shot re-key of identity-bearing sessions onto their canonical uuids (see
+    /// `SessionFeeder.canonicalSessionUuid`). The store playlist and every setting carry
+    /// over — only the record's uuid changes — and the old record dies through the store's
+    /// plain delete (a tombstone, never touching the playlist). Both devices run this
+    /// independently and mint identical records, so the server converges by construction.
+    /// Versioned so it runs once per install.
+    func migrateSessionsToCanonicalUuids() {
+        let migrationKey = "SJSessionCanonicalUuidMigration"
+        let version = 1
+        guard UserDefaults.standard.integer(forKey: migrationKey) < version else { return }
+        var moved = 0
+        for session in SessionStore.shared.sessions {
+            guard let canonical = session.feeder.canonicalSessionUuid, session.uuid != canonical else { continue }
+            // If the canonical record already exists this one is a plain duplicate —
+            // dedupeSessionsByIdentity owns that case (it also folds the lineup over).
+            guard SessionStore.shared.session(uuid: canonical) == nil else { continue }
+            let rekeyed = Session(
+                uuid: canonical,
+                storePlaylistUuid: session.storePlaylistUuid,
+                feeder: session.feeder,
+                autoAdd: session.autoAdd,
+                autoFill: session.autoFill,
+                insertMode: session.insertMode,
+                lastInsertedUuid: session.lastInsertedUuid,
+                lastUsed: session.lastUsed,
+                pinnedEpisodeUuids: session.pinnedEpisodeUuids,
+                sortIndex: session.sortIndex
+            )
+            SessionStore.shared.upsert(rekeyed)
+            SessionStore.shared.delete(sessionUuid: session.uuid)
+            moved += 1
+        }
+        UserDefaults.standard.set(version, forKey: migrationKey)
+        if moved > 0 {
+            FileLog.shared.addMessage("SessionManager: re-keyed \(moved) session(s) onto canonical uuids")
+        }
     }
 
     /// Converts a lens (pure smart playlist) into a Session: the lens flips into the
