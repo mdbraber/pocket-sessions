@@ -85,6 +85,10 @@ APNs sandbox (per-device `apnsEnv`). Periodic pull remains the fallback.
 
 ## Milestones
 
+**Status 2026-07-28:** M1 done and deployed; M2 stage 1 (PC account link) and
+stage 2 (Up Next mirror + query API) built and verified against a real account
+locally — deploy pending. Next: history/podcast mirrors, then M3 write-through.
+
 - **M1 (= v1)** — Go skeleton, session sync API, device registry, APNs push;
   `SessionServerSync` + nudge hook in the app; CloudKit demoted to fallback.
   Zero protobuf. Ships the simulator fix and cross-device session sync.
