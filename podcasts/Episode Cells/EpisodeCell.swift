@@ -334,6 +334,10 @@ class EpisodeCell: ThemeableSwipeCell, MainEpisodeActionViewDelegate {
         NotificationCenter.default.addObserver(self, selector: #selector(upNextEpisodeChanged(_:)), name: Constants.Notifications.upNextEpisodeAdded, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(upNextEpisodeChanged(_:)), name: Constants.Notifications.upNextEpisodeRemoved, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(upNextQueueChanged), name: Constants.Notifications.upNextQueueChanged, object: nil)
+        // Fork: the now-playing row ticks live with the player's clock — without this its
+        // ring and time-left only advance on the 30-second position save, which left the row
+        // visibly frozen through the end of an episode.
+        NotificationCenter.default.addObserver(self, selector: #selector(playbackProgressTicked), name: Constants.Notifications.playbackProgress, object: nil)
 
         updateSize()
     }
@@ -686,6 +690,19 @@ class EpisodeCell: ThemeableSwipeCell, MainEpisodeActionViewDelegate {
                 self.upNextIndicator.transform = .identity
             })
         }
+    }
+
+    /// Fork: live progress for the one row whose episode is playing — ring + time-left follow
+    /// `PlaybackManager.currentTime()` every tick instead of the 30-second position save.
+    /// Works on a private DB copy of the episode: the data-source's object must keep its stale
+    /// `playedUpTo`, since the table diff relies on it to detect content changes on reload.
+    @objc private func playbackProgressTicked() {
+        guard window != nil, let current = episode,
+              PlaybackManager.shared.isNowPlayingEpisode(episodeUuid: current.uuid),
+              let fresh = reloadEpisode() else { return }
+        fresh.playedUpTo = PlaybackManager.shared.currentTime()
+        episode = fresh
+        populate(progressOnly: true)
     }
 
     @objc private func downloadProgressDidUpdate() {
