@@ -79,8 +79,12 @@ struct PodcastHeaderView: View {
                 .frame(maxHeight: viewModel.isExpanded ? .infinity : 0)
                 .opacity(viewModel.isExpanded ? 1 : 0)
                 .clipped()
-            playAsSessionButton
-            Spacer().frame(height: itemMargin)
+            // Sessions exist only for subscribed podcasts — no Play as Session on a page
+            // that has no session and could not create one.
+            if viewModel.podcast.isSubscribed() || SessionStore.shared.session(forPodcast: viewModel.podcast.uuid) != nil {
+                playAsSessionButton
+                Spacer().frame(height: itemMargin)
+            }
             PodcastDetailsTabView(delegate: viewModel.delegate)
         }
         .padding(.horizontal, 16)

@@ -15,8 +15,10 @@ enum SessionLinking {
         let grouped = Dictionary(grouping: episodes.compactMap { $0 as? Episode }, by: \.podcastUuid)
         for (podcastUuid, podcastEpisodes) in grouped {
             guard Settings.resolvedMirrorUpNextToSession(podcastUuid: podcastUuid),
-                  let podcast = DataManager.sharedManager.findPodcast(uuid: podcastUuid, includeUnsubscribed: true) else { continue }
-            let session = SessionManager.shared.findOrCreateSession(forPodcast: podcast)
+                  let podcast = DataManager.sharedManager.findPodcast(uuid: podcastUuid, includeUnsubscribed: true),
+                  // Unsubscribed podcasts never get a session sprung by the mirror —
+                  // their queue adds stay queue-only (an existing session still receives).
+                  let session = SessionManager.shared.findOrCreateSession(forPodcast: podcast) else { continue }
             let members = Set(SessionFeederEngine.storeMemberUuids(for: session))
             let toAdd = podcastEpisodes.map(\.uuid).filter { !members.contains($0) }
             guard !toAdd.isEmpty else { continue }

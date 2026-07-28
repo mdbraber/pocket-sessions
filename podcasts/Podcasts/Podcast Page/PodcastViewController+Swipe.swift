@@ -17,10 +17,13 @@ extension PodcastViewController: SwipeTableViewCellDelegate, SwipeHandler {
                 let actions = SwipeActionsHelper.createLeftActionsForEpisode(episode, tableView: tableView, indexPath: indexPath, swipeHandler: self)
                 return actions.swipeKitActions()
             }
-            return TriageSwipes.leftActions(for: episode, inLocalSession: cachedSessionMemberUuids.contains(episode.uuid), presenting: self, source: swipeSource, addToSession: { [weak self] in
-                guard let self, let podcast = self.podcast else { return }
+            // Sessions exist only for subscribed podcasts: on an unsubscribed page with no
+            // session, the green verb has nowhere to land — offer only Add to… (Up Next).
+            let canAddToSession = podcast.map { $0.isSubscribed() || SessionStore.shared.session(forPodcast: $0.uuid) != nil } ?? false
+            return TriageSwipes.leftActions(for: episode, inLocalSession: cachedSessionMemberUuids.contains(episode.uuid), canAddToSession: canAddToSession, presenting: self, source: swipeSource, addToSession: { [weak self] in
+                guard let self, let podcast = self.podcast,
+                      let session = SessionManager.shared.findOrCreateSession(forPodcast: podcast) else { return }
 
-                let session = SessionManager.shared.findOrCreateSession(forPodcast: podcast)
                 SessionManager.shared.addToSessions(episodeUuids: [episode.uuid], preferred: session, presenting: self) { [weak self] _ in
                     guard let self, let podcast = self.podcast else { return }
                     self.loadLocalEpisodes(podcast: podcast, animated: true)

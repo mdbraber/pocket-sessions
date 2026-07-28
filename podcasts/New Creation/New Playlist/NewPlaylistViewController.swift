@@ -241,7 +241,7 @@ class NewPlaylistViewController: PCViewController {
             delegate?.filterCreated(newFilter: playlist)
             NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged, object: playlist)
         } else if case let .addEpisode(episode) = creationType {
-            let didAdd = DataManager.sharedManager.add(episodes: [episode], to: playlist)
+            let didAdd = SessionManager.shared.addToManualPlaylist(episodes: [episode], playlist: playlist)
             guard didAdd else {
                 let theme: any ToastTheme = ToastIconTheme(iconName: "option-alert", iconColor: Theme.sharedTheme.primaryIcon01)
                 Toast.show(L10n.playlistManualCreateErrorMessage, theme: theme)
@@ -249,6 +249,9 @@ class NewPlaylistViewController: PCViewController {
             }
 
             Analytics.track(.addToPlaylistsCreateNewPlaylistTapped, properties: ["source": analyticsSource ?? "unknown"])
+
+            // Fork: a just-created playlist is the freshest possible Add to… quick target.
+            Settings.setLastManualPlaylistAddedTo(uuid: playlist.uuid)
 
             NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged, object: playlist)
 
@@ -281,7 +284,7 @@ class NewPlaylistViewController: PCViewController {
                 Toast.show(L10n.playlistManualAddTooManyEpisodesToast(maxPlaylistItems.localized(.decimal)))
                 return
             }
-            let didAdd = DataManager.sharedManager.add(episodes: episodes, to: playlist)
+            let didAdd = SessionManager.shared.addToManualPlaylist(episodes: episodes, playlist: playlist)
             guard didAdd else {
                 let theme: any ToastTheme = ToastIconTheme(iconName: "option-alert", iconColor: Theme.sharedTheme.primaryIcon01)
                 Toast.show(L10n.playlistManualCreateErrorMessage, theme: theme)
@@ -289,6 +292,9 @@ class NewPlaylistViewController: PCViewController {
             }
 
             Analytics.track(.addToPlaylistsCreateNewPlaylistTapped, properties: ["source": analyticsSource ?? "unknown"])
+
+            // Fork: a just-created playlist is the freshest possible Add to… quick target.
+            Settings.setLastManualPlaylistAddedTo(uuid: playlist.uuid)
 
             NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged, object: playlist)
 

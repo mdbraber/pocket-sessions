@@ -235,6 +235,13 @@ extension UpNextViewController: SwipeTableViewCellDelegate, SwipeHandler {
     /// on screen.
     private func addToSessionSwipeAction(for episode: BaseEpisode, inLocalSession: Bool) -> SwipeAction? {
         guard !inLocalSession else { return nil }
+        // Sessions exist only for subscribed podcasts: hide the verb when nothing could
+        // receive the episode — its podcast unsubscribed and no existing session covers it.
+        if let episode = episode as? Episode,
+           DataManager.sharedManager.findPodcast(uuid: episode.podcastUuid) == nil,
+           SessionManager.shared.sessionsCovering(podcastUuid: episode.podcastUuid).isEmpty {
+            return nil
+        }
         let uuid = episode.uuid
         // Only a session you are LOOKING AT is a preferred target. `browsedSession` falls
         // back to the active one, so passing it from the queue world would hand the episode

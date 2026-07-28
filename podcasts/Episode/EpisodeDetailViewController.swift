@@ -30,11 +30,16 @@ class EpisodeDetailViewController: FakeNavViewController, UIDocumentInteractionC
                 NavigationManager.sharedManager.navigateTo(NavigationManager.filterPageKey, data: [NavigationManager.filterUuidKey: row.storeUuid])
             }
         }
-        viewModel.onAddToSession = { [weak self] in
-            // The standard add flow; any "which session?" picker presents over this card
-            // (without dismissing it), and the list refreshes via playlistChanged.
-            guard let self else { return }
-            SessionManager.shared.addToSessions(episodeUuids: [self.episode.uuid], preferred: nil, presenting: self)
+        // Sessions exist only for subscribed podcasts — leave the Add to Session row off
+        // when nothing could receive the episode (podcast unsubscribed, no covering session).
+        if DataManager.sharedManager.findPodcast(uuid: episode.podcastUuid) != nil
+            || !SessionManager.shared.sessionsCovering(podcastUuid: episode.podcastUuid).isEmpty {
+            viewModel.onAddToSession = { [weak self] in
+                // The standard add flow; any "which session?" picker presents over this card
+                // (without dismissing it), and the list refreshes via playlistChanged.
+                guard let self else { return }
+                SessionManager.shared.addToSessions(episodeUuids: [self.episode.uuid], preferred: nil, presenting: self)
+            }
         }
         return viewModel
     }()

@@ -196,7 +196,8 @@ class ManualPlaylistsChooserViewController: PCViewController {
                     return
                 }
                 episodes.forEach { track(episode: $0, added: true, to: playlist) }
-                dataManager.add(episodes: episodes, to: playlist)
+                // Fork: routed so a session store's "Position in Session" governs this door too.
+                SessionManager.shared.addToManualPlaylist(episodes: episodes, playlist: playlist)
                 changedPlaylists.insert(playlist)
             }
             if removed.contains(playlist.uuid), let episode = episodes.first, episodes.count == 1 {
@@ -213,6 +214,12 @@ class ManualPlaylistsChooserViewController: PCViewController {
             // Fork (Sessions): a hand-add into a session's store is an explicit USER add —
             // pin it so the feeder's prune never sweeps it back out.
             SessionManager.shared.pinDirectAdd(episodeUuids: episodes.map(\.uuid), storePlaylistUuid: playlist.uuid)
+        }
+
+        // Fork: remember an unambiguous target so the Add to… swipe can offer a
+        // one-tap repeat add ("Add to <name>").
+        if changedPlaylists.count == 1, let target = changedPlaylists.first {
+            Settings.setLastManualPlaylistAddedTo(uuid: target.uuid)
         }
 
         let showAddedToast = !added.isEmpty && !changedPlaylists.isEmpty

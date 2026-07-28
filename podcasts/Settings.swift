@@ -370,6 +370,16 @@ class Settings: NSObject {
     }
     class func setHideEmptySessions(_ on: Bool) { UserDefaults.standard.set(on, forKey: hideEmptySessionsKey) }
 
+    /// Fork: the most recently used "Add to Playlist" target, surfaced as a one-tap
+    /// "Add to <name>" row in the Add to… swipe picker.
+    private static let lastManualPlaylistAddedToKey = "SJLastManualPlaylistAddedTo"
+    class func lastManualPlaylistAddedTo() -> String? {
+        UserDefaults.standard.string(forKey: lastManualPlaylistAddedToKey)
+    }
+    class func setLastManualPlaylistAddedTo(uuid: String) {
+        UserDefaults.standard.set(uuid, forKey: lastManualPlaylistAddedToKey)
+    }
+
     static let upNextInSessionListKey = "SJUpNextInSessionList"
     /// Fork: where the "Up Next" row sits on the session-list screen. False (default) = pinned at the
     /// top with its own accent box. True = a normal session row in the list (no separate styling).

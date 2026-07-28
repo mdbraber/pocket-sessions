@@ -15,14 +15,16 @@ enum TriageSwipes {
 
     /// Left swipe: Add to Session (green) — only when the episode is NOT in *this page's* session —
     /// then Add to… (the shared destination picker). (Remove from Session is the right
-    /// swipe, shown when it IS.)
+    /// swipe, shown when it IS.) `canAddToSession: false` drops the green verb entirely —
+    /// unsubscribed podcasts never get a session, so pages without one offer only Add to….
     static func leftActions(for episode: BaseEpisode,
                             inLocalSession: Bool,
+                            canAddToSession: Bool = true,
                             presenting: UIViewController,
                             source: String = "swipe",
                             addToSession: @escaping () -> Void) -> [SwipeAction] {
         var leading = [SwipeAction]()
-        if !inLocalSession {
+        if canAddToSession, !inLocalSession {
             let add = SwipeAction(style: .default, title: nil) { _, _ in
                 addToSession()
             }
@@ -90,6 +92,30 @@ enum TriageSwipes {
 
         // User episodes can't live in a manual playlist, so only offer it for podcast episodes.
         if DataManager.sharedManager.findEpisode(uuid: uuid) != nil {
+            // One-tap repeat: the most recently used playlist target, when it still exists
+            // and doesn't already hold the episode. Makes building a playlist episode-by-episode
+            // (e.g. from an unsubscribed podcast's back catalog) a two-tap flow with no navigation.
+            if let lastUuid = Settings.lastManualPlaylistAddedTo(),
+               let last = DataManager.sharedManager.findPlaylist(uuid: lastUuid),
+               last.manual, !last.wasDeleted,
+               !DataManager.sharedManager.manualPlaylistUUIDs(for: uuid).contains(lastUuid) {
+                picker.addAction(action: OptionAction(label: L10n.swipeAddToLastPlaylist(last.playlistName), icon: "plus-circle") {
+                    guard let fresh = DataManager.sharedManager.findEpisode(uuid: uuid) else { return }
+                    let currentCount = DataManager.sharedManager.allPlaylistEpisodeCount(for: last, episodeUuidToAdd: nil, includingArchivedEpisodes: true)
+                    guard currentCount < Constants.Limits.maxFilterItems else {
+                        Toast.show(L10n.playlistManualAddEpisodesAlmostFullToast)
+                        return
+                    }
+                    // Routed so a session store honors its "Position in Session" (and pins,
+                    // unarchives, marks seen — the full explicit-add semantics).
+                    guard SessionManager.shared.addToManualPlaylist(episodes: [fresh], playlist: last) else { return }
+                    last.syncStatus = SyncStatus.notSynced.rawValue
+                    DataManager.sharedManager.save(playlist: last)
+                    NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged, object: last)
+                    Toast.show(L10n.playlistEpisodesAddedToSinglePlaylist(last.playlistName))
+                    Analytics.track(.episodeSwipeActionPerformed, properties: ["action": "add_to_last_playlist", "source": source])
+                })
+            }
             picker.addAction(action: OptionAction(label: L10n.playlistManualEpisodeAddToPlaylist, icon: "plus-circle") {
                 if let onPlaylistChooser {
                     onPlaylistChooser()

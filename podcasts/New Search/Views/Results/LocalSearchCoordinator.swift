@@ -143,7 +143,8 @@ final class LocalSearchCoordinator {
                     return (didAdd: false, episode: nil as Episode?, isFull: false)
                 }
 
-                let didAdd = dataManager.add(episodes: [episode], to: playlist)
+                // Fork: routed so a session store's "Position in Session" governs this door too.
+                let didAdd = SessionManager.shared.addToManualPlaylist(episodes: [episode], playlist: playlist)
                 playlist.syncStatus = SyncStatus.notSynced.rawValue
                 dataManager.save(playlist: playlist)
 

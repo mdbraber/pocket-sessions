@@ -33,13 +33,19 @@ struct PodcastDetailsTabView: View {
         sessionCount > 0 ? "\(L10n.playbackSessionTabSession) · \(sessionCount.localized())" : L10n.playbackSessionTabSession
     }
 
+    /// Sessions exist only for subscribed podcasts — no Session tab on a page that has
+    /// no session and could not create one.
+    @State private var sessionTabAvailable = false
+
     private func refreshSessionCount() {
         guard let podcast = delegate?.displayedPodcast() else {
             sessionCount = 0
+            sessionTabAvailable = false
             return
         }
-        sessionCount = SessionStore.shared.session(forPodcast: podcast.uuid)
-            .map { SessionFeederEngine.storeMemberUuids(for: $0).count } ?? 0
+        let session = SessionStore.shared.session(forPodcast: podcast.uuid)
+        sessionTabAvailable = session != nil || podcast.isSubscribed()
+        sessionCount = session.map { SessionFeederEngine.storeMemberUuids(for: $0).count } ?? 0
     }
 
     private func openSession() {
@@ -95,14 +101,16 @@ struct PodcastDetailsTabView: View {
                         .applyButtonEffect(isPressed: config.isPressed)
                 }
 
-            Text(sessionTabTitle)
-                .buttonize {
-                    openSession()
-                } customize: { config in
-                    config.label
-                        .applyStyle(theme: theme, highlighted: selectedTab == .session)
-                        .applyButtonEffect(isPressed: config.isPressed)
-                }
+            if sessionTabAvailable {
+                Text(sessionTabTitle)
+                    .buttonize {
+                        openSession()
+                    } customize: { config in
+                        config.label
+                            .applyStyle(theme: theme, highlighted: selectedTab == .session)
+                            .applyButtonEffect(isPressed: config.isPressed)
+                    }
+            }
 
             Text(L10n.bookmarks)
                 .buttonize {

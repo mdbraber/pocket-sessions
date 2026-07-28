@@ -442,8 +442,7 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
         let current = SessionStore.shared.session(forPodcast: podcast.uuid).flatMap { PlaylistInsertMode(rawValue: $0.insertMode) } ?? .top
         for mode in PlaylistInsertMode.allCases {
             picker.addAction(action: OptionAction(label: mode.description, icon: nil, selected: current == mode) { [weak self] in
-                guard let self else { return }
-                var session = SessionManager.shared.findOrCreateSession(forPodcast: podcast)
+                guard let self, var session = SessionManager.shared.findOrCreateSession(forPodcast: podcast) else { return }
                 session.insertMode = mode.rawValue
                 SessionStore.shared.upsert(session)
                 settingsTable.reloadData()
@@ -507,7 +506,7 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
         if sender.isOn {
             // Turning it on creates the podcast's session on first use and absorbs
             // the current inbox offers right away.
-            var session = SessionManager.shared.findOrCreateSession(forPodcast: podcast)
+            guard var session = SessionManager.shared.findOrCreateSession(forPodcast: podcast) else { return }
             session.autoAdd = true
             SessionStore.shared.upsert(session)
             DispatchQueue.global(qos: .userInitiated).async {

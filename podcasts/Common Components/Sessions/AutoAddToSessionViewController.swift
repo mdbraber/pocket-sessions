@@ -135,7 +135,7 @@ class AutoAddToSessionViewController: PCViewController, UITableViewDelegate, UIT
 
     private func setAutoAdd(_ autoAdd: Bool, forPodcast podcast: Podcast) {
         if autoAdd {
-            var session = SessionManager.shared.findOrCreateSession(forPodcast: podcast)
+            guard var session = SessionManager.shared.findOrCreateSession(forPodcast: podcast) else { return }
             session.autoAdd = true
             SessionStore.shared.upsert(session)
             DispatchQueue.global(qos: .userInitiated).async {

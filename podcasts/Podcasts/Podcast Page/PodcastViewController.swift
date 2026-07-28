@@ -208,6 +208,15 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
     @IBOutlet var multiSelectFooter: MultiSelectFooterView! {
         didSet {
             multiSelectFooter.delegate = self
+            // Sessions exist only for subscribed podcasts — scrub the session verbs on a
+            // page that has no session and could not create one (Add to Playlist stays the
+            // bulk verb there). Evaluated per open, so subscribing fixes it live.
+            multiSelectFooter.getActionsFunc = { [weak self] in
+                let actions = Settings.multiSelectActions()
+                guard let podcast = self?.podcast,
+                      !podcast.isSubscribed(), SessionStore.shared.session(forPodcast: podcast.uuid) == nil else { return actions }
+                return actions.filter { $0 != .addToSession && $0 != .removeFromSession }
+            }
         }
     }
 
@@ -1278,8 +1287,8 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
     /// Fork: the group joins the podcast's session at the marker and playback starts
     /// at the group's first episode.
     private func playGroupAsSession(_ group: [ListEpisode]) {
-        guard let podcast, let first = group.first?.episode else { return }
-        let session = SessionManager.shared.findOrCreateSession(forPodcast: podcast)
+        guard let podcast, let first = group.first?.episode,
+              let session = SessionManager.shared.findOrCreateSession(forPodcast: podcast) else { return }
         // Explicit USER add — pinned, so the feeder's prune never removes it.
         SessionManager.shared.addToLineup(episodeUuids: group.map { $0.episode.uuid }, session: session, pinning: true)
         SessionManager.shared.play(episode: first, in: session)
@@ -1295,8 +1304,8 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
     /// Fork: the lineup becomes exactly this group. Former members return to triage.
     /// Nothing plays — that's Play as Session's job.
     private func replaceSessionWithGroup(_ group: [ListEpisode]) {
-        guard let podcast, !group.isEmpty else { return }
-        let session = SessionManager.shared.findOrCreateSession(forPodcast: podcast)
+        guard let podcast, !group.isEmpty,
+              let session = SessionManager.shared.findOrCreateSession(forPodcast: podcast) else { return }
         // Explicit USER choice — the new lineup is pinned against the feeder's prune.
         SessionManager.shared.replaceLineup(episodeUuids: group.map { $0.episode.uuid }, session: session, pinning: true)
     }
@@ -1572,9 +1581,8 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
     /// Fork: the inline Session tab — find or create the podcast's session, then
     /// render its store through the standard episodes surface.
     func showSession() {
-        guard let podcast else { return }
+        guard let podcast, SessionManager.shared.findOrCreateSession(forPodcast: podcast) != nil else { return }
 
-        _ = SessionManager.shared.findOrCreateSession(forPodcast: podcast)
         episodesListMode = .session
         episodesTable.tableFooterView = nil
         switchViewMode(to: .episodes)

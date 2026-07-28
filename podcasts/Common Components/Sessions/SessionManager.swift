@@ -319,7 +319,14 @@ class SessionManager {
     }
 
     /// The session for a podcast, created on first use (feeder = the podcast itself).
-    func findOrCreateSession(forPodcast podcast: Podcast, seedEpisodeUuids: [String] = []) -> Session {
+    ///
+    /// Nil when the podcast is unsubscribed and has no session yet: sessions exist only for
+    /// subscribed podcasts — auto-creating one for a podcast the user doesn't follow leaves
+    /// hidden clutter. A session that already exists (from when the podcast was subscribed)
+    /// is still returned. Optional rather than a separate guard so every call site is
+    /// compiler-checked.
+    func findOrCreateSession(forPodcast podcast: Podcast, seedEpisodeUuids: [String] = []) -> Session? {
+        guard SessionStore.shared.session(forPodcast: podcast.uuid) != nil || podcast.isSubscribed() else { return nil }
         let session = SessionStore.shared.session(forPodcast: podcast.uuid)
             ?? createSession(name: podcast.title ?? L10n.filtersDefaultNewFilter, feeder: .podcast(uuid: podcast.uuid), seedEpisodeUuids: seedEpisodeUuids)
         // Mirror the podcast's folder immediately (even for sessions first created by playback or an
@@ -456,6 +463,22 @@ class SessionManager {
                 updated.pinnedEpisodeUuids.append(contentsOf: episodeUuids.filter { !updated.pinnedEpisodeUuids.contains($0) })
             }
         }
+    }
+
+    /// Fork: the one entrance for hand-adding episodes to a manual playlist ("Add to… →
+    /// Playlist" flows: the chooser, the last-playlist quick-add, a playlist's
+    /// add-episodes search). When the playlist is a session's store, the add routes
+    /// through the lineup insert so "Position in Session" governs every door in — with
+    /// the full add-to-session semantics (unarchive, mark seen, insert marker, pinned).
+    /// Plain playlists (no session) append classically. Returns false when a plain
+    /// playlist refuses the add (full); session inserts don't refuse.
+    @discardableResult
+    func addToManualPlaylist(episodes: [Episode], playlist: EpisodeFilter) -> Bool {
+        guard let session = SessionStore.shared.session(forStore: playlist.uuid) else {
+            return DataManager.sharedManager.add(episodes: episodes, to: playlist)
+        }
+        addToLineup(episodeUuids: episodes.map(\.uuid), session: session, pinning: true)
+        return true
     }
 
     /// Replaces the lineup wholesale: the store becomes exactly these episodes, in
@@ -762,20 +785,22 @@ class SessionManager {
         // always be chosen by name.
         let fanOutTargets = covering.filter { $0.autoFill || $0.uuid == preferred?.uuid }
 
-        // The episodes' own podcasts always match — their sessions spring into being
-        // on demand, so adding works even for a podcast that never had one.
+        // The episodes' own subscribed podcasts always match — their sessions spring into
+        // being on demand, so adding works even for a podcast that never had one. Unsubscribed
+        // podcasts never get a session (findPodcast's default excludes them); their episodes
+        // can still land in existing covering sessions.
         let podcastsWithoutSessions: [Podcast] = {
             var seen = Set<String>()
             return episodes.compactMap { episode in
                 guard !seen.contains(episode.podcastUuid) else { return nil }
                 seen.insert(episode.podcastUuid)
                 guard SessionStore.shared.session(forPodcast: episode.podcastUuid) == nil else { return nil }
-                return DataManager.sharedManager.findPodcast(uuid: episode.podcastUuid, includeUnsubscribed: true)
+                return DataManager.sharedManager.findPodcast(uuid: episode.podcastUuid)
             }
         }()
 
         func withPodcastSessions(_ sessions: [Session]) -> [Session] {
-            sessions + podcastsWithoutSessions.map { findOrCreateSession(forPodcast: $0) }
+            sessions + podcastsWithoutSessions.compactMap { findOrCreateSession(forPodcast: $0) }
         }
 
         func add(to targets: [Session]) {
@@ -832,8 +857,8 @@ class SessionManager {
             // Podcasts without sessions appear by name; picking one creates it.
             for podcast in podcastsWithoutSessions {
                 picker.addAction(action: OptionAction(label: podcast.title ?? L10n.playbackSessionTabSession, icon: nil) { [weak self] in
-                    guard let self else { return }
-                    add(to: [self.findOrCreateSession(forPodcast: podcast)])
+                    guard let self, let session = self.findOrCreateSession(forPodcast: podcast) else { return }
+                    add(to: [session])
                 })
             }
             picker.present(from: presenting)
@@ -997,9 +1022,11 @@ class SessionManager {
 
 
     /// Play as Session on a podcast: plays the podcast's session lineup, nothing
-    /// else — the Inbox and Episodes tabs never leak in. Created empty on first use.
+    /// else — the Inbox and Episodes tabs never leak in. Created empty on first use
+    /// (subscribed podcasts only).
     func playPodcastSession(for podcast: Podcast) {
-        play(session: findOrCreateSession(forPodcast: podcast))
+        guard let session = findOrCreateSession(forPodcast: podcast) else { return }
+        play(session: session)
     }
 
     /// Fork: this session is fed by a smart playlist the user has declared "not a session

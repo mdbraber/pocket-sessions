@@ -7122,6 +7122,9 @@
 /* Fork: title of the sheet opened by the Add to swipe. */
 "swipe_add_to_title" = "Add Episode To";
 
+/* Fork: add-to option — one-tap add into the most recently used playlist. %1$@ is the playlist name. */
+"swipe_add_to_last_playlist" = "Add to “%1$@”";
+
 /* Fork: smart playlist options — whether this playlist has a Session at all. */
 "playlist_is_session" = "Session Playlist";
 
