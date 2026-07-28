@@ -1,10 +1,19 @@
 # Pocket Casts Sessions (PCS)
 
-The Pocket Casts Sessions (PCS) server (`pcsessions`) — companion to the Pocket Casts iOS
+The Pocket Casts Sessions (PCS) server (`pcs`) — companion to the Pocket Casts iOS
 fork's Sessions feature: session-state sync (sessions, seen-ledger,
 offeredThrough, filter presets) with push-based sync between devices, a
 background Pocket Casts mirror (M2), and a query / automation API (M2/M3).
 Full design: `SESSIONS_SERVER_PLAN.md` in the `pocket-casts-ios` fork.
+
+The binary has two subcommands: `pcs serve` (the Docker entrypoint) and
+`pcs link`, an operator fallback that links a Pocket Casts account straight
+into the database. `pcs link` uses PC's device-pairing flow by default (approve
+the printed code at pocketcasts.com/pair — yields a self-renewing refresh-token
+lineage); `pcs link -password` does a one-shot email+password login instead,
+which never stores the password but only yields an expiring access token. The
+normal path is neither: the app's Settings → Synchronization → Link Pocket
+Casts drives the same device flow end-to-end, approval included.
 
 The app never routes Pocket Casts traffic through this server — it is a
 side-service, and the app keeps working with stock PC when no server is
@@ -68,6 +77,8 @@ Then locally, create a gitignored `deploy.env` with `DEPLOY_HOST=<ssh-host>` and
 make deploy   # rsync source + docker compose up -d --build
 ```
 
-The token in the host `.env` is what the app's Settings → Synchronization →
-Access Token expects. APNs (token-based `.p8` key) slots in behind
-`push.Pusher` next.
+The token in the host `.env` is the bootstrap credential: the first device
+authenticates with it once, and a successful Link Pocket Casts hands the app
+its own server-issued `pcs_…` token, which it stores automatically. Manual
+token entry in the app remains as an escape hatch. APNs (token-based `.p8`
+key) slots in behind `push.Pusher` next.
