@@ -10,7 +10,7 @@ FROM alpine:3.21
 # ca-certificates for outbound TLS (APNs, later the PC mirror); tzdata for sane logs.
 RUN apk add --no-cache ca-certificates tzdata && adduser -D -u 1000 pcsessions
 USER pcsessions
-ENV PCC_LISTEN=:8080 PCC_DB=/data/pcsessions.db
+ENV PCS_LISTEN=:8080 PCS_DB=/data/pcsessions.db
 EXPOSE 8080
 COPY --from=build /pcsessions /usr/local/bin/pcsessions
 ENTRYPOINT ["pcsessions"]

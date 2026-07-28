@@ -37,7 +37,7 @@ func New(st *store.Store, pusher push.Pusher, logger *slog.Logger) http.Handler 
 }
 
 // authed resolves the bearer token to a user. A database with NO tokens at
-// all (fresh local dev, no PCC_AUTH_TOKEN) runs open as user 1 — the moment
+// all (fresh local dev, no PCS_AUTH_TOKEN) runs open as user 1 — the moment
 // any token exists, auth is required everywhere.
 func (s *Server) authed(next func(http.ResponseWriter, *http.Request, int64)) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

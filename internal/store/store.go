@@ -94,7 +94,7 @@ CREATE INDEX IF NOT EXISTS idx_presets_cursor  ON presets(user_id, cursor);
 }
 
 // EnsureBootstrapUser guarantees user 1 exists and, when a token is supplied,
-// that it authenticates as them. Local dev with no PCC_AUTH_TOKEN runs open.
+// that it authenticates as them. Local dev with no PCS_AUTH_TOKEN runs open.
 func (s *Store) EnsureBootstrapUser(token string) error {
 	if _, err := s.db.Exec(`INSERT OR IGNORE INTO users(id, name) VALUES (1, 'owner')`); err != nil {
 		return err
@@ -121,7 +121,7 @@ func (s *Store) UserForToken(token string) (int64, error) {
 }
 
 // HasTokens reports whether any token exists — when none do (fresh local dev
-// database, no PCC_AUTH_TOKEN), the API runs open as user 1.
+// database, no PCS_AUTH_TOKEN), the API runs open as user 1.
 func (s *Store) HasTokens() (bool, error) {
 	var n int
 	if err := s.db.QueryRow(`SELECT COUNT(*) FROM tokens`).Scan(&n); err != nil {

@@ -18,7 +18,7 @@ make test
 ```
 
 No TLS in the binary (that's Caddy's job at deployment) and no APNs key needed
-locally — the push layer logs what it would send. With no `PCC_AUTH_TOKEN` set
+locally — the push layer logs what it would send. With no `PCS_AUTH_TOKEN` set
 and no tokens in the database, the API runs open as user 1; the moment any
 token exists, auth is required.
 
@@ -40,10 +40,10 @@ curl -s 'localhost:8080/session/v1/changes?since=0'
 
 | Variable         | Default          | Purpose                                   |
 |------------------|------------------|-------------------------------------------|
-| `PCC_LISTEN`     | `:8080`          | Listen address                             |
-| `PCC_DB`         | `pcsessions.db`  | SQLite path                                |
-| `PCC_AUTH_TOKEN` | *(empty)*        | Bootstrap bearer token for user 1          |
-| `PCC_DEBUG`      | *(empty)*        | Debug logging when set                     |
+| `PCS_LISTEN`     | `:8080`          | Listen address                             |
+| `PCS_DB`         | `pcsessions.db`  | SQLite path                                |
+| `PCS_AUTH_TOKEN` | *(empty)*        | Bootstrap bearer token for user 1          |
+| `PCS_DEBUG`      | *(empty)*        | Debug logging when set                     |
 
 ## Deployment
 
@@ -56,8 +56,8 @@ One-time host setup (a deploy directory the SSH user can write, plus secrets):
 ```
 mkdir -p <deploy-dir>/data
 cat > <deploy-dir>/.env <<EOF
-PCC_DOMAIN=sessions.example.com
-PCC_AUTH_TOKEN=$(openssl rand -hex 24)
+PCS_DOMAIN=sessions.example.com
+PCS_AUTH_TOKEN=$(openssl rand -hex 24)
 EOF
 ```
 

@@ -3,23 +3,23 @@
 # host running caddy-docker-proxy with an external `caddy` network.
 #
 # Host-side `.env` (next to this file, not in git):
-#   PCC_DOMAIN=sessions.example.com
-#   PCC_AUTH_TOKEN=<openssl rand -hex 24>
+#   PCS_DOMAIN=sessions.example.com
+#   PCS_AUTH_TOKEN=<openssl rand -hex 24>
 services:
   pocket-sessions:
     container_name: pocket-sessions
     build: ./src
     restart: always
     environment:
-      - PCC_LISTEN=:8080
-      - PCC_DB=/data/pcsessions.db
-      - PCC_AUTH_TOKEN=${PCC_AUTH_TOKEN}
+      - PCS_LISTEN=:8080
+      - PCS_DB=/data/pcsessions.db
+      - PCS_AUTH_TOKEN=${PCS_AUTH_TOKEN}
     volumes:
       - ./data:/data
     networks:
       - caddy
     labels:
-      caddy: ${PCC_DOMAIN}
+      caddy: ${PCS_DOMAIN}
       caddy.reverse_proxy: "{{upstreams 8080}}"
 
 networks:
