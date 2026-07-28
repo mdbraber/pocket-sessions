@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mdbraber/pocket-sessions-server/internal/push"
@@ -20,10 +21,20 @@ type Server struct {
 	store  *store.Store
 	pusher push.Pusher
 	logger *slog.Logger
+
+	// Device-code links awaiting approval, keyed by user. In-memory on purpose:
+	// codes live 30 minutes and a lost pending link just means re-tapping Link.
+	pendingMu    sync.Mutex
+	pendingLinks map[int64]pendingLink
+}
+
+type pendingLink struct {
+	deviceCode string
+	expires    time.Time
 }
 
 func New(st *store.Store, pusher push.Pusher, logger *slog.Logger) http.Handler {
-	s := &Server{store: st, pusher: pusher, logger: logger}
+	s := &Server{store: st, pusher: pusher, logger: logger, pendingLinks: map[int64]pendingLink{}}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -36,6 +47,8 @@ func New(st *store.Store, pusher push.Pusher, logger *slog.Logger) http.Handler 
 	mux.Handle("POST /session/v1/nudge", s.authed(s.handleNudge))
 	mux.Handle("GET /session/v1/pc-link", s.authed(s.handlePCLinkStatus))
 	mux.Handle("POST /session/v1/pc-link", s.authed(s.handlePCLink))
+	mux.Handle("POST /session/v1/pc-link/start", s.authed(s.handlePCLinkStart))
+	mux.Handle("POST /session/v1/pc-link/complete", s.authed(s.handlePCLinkComplete))
 	mux.Handle("DELETE /session/v1/pc-link", s.authed(s.handlePCUnlink))
 	mux.Handle("GET /api/v1/up-next", s.authed(s.handleUpNext))
 	mux.Handle("POST /api/v1/pull", s.authed(s.handlePullMirror))

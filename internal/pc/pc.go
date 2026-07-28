@@ -25,47 +25,22 @@ type TokenExchange struct {
 }
 
 // ExchangeRefreshToken redeems a PC refresh token for a fresh access token,
-// exactly like the app's TokenHelper does against POST /user/token.
-func ExchangeRefreshToken(ctx context.Context, refreshToken string) (TokenExchange, error) {
+// exactly like the app's TokenHelper does against POST /user/token. The scope
+// must match the lineage's own ("tv" for device-flow links, "mobile" for app
+// tokens) — PC rejects a refresh with a different scope as invalid_scope.
+func ExchangeRefreshToken(ctx context.Context, refreshToken, scope string) (TokenExchange, error) {
+	if scope == "" {
+		scope = "mobile"
+	}
 	body := appendStringField(nil, 2, "refresh_token")
 	body = appendStringField(body, 3, refreshToken)
-	body = appendStringField(body, 4, "mobile")
+	body = appendStringField(body, 4, scope)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiBase+"/user/token", bytesReader(body))
+	data, err := postProto(ctx, "/user/token", body, "")
 	if err != nil {
-		return TokenExchange{}, err
+		return TokenExchange{}, fmt.Errorf("pc token exchange: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/octet-stream")
-	req.Header.Set("Accept", "application/octet-stream")
-	req.Header.Set("User-Agent", "Pocket Casts")
-
-	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return TokenExchange{}, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return TokenExchange{}, fmt.Errorf("pc token exchange: HTTP %d", resp.StatusCode)
-	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if err != nil {
-		return TokenExchange{}, err
-	}
-
-	fields, err := parseLenDelimited(data)
-	if err != nil {
-		return TokenExchange{}, fmt.Errorf("pc token exchange: bad response: %w", err)
-	}
-	out := TokenExchange{
-		Email:        string(fields[1]),
-		AccessToken:  string(fields[4]),
-		RefreshToken: string(fields[7]),
-	}
-	if out.AccessToken == "" {
-		return TokenExchange{}, fmt.Errorf("pc token exchange: empty access token")
-	}
-	return out, nil
+	return parseTokenLoginResponse(data)
 }
 
 // --- minimal proto3 wire helpers ---

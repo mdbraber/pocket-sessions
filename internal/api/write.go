@@ -45,7 +45,7 @@ func (s *Server) handleUpNextChange(w http.ResponseWriter, r *http.Request, user
 	// serverModified, and the mirror may be minutes old.
 	current, err := pc.FetchUpNext(r.Context(), link.AccessToken, "pcs-server")
 	if err != nil && link.RefreshToken != "" {
-		if exchange, exErr := pc.ExchangeRefreshToken(r.Context(), link.RefreshToken); exErr == nil {
+		if exchange, exErr := pc.ExchangeRefreshToken(r.Context(), link.RefreshToken, link.Scope); exErr == nil {
 			link.AccessToken = exchange.AccessToken
 			if exchange.RefreshToken != "" {
 				link.RefreshToken = exchange.RefreshToken
@@ -63,7 +63,7 @@ func (s *Server) handleUpNextChange(w http.ResponseWriter, r *http.Request, user
 	upNext, err := pc.ChangeUpNext(r.Context(), link.AccessToken, "pcs-server", action, in.EpisodeUUID, in.Title, in.PodcastUUID, current.ServerModified)
 	if err != nil && link.RefreshToken != "" {
 		// Access token may have expired — renew and retry once, same as the read path.
-		if exchange, exErr := pc.ExchangeRefreshToken(r.Context(), link.RefreshToken); exErr == nil {
+		if exchange, exErr := pc.ExchangeRefreshToken(r.Context(), link.RefreshToken, link.Scope); exErr == nil {
 			link.AccessToken = exchange.AccessToken
 			if exchange.RefreshToken != "" {
 				link.RefreshToken = exchange.RefreshToken

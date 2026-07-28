@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"strings"
 
 	_ "modernc.org/sqlite" // pure-Go driver: no cgo, trivial cross-compile for the VPS
 )
@@ -105,7 +106,20 @@ CREATE TABLE IF NOT EXISTS pc_links (
 CREATE INDEX IF NOT EXISTS idx_sessions_cursor ON sessions(user_id, cursor);
 CREATE INDEX IF NOT EXISTS idx_presets_cursor  ON presets(user_id, cursor);
 `)
-	return err
+	if err != nil {
+		return err
+	}
+	// Additive migration: PC token lineages carry a scope ("tv" for device-flow
+	// links, "mobile" for app-donated tokens) that must ride along into refresh
+	// exchanges. Ignore the error SQLite gives when the column already exists.
+	if _, err := s.db.Exec(`ALTER TABLE pc_links ADD COLUMN pc_scope TEXT NOT NULL DEFAULT 'mobile'`); err != nil && !isDuplicateColumn(err) {
+		return err
+	}
+	return nil
+}
+
+func isDuplicateColumn(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "duplicate column")
 }
 
 // EnsureBootstrapUser guarantees user 1 exists and, when a token is supplied,
@@ -143,6 +157,21 @@ func (s *Store) HasTokens() (bool, error) {
 		return false, err
 	}
 	return n > 0, nil
+}
+
+// CreateToken mints a fresh API bearer token for a user — issued to the app on
+// a successful PC link so the shared bootstrap token never has to be typed in.
+// The label records where it went (e.g. "device:<deviceId>").
+func (s *Store) CreateToken(userID int64, label string) (string, error) {
+	b := make([]byte, 24)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	token := "pcs_" + hex.EncodeToString(b)
+	if _, err := s.db.Exec(`INSERT INTO tokens(token, user_id, label) VALUES (?, ?, ?)`, token, userID, label); err != nil {
+		return "", err
+	}
+	return token, nil
 }
 
 func newID() string {

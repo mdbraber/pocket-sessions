@@ -51,7 +51,7 @@ func (s *Server) refreshMirror(ctx context.Context, userID int64) error {
 		if link.RefreshToken == "" {
 			return err
 		}
-		exchange, exErr := pc.ExchangeRefreshToken(ctx, link.RefreshToken)
+		exchange, exErr := pc.ExchangeRefreshToken(ctx, link.RefreshToken, link.Scope)
 		if exErr != nil {
 			return err
 		}
