@@ -264,3 +264,12 @@ func parseAllFields(data []byte) (parsedFields, error) {
 	}
 	return out, nil
 }
+
+func appendBytesField(b []byte, field int, val []byte) []byte {
+	if len(val) == 0 {
+		return b
+	}
+	b = appendVarint(b, uint64(field)<<3|2)
+	b = appendVarint(b, uint64(len(val)))
+	return append(b, val...)
+}

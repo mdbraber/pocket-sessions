@@ -39,6 +39,7 @@ func New(st *store.Store, pusher push.Pusher, logger *slog.Logger) http.Handler 
 	mux.Handle("DELETE /session/v1/pc-link", s.authed(s.handlePCUnlink))
 	mux.Handle("GET /api/v1/up-next", s.authed(s.handleUpNext))
 	mux.Handle("POST /api/v1/pull", s.authed(s.handlePullMirror))
+	mux.Handle("POST /api/v1/up-next", s.authed(s.handleUpNextChange))
 
 	return s.logged(mux)
 }

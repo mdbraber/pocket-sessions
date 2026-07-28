@@ -57,6 +57,12 @@ func FetchUpNext(ctx context.Context, accessToken, deviceID string) (UpNext, err
 		return UpNext{}, err
 	}
 
+	return parseUpNextResponse(data)
+}
+
+// parseUpNextResponse decodes UpNextResponse{1:serverModified,
+// 4:repeated EpisodeResponse{1:title, 2:url, 3:podcast, 4:uuid}}.
+func parseUpNextResponse(data []byte) (UpNext, error) {
 	out := UpNext{}
 	top, err := parseAllFields(data)
 	if err != nil {
