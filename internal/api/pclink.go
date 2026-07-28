@@ -25,6 +25,9 @@ func (s *Server) handlePCLink(w http.ResponseWriter, r *http.Request, userID int
 	var in struct {
 		RefreshToken string `json:"refreshToken"`
 		AccessToken  string `json:"accessToken"`
+		// The account email as the APP knows it — used only for display when the
+		// access-token path (no refresh token) gives us no identity of our own.
+		Email string `json:"email"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil || (in.RefreshToken == "" && in.AccessToken == "") {
 		http.Error(w, "bad link request", http.StatusBadRequest)
@@ -58,6 +61,7 @@ func (s *Server) handlePCLink(w http.ResponseWriter, r *http.Request, userID int
 			http.Error(w, "pocket casts rejected the token", http.StatusBadGateway)
 			return
 		}
+		link.Email = in.Email
 	}
 	exchange := struct{ Email string }{Email: link.Email}
 	if err := s.store.SetPCLink(userID, link); err != nil {
