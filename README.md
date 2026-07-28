@@ -1,6 +1,6 @@
-# Pocket Sessions
+# Pocket Casts Sessions (PCS)
 
-The Pocket Sessions server (`pcsessions`) — companion to the Pocket Casts iOS
+The Pocket Casts Sessions (PCS) server (`pcsessions`) — companion to the Pocket Casts iOS
 fork's Sessions feature: session-state sync (sessions, seen-ledger,
 offeredThrough, filter presets) with push-based sync between devices, a
 background Pocket Casts mirror (M2), and a query / automation API (M2/M3).

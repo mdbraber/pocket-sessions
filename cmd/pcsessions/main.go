@@ -1,4 +1,4 @@
-// pcsessions — the Pocket Sessions server (see SESSIONS_SERVER_PLAN.md in the
+// pcsessions — the Pocket Casts Sessions (PCS) server (see SESSIONS_SERVER_PLAN.md in the
 // pocket-casts-ios fork). M1: session-state sync + device registry + push stub.
 //
 // Local development: `make run` serves plain HTTP on :8080 — the iOS simulator
