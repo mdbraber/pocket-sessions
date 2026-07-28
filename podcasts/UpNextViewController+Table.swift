@@ -43,6 +43,10 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
     /// queue owns playback, else the queue's own head (position 1) while a session plays.
     var upNextCardEpisode: BaseEpisode? {
         if upNextListOffset == 1 { return PlaybackManager.shared.queue.episodeAt(index: 0) }
+        // A session owns playback, its episode was never shared into Up Next, and the queue has
+        // nothing of its own: the queue world has no head to pin. Without this, the parked
+        // session episode (hidden bookkeeping, not a queue member) leaks onto the top card.
+        if sessionOwnsCard, !PlaybackManager.shared.currentSessionEpisodeIsSharedToQueue { return nil }
         return PlaybackManager.shared.currentEpisode()
     }
 
@@ -156,6 +160,10 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         case .sessionSection:
             if showingSessionList { return max(sessionListRows.count, 1) + (showSessionSearchRow ? 1 : 0) } // 1 = empty state cell
             if browsedPlaybackSession == nil { return 1 } // empty state cell
+            // A browsed session with no current episode (no card) and no tail is truly empty —
+            // same world-level rule as Up Next: the card counts, so only card-less emptiness
+            // shows the empty state.
+            if !lineupSearchActive, filteredLineupTail.isEmpty, sessionCurrentEpisode == nil { return 1 } // empty state cell
             // The pinned current is the top-block card; this section is the reorderable tail
             // (filtered by the lineup search when a query is active).
             return filteredLineupTail.count
@@ -163,7 +171,10 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
             // Same shape as the session tail: the reorderable tail below the pinned head (the queue's
             // own head sits on the card while a session plays), filtered by the lineup search.
             if lineupSearchActive { return filteredLineupTail.count } // no empty-state during search
-            return filteredLineupTail.isEmpty ? 1 : filteredLineupTail.count // 1 = empty state cell
+            // "Nothing in your queue" means the whole WORLD is empty — an episode on the pinned
+            // card still counts as queued, so an empty tail under a card shows nothing at all.
+            if filteredLineupTail.isEmpty { return topBlockHasCard ? 0 : 1 } // 1 = empty state cell
+            return filteredLineupTail.count
         }
     }
 
@@ -308,6 +319,15 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
             // The pinned current is the top-block card (see nowPlayingSection), so no tail row is
             // ever "active"; the accent box lives on the card.
             guard let episode = filteredLineupTail[safe: indexPath.row] else {
+                // The truly-empty session (no card, no tail) renders its empty state here; any
+                // other out-of-range ask (mid-animation) keeps the harmless blank episode cell.
+                if filteredLineupTail.isEmpty, sessionCurrentEpisode == nil {
+                    let emptyCell = tableView.dequeueReusableCell(withIdentifier: UpNextViewController.emptyStateCell, for: indexPath) as! EmptyStateCell
+                    emptyCell.configure(title: L10n.sessionEmptyTitle,
+                                        message: L10n.sessionEmptyMessage,
+                                        icon: { Image(systemName: "rectangle.stack") })
+                    return emptyCell
+                }
                 let cell = tableView.dequeueReusableCell(withIdentifier: UpNextViewController.episodeCell, for: indexPath) as! EpisodeCell
                 cell.themeOverride = themeOverride
                 cell.showsReorderControl = false
