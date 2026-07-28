@@ -161,3 +161,29 @@ func (r *sliceReader) Read(p []byte) (int, error) {
 	r.b = r.b[n:]
 	return n, nil
 }
+
+// ValidateAccessToken proves a PC access token still works, for links made without a
+// refresh token. Any authenticated endpoint would do; subscription/status is cheap.
+func ValidateAccessToken(ctx context.Context, accessToken string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiBase+"/subscription/status", nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Accept", "application/octet-stream")
+	req.Header.Set("User-Agent", "Pocket Casts")
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return fmt.Errorf("pc rejected access token: HTTP %d", resp.StatusCode)
+	}
+	if resp.StatusCode >= 500 {
+		return fmt.Errorf("pc unavailable: HTTP %d", resp.StatusCode)
+	}
+	return nil
+}
