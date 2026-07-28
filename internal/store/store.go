@@ -87,6 +87,14 @@ CREATE TABLE IF NOT EXISTS meta (
     user_id INTEGER PRIMARY KEY,
     cursor  INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS pc_links (
+    user_id          INTEGER PRIMARY KEY,
+    pc_email         TEXT NOT NULL DEFAULT '',
+    pc_refresh_token TEXT NOT NULL,  -- rotates on every exchange; always the latest
+    pc_access_token  TEXT NOT NULL DEFAULT '',
+    linked_at        TEXT NOT NULL DEFAULT (datetime('now')),
+    last_pull_at     TEXT
+);
 CREATE INDEX IF NOT EXISTS idx_sessions_cursor ON sessions(user_id, cursor);
 CREATE INDEX IF NOT EXISTS idx_presets_cursor  ON presets(user_id, cursor);
 `)
