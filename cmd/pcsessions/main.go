@@ -15,10 +15,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/mdbraber/pocket-casts-sessions-server/internal/api"
-	"github.com/mdbraber/pocket-casts-sessions-server/internal/config"
-	"github.com/mdbraber/pocket-casts-sessions-server/internal/push"
-	"github.com/mdbraber/pocket-casts-sessions-server/internal/store"
+	"github.com/mdbraber/pocket-sessions-server/internal/api"
+	"github.com/mdbraber/pocket-sessions-server/internal/config"
+	"github.com/mdbraber/pocket-sessions-server/internal/push"
+	"github.com/mdbraber/pocket-sessions-server/internal/store"
 )
 
 func main() {

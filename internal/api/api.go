@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mdbraber/pocket-casts-sessions-server/internal/push"
-	"github.com/mdbraber/pocket-casts-sessions-server/internal/store"
+	"github.com/mdbraber/pocket-sessions-server/internal/push"
+	"github.com/mdbraber/pocket-sessions-server/internal/store"
 )
 
 type Server struct {

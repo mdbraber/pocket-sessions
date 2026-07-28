@@ -1,4 +1,4 @@
-module github.com/mdbraber/pocket-casts-sessions-server
+module github.com/mdbraber/pocket-sessions-server
 
 go 1.26
 
