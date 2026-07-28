@@ -1,0 +1,153 @@
+// Package api wires the HTTP surface: /fork/v1/* (app-facing sync) now; the
+// query/automation API (/api/v1/*) arrives with the PC mirror in M2.
+package api
+
+import (
+	"encoding/json"
+	"log/slog"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/mdbraber/pocket-casts-sessions-server/internal/push"
+	"github.com/mdbraber/pocket-casts-sessions-server/internal/store"
+)
+
+type Server struct {
+	store  *store.Store
+	pusher push.Pusher
+	logger *slog.Logger
+}
+
+func New(st *store.Store, pusher push.Pusher, logger *slog.Logger) http.Handler {
+	s := &Server{store: st, pusher: pusher, logger: logger}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	})
+	mux.Handle("POST /fork/v1/devices", s.authed(s.handleRegisterDevice))
+	mux.Handle("GET /fork/v1/changes", s.authed(s.handleGetChanges))
+	mux.Handle("POST /fork/v1/changes", s.authed(s.handlePostChanges))
+	mux.Handle("POST /fork/v1/nudge", s.authed(s.handleNudge))
+
+	return s.logged(mux)
+}
+
+// authed resolves the bearer token to a user. A database with NO tokens at
+// all (fresh local dev, no PCC_AUTH_TOKEN) runs open as user 1 — the moment
+// any token exists, auth is required everywhere.
+func (s *Server) authed(next func(http.ResponseWriter, *http.Request, int64)) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if token != "" {
+			userID, err := s.store.UserForToken(token)
+			if err != nil {
+				http.Error(w, "auth lookup failed", http.StatusInternalServerError)
+				return
+			}
+			if userID != 0 {
+				next(w, r, userID)
+				return
+			}
+		}
+		hasTokens, err := s.store.HasTokens()
+		if err != nil {
+			http.Error(w, "auth lookup failed", http.StatusInternalServerError)
+			return
+		}
+		if !hasTokens {
+			next(w, r, 1) // open local-dev mode
+			return
+		}
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	})
+}
+
+func (s *Server) logged(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		next.ServeHTTP(w, r)
+		s.logger.Debug("request", "method", r.Method, "path", r.URL.Path, "ms", time.Since(start).Milliseconds())
+	})
+}
+
+type deviceRegistration struct {
+	DeviceID  string `json:"deviceId"`
+	APNSToken string `json:"apnsToken"`
+	APNSEnv   string `json:"apnsEnv"` // "sandbox" (dev-signed builds) or "production"
+}
+
+func (s *Server) handleRegisterDevice(w http.ResponseWriter, r *http.Request, userID int64) {
+	var reg deviceRegistration
+	if err := json.NewDecoder(r.Body).Decode(&reg); err != nil || reg.DeviceID == "" {
+		http.Error(w, "bad registration", http.StatusBadRequest)
+		return
+	}
+	if reg.APNSEnv == "" {
+		reg.APNSEnv = "sandbox"
+	}
+	if err := s.store.RegisterDevice(userID, reg.DeviceID, reg.APNSToken, reg.APNSEnv); err != nil {
+		http.Error(w, "store failed", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleGetChanges(w http.ResponseWriter, r *http.Request, userID int64) {
+	since, _ := strconv.ParseInt(r.URL.Query().Get("since"), 10, 64)
+	changes, err := s.store.ChangesSince(userID, since)
+	if err != nil {
+		http.Error(w, "store failed", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, changes)
+}
+
+func (s *Server) handlePostChanges(w http.ResponseWriter, r *http.Request, userID int64) {
+	var in store.Changes
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		http.Error(w, "bad changes", http.StatusBadRequest)
+		return
+	}
+	cursor, changed, err := s.store.ApplyChanges(userID, in)
+	if err != nil {
+		http.Error(w, "store failed", http.StatusInternalServerError)
+		return
+	}
+	if changed {
+		s.fanOut(userID, cursor, r.Header.Get("X-Device-Id"))
+	}
+	writeJSON(w, map[string]int64{"cursor": cursor})
+}
+
+// handleNudge — "I just finished a PC sync." In M1 this only wakes the user's
+// OTHER devices (they may want to refresh from PC too); in M2 it will also
+// trigger a mirror pull from PC.
+func (s *Server) handleNudge(w http.ResponseWriter, r *http.Request, userID int64) {
+	changes, err := s.store.ChangesSince(userID, 0)
+	if err != nil {
+		http.Error(w, "store failed", http.StatusInternalServerError)
+		return
+	}
+	s.fanOut(userID, changes.Cursor, r.Header.Get("X-Device-Id"))
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) fanOut(userID, cursor int64, originDeviceID string) {
+	devices, err := s.store.DevicesExcept(userID, originDeviceID)
+	if err != nil {
+		s.logger.Error("device fan-out lookup", "err", err)
+		return
+	}
+	if len(devices) > 0 {
+		s.pusher.NotifyChanged(userID, cursor, devices)
+	}
+}
+
+func writeJSON(w http.ResponseWriter, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(v)
+}
