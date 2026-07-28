@@ -12,12 +12,11 @@ import (
 // a change attached: PC applies it to the stored queue and returns the resulting
 // queue, so one call both writes and refreshes the mirror.
 //
-// STATUS: the request is accepted (HTTP 200) and the response parses, but a
-// play_next on an episode ALREADY in the queue comes back unchanged — PC appears
-// to treat the single-episode actions as membership changes (add / remove) and to
-// do REORDERING through the replace action (5) carrying the full ordered uuid
-// list in UpNextChanges{3:order}. Verify add/remove first, then implement reorder
-// as replace; don't assume play_next moves an existing entry.
+// VERIFIED against a real account: play_last adds an episode (pass title +
+// podcastUuid so PC can resolve a new one) and remove takes it out again. The
+// single-episode actions are MEMBERSHIP changes — play_next on an episode
+// already queued is a no-op, not a move. Reordering is a separate job: the
+// replace action (5) carrying the full ordered uuid list in UpNextChanges{3:order}.
 //
 // Action codes (app's UpNextChanges.Actions): 1=playNow, 2=playNext, 3=playLast,
 // 4=remove, 5=replace. Wire: UpNextSyncRequest{1:deviceTime, 2:version,
