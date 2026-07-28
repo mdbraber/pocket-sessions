@@ -101,7 +101,13 @@ class SyncSettingsViewController: PCViewController, UITableViewDataSource, UITab
             cell.accessoryType = .disclosureIndicator
         case .serverToken:
             cell.textLabel?.text = L10n.sessionSyncServerToken
-            cell.detailTextLabel?.text = Settings.sessionServerToken() == nil ? L10n.sessionSyncNotSet : "••••••"
+            // Server-issued tokens (minted on PC link, "pcs_" prefix) show as status —
+            // the field is no longer something to type, just to inspect.
+            if let token = Settings.sessionServerToken() {
+                cell.detailTextLabel?.text = token.hasPrefix("pcs_") ? L10n.sessionSyncServerTokenAuto : "••••••"
+            } else {
+                cell.detailTextLabel?.text = L10n.sessionSyncNotSet
+            }
             cell.accessoryType = .disclosureIndicator
         case .pcLink:
             cell.textLabel?.text = L10n.sessionSyncPcLink
@@ -138,29 +144,10 @@ class SyncSettingsViewController: PCViewController, UITableViewDataSource, UITab
         case .serverURL:
             promptForServerURL()
         case .serverToken:
-            promptForToken()
+            showTokenStatus()
         case .pcLink:
             confirm(title: L10n.sessionSyncPcLink, message: L10n.sessionSyncPcLinkMessage) { [weak self] in
-                // A refresh token is ideal (the server can renew indefinitely), but some
-                // sign-in paths only leave an access token — send whatever exists and let
-                // the server use the better one.
-                let refreshToken = ((try? ServerSettings.refreshToken()) ?? nil) ?? ""
-                let accessToken = ServerSettings.syncingV2Token ?? ""
-                guard let self, !refreshToken.isEmpty || !accessToken.isEmpty else {
-                    Toast.show(L10n.sessionSyncPcLinkNoToken)
-                    return
-                }
-                self.withActiveSync { sync in
-                    sync.linkPCAccount(refreshToken: refreshToken, accessToken: accessToken, email: ServerSettings.syncingEmail() ?? "") { [weak self] email in
-                        if let email {
-                            self?.pcLinkEmail = email
-                            self?.settingsTable.reloadData()
-                            Toast.show(L10n.sessionSyncPcLinkDone(email))
-                        } else {
-                            Toast.show(L10n.sessionSyncFailed)
-                        }
-                    }
-                }
+                self?.linkPCAccount()
             }
         case .syncNow:
             withActiveSync { $0.syncNow { ok in Toast.show(ok ? L10n.sessionSyncNowDone : L10n.sessionSyncFailed) } }
@@ -214,6 +201,60 @@ class SyncSettingsViewController: PCViewController, UITableViewDataSource, UITab
             let raw = alert?.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             Settings.setSessionServerURL(raw.isEmpty ? nil : raw)
             self?.settingsTable.reloadData()
+        })
+        present(alert, animated: true)
+    }
+
+    /// The device-code link handshake: the server gets a pairing code from Pocket
+    /// Casts, this device approves it with its own session, and the server redeems
+    /// it for a renewable token lineage — issuing us a PCS API token in return.
+    /// No password or token ever leaves this device.
+    private func linkPCAccount() {
+        guard SyncManager.isUserLoggedIn() else {
+            Toast.show(L10n.sessionSyncPcLinkNoToken)
+            return
+        }
+        withActiveSync { sync in
+            Toast.show(L10n.sessionSyncPcLinking)
+            sync.startPCLink { userCode in
+                guard let userCode else {
+                    Toast.show(L10n.sessionSyncFailed)
+                    return
+                }
+                Task { @MainActor in
+                    do {
+                        _ = try await ApiServerHandler.shared.deviceApproveRequest(userCode: userCode, approve: true)
+                    } catch {
+                        FileLog.shared.addMessage("SyncSettings: PC device approve failed: \(error.localizedDescription)")
+                        Toast.show(L10n.sessionSyncFailed)
+                        return
+                    }
+                    sync.completePCLink { [weak self] email, apiToken in
+                        // The server-issued token replaces the typed bootstrap token
+                        // from here on; manual entry stays as the escape hatch.
+                        if let apiToken, !apiToken.isEmpty {
+                            Settings.setSessionServerToken(apiToken)
+                        }
+                        if let email {
+                            self?.pcLinkEmail = email
+                            self?.settingsTable.reloadData()
+                            Toast.show(L10n.sessionSyncPcLinkDone(email))
+                        } else {
+                            Toast.show(L10n.sessionSyncFailed)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// The Access Token row is status-first — it's provisioned automatically on PC
+    /// link; manual entry remains as the advanced escape hatch (bootstrap token).
+    private func showTokenStatus() {
+        let alert = UIAlertController(title: L10n.sessionSyncServerToken, message: L10n.sessionSyncServerTokenStatus, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: L10n.cancel, style: .cancel))
+        alert.addAction(UIAlertAction(title: L10n.sessionSyncServerTokenManual, style: .default) { [weak self] _ in
+            self?.promptForToken()
         })
         present(alert, animated: true)
     }

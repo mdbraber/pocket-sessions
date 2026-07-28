@@ -91,9 +91,35 @@ GET /api/v1/up-next, /history, POST /api/v1/pull, POST /api/v1/up-next
 (write-through: add/remove verified end-to-end). Single-episode queue actions
 are MEMBERSHIP changes — play_next on an already-queued episode is a no-op by
 design; reordering needs the replace action (5) with a full order list.
-Remaining: link PC from the phone (renewable refresh token — the sim linked with
-an access token), APNs push (needs a .p8 key), reorder via replace, podcast-list
+Remaining: APNs push (needs a .p8 key), reorder via replace, podcast-list
 mirror, optional M4 passthrough.
+
+**PC link v2 (2026-07-28): the server's credential is self-sufficient.**
+Key findings, verified against the production API:
+
+- `POST /user/login` (password) returns only `{token, uuid, email}` — **no
+  refresh token** — so "app re-logs-in and donates a refresh token" was never
+  possible. Password accounts hold no refresh token at all; the app re-runs
+  `/user/login` on every access-token expiry.
+- Token lineages are independent: minting a new one disturbs no existing
+  session (old tokens kept working throughout).
+- PC runs a full **OAuth device-code flow** in production (TV pairing):
+  `POST /device/authorize` (scope `tv` — the only accepted scope) →
+  authenticated `POST /device/approve` → `POST /user/token` with the
+  device_code grant → access token (1 h) **plus a rotating refresh token**.
+  tv-scoped tokens read AND write `/up_next/sync` and read `/history/sync`;
+  refresh exchanges must reuse the lineage's own scope (`pc_scope` column).
+
+The link is now that flow end-to-end: app taps Link → server
+`/session/v1/pc-link/start` (returns userCode) → app approves the code with
+its own PC session (`deviceApproveRequest`) → `/session/v1/pc-link/complete`
+redeems it. No password and no token ever leaves the device. A successful
+link also mints a per-device **PCS API token** (`pcs_…`) which the app stores
+automatically — the typed bootstrap token (PCS_AUTH_TOKEN) is now operator-only
+and the Access Token row is read-only status with manual entry as escape hatch.
+The binary is renamed **`pcs`** with `serve` (Docker entrypoint) and `link`
+subcommands; `pcs link` is the operator fallback (device flow by default,
+`-password` for a one-shot login that yields an expiring access-token link).
 
 - **M1 (= v1)** — Go skeleton, session sync API, device registry, APNs push;
   `SessionServerSync` + nudge hook in the app; CloudKit demoted to fallback.

@@ -88,7 +88,7 @@ final class SessionServerSync {
 
     private func refreshPCLinkIfLinked() {
         guard UserDefaults.standard.bool(forKey: pcLinkedKey) else { return }
-        let refreshToken = ((try? ServerSettings.refreshToken()) ?? nil) ?? ""
+        let refreshToken = ((try? ServerSettings.refreshToken())) ?? ""
         let accessToken = ServerSettings.syncingV2Token ?? ""
         guard !refreshToken.isEmpty || !accessToken.isEmpty else { return }
         request(path: "/session/v1/pc-link", method: "POST",
@@ -393,25 +393,52 @@ final class SessionServerSync {
         }
     }
 
-    /// Hands the server this device's PC refresh token (never a password); the server
-    /// validates it with a real exchange and becomes "another PC client" for the mirror.
-    func linkPCAccount(refreshToken: String, accessToken: String, email: String, completion: @escaping (String?) -> Void) {
-        FileLog.shared.addMessage("SessionServerSync: linking PC account (refresh: \(!refreshToken.isEmpty), access: \(!accessToken.isEmpty))")
+    /// Starts a device-code link: the server asks Pocket Casts for a pairing code
+    /// (PC's TV-pairing flow) and hands back the user code, which this device then
+    /// approves with its own PC session. Nothing secret ever travels app → server.
+    func startPCLink(completion: @escaping (String?) -> Void) {
+        FileLog.shared.addMessage("SessionServerSync: starting PC device-code link")
         queue.async { [weak self] in
-            self?.request(path: "/session/v1/pc-link", method: "POST",
-                          body: ["refreshToken": refreshToken, "accessToken": accessToken, "email": email]) { [weak self] result in
-                if case .failure(let error) = result {
-                    FileLog.shared.addMessage("SessionServerSync: PC link failed: \(error.localizedDescription)")
+            self?.request(path: "/session/v1/pc-link/start", method: "POST", body: [:]) { result in
+                guard case .success(let data) = result,
+                      let dict = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+                      let userCode = dict["userCode"] as? String, !userCode.isEmpty else {
+                    FileLog.shared.addMessage("SessionServerSync: PC link start failed")
+                    DispatchQueue.main.async { completion(nil) }
+                    return
                 }
+                DispatchQueue.main.async { completion(userCode) }
+            }
+        }
+    }
+
+    /// Completes the link after this device approved the code: the server redeems it
+    /// for its own token lineage and issues us a PCS API token in return. The server
+    /// answers "pending" until PC has registered the approval, so retry briefly.
+    func completePCLink(attemptsLeft: Int = 5, completion: @escaping (String?, String?) -> Void) {
+        queue.async { [weak self] in
+            self?.request(path: "/session/v1/pc-link/complete", method: "POST", body: [:]) { [weak self] result in
                 guard case .success(let data) = result,
                       let dict = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
-                    DispatchQueue.main.async { completion(nil) }
+                    FileLog.shared.addMessage("SessionServerSync: PC link complete failed")
+                    DispatchQueue.main.async { completion(nil, nil) }
+                    return
+                }
+                if dict["pending"] as? Bool == true {
+                    guard attemptsLeft > 1 else {
+                        FileLog.shared.addMessage("SessionServerSync: PC link still pending after retries")
+                        DispatchQueue.main.async { completion(nil, nil) }
+                        return
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                        self?.completePCLink(attemptsLeft: attemptsLeft - 1, completion: completion)
+                    }
                     return
                 }
                 if dict["linked"] as? Bool == true {
                     UserDefaults.standard.set(true, forKey: self?.pcLinkedKey ?? "")
                 }
-                DispatchQueue.main.async { completion(dict["email"] as? String) }
+                DispatchQueue.main.async { completion(dict["email"] as? String, dict["apiToken"] as? String) }
             }
         }
     }
