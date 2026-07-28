@@ -5395,7 +5395,7 @@
 "inbox_group_no_folder" = "No Folder";
 
 /* Options on the Inbox Clear sheet: dismiss the remaining episodes without touching them, or archive them all */
-"inbox_clear_keep_all" = "Clear Inbox";
+"inbox_mark_all_seen" = "Mark All as Seen";
 "inbox_clear_archive_all" = "Archive All";
 
 /* Settings > Inbox: where the Add to Session action puts an episode */

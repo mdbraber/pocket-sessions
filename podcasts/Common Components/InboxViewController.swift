@@ -324,11 +324,11 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
     }
 
     @objc private func clearTapped() {
-        let optionsPicker = OptionsPicker(title: L10n.inboxClearKeepAll.localizedUppercase)
+        let optionsPicker = OptionsPicker(title: L10n.inboxMarkAllSeen.localizedUppercase)
 
         // Mark All as Seen: the soft clear — one DELETE and one notification, however many
         // episodes. Nothing else about them moves.
-        optionsPicker.addAction(action: OptionAction(label: L10n.inboxClearKeepAll, icon: "eye.slash") { [weak self] in
+        optionsPicker.addAction(action: OptionAction(label: L10n.inboxMarkAllSeen, icon: "eye.slash") { [weak self] in
             guard let self else { return }
             InboxManager.shared.markSeen(episodeUuids: self.allEpisodes.map(\.uuid))
         })
@@ -770,7 +770,7 @@ private struct InboxClearPill: View {
     var body: some View {
         InboxPillButton(
             icon: Image(systemName: "eye.slash"),
-            title: L10n.inboxClearKeepAll,
+            title: L10n.inboxMarkAllSeen,
             color: theme.primaryUi01,
             background: theme.primaryInteractive01,
             stroke: nil,
