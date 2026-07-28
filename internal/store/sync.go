@@ -53,7 +53,7 @@ func (s *Store) ApplyChanges(userID int64, in Changes) (int64, bool, error) {
 	for _, table := range []struct {
 		name string
 		recs []Record
-	}{{"fork_sessions", in.Sessions}, {"fork_presets", in.Presets}} {
+	}{{"sessions", in.Sessions}, {"presets", in.Presets}} {
 		for _, r := range table.recs {
 			res, err := tx.Exec(fmt.Sprintf(`
 INSERT INTO %s (user_id, uuid, payload, updated_at, deleted, cursor)
@@ -74,10 +74,10 @@ WHERE excluded.updated_at >= %s.updated_at`, table.name, table.name),
 
 	for podcast, date := range in.Offered {
 		res, err := tx.Exec(`
-INSERT INTO fork_offered (user_id, podcast_uuid, date, cursor) VALUES (?, ?, ?, ?)
+INSERT INTO offered_through (user_id, podcast_uuid, date, cursor) VALUES (?, ?, ?, ?)
 ON CONFLICT(user_id, podcast_uuid) DO UPDATE
 SET date = excluded.date, cursor = excluded.cursor
-WHERE excluded.date > fork_offered.date`, userID, podcast, date, cursor)
+WHERE excluded.date > offered_through.date`, userID, podcast, date, cursor)
 		if err != nil {
 			return 0, false, err
 		}
@@ -97,7 +97,7 @@ WHERE excluded.date > fork_offered.date`, userID, podcast, date, cursor)
 				return 0, false, err
 			}
 			if _, err := tx.Exec(`
-INSERT INTO fork_seen_ledger (user_id, payload, cursor) VALUES (?, ?, ?)
+INSERT INTO seen_ledger (user_id, payload, cursor) VALUES (?, ?, ?)
 ON CONFLICT(user_id) DO UPDATE SET payload = excluded.payload, cursor = excluded.cursor`,
 				userID, string(payload), cursor); err != nil {
 				return 0, false, err
@@ -135,7 +135,7 @@ func (s *Store) ChangesSince(userID, since int64) (Changes, error) {
 	for _, q := range []struct {
 		table string
 		dest  *[]Record
-	}{{"fork_sessions", &out.Sessions}, {"fork_presets", &out.Presets}} {
+	}{{"sessions", &out.Sessions}, {"presets", &out.Presets}} {
 		rows, err := s.db.Query(fmt.Sprintf(
 			`SELECT uuid, updated_at, payload, deleted FROM %s WHERE user_id = ? AND cursor > ?`, q.table), userID, since)
 		if err != nil {
@@ -155,7 +155,7 @@ func (s *Store) ChangesSince(userID, since int64) (Changes, error) {
 	}
 
 	offered := map[string]int64{}
-	rows, err := s.db.Query(`SELECT podcast_uuid, date FROM fork_offered WHERE user_id = ? AND cursor > ?`, userID, since)
+	rows, err := s.db.Query(`SELECT podcast_uuid, date FROM offered_through WHERE user_id = ? AND cursor > ?`, userID, since)
 	if err != nil {
 		return out, err
 	}
@@ -175,7 +175,7 @@ func (s *Store) ChangesSince(userID, since int64) (Changes, error) {
 
 	var ledgerPayload string
 	var ledgerCursor int64
-	err = s.db.QueryRow(`SELECT payload, cursor FROM fork_seen_ledger WHERE user_id = ?`, userID).Scan(&ledgerPayload, &ledgerCursor)
+	err = s.db.QueryRow(`SELECT payload, cursor FROM seen_ledger WHERE user_id = ?`, userID).Scan(&ledgerPayload, &ledgerCursor)
 	if err == nil && ledgerCursor > since {
 		var ledger SeenLedger
 		if err := json.Unmarshal([]byte(ledgerPayload), &ledger); err == nil {
@@ -190,7 +190,7 @@ func (s *Store) ChangesSince(userID, since int64) (Changes, error) {
 func mergeLedger(tx *sql.Tx, userID int64, incoming SeenLedger) (SeenLedger, bool, error) {
 	current := SeenLedger{SeenAt: map[string]int64{}, UnseenAt: map[string]int64{}}
 	var payload string
-	err := tx.QueryRow(`SELECT payload FROM fork_seen_ledger WHERE user_id = ?`, userID).Scan(&payload)
+	err := tx.QueryRow(`SELECT payload FROM seen_ledger WHERE user_id = ?`, userID).Scan(&payload)
 	if err != nil && err != sql.ErrNoRows {
 		return current, false, err
 	}

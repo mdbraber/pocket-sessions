@@ -1,5 +1,5 @@
-// pccompanion — the Pocket Casts companion server (see PROXY_PLAN.md in the
-// pocket-casts-ios fork). M1: fork-state sync + device registry + push stub.
+// pcsessions — the Pocket Sessions server (see SESSIONS_SERVER_PLAN.md in the
+// pocket-casts-ios fork). M1: session-state sync + device registry + push stub.
 //
 // Local development: `make run` serves plain HTTP on :8080 — the iOS simulator
 // reaches it at http://localhost:8080 (loopback is ATS-exempt). TLS is the

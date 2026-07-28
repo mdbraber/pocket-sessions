@@ -1,10 +1,10 @@
-# pocket-casts-sessions-server
+# Pocket Sessions
 
-Companion server for the Pocket Casts iOS fork's Sessions feature: fork-state
-sync (sessions, seen-ledger, offeredThrough, filter presets) with push-based
-sync between devices, a background Pocket Casts mirror (M2), and a query /
-automation API (M2/M3). Full design: `PROXY_PLAN.md` in the
-`pocket-casts-ios` fork.
+The Pocket Sessions server (`pcsessions`) — companion to the Pocket Casts iOS
+fork's Sessions feature: session-state sync (sessions, seen-ledger,
+offeredThrough, filter presets) with push-based sync between devices, a
+background Pocket Casts mirror (M2), and a query / automation API (M2/M3).
+Full design: `SESSIONS_SERVER_PLAN.md` in the `pocket-casts-ios` fork.
 
 The app never routes Pocket Casts traffic through this server — it is a
 side-service, and the app keeps working with stock PC when no server is
@@ -31,9 +31,9 @@ Smoke test:
 
 ```
 curl -s localhost:8080/healthz
-curl -s -X POST localhost:8080/fork/v1/changes -H 'X-Device-Id: dev-a' \
+curl -s -X POST localhost:8080/session/v1/changes -H 'X-Device-Id: dev-a' \
   -d '{"sessions":[{"uuid":"s1","updatedAt":1000,"payload":{"name":"Test"}}]}'
-curl -s 'localhost:8080/fork/v1/changes?since=0'
+curl -s 'localhost:8080/session/v1/changes?since=0'
 ```
 
 ## Configuration (environment)
@@ -41,7 +41,7 @@ curl -s 'localhost:8080/fork/v1/changes?since=0'
 | Variable         | Default          | Purpose                                   |
 |------------------|------------------|-------------------------------------------|
 | `PCC_LISTEN`     | `:8080`          | Listen address                             |
-| `PCC_DB`         | `pccompanion.db` | SQLite path                                |
+| `PCC_DB`         | `pcsessions.db`  | SQLite path                                |
 | `PCC_AUTH_TOKEN` | *(empty)*        | Bootstrap bearer token for user 1          |
 | `PCC_DEBUG`      | *(empty)*        | Debug logging when set                     |
 

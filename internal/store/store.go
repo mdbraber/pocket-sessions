@@ -53,7 +53,7 @@ CREATE TABLE IF NOT EXISTS devices (
     last_seen  TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (user_id, device_id)
 );
-CREATE TABLE IF NOT EXISTS fork_sessions (
+CREATE TABLE IF NOT EXISTS sessions (
     user_id    INTEGER NOT NULL,
     uuid       TEXT NOT NULL,
     payload    TEXT NOT NULL,
@@ -62,7 +62,7 @@ CREATE TABLE IF NOT EXISTS fork_sessions (
     cursor     INTEGER NOT NULL, -- server change cursor for delta sync
     PRIMARY KEY (user_id, uuid)
 );
-CREATE TABLE IF NOT EXISTS fork_presets (
+CREATE TABLE IF NOT EXISTS presets (
     user_id    INTEGER NOT NULL,
     uuid       TEXT NOT NULL,
     payload    TEXT NOT NULL,
@@ -71,14 +71,14 @@ CREATE TABLE IF NOT EXISTS fork_presets (
     cursor     INTEGER NOT NULL,
     PRIMARY KEY (user_id, uuid)
 );
-CREATE TABLE IF NOT EXISTS fork_offered (
+CREATE TABLE IF NOT EXISTS offered_through (
     user_id      INTEGER NOT NULL,
     podcast_uuid TEXT NOT NULL,
     date         INTEGER NOT NULL, -- unix ms; monotonic max, never regresses
     cursor       INTEGER NOT NULL,
     PRIMARY KEY (user_id, podcast_uuid)
 );
-CREATE TABLE IF NOT EXISTS fork_seen_ledger (
+CREATE TABLE IF NOT EXISTS seen_ledger (
     user_id INTEGER PRIMARY KEY,
     payload TEXT NOT NULL, -- {"seenAt":{uuid:ms},"unseenAt":{uuid:ms}} union doc
     cursor  INTEGER NOT NULL
@@ -87,8 +87,8 @@ CREATE TABLE IF NOT EXISTS meta (
     user_id INTEGER PRIMARY KEY,
     cursor  INTEGER NOT NULL DEFAULT 0
 );
-CREATE INDEX IF NOT EXISTS idx_sessions_cursor ON fork_sessions(user_id, cursor);
-CREATE INDEX IF NOT EXISTS idx_presets_cursor  ON fork_presets(user_id, cursor);
+CREATE INDEX IF NOT EXISTS idx_sessions_cursor ON sessions(user_id, cursor);
+CREATE INDEX IF NOT EXISTS idx_presets_cursor  ON presets(user_id, cursor);
 `)
 	return err
 }

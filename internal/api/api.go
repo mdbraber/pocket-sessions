@@ -1,4 +1,4 @@
-// Package api wires the HTTP surface: /fork/v1/* (app-facing sync) now; the
+// Package api wires the HTTP surface: /session/v1/* (app-facing sync) now; the
 // query/automation API (/api/v1/*) arrives with the PC mirror in M2.
 package api
 
@@ -28,10 +28,10 @@ func New(st *store.Store, pusher push.Pusher, logger *slog.Logger) http.Handler 
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
-	mux.Handle("POST /fork/v1/devices", s.authed(s.handleRegisterDevice))
-	mux.Handle("GET /fork/v1/changes", s.authed(s.handleGetChanges))
-	mux.Handle("POST /fork/v1/changes", s.authed(s.handlePostChanges))
-	mux.Handle("POST /fork/v1/nudge", s.authed(s.handleNudge))
+	mux.Handle("POST /session/v1/devices", s.authed(s.handleRegisterDevice))
+	mux.Handle("GET /session/v1/changes", s.authed(s.handleGetChanges))
+	mux.Handle("POST /session/v1/changes", s.authed(s.handlePostChanges))
+	mux.Handle("POST /session/v1/nudge", s.authed(s.handleNudge))
 
 	return s.logged(mux)
 }
