@@ -20,12 +20,6 @@ class SessionsPlayerItemViewController: PlayerItemViewController {
             PlaylistDetailViewModel.pendingInitialTab[row.storeUuid] = .lineup
             NavigationManager.sharedManager.navigateTo(NavigationManager.filterPageKey, data: [NavigationManager.filterUuidKey: row.storeUuid])
         }
-
-        viewModel.onAddToSession = { [weak self] in
-            // The standard add flow; any "which session?" picker presents over the player.
-            guard let self, let episode = PlaybackManager.shared.currentEpisode() as? Episode else { return }
-            SessionManager.shared.addToSessions(episodeUuids: [episode.uuid], preferred: nil, presenting: self)
-        }
     }
 
     required init?(coder: NSCoder) {
@@ -66,6 +60,23 @@ class SessionsPlayerItemViewController: PlayerItemViewController {
     }
 
     private func updateCurrentEpisode() {
-        viewModel.episodeUuid = (PlaybackManager.shared.currentEpisode() as? Episode)?.uuid
+        let episode = PlaybackManager.shared.currentEpisode() as? Episode
+        viewModel.episodeUuid = episode?.uuid
+        // Sessions exist only for subscribed podcasts — drop the Add to Session row when
+        // nothing could receive this track (unsubscribed podcast, no covering session),
+        // matching every other surface. Re-evaluated per track, since the player's tab
+        // follows playback rather than a fixed episode.
+        let canAdd = episode.map { episode in
+            DataManager.sharedManager.findPodcast(uuid: episode.podcastUuid) != nil
+                || !SessionManager.shared.sessionsCovering(podcastUuid: episode.podcastUuid).isEmpty
+        } ?? false
+        viewModel.onAddToSession = canAdd ? addToSessionAction : nil
+    }
+
+    /// Held separately so `updateCurrentEpisode` can attach or detach it per track.
+    private lazy var addToSessionAction: () -> Void = { [weak self] in
+        // The standard add flow; any "which session?" picker presents over the player.
+        guard let self, let episode = PlaybackManager.shared.currentEpisode() as? Episode else { return }
+        SessionManager.shared.addToSessions(episodeUuids: [episode.uuid], preferred: nil, presenting: self)
     }
 }

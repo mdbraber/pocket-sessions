@@ -411,6 +411,27 @@ class SessionManager {
         return removed
     }
 
+    /// Fork: deletes sessions belonging to podcasts you no longer follow AND that hold
+    /// nothing — leftovers from before sessions were gated to subscribed podcasts (an
+    /// "Add to Session" on an unsubscribed page used to spring one into being), which are
+    /// invisible in the Playlists tab and so unreachable to clean up by hand. Only EMPTY
+    /// ones go: a lineup you actually built is yours, subscribed or not.
+    @discardableResult
+    func pruneEmptyUnsubscribedPodcastSessions() -> Int {
+        var removed = 0
+        for session in SessionStore.shared.sessions {
+            guard case .podcast(let podcastUuid) = session.feeder,
+                  DataManager.sharedManager.findPodcast(uuid: podcastUuid) == nil, // unsubscribed
+                  SessionFeederEngine.storeMemberUuids(for: session).isEmpty else { continue }
+            deleteSession(session)
+            removed += 1
+        }
+        if removed > 0 {
+            FileLog.shared.addMessage("SessionManager: pruned \(removed) empty session(s) for unsubscribed podcasts")
+        }
+        return removed
+    }
+
     /// Fork: one-shot re-key of identity-bearing sessions onto their canonical uuids (see
     /// `SessionFeeder.canonicalSessionUuid`). The store playlist and every setting carry
     /// over — only the record's uuid changes — and the old record dies through the store's

@@ -344,6 +344,12 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         }
         // After the engine hooks the stores, so the re-key's records and tombstones upload.
         SessionManager.shared.migrateSessionsToCanonicalUuids()
+        // Sweep leftovers from before sessions were gated to subscribed podcasts. Cheap
+        // (in-memory session list + one member query each) and self-limiting: it only ever
+        // finds anything on the first run after unsubscribing.
+        DispatchQueue.global(qos: .utility).async {
+            SessionManager.shared.pruneEmptyUnsubscribedPodcastSessions()
+        }
         DispatchQueue.main.async {
             ForkSettingsSync.shared.start()
         }
