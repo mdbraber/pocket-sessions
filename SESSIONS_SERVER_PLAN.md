@@ -85,9 +85,15 @@ APNs sandbox (per-device `apnsEnv`). Periodic pull remains the fallback.
 
 ## Milestones
 
-**Status 2026-07-28:** M1 done and deployed; M2 stage 1 (PC account link) and
-stage 2 (Up Next mirror + query API) built and verified against a real account
-locally — deploy pending. Next: history/podcast mirrors, then M3 write-through.
+**Status 2026-07-28:** M1, M2 and M3 built, deployed and verified against the
+real account. Live: PC account link, Up Next + listening-history mirrors,
+GET /api/v1/up-next, /history, POST /api/v1/pull, POST /api/v1/up-next
+(write-through: add/remove verified end-to-end). Single-episode queue actions
+are MEMBERSHIP changes — play_next on an already-queued episode is a no-op by
+design; reordering needs the replace action (5) with a full order list.
+Remaining: link PC from the phone (renewable refresh token — the sim linked with
+an access token), APNs push (needs a .p8 key), reorder via replace, podcast-list
+mirror, optional M4 passthrough.
 
 - **M1 (= v1)** — Go skeleton, session sync API, device registry, APNs push;
   `SessionServerSync` + nudge hook in the app; CloudKit demoted to fallback.
