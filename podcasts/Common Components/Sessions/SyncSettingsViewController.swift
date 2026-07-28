@@ -141,12 +141,17 @@ class SyncSettingsViewController: PCViewController, UITableViewDataSource, UITab
             promptForToken()
         case .pcLink:
             confirm(title: L10n.sessionSyncPcLink, message: L10n.sessionSyncPcLinkMessage) { [weak self] in
-                guard let self, let refreshToken = ((try? ServerSettings.refreshToken()) ?? nil), !refreshToken.isEmpty else {
+                // A refresh token is ideal (the server can renew indefinitely), but some
+                // sign-in paths only leave an access token — send whatever exists and let
+                // the server use the better one.
+                let refreshToken = ((try? ServerSettings.refreshToken()) ?? nil) ?? ""
+                let accessToken = ServerSettings.syncingV2Token ?? ""
+                guard let self, !refreshToken.isEmpty || !accessToken.isEmpty else {
                     Toast.show(L10n.sessionSyncPcLinkNoToken)
                     return
                 }
                 self.withActiveSync { sync in
-                    sync.linkPCAccount(refreshToken: refreshToken) { [weak self] email in
+                    sync.linkPCAccount(refreshToken: refreshToken, accessToken: accessToken) { [weak self] email in
                         if let email {
                             self?.pcLinkEmail = email
                             self?.settingsTable.reloadData()
