@@ -187,3 +187,80 @@ func ValidateAccessToken(ctx context.Context, accessToken string) error {
 	}
 	return nil
 }
+
+func appendVarintField(b []byte, field int, v uint64) []byte {
+	b = appendVarint(b, uint64(field)<<3)
+	return appendVarint(b, v)
+}
+
+// parsedFields keeps every wire shape a caller might need: varints, the last
+// value per length-delimited field, and all repeated length-delimited values.
+type parsedFields struct {
+	varints  map[int]uint64
+	bytes    map[int][]byte
+	repeated map[int][][]byte
+}
+
+func parseAllFields(data []byte) (parsedFields, error) {
+	out := parsedFields{varints: map[int]uint64{}, bytes: map[int][]byte{}, repeated: map[int][][]byte{}}
+	i := 0
+	readVarint := func() (uint64, error) {
+		var v uint64
+		var shift uint
+		for {
+			if i >= len(data) {
+				return 0, fmt.Errorf("truncated varint")
+			}
+			b := data[i]
+			i++
+			v |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				return v, nil
+			}
+			shift += 7
+			if shift > 63 {
+				return 0, fmt.Errorf("varint overflow")
+			}
+		}
+	}
+	for i < len(data) {
+		key, err := readVarint()
+		if err != nil {
+			return out, err
+		}
+		field, wire := int(key>>3), int(key&7)
+		switch wire {
+		case 0:
+			v, err := readVarint()
+			if err != nil {
+				return out, err
+			}
+			out.varints[field] = v
+		case 1:
+			if i+8 > len(data) {
+				return out, fmt.Errorf("truncated fixed64")
+			}
+			i += 8
+		case 2:
+			length, err := readVarint()
+			if err != nil {
+				return out, err
+			}
+			if uint64(len(data)-i) < length {
+				return out, fmt.Errorf("truncated bytes field")
+			}
+			val := data[i : i+int(length)]
+			out.bytes[field] = val
+			out.repeated[field] = append(out.repeated[field], val)
+			i += int(length)
+		case 5:
+			if i+4 > len(data) {
+				return out, fmt.Errorf("truncated fixed32")
+			}
+			i += 4
+		default:
+			return out, fmt.Errorf("unsupported wire type %d", wire)
+		}
+	}
+	return out, nil
+}

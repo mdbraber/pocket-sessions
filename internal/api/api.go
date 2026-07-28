@@ -3,7 +3,9 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -35,6 +37,8 @@ func New(st *store.Store, pusher push.Pusher, logger *slog.Logger) http.Handler 
 	mux.Handle("GET /session/v1/pc-link", s.authed(s.handlePCLinkStatus))
 	mux.Handle("POST /session/v1/pc-link", s.authed(s.handlePCLink))
 	mux.Handle("DELETE /session/v1/pc-link", s.authed(s.handlePCUnlink))
+	mux.Handle("GET /api/v1/up-next", s.authed(s.handleUpNext))
+	mux.Handle("POST /api/v1/pull", s.authed(s.handlePullMirror))
 
 	return s.logged(mux)
 }
@@ -136,6 +140,15 @@ func (s *Server) handleNudge(w http.ResponseWriter, r *http.Request, userID int6
 		return
 	}
 	s.fanOut(userID, changes.Cursor, r.Header.Get("X-Device-Id"))
+	// The app just synced with PC, so our mirror is stale — refresh it in the
+	// background (best effort; the nudge itself must stay instant).
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		if err := s.refreshMirror(ctx, userID); err != nil && !errors.Is(err, errNotLinked) {
+			s.logger.Warn("mirror refresh after nudge", "err", err)
+		}
+	}()
 	w.WriteHeader(http.StatusNoContent)
 }
 

@@ -87,6 +87,13 @@ CREATE TABLE IF NOT EXISTS meta (
     user_id INTEGER PRIMARY KEY,
     cursor  INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS mirror (
+    user_id    INTEGER NOT NULL,
+    kind       TEXT NOT NULL,   -- 'up_next', later 'history', 'podcasts'
+    payload    TEXT NOT NULL,
+    fetched_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, kind)
+);
 CREATE TABLE IF NOT EXISTS pc_links (
     user_id          INTEGER PRIMARY KEY,
     pc_email         TEXT NOT NULL DEFAULT '',
