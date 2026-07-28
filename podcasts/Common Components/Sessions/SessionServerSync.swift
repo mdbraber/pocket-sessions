@@ -352,6 +352,37 @@ final class SessionServerSync {
         }
     }
 
+    // MARK: - Pocket Casts account link (M2)
+
+    /// Whether the server holds a PC link, and for which email.
+    func pcLinkStatus(completion: @escaping (Bool, String?) -> Void) {
+        queue.async { [weak self] in
+            self?.request(path: "/session/v1/pc-link", method: "GET", body: nil) { result in
+                guard case .success(let data) = result,
+                      let dict = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+                    DispatchQueue.main.async { completion(false, nil) }
+                    return
+                }
+                DispatchQueue.main.async { completion(dict["linked"] as? Bool ?? false, dict["email"] as? String) }
+            }
+        }
+    }
+
+    /// Hands the server this device's PC refresh token (never a password); the server
+    /// validates it with a real exchange and becomes "another PC client" for the mirror.
+    func linkPCAccount(refreshToken: String, completion: @escaping (String?) -> Void) {
+        queue.async { [weak self] in
+            self?.request(path: "/session/v1/pc-link", method: "POST", body: ["refreshToken": refreshToken]) { result in
+                guard case .success(let data) = result,
+                      let dict = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+                    DispatchQueue.main.async { completion(nil) }
+                    return
+                }
+                DispatchQueue.main.async { completion(dict["email"] as? String) }
+            }
+        }
+    }
+
     // MARK: - Registration + nudge
 
     private func registerDevice() {

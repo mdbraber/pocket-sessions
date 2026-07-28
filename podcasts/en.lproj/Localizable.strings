@@ -7199,3 +7199,21 @@
 
 /* Fork: playlist/session Group By option — group episodes by season (matches the podcast page). */
 "inbox_group_season" = "Season";
+
+/* Fork: Synchronization — row linking the Pocket Casts account to the PCS server. */
+"session_sync_pc_link" = "Link Pocket Casts Account";
+
+/* Fork: confirmation before sending the PC refresh token to the user's own server. */
+"session_sync_pc_link_message" = "Sends this device's Pocket Casts sign-in token to your server, so it can fetch your account data (queue, history) and act on your behalf. No password is transmitted, and the token is stored only on your server.";
+
+/* Fork: toast after linking succeeds. %1$@ is the account email. */
+"session_sync_pc_link_done" = "Linked as %1$@";
+
+/* Fork: toast when no Pocket Casts sign-in token exists on this device. */
+"session_sync_pc_link_no_token" = "Sign in to Pocket Casts on this device first";
+
+/* Fork: PC link row state — linked (email unknown). */
+"session_sync_linked" = "Linked";
+
+/* Fork: PC link row state — no link on the server yet. */
+"session_sync_not_linked" = "Not Linked";

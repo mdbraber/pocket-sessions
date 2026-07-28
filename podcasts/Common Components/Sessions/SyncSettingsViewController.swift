@@ -1,3 +1,4 @@
+import PocketCastsServer
 import PocketCastsUtils
 import UIKit
 
@@ -8,19 +9,22 @@ import UIKit
 class SyncSettingsViewController: PCViewController, UITableViewDataSource, UITableViewDelegate {
     private static let cellId = "SyncSettingsCell"
 
-    private enum TableRow { case modeServer, modeICloud, modeLocal, serverURL, serverToken, syncNow, pushWins, pullWins }
+    private enum TableRow { case modeServer, modeICloud, modeLocal, serverURL, serverToken, pcLink, syncNow, pushWins, pullWins }
 
     /// The server-detail and manual-sync sections only show while the server mode is selected.
     private var sections: [[TableRow]] {
         var sections: [[TableRow]] = [[.modeServer, .modeICloud, .modeLocal]]
         if Settings.sessionSyncMode() == .server {
-            sections.append([.serverURL, .serverToken])
+            sections.append([.serverURL, .serverToken, .pcLink])
             sections.append([.syncNow, .pushWins, .pullWins])
         }
         return sections
     }
 
     private let settingsTable = ThemeableTable(frame: .zero, style: .grouped)
+
+    /// Last-known PC link state on the server, refreshed on appear.
+    private var pcLinkEmail: String?
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -41,6 +45,10 @@ class SyncSettingsViewController: PCViewController, UITableViewDataSource, UITab
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         settingsTable.reloadData()
+        SessionServerSync.shared?.pcLinkStatus { [weak self] linked, email in
+            self?.pcLinkEmail = linked ? (email ?? "") : nil
+            self?.settingsTable.reloadData()
+        }
     }
 
     // MARK: - Table
@@ -95,6 +103,10 @@ class SyncSettingsViewController: PCViewController, UITableViewDataSource, UITab
             cell.textLabel?.text = L10n.sessionSyncServerToken
             cell.detailTextLabel?.text = Settings.sessionServerToken() == nil ? L10n.sessionSyncNotSet : "••••••"
             cell.accessoryType = .disclosureIndicator
+        case .pcLink:
+            cell.textLabel?.text = L10n.sessionSyncPcLink
+            cell.detailTextLabel?.text = pcLinkEmail.map { $0.isEmpty ? L10n.sessionSyncLinked : $0 } ?? L10n.sessionSyncNotLinked
+            cell.accessoryType = .disclosureIndicator
         case .syncNow:
             cell.textLabel?.text = L10n.sessionSyncNow
             cell.detailTextLabel?.text = nil
@@ -127,6 +139,24 @@ class SyncSettingsViewController: PCViewController, UITableViewDataSource, UITab
             promptForServerURL()
         case .serverToken:
             promptForToken()
+        case .pcLink:
+            confirm(title: L10n.sessionSyncPcLink, message: L10n.sessionSyncPcLinkMessage) { [weak self] in
+                guard let self, let refreshToken = ((try? ServerSettings.refreshToken()) ?? nil), !refreshToken.isEmpty else {
+                    Toast.show(L10n.sessionSyncPcLinkNoToken)
+                    return
+                }
+                self.withActiveSync { sync in
+                    sync.linkPCAccount(refreshToken: refreshToken) { [weak self] email in
+                        if let email {
+                            self?.pcLinkEmail = email
+                            self?.settingsTable.reloadData()
+                            Toast.show(L10n.sessionSyncPcLinkDone(email))
+                        } else {
+                            Toast.show(L10n.sessionSyncFailed)
+                        }
+                    }
+                }
+            }
         case .syncNow:
             withActiveSync { $0.syncNow { ok in Toast.show(ok ? L10n.sessionSyncNowDone : L10n.sessionSyncFailed) } }
         case .pushWins:
