@@ -7,7 +7,7 @@ import WatchConnectivity
 class SettingsViewController: PCViewController, UITableViewDataSource, UITableViewDelegate {
     enum TableRow: String {
         case general, notifications, appearance, storageAndDataUse
-        case inbox, filterPresets
+        case inbox, filterPresets, sync
         case autoArchive, autoDownload, siriShortcuts
         case watch, customFiles, importSteps, opml
         case about, pocketCastsPlus, privacy
@@ -43,6 +43,8 @@ class SettingsViewController: PCViewController, UITableViewDataSource, UITableVi
                 return (L10n.settingsUpNextAndSession, UIImage(named: "upnext"))
             case .filterPresets:
                 return (L10n.settingsFilterPresets, UIImage(named: "podcast-filter"))
+            case .sync:
+                return (L10n.settingsSync, UIImage(systemName: "arrow.triangle.2.circlepath"))
             case .autoArchive:
                 return (L10n.settingsAutoArchive, UIImage(named: "settings_archive"))
             case .autoDownload:
@@ -91,7 +93,7 @@ class SettingsViewController: PCViewController, UITableViewDataSource, UITableVi
             developerSection,
             [.pocketCastsPlus],
             [.general, .notifications, .appearance],
-            [.inbox, .filterPresets, .autoArchive, .autoDownload],
+            [.inbox, .filterPresets, .sync, .autoArchive, .autoDownload],
             [.storageAndDataUse, .siriShortcuts, .headphoneControls, .watch, .customFiles],
             [.importSteps, .opml],
             [.upNextHistory, .foldersHistory],
@@ -175,6 +177,8 @@ class SettingsViewController: PCViewController, UITableViewDataSource, UITableVi
             navigationController?.pushViewController(InboxSettingsViewController(), animated: true)
         case .filterPresets:
             navigationController?.pushViewController(FilterPresetsListViewController(), animated: true)
+        case .sync:
+            navigationController?.pushViewController(SyncSettingsViewController(), animated: true)
         case .autoArchive:
             navigationController?.pushViewController(AutoArchiveViewController(), animated: true)
         case .autoDownload:

@@ -335,7 +335,13 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         SessionManager.shared.setup()
         SessionManager.shared.healSessions()
         InboxManager.shared.setup()
-        SessionCloudSync.start()
+        // Fork: exactly one Sessions sync engine per launch (they'd fight over the stores'
+        // diff handlers) — chosen in Settings → Synchronization. Local = no engine at all.
+        switch Settings.sessionSyncMode() {
+        case .server: SessionServerSync.start()
+        case .icloud: SessionCloudSync.start()
+        case .local: break
+        }
         DispatchQueue.main.async {
             ForkSettingsSync.shared.start()
         }

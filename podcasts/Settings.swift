@@ -370,6 +370,63 @@ class Settings: NSObject {
     }
     class func setHideEmptySessions(_ on: Bool) { UserDefaults.standard.set(on, forKey: hideEmptySessionsKey) }
 
+    // MARK: Fork: Pocket Sessions sync
+
+    /// How Sessions data (sessions, seen state, presets) syncs — entirely separate from the
+    /// Pocket Casts account, which always keeps syncing podcasts/progress/playlists/Up Next.
+    enum SessionSyncMode: String, CaseIterable {
+        case server, icloud, local
+
+        var title: String {
+            switch self {
+            case .server: return L10n.sessionSyncModeServer
+            case .icloud: return L10n.sessionSyncModeIcloud
+            case .local: return L10n.sessionSyncModeLocal
+            }
+        }
+    }
+
+    private static let sessionSyncModeKey = "SJSessionSyncMode"
+    class func sessionSyncMode() -> SessionSyncMode {
+        if let raw = UserDefaults.standard.string(forKey: sessionSyncModeKey), let mode = SessionSyncMode(rawValue: raw) {
+            return mode
+        }
+        // Pre-setting installs: a configured server URL implied server sync, else iCloud.
+        return sessionServerURL() != nil ? .server : .icloud
+    }
+    class func setSessionSyncMode(_ mode: SessionSyncMode) {
+        UserDefaults.standard.set(mode.rawValue, forKey: sessionSyncModeKey)
+    }
+
+    /// The Pocket Sessions server base URL. Also settable from the terminal for simulator testing:
+    ///   xcrun simctl spawn booted defaults write com.example.podcasts SJSessionServerURL http://localhost:8080
+    private static let sessionServerURLKey = "SJSessionServerURL"
+    class func sessionServerURL() -> URL? {
+        guard let raw = UserDefaults.standard.string(forKey: sessionServerURLKey), !raw.isEmpty else { return nil }
+        return URL(string: raw)
+    }
+    class func setSessionServerURL(_ url: String?) {
+        UserDefaults.standard.set(url, forKey: sessionServerURLKey)
+    }
+
+    private static let sessionServerTokenKey = "SJSessionServerToken"
+    class func sessionServerToken() -> String? {
+        guard let token = UserDefaults.standard.string(forKey: sessionServerTokenKey), !token.isEmpty else { return nil }
+        return token
+    }
+    class func setSessionServerToken(_ token: String?) {
+        UserDefaults.standard.set(token, forKey: sessionServerTokenKey)
+    }
+
+    /// A stable per-install device id — the server's push fan-out excludes the originator by it.
+    private static let sessionServerDeviceIdKey = "SJSessionServerDeviceId"
+    class func sessionServerDeviceId() -> String {
+        if let existing = UserDefaults.standard.string(forKey: sessionServerDeviceIdKey) { return existing }
+        let created = UUID().uuidString
+        UserDefaults.standard.set(created, forKey: sessionServerDeviceIdKey)
+        return created
+    }
+
     /// Fork: the most recently used "Add to Playlist" target, surfaced as a one-tap
     /// "Add to <name>" row in the Add to… swipe picker.
     private static let lastManualPlaylistAddedToKey = "SJLastManualPlaylistAddedTo"
