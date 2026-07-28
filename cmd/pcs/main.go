@@ -90,7 +90,7 @@ func serve() {
 
 	srv := &http.Server{
 		Addr:              cfg.Listen,
-		Handler:           api.New(st, pusher, logger),
+		Handler:           api.New(st, pusher, logger, cfg.AllowedEmails),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 

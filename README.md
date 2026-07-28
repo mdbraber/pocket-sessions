@@ -47,12 +47,13 @@ curl -s 'localhost:8080/session/v1/changes?since=0'
 
 ## Configuration (environment)
 
-| Variable         | Default          | Purpose                                   |
-|------------------|------------------|-------------------------------------------|
-| `PCS_LISTEN`     | `:8080`          | Listen address                             |
-| `PCS_DB`         | `pcsessions.db`  | SQLite path                                |
-| `PCS_AUTH_TOKEN` | *(empty)*        | Bootstrap bearer token for user 1          |
-| `PCS_DEBUG`      | *(empty)*        | Debug logging when set                     |
+| Variable             | Default          | Purpose                                                        |
+|----------------------|------------------|----------------------------------------------------------------|
+| `PCS_LISTEN`         | `:8080`          | Listen address                                                  |
+| `PCS_DB`             | `pcsessions.db`  | SQLite path                                                     |
+| `PCS_AUTH_TOKEN`     | *(empty)*        | Operator bearer token for user 1 (curl/scripts; devices don't need it) |
+| `PCS_ALLOWED_EMAILS` | *(empty)*        | PC accounts allowed to enroll (comma-separated); empty = the already-linked account, or anyone on a fresh server |
+| `PCS_DEBUG`          | *(empty)*        | Debug logging when set                                          |
 
 ## Deployment
 
@@ -77,8 +78,12 @@ Then locally, create a gitignored `deploy.env` with `DEPLOY_HOST=<ssh-host>` and
 make deploy   # rsync source + docker compose up -d --build
 ```
 
-The token in the host `.env` is the bootstrap credential: the first device
-authenticates with it once, and a successful Link Pocket Casts hands the app
-its own server-issued `pcs_…` token, which it stores automatically. Manual
-token entry in the app remains as an escape hatch. APNs (token-based `.p8`
-key) slots in behind `push.Pusher` next.
+Devices never need a typed token: enrollment is PC-identity based. A device
+POSTs `/session/v1/pc-link/start` (unauthenticated), approves the pairing
+code with its own Pocket Casts session, and `/pc-link/complete` both links
+the account and issues the device its own `pcs_…` bearer token — in the app
+this all happens automatically when the server URL is saved. The gate is
+`PCS_ALLOWED_EMAILS` (or, unset: the already-linked account; a fresh server
+trusts its first link). `PCS_AUTH_TOKEN` remains as an operator credential
+for curl and scripts. APNs (token-based `.p8` key) slots in behind
+`push.Pusher` next.

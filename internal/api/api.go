@@ -22,10 +22,15 @@ type Server struct {
 	pusher push.Pusher
 	logger *slog.Logger
 
-	// Device-code links awaiting approval, keyed by user. In-memory on purpose:
+	// PC accounts allowed to enroll through the unauthenticated pc-link flow
+	// (PCS_ALLOWED_EMAILS); empty means "the already-linked account" (or anyone,
+	// on a completely fresh server).
+	allowedEmails []string
+
+	// Device-code links awaiting approval, keyed by linkId. In-memory on purpose:
 	// codes live 30 minutes and a lost pending link just means re-tapping Link.
 	pendingMu    sync.Mutex
-	pendingLinks map[int64]pendingLink
+	pendingLinks map[string]pendingLink
 }
 
 type pendingLink struct {
@@ -33,8 +38,8 @@ type pendingLink struct {
 	expires    time.Time
 }
 
-func New(st *store.Store, pusher push.Pusher, logger *slog.Logger) http.Handler {
-	s := &Server{store: st, pusher: pusher, logger: logger, pendingLinks: map[int64]pendingLink{}}
+func New(st *store.Store, pusher push.Pusher, logger *slog.Logger, allowedEmails []string) http.Handler {
+	s := &Server{store: st, pusher: pusher, logger: logger, allowedEmails: allowedEmails, pendingLinks: map[string]pendingLink{}}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -47,8 +52,10 @@ func New(st *store.Store, pusher push.Pusher, logger *slog.Logger) http.Handler 
 	mux.Handle("POST /session/v1/nudge", s.authed(s.handleNudge))
 	mux.Handle("GET /session/v1/pc-link", s.authed(s.handlePCLinkStatus))
 	mux.Handle("POST /session/v1/pc-link", s.authed(s.handlePCLink))
-	mux.Handle("POST /session/v1/pc-link/start", s.authed(s.handlePCLinkStart))
-	mux.Handle("POST /session/v1/pc-link/complete", s.authed(s.handlePCLinkComplete))
+	// Enrollment is unauthenticated by design: approving the pairing code with an
+	// allowed Pocket Casts account IS the credential (see handlePCLinkComplete).
+	mux.HandleFunc("POST /session/v1/pc-link/start", s.handlePCLinkStart)
+	mux.HandleFunc("POST /session/v1/pc-link/complete", s.handlePCLinkComplete)
 	mux.Handle("DELETE /session/v1/pc-link", s.authed(s.handlePCUnlink))
 	mux.Handle("GET /api/v1/up-next", s.authed(s.handleUpNext))
 	mux.Handle("POST /api/v1/pull", s.authed(s.handlePullMirror))

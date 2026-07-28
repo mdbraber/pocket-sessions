@@ -4,7 +4,8 @@
 #
 # Host-side `.env` (next to this file, not in git):
 #   PCS_DOMAIN=sessions.example.com
-#   PCS_AUTH_TOKEN=<openssl rand -hex 24>
+#   PCS_AUTH_TOKEN=<openssl rand -hex 24>       # operator credential (curl/scripts)
+#   PCS_ALLOWED_EMAILS=you@example.com          # PC accounts allowed to enroll (optional)
 services:
   pocket-sessions:
     container_name: pocket-sessions
@@ -14,6 +15,7 @@ services:
       - PCS_LISTEN=:8080
       - PCS_DB=/data/pcsessions.db
       - PCS_AUTH_TOKEN=${PCS_AUTH_TOKEN}
+      - PCS_ALLOWED_EMAILS=${PCS_ALLOWED_EMAILS:-}
     volumes:
       - ./data:/data
     networks:

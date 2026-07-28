@@ -39,3 +39,23 @@ func (s *Store) DeletePCLink(userID int64) error {
 	_, err := s.db.Exec(`DELETE FROM pc_links WHERE user_id = ?`, userID)
 	return err
 }
+
+// PCLinkEmailExists reports whether some user is already linked to this PC
+// account (case-insensitive) — one of the ways an enrollment proves it's welcome.
+func (s *Store) PCLinkEmailExists(email string) (bool, error) {
+	var n int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM pc_links WHERE lower(pc_email) = lower(?)`, email).Scan(&n); err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
+// HasPCLinks reports whether any PC account is linked at all — a completely
+// fresh server trusts its first enrollment (there is nothing to protect yet).
+func (s *Store) HasPCLinks() (bool, error) {
+	var n int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM pc_links`).Scan(&n); err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
