@@ -370,11 +370,11 @@ final class SessionServerSync {
 
     /// Hands the server this device's PC refresh token (never a password); the server
     /// validates it with a real exchange and becomes "another PC client" for the mirror.
-    func linkPCAccount(refreshToken: String, accessToken: String, completion: @escaping (String?) -> Void) {
+    func linkPCAccount(refreshToken: String, accessToken: String, email: String, completion: @escaping (String?) -> Void) {
         FileLog.shared.addMessage("SessionServerSync: linking PC account (refresh: \(!refreshToken.isEmpty), access: \(!accessToken.isEmpty))")
         queue.async { [weak self] in
             self?.request(path: "/session/v1/pc-link", method: "POST",
-                          body: ["refreshToken": refreshToken, "accessToken": accessToken]) { result in
+                          body: ["refreshToken": refreshToken, "accessToken": accessToken, "email": email]) { result in
                 if case .failure(let error) = result {
                     FileLog.shared.addMessage("SessionServerSync: PC link failed: \(error.localizedDescription)")
                 }

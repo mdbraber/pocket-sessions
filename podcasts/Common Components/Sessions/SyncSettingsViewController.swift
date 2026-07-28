@@ -151,7 +151,7 @@ class SyncSettingsViewController: PCViewController, UITableViewDataSource, UITab
                     return
                 }
                 self.withActiveSync { sync in
-                    sync.linkPCAccount(refreshToken: refreshToken, accessToken: accessToken) { [weak self] email in
+                    sync.linkPCAccount(refreshToken: refreshToken, accessToken: accessToken, email: ServerSettings.syncingEmail() ?? "") { [weak self] email in
                         if let email {
                             self?.pcLinkEmail = email
                             self?.settingsTable.reloadData()
