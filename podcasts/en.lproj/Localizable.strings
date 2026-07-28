@@ -7135,7 +7135,7 @@
 "session_sync_mode_header" = "Sessions Data";
 
 /* Fork: sync mode — the user's own Pocket Casts Sessions (PCS) server. */
-"session_sync_mode_server" = "PCS Server";
+"session_sync_mode_server" = "Pocket Casts Sessions Server";
 
 /* Fork: sync mode — Apple iCloud. */
 "session_sync_mode_icloud" = "iCloud";
