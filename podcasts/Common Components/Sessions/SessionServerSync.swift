@@ -72,7 +72,32 @@ final class SessionServerSync {
     }
 
     @objc private func pcSyncCompleted() {
-        queue.async { [weak self] in self?.postNudge() }
+        queue.async { [weak self] in
+            self?.postNudge()
+            // The app just proved it holds a working PC token — hand the server a fresh
+            // copy. This is what makes the link durable: neither device reliably has a
+            // refresh token, so without this the server's access would expire and the
+            // user would have to re-link by hand.
+            self?.refreshPCLinkIfLinked()
+        }
+    }
+
+    /// Key remembering that THIS device linked its PC account to THIS server — the
+    /// refresh below only ever runs for a link the user already consented to.
+    private var pcLinkedKey: String { "SJSessionServerPCLinked-\(baseURL.host ?? "server")" }
+
+    private func refreshPCLinkIfLinked() {
+        guard UserDefaults.standard.bool(forKey: pcLinkedKey) else { return }
+        let refreshToken = ((try? ServerSettings.refreshToken()) ?? nil) ?? ""
+        let accessToken = ServerSettings.syncingV2Token ?? ""
+        guard !refreshToken.isEmpty || !accessToken.isEmpty else { return }
+        request(path: "/session/v1/pc-link", method: "POST",
+                body: ["refreshToken": refreshToken, "accessToken": accessToken,
+                       "email": ServerSettings.syncingEmail() ?? ""]) { result in
+            if case .failure(let error) = result {
+                FileLog.shared.addMessage("SessionServerSync: PC link refresh failed: \(error.localizedDescription)")
+            }
+        }
     }
 
     // MARK: - Local → server (diffs, mirroring SessionCloudSync's enqueue rules)
@@ -374,7 +399,7 @@ final class SessionServerSync {
         FileLog.shared.addMessage("SessionServerSync: linking PC account (refresh: \(!refreshToken.isEmpty), access: \(!accessToken.isEmpty))")
         queue.async { [weak self] in
             self?.request(path: "/session/v1/pc-link", method: "POST",
-                          body: ["refreshToken": refreshToken, "accessToken": accessToken, "email": email]) { result in
+                          body: ["refreshToken": refreshToken, "accessToken": accessToken, "email": email]) { [weak self] result in
                 if case .failure(let error) = result {
                     FileLog.shared.addMessage("SessionServerSync: PC link failed: \(error.localizedDescription)")
                 }
@@ -382,6 +407,9 @@ final class SessionServerSync {
                       let dict = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
                     DispatchQueue.main.async { completion(nil) }
                     return
+                }
+                if dict["linked"] as? Bool == true {
+                    UserDefaults.standard.set(true, forKey: self?.pcLinkedKey ?? "")
                 }
                 DispatchQueue.main.async { completion(dict["email"] as? String) }
             }
