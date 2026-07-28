@@ -201,49 +201,33 @@ class SyncSettingsViewController: PCViewController, UITableViewDataSource, UITab
             let raw = alert?.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             Settings.setSessionServerURL(raw.isEmpty ? nil : raw)
             self?.settingsTable.reloadData()
+            // Entering the server is the only manual step: enrollment (PC link +
+            // this device's own PCS token) runs automatically from here.
+            if !raw.isEmpty, SyncManager.isUserLoggedIn() {
+                self?.linkPCAccount()
+            }
         })
         present(alert, animated: true)
     }
 
-    /// The device-code link handshake: the server gets a pairing code from Pocket
-    /// Casts, this device approves it with its own session, and the server redeems
-    /// it for a renewable token lineage — issuing us a PCS API token in return.
-    /// No password or token ever leaves this device.
+    /// PC-identity enrollment: the server gets a pairing code from Pocket Casts,
+    /// this device approves it with its own session, and the server redeems it for
+    /// a renewable lineage — issuing this device its own PCS API token in return.
+    /// No password or token ever leaves this device, and no bootstrap token is
+    /// needed. Engine-free, so it works right after the URL is saved (no relaunch).
     private func linkPCAccount() {
         guard SyncManager.isUserLoggedIn() else {
             Toast.show(L10n.sessionSyncPcLinkNoToken)
             return
         }
-        withActiveSync { sync in
-            Toast.show(L10n.sessionSyncPcLinking)
-            sync.startPCLink { userCode in
-                guard let userCode else {
-                    Toast.show(L10n.sessionSyncFailed)
-                    return
-                }
-                Task { @MainActor in
-                    do {
-                        _ = try await ApiServerHandler.shared.deviceApproveRequest(userCode: userCode, approve: true)
-                    } catch {
-                        FileLog.shared.addMessage("SyncSettings: PC device approve failed: \(error.localizedDescription)")
-                        Toast.show(L10n.sessionSyncFailed)
-                        return
-                    }
-                    sync.completePCLink { [weak self] email, apiToken in
-                        // The server-issued token replaces the typed bootstrap token
-                        // from here on; manual entry stays as the escape hatch.
-                        if let apiToken, !apiToken.isEmpty {
-                            Settings.setSessionServerToken(apiToken)
-                        }
-                        if let email {
-                            self?.pcLinkEmail = email
-                            self?.settingsTable.reloadData()
-                            Toast.show(L10n.sessionSyncPcLinkDone(email))
-                        } else {
-                            Toast.show(L10n.sessionSyncFailed)
-                        }
-                    }
-                }
+        Toast.show(L10n.sessionSyncPcLinking)
+        SessionServerSync.enroll { [weak self] email in
+            if let email {
+                self?.pcLinkEmail = email
+                self?.settingsTable.reloadData()
+                Toast.show(L10n.sessionSyncPcLinkDone(email.isEmpty ? L10n.sessionSyncLinked : email))
+            } else {
+                Toast.show(L10n.sessionSyncFailed)
             }
         }
     }

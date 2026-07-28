@@ -7150,7 +7150,7 @@
 "session_sync_server_url" = "Server URL";
 
 /* Fork: prompt text when entering the server URL. */
-"session_sync_server_url_message" = "The base URL of your PCS server, including http(s):// — for example https://sessions.example.com, or http://localhost:8080 for local testing.";
+"session_sync_server_url_message" = "The base URL of your PCS server, including http(s):// — for example https://sessions.example.com, or http://localhost:8080 for local testing. Saving links your Pocket Casts account and sets up this device automatically.";
 
 /* Fork: Synchronization screen — the server's access token row. */
 "session_sync_server_token" = "Access Token";
@@ -7162,7 +7162,7 @@
 "session_sync_server_token_auto" = "Set Automatically";
 
 /* Alert message explaining the Access Token row; manual entry is the advanced escape hatch */
-"session_sync_server_token_status" = "A token is issued automatically when you link your Pocket Casts account. Enter one manually only for the first connection to a server that requires its bootstrap token.";
+"session_sync_server_token_status" = "A token is issued automatically when your Pocket Casts account is linked — there is nothing to type here. Manual entry exists only for unusual setups, like a server whose enrollment is restricted to other accounts.";
 
 /* Button that opens manual entry of the server access token */
 "session_sync_server_token_manual" = "Enter Manually";
@@ -7216,7 +7216,7 @@
 "session_sync_pc_link" = "Link Pocket Casts Account";
 
 /* Fork: confirmation before sending the PC refresh token to the user's own server. */
-"session_sync_pc_link_message" = "Your server gets its own Pocket Casts sign-in through the device-pairing flow: it requests a pairing code and this app approves it with your account. Nothing leaves this device — no password and no token — and the server's access renews itself from then on.";
+"session_sync_pc_link_message" = "Re-runs the link: your server gets its own Pocket Casts sign-in through the device-pairing flow — it requests a pairing code and this app approves it with your account. Nothing leaves this device (no password, no token), the server's access renews itself, and this device receives a fresh server token. This normally happens automatically when you save the server URL.";
 
 /* Fork: toast after linking succeeds. %1$@ is the account email. */
 "session_sync_pc_link_done" = "Linked as %1$@";

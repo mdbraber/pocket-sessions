@@ -72,32 +72,9 @@ final class SessionServerSync {
     }
 
     @objc private func pcSyncCompleted() {
-        queue.async { [weak self] in
-            self?.postNudge()
-            // The app just proved it holds a working PC token — hand the server a fresh
-            // copy. This is what makes the link durable: neither device reliably has a
-            // refresh token, so without this the server's access would expire and the
-            // user would have to re-link by hand.
-            self?.refreshPCLinkIfLinked()
-        }
-    }
-
-    /// Key remembering that THIS device linked its PC account to THIS server — the
-    /// refresh below only ever runs for a link the user already consented to.
-    private var pcLinkedKey: String { "SJSessionServerPCLinked-\(baseURL.host ?? "server")" }
-
-    private func refreshPCLinkIfLinked() {
-        guard UserDefaults.standard.bool(forKey: pcLinkedKey) else { return }
-        let refreshToken = ((try? ServerSettings.refreshToken())) ?? ""
-        let accessToken = ServerSettings.syncingV2Token ?? ""
-        guard !refreshToken.isEmpty || !accessToken.isEmpty else { return }
-        request(path: "/session/v1/pc-link", method: "POST",
-                body: ["refreshToken": refreshToken, "accessToken": accessToken,
-                       "email": ServerSettings.syncingEmail() ?? ""]) { result in
-            if case .failure(let error) = result {
-                FileLog.shared.addMessage("SessionServerSync: PC link refresh failed: \(error.localizedDescription)")
-            }
-        }
+        // No PC-token upkeep here anymore: the server's device-flow lineage renews
+        // itself (a donated token would only ever downgrade it).
+        queue.async { [weak self] in self?.postNudge() }
     }
 
     // MARK: - Local → server (diffs, mirroring SessionCloudSync's enqueue rules)
@@ -393,54 +370,84 @@ final class SessionServerSync {
         }
     }
 
-    /// Starts a device-code link: the server asks Pocket Casts for a pairing code
-    /// (PC's TV-pairing flow) and hands back the user code, which this device then
-    /// approves with its own PC session. Nothing secret ever travels app → server.
-    func startPCLink(completion: @escaping (String?) -> Void) {
-        FileLog.shared.addMessage("SessionServerSync: starting PC device-code link")
-        queue.async { [weak self] in
-            self?.request(path: "/session/v1/pc-link/start", method: "POST", body: [:]) { result in
-                guard case .success(let data) = result,
-                      let dict = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-                      let userCode = dict["userCode"] as? String, !userCode.isEmpty else {
-                    FileLog.shared.addMessage("SessionServerSync: PC link start failed")
-                    DispatchQueue.main.async { completion(nil) }
+    /// The full PC-identity enrollment against the configured server, engine-free on
+    /// purpose so it can run the moment a server URL is saved (no relaunch needed):
+    /// ask the server for a pairing code, approve it with this device's own Pocket
+    /// Casts session, then have the server redeem it. The server answers with a
+    /// PCS API token of our own (stored here) — no bootstrap token, no secrets sent.
+    static func enroll(completion: @escaping (String?) -> Void) {
+        guard let baseURL = Settings.sessionServerURL() else {
+            completion(nil)
+            return
+        }
+        FileLog.shared.addMessage("SessionServerSync: starting PC-identity enrollment")
+        enrollRequest(baseURL: baseURL, path: "/session/v1/pc-link/start", body: [:]) { dict in
+            guard let dict, let linkId = dict["linkId"] as? String, !linkId.isEmpty,
+                  let userCode = dict["userCode"] as? String, !userCode.isEmpty else {
+                FileLog.shared.addMessage("SessionServerSync: enrollment start failed")
+                DispatchQueue.main.async { completion(nil) }
+                return
+            }
+            Task { @MainActor in
+                do {
+                    _ = try await ApiServerHandler.shared.deviceApproveRequest(userCode: userCode, approve: true)
+                } catch {
+                    FileLog.shared.addMessage("SessionServerSync: PC device approve failed: \(error.localizedDescription)")
+                    completion(nil)
                     return
                 }
-                DispatchQueue.main.async { completion(userCode) }
+                completeEnrollment(baseURL: baseURL, linkId: linkId, attemptsLeft: 5, completion: completion)
             }
         }
     }
 
-    /// Completes the link after this device approved the code: the server redeems it
-    /// for its own token lineage and issues us a PCS API token in return. The server
-    /// answers "pending" until PC has registered the approval, so retry briefly.
-    func completePCLink(attemptsLeft: Int = 5, completion: @escaping (String?, String?) -> Void) {
-        queue.async { [weak self] in
-            self?.request(path: "/session/v1/pc-link/complete", method: "POST", body: [:]) { [weak self] result in
-                guard case .success(let data) = result,
-                      let dict = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
-                    FileLog.shared.addMessage("SessionServerSync: PC link complete failed")
-                    DispatchQueue.main.async { completion(nil, nil) }
+    /// The server answers "pending" until PC has registered the approval — retry
+    /// briefly. Success delivers the linked email and stores the issued PCS token.
+    private static func completeEnrollment(baseURL: URL, linkId: String, attemptsLeft: Int, completion: @escaping (String?) -> Void) {
+        enrollRequest(baseURL: baseURL, path: "/session/v1/pc-link/complete", body: ["linkId": linkId]) { dict in
+            guard let dict else {
+                FileLog.shared.addMessage("SessionServerSync: enrollment complete failed")
+                DispatchQueue.main.async { completion(nil) }
+                return
+            }
+            if dict["pending"] as? Bool == true {
+                guard attemptsLeft > 1 else {
+                    FileLog.shared.addMessage("SessionServerSync: enrollment still pending after retries")
+                    DispatchQueue.main.async { completion(nil) }
                     return
                 }
-                if dict["pending"] as? Bool == true {
-                    guard attemptsLeft > 1 else {
-                        FileLog.shared.addMessage("SessionServerSync: PC link still pending after retries")
-                        DispatchQueue.main.async { completion(nil, nil) }
-                        return
-                    }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                        self?.completePCLink(attemptsLeft: attemptsLeft - 1, completion: completion)
-                    }
-                    return
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                    completeEnrollment(baseURL: baseURL, linkId: linkId, attemptsLeft: attemptsLeft - 1, completion: completion)
                 }
-                if dict["linked"] as? Bool == true {
-                    UserDefaults.standard.set(true, forKey: self?.pcLinkedKey ?? "")
+                return
+            }
+            DispatchQueue.main.async {
+                if let token = dict["apiToken"] as? String, !token.isEmpty {
+                    Settings.setSessionServerToken(token)
                 }
-                DispatchQueue.main.async { completion(dict["email"] as? String, dict["apiToken"] as? String) }
+                completion(dict["linked"] as? Bool == true ? (dict["email"] as? String ?? "") : nil)
             }
         }
+    }
+
+    private static func enrollRequest(baseURL: URL, path: String, body: [String: Any], completion: @escaping ([String: Any]?) -> Void) {
+        guard let url = URL(string: path, relativeTo: baseURL) else {
+            completion(nil)
+            return
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue(Settings.sessionServerDeviceId(), forHTTPHeaderField: "X-Device-Id")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        URLSession.shared.dataTask(with: request) { data, response, _ in
+            guard let http = response as? HTTPURLResponse, (200 ..< 300).contains(http.statusCode),
+                  let data, let dict = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+                completion(nil)
+                return
+            }
+            completion(dict)
+        }.resume()
     }
 
     // MARK: - Registration + nudge

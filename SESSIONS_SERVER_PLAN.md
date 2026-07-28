@@ -121,6 +121,19 @@ The binary is renamed **`pcs`** with `serve` (Docker entrypoint) and `link`
 subcommands; `pcs link` is the operator fallback (device flow by default,
 `-password` for a one-shot login that yields an expiring access-token link).
 
+**Enrollment v2 (same day): no bootstrap token for devices.** `/pc-link/start`
++ `/complete` are unauthenticated and keyed by a `linkId`; approving the code
+with an allowed PC account IS the credential (gate: `PCS_ALLOWED_EMAILS`, else
+the already-linked email, else trust-on-first-link on a fresh server; pending
+links capped + pruned). In the app, saving the Server URL runs the whole
+enrollment automatically — the only manual step left. The Link row remains as
+status/manual re-link. The client-side "keep the link alive" re-post was
+removed, and the legacy donate-a-token endpoint now refuses to downgrade a
+renewable lineage (old builds — the phone — would clobber it otherwise).
+`PCS_AUTH_TOKEN` is an operator credential only. Verified end-to-end on the
+simulator against a fresh local server (TOFU, tv lineage, minted pcs_ token
+auto-stored).
+
 - **M1 (= v1)** — Go skeleton, session sync API, device registry, APNs push;
   `SessionServerSync` + nudge hook in the app; CloudKit demoted to fallback.
   Zero protobuf. Ships the simulator fix and cross-device session sync.
