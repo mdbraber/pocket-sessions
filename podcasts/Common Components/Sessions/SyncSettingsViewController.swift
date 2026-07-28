@@ -8,13 +8,14 @@ import UIKit
 class SyncSettingsViewController: PCViewController, UITableViewDataSource, UITableViewDelegate {
     private static let cellId = "SyncSettingsCell"
 
-    private enum TableRow { case modeServer, modeICloud, modeLocal, serverURL, serverToken }
+    private enum TableRow { case modeServer, modeICloud, modeLocal, serverURL, serverToken, syncNow, pushWins, pullWins }
 
-    /// The server-detail section only shows while the server mode is selected.
+    /// The server-detail and manual-sync sections only show while the server mode is selected.
     private var sections: [[TableRow]] {
         var sections: [[TableRow]] = [[.modeServer, .modeICloud, .modeLocal]]
         if Settings.sessionSyncMode() == .server {
             sections.append([.serverURL, .serverToken])
+            sections.append([.syncNow, .pushWins, .pullWins])
         }
         return sections
     }
@@ -52,6 +53,7 @@ class SyncSettingsViewController: PCViewController, UITableViewDataSource, UITab
         switch sections[section].first {
         case .modeServer: return L10n.sessionSyncModeHeader
         case .serverURL: return L10n.sessionSyncModeServer
+        case .syncNow: return L10n.sessionSyncActionsHeader
         default: return nil
         }
     }
@@ -60,6 +62,7 @@ class SyncSettingsViewController: PCViewController, UITableViewDataSource, UITab
         switch sections[section].first {
         case .modeServer: return L10n.sessionSyncFooter
         case .serverURL: return L10n.sessionSyncServerFooter
+        case .syncNow: return L10n.sessionSyncActionsFooter
         default: return nil
         }
     }
@@ -92,6 +95,18 @@ class SyncSettingsViewController: PCViewController, UITableViewDataSource, UITab
             cell.textLabel?.text = L10n.sessionSyncServerToken
             cell.detailTextLabel?.text = Settings.sessionServerToken() == nil ? L10n.sessionSyncNotSet : "••••••"
             cell.accessoryType = .disclosureIndicator
+        case .syncNow:
+            cell.textLabel?.text = L10n.sessionSyncNow
+            cell.detailTextLabel?.text = nil
+            cell.accessoryType = .none
+        case .pushWins:
+            cell.textLabel?.text = L10n.sessionSyncPushWins
+            cell.detailTextLabel?.text = nil
+            cell.accessoryType = .none
+        case .pullWins:
+            cell.textLabel?.text = L10n.sessionSyncPullWins
+            cell.detailTextLabel?.text = nil
+            cell.accessoryType = .none
         }
         return cell
     }
@@ -112,7 +127,34 @@ class SyncSettingsViewController: PCViewController, UITableViewDataSource, UITab
             promptForServerURL()
         case .serverToken:
             promptForToken()
+        case .syncNow:
+            withActiveSync { $0.syncNow { ok in Toast.show(ok ? L10n.sessionSyncNowDone : L10n.sessionSyncFailed) } }
+        case .pushWins:
+            confirm(title: L10n.sessionSyncPushWins, message: L10n.sessionSyncPushConfirm) { [weak self] in
+                self?.withActiveSync { $0.pushReplacingServer { ok in Toast.show(ok ? L10n.sessionSyncNowDone : L10n.sessionSyncFailed) } }
+            }
+        case .pullWins:
+            confirm(title: L10n.sessionSyncPullWins, message: L10n.sessionSyncPullConfirm) { [weak self] in
+                self?.withActiveSync { $0.pullReplacingLocal { ok in Toast.show(ok ? L10n.sessionSyncNowDone : L10n.sessionSyncFailed) } }
+            }
         }
+    }
+
+    /// The engine only exists when server mode was active at launch — a just-switched
+    /// mode needs a relaunch first, and the toast says so instead of failing silently.
+    private func withActiveSync(_ block: (SessionServerSync) -> Void) {
+        guard let sync = SessionServerSync.shared else {
+            Toast.show(L10n.sessionSyncRestartNeeded)
+            return
+        }
+        block(sync)
+    }
+
+    private func confirm(title: String, message: String, onConfirm: @escaping () -> Void) {
+        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: L10n.cancel, style: .cancel))
+        alert.addAction(UIAlertAction(title: title, style: .destructive) { _ in onConfirm() })
+        present(alert, animated: true)
     }
 
     private func select(mode: Settings.SessionSyncMode) {

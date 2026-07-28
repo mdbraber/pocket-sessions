@@ -159,7 +159,7 @@ final class SessionServerSync {
         queue.asyncAfter(deadline: .now() + 2, execute: work)
     }
 
-    private func flush() {
+    private func flush(completion: ((Bool) -> Void)? = nil) {
         var body: [String: Any] = [:]
         if !pendingSessions.isEmpty { body["sessions"] = Array(pendingSessions.values) }
         if !pendingPresets.isEmpty { body["presets"] = Array(pendingPresets.values) }
@@ -172,7 +172,10 @@ final class SessionServerSync {
                 "unseenAt": InboxStore.withinSeenRetention(ledger.unseenAt).mapValues(Self.ms)
             ]
         }
-        guard !body.isEmpty else { return }
+        guard !body.isEmpty else {
+            fetch(completion: completion)
+            return
+        }
 
         let sent = (pendingSessions, pendingPresets, pendingOffered, ledgerDirty)
         pendingSessions = [:]; pendingPresets = [:]; pendingOffered = [:]; ledgerDirty = false
@@ -183,7 +186,7 @@ final class SessionServerSync {
             case .success:
                 // Converge: fetch from our cursor so anything that landed meanwhile
                 // (other devices) applies too; our own echo is idempotent.
-                self.fetch()
+                self.fetch(completion: completion)
             case .failure(let error):
                 FileLog.shared.addMessage("SessionServerSync: upload failed (\(error.localizedDescription)) — requeued")
                 // Re-merge what we tried to send under anything newer that arrived since.
@@ -192,29 +195,132 @@ final class SessionServerSync {
                 self.pendingOffered.merge(sent.2) { newer, older in max(newer, older) }
                 self.ledgerDirty = self.ledgerDirty || sent.3
                 self.queue.asyncAfter(deadline: .now() + 30) { [weak self] in self?.scheduleFlush() }
+                DispatchQueue.main.async { completion?(false) }
             }
         }
     }
 
     // MARK: - Server → local
 
-    func fetch() {
+    func fetch(completion: ((Bool) -> Void)? = nil) {
         let since = UserDefaults.standard.integer(forKey: cursorKey)
         request(path: "/session/v1/changes?since=\(since)", method: "GET", body: nil) { [weak self] result in
             guard let self, case .success(let data) = result,
-                  let dict = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return }
+                  let dict = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+                DispatchQueue.main.async { completion?(false) }
+                return
+            }
             self.apply(dict)
+            DispatchQueue.main.async { completion?(true) }
+        }
+    }
+
+    // MARK: - Manual sync (Settings → Synchronization)
+
+    /// Flush anything pending immediately, then fetch — the "Sync Now" button.
+    func syncNow(completion: ((Bool) -> Void)? = nil) {
+        queue.async { [weak self] in
+            guard let self else { return }
+            self.flushWork?.cancel()
+            self.flushWork = nil
+            self.flush(completion: completion)
+        }
+    }
+
+    /// "This device wins": every local record re-uploads stamped NOW (winning LWW on the
+    /// server and, transitively, on every other device), and server-only records are
+    /// tombstoned — replace, not union.
+    func pushReplacingServer(completion: ((Bool) -> Void)? = nil) {
+        queue.async { [weak self] in
+            guard let self else { return }
+            self.request(path: "/session/v1/changes?since=0", method: "GET", body: nil) { result in
+                guard case .success(let data) = result,
+                      let dict = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+                    DispatchQueue.main.async { completion?(false) }
+                    return
+                }
+                let now = Self.nowMs()
+                let localSessions = SessionStore.shared.snapshot.sessions
+                let localSessionUuids = Set(localSessions.map(\.uuid))
+                for session in localSessions {
+                    guard let payload = Self.jsonObject(session) else { continue }
+                    self.pendingSessions[session.uuid] = ["uuid": session.uuid, "updatedAt": now, "payload": payload]
+                }
+                for record in dict["sessions"] as? [[String: Any]] ?? [] {
+                    if let uuid = record["uuid"] as? String, !localSessionUuids.contains(uuid), record["deleted"] as? Bool != true {
+                        self.pendingSessions[uuid] = ["uuid": uuid, "updatedAt": now, "deleted": true]
+                    }
+                }
+                let localPresets = FilterPresetStore.shared.snapshot.presets
+                let localPresetUuids = Set(localPresets.map(\.uuid))
+                for preset in localPresets {
+                    guard let payload = Self.jsonObject(preset) else { continue }
+                    self.pendingPresets[preset.uuid] = ["uuid": preset.uuid, "updatedAt": now, "payload": payload]
+                }
+                for record in dict["presets"] as? [[String: Any]] ?? [] {
+                    if let uuid = record["uuid"] as? String, !localPresetUuids.contains(uuid), record["deleted"] as? Bool != true {
+                        self.pendingPresets[uuid] = ["uuid": uuid, "updatedAt": now, "deleted": true]
+                    }
+                }
+                let inbox = InboxStore.shared.snapshot
+                for (uuid, date) in inbox.offeredThrough { self.pendingOffered[uuid] = Self.ms(date) }
+                self.ledgerDirty = true
+                self.flush(completion: completion)
+            }
+        }
+    }
+
+    /// "Server wins": local records the server doesn't have are deleted through the NORMAL
+    /// path (their tombstones and store-playlist deletions propagate, so other devices
+    /// converge on the same state), pending local uploads are dropped, and the full server
+    /// state applies on top.
+    func pullReplacingLocal(completion: ((Bool) -> Void)? = nil) {
+        queue.async { [weak self] in
+            guard let self else { return }
+            self.request(path: "/session/v1/changes?since=0", method: "GET", body: nil) { result in
+                guard case .success(let data) = result,
+                      let dict = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+                    DispatchQueue.main.async { completion?(false) }
+                    return
+                }
+                // Drop local divergence that was waiting to upload — the server's view wins.
+                self.pendingSessions = [:]; self.pendingPresets = [:]; self.pendingOffered = [:]; self.ledgerDirty = false
+
+                let liveServerSessions = Set((dict["sessions"] as? [[String: Any]] ?? [])
+                    .filter { $0["deleted"] as? Bool != true }
+                    .compactMap { $0["uuid"] as? String })
+                for local in SessionStore.shared.snapshot.sessions
+                where local.uuid != SessionStore.globalInboxUuid && !liveServerSessions.contains(local.uuid) {
+                    SessionManager.shared.deleteSession(local)
+                }
+                let liveServerPresets = Set((dict["presets"] as? [[String: Any]] ?? [])
+                    .filter { $0["deleted"] as? Bool != true }
+                    .compactMap { $0["uuid"] as? String })
+                for preset in FilterPresetStore.shared.snapshot.presets where !liveServerPresets.contains(preset.uuid) {
+                    FilterPresetStore.shared.delete(uuid: preset.uuid)
+                }
+
+                self.apply(dict)
+                DispatchQueue.main.async { completion?(true) }
+            }
         }
     }
 
     private func apply(_ dict: [String: Any]) {
-        for record in dict["sessions"] as? [[String: Any]] ?? [] {
+        let sessionRecords = dict["sessions"] as? [[String: Any]] ?? []
+        for record in sessionRecords {
             guard let uuid = record["uuid"] as? String else { continue }
             if record["deleted"] as? Bool == true {
                 SessionStore.shared.applyRemoteDelete(sessionUuid: uuid)
             } else if let session: Session = Self.decode(record["payload"]) {
                 SessionStore.shared.applyRemoteUpsert(session)
             }
+        }
+        // Two devices that diverged before ever sharing a server each hold their own record
+        // for "the same" session (same podcast/lens, different uuid) — merge them now, with a
+        // deterministic winner so every device converges without coordination.
+        if !sessionRecords.isEmpty {
+            SessionManager.shared.dedupeSessionsByIdentity()
         }
         for record in dict["presets"] as? [[String: Any]] ?? [] {
             guard let uuid = record["uuid"] as? String else { continue }

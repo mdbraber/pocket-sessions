@@ -353,6 +353,54 @@ class SessionManager {
         NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged)
     }
 
+    /// Fork: merges duplicate sessions sharing one identity — the same podcast, folder, or
+    /// smart-playlist feeder (manual sessions: the same store playlist). Duplicates arise when
+    /// two devices each created "the podcast's session" locally before ever syncing with each
+    /// other (a CloudKit-era phone vs a fresh install), so a union merge alone would list every
+    /// session twice. The winner is deterministic (lowest uuid) so every device independently
+    /// picks the same survivor; the loser's lineup and pins fold into the winner, and the loser
+    /// dies through the NORMAL delete path — its tombstone and store-playlist deletion sync
+    /// onward and converge the other devices too.
+    @discardableResult
+    func dedupeSessionsByIdentity() -> Int {
+        var groups: [String: [Session]] = [:]
+        for session in SessionStore.shared.sessions where session.uuid != SessionStore.globalInboxUuid {
+            let key: String
+            switch session.feeder {
+            case .podcast(let uuid): key = "podcast:\(uuid)"
+            case .folder(let uuid): key = "folder:\(uuid)"
+            case .smartPlaylist(let uuid): key = "smart:\(uuid)"
+            case .allPodcasts: key = "allPodcasts"
+            case .none: key = "store:\(session.storePlaylistUuid ?? session.uuid)"
+            }
+            groups[key, default: []].append(session)
+        }
+
+        var removed = 0
+        for group in groups.values where group.count > 1 {
+            let sorted = group.sorted { $0.uuid < $1.uuid }
+            guard let winner = sorted.first else { continue }
+            for loser in sorted.dropFirst() {
+                if let loserStore = store(for: loser) {
+                    let winnerMembers = Set(SessionFeederEngine.storeMemberUuids(for: winner))
+                    let toMove = DataManager.sharedManager.positionedEpisodeUuids(for: loserStore).filter { !winnerMembers.contains($0) }
+                    if !toMove.isEmpty { addToLineup(episodeUuids: toMove, session: winner) }
+                }
+                if !loser.pinnedEpisodeUuids.isEmpty {
+                    SessionStore.shared.mutateSession(winner) { updated in
+                        updated.pinnedEpisodeUuids.append(contentsOf: loser.pinnedEpisodeUuids.filter { !updated.pinnedEpisodeUuids.contains($0) })
+                    }
+                }
+                deleteSession(loser)
+                removed += 1
+            }
+        }
+        if removed > 0 {
+            FileLog.shared.addMessage("SessionManager: merged \(removed) duplicate session(s) by identity")
+        }
+        return removed
+    }
+
     /// Converts a lens (pure smart playlist) into a Session: the lens flips into the
     /// store — keeping its name, uuid and spot — seeded with the current query order,
     /// while a fresh hidden feeder playlist carries the rules onward.

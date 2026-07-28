@@ -7164,6 +7164,36 @@
 /* Fork: placeholder shown when a server URL or token has not been entered yet. */
 "session_sync_not_set" = "Not Set";
 
+/* Fork: Synchronization screen — header over the manual sync actions. */
+"session_sync_actions_header" = "Manual Sync";
+
+/* Fork: Synchronization screen — footer under the manual sync actions. */
+"session_sync_actions_footer" = "Sync Now merges both sides. The Wins actions replace one side with the other — other devices follow on their next sync.";
+
+/* Fork: manual action — flush pending changes and fetch, merging both sides. */
+"session_sync_now" = "Sync Now";
+
+/* Fork: toast after a successful manual sync. */
+"session_sync_now_done" = "Synced";
+
+/* Fork: toast when a manual sync could not reach the server. */
+"session_sync_failed" = "Sync failed — check the server URL and access token";
+
+/* Fork: toast when the sync engine isn't running yet (mode was just switched). */
+"session_sync_restart_needed" = "Relaunch the app first to connect to the server";
+
+/* Fork: manual action — this device's Sessions data replaces the server's. */
+"session_sync_push_wins" = "Upload — This Device Wins";
+
+/* Fork: confirmation before replacing the server's data with this device's. */
+"session_sync_push_confirm" = "Replace the server's Sessions data with this device's? Records that only exist on the server will be deleted, and other devices will follow on their next sync.";
+
+/* Fork: manual action — the server's Sessions data replaces this device's. */
+"session_sync_pull_wins" = "Download — Server Wins";
+
+/* Fork: confirmation before replacing this device's data with the server's. */
+"session_sync_pull_confirm" = "Replace this device's Sessions data with the server's? Sessions that only exist on this device will be deleted (including their session playlists).";
+
 /* Fork: footer under the Session Playlist toggle explaining what turning it off does. */
 "playlist_is_session_footer" = "Off: this playlist has no Session — it won't appear in the session list, on CarPlay, or as a Session tab. Its lineup is kept, so turning this back on restores it.";
 
