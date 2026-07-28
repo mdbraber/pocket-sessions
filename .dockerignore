@@ -1,6 +1,6 @@
+.git
 bin/
 *.db
 *.db-wal
 *.db-shm
-deploy.env
-CLAUDE.md
+deploy/

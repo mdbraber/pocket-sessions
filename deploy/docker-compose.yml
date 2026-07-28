@@ -1,0 +1,27 @@
+# Deployed next to a `src/` checkout of this repo (see `make deploy`): the compose
+# file sits one level up, `./data` beside it holds the SQLite database. Assumes a
+# host running caddy-docker-proxy with an external `caddy` network.
+#
+# Host-side `.env` (next to this file, not in git):
+#   PCC_DOMAIN=sessions.example.com
+#   PCC_AUTH_TOKEN=<openssl rand -hex 24>
+services:
+  pocket-sessions:
+    container_name: pocket-sessions
+    build: ./src
+    restart: always
+    environment:
+      - PCC_LISTEN=:8080
+      - PCC_DB=/data/pcsessions.db
+      - PCC_AUTH_TOKEN=${PCC_AUTH_TOKEN}
+    volumes:
+      - ./data:/data
+    networks:
+      - caddy
+    labels:
+      caddy: ${PCC_DOMAIN}
+      caddy.reverse_proxy: "{{upstreams 8080}}"
+
+networks:
+  caddy:
+    external: true

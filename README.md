@@ -45,8 +45,29 @@ curl -s 'localhost:8080/session/v1/changes?since=0'
 | `PCC_AUTH_TOKEN` | *(empty)*        | Bootstrap bearer token for user 1          |
 | `PCC_DEBUG`      | *(empty)*        | Debug logging when set                     |
 
-## Deployment (later)
+## Deployment
 
-`make build-linux` → single static binary + the SQLite file behind Caddy
-(auto-TLS). APNs: token-based `.p8` key, sandbox host for dev-signed builds —
-implementation slots in behind `push.Pusher`.
+Any Docker host running [caddy-docker-proxy](https://github.com/lucaslorentz/caddy-docker-proxy)
+with an external `caddy` network works: `deploy/docker-compose.yml` builds the
+image and labels it for TLS + routing.
+
+One-time host setup (a deploy directory the SSH user can write, plus secrets):
+
+```
+mkdir -p <deploy-dir>/data
+cat > <deploy-dir>/.env <<EOF
+PCC_DOMAIN=sessions.example.com
+PCC_AUTH_TOKEN=$(openssl rand -hex 24)
+EOF
+```
+
+Then locally, create a gitignored `deploy.env` with `DEPLOY_HOST=<ssh-host>` and
+`DEPLOY_DIR=<deploy-dir>`, and:
+
+```
+make deploy   # rsync source + docker compose up -d --build
+```
+
+The token in the host `.env` is what the app's Settings → Synchronization →
+Access Token expects. APNs (token-based `.p8` key) slots in behind
+`push.Pusher` next.
