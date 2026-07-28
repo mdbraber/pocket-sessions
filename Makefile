@@ -1,4 +1,4 @@
-.PHONY: run test build clean
+.PHONY: run test build build-linux deploy clean
 
 # Local dev: plain HTTP on :8080, database in ./pcsessions.db, no auth token
 # (open mode as user 1 — set PCS_AUTH_TOKEN to require auth, which is what
