@@ -73,7 +73,15 @@ class PCSearchBarController: UIViewController {
         }
     }
 
-    var backgroundColorOverride: UIColor?
+    var backgroundColorOverride: UIColor? {
+        didSet {
+            // Hosts refresh this on theme changes — repaint immediately rather than waiting
+            // for this controller's own themeChanged observer (ordering between the two
+            // observers is undefined, which left stale colors behind).
+            guard isViewLoaded else { return }
+            updateColors()
+        }
+    }
 
     var startWithToolbarHidden = true
 

@@ -267,6 +267,9 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     /// The search bar — same component + dimensions as the podcast/playlist page.
     lazy var sessionSearchController: PCSearchBarController = {
         let controller = PCSearchBarController()
+        // Sit on the queue screen's own background — without this the component paints its
+        // stock secondaryUi01 strip, a visibly different rectangle behind the field.
+        controller.backgroundColorOverride = AppTheme.colorForStyle(.primaryUi04, themeOverride: themeOverride)
         controller.searchDebounce = 0.2
         controller.placeholderText = L10n.sessionSearchPlaceholder
         controller.searchDelegate = self
@@ -335,6 +338,8 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     /// routes by world (`showingSessionList`), so the two never collide.
     lazy var lineupSearchController: PCSearchBarController = {
         let controller = PCSearchBarController()
+        // Same background rule as the session-list search — the queue screen's own color.
+        controller.backgroundColorOverride = AppTheme.colorForStyle(.primaryUi04, themeOverride: themeOverride)
         controller.searchDebounce = 0.2
         controller.placeholderText = L10n.search
         controller.searchDelegate = self
@@ -1568,6 +1573,12 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
 
     @objc private func themeDidChange() {
         FileLog.shared.addMessage("UpNext themeDidChange: user has active subscription: \(SubscriptionHelper.hasActiveSubscription()) and is logged in: \(SyncManager.isUserLoggedIn())")
+
+        // Fork: the embedded search bars sit on the screen's own background — refresh their
+        // override so a theme switch doesn't leave them wearing the old theme's color.
+        let searchBackground = AppTheme.colorForStyle(.primaryUi04, themeOverride: themeOverride)
+        sessionSearchController.backgroundColorOverride = searchBackground
+        lineupSearchController.backgroundColorOverride = searchBackground
 
         if !SubscriptionHelper.hasActiveSubscription() || !SyncManager.isUserLoggedIn() {
             shuffleButton.setImage(UIImage(named: "shuffle-plus"), for: .normal)
