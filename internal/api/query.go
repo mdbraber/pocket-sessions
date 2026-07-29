@@ -126,16 +126,16 @@ func (s *Server) enrichPodcasts(ctx context.Context, list *pc.PodcastList) {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 			uuid := list.Podcasts[i].UUID
-			title, author, err := pc.FetchPodcastMeta(ctx, uuid)
-			if err != nil || title == "" {
+			catalog, err := pc.FetchCatalog(ctx, uuid)
+			if err != nil || catalog.Title == "" {
 				s.logger.Warn("podcast catalog lookup", "uuid", uuid, "err", err)
 				return
 			}
 			mu.Lock()
-			list.Podcasts[i].Title = title
-			list.Podcasts[i].Author = author
+			list.Podcasts[i].Title = catalog.Title
+			list.Podcasts[i].Author = catalog.Author
 			mu.Unlock()
-			if err := s.store.SavePodcastMeta(uuid, title, author); err != nil {
+			if err := s.store.SavePodcastMeta(uuid, catalog.Title, catalog.Author); err != nil {
 				s.logger.Warn("podcast meta cache write", "uuid", uuid, "err", err)
 			}
 		}(i)

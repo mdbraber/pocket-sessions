@@ -95,6 +95,13 @@ CREATE TABLE IF NOT EXISTS mirror (
     fetched_at TEXT NOT NULL,
     PRIMARY KEY (user_id, kind)
 );
+CREATE TABLE IF NOT EXISTS seen_episodes (
+    user_id      INTEGER NOT NULL, -- the episode watcher's "already knew about this" ledger
+    episode_uuid TEXT NOT NULL,
+    podcast_uuid TEXT NOT NULL,
+    seen_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (user_id, episode_uuid)
+);
 CREATE TABLE IF NOT EXISTS podcast_meta (
     uuid       TEXT PRIMARY KEY, -- catalog cache: titles aren't in PC's sync list
     title      TEXT NOT NULL,

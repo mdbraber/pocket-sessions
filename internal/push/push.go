@@ -16,6 +16,21 @@ type Pusher interface {
 	// NotifyChanged tells every device in the fan-out set that the user's data
 	// moved past `cursor`. Implementations debounce internally.
 	NotifyChanged(userID int64, cursor int64, devices []store.Device)
+	// NotifyNewEpisodes shows visible "new episode" notifications on every
+	// device — the fork's replacement for PC's own episode pushes (which can
+	// never reach this bundle id). No debounce: the watcher's poll interval is
+	// the cadence, and each alert is user-facing.
+	NotifyNewEpisodes(userID int64, alerts []EpisodeAlert, devices []store.Device)
+}
+
+// EpisodeAlert mimics PC's episode notification payload (category "ep",
+// eu + podcast_uuid), so the app's existing notification actions — Download,
+// Play Now, Play Next/Last, Archive — work unchanged.
+type EpisodeAlert struct {
+	PodcastUUID  string
+	PodcastTitle string
+	EpisodeUUID  string
+	EpisodeTitle string
 }
 
 const debounce = 2 * time.Second
@@ -64,11 +79,19 @@ func (d *debouncer) NotifyChanged(userID int64, cursor int64, devices []store.De
 // LogPusher logs what an APNs pusher would send.
 type LogPusher struct {
 	*debouncer
+	logger *slog.Logger
 }
 
 func NewLogPusher(logger *slog.Logger) *LogPusher {
-	return &LogPusher{debouncer: newDebouncer(func(userID, cursor int64, devices []store.Device) {
+	return &LogPusher{logger: logger, debouncer: newDebouncer(func(userID, cursor int64, devices []store.Device) {
 		logger.Info("push (log-only): would send content-available",
 			"user", userID, "cursor", cursor, "devices", len(devices))
 	})}
+}
+
+func (p *LogPusher) NotifyNewEpisodes(userID int64, alerts []EpisodeAlert, devices []store.Device) {
+	for _, alert := range alerts {
+		p.logger.Info("push (log-only): would send episode alert",
+			"user", userID, "podcast", alert.PodcastTitle, "episode", alert.EpisodeTitle, "devices", len(devices))
+	}
 }

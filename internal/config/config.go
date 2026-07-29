@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"time"
 )
 
 // Config comes entirely from the environment — the same binary runs on a
@@ -21,7 +22,10 @@ type Config struct {
 	APNSKeyID  string // PCS_APNS_KEY_ID
 	APNSTeamID string // PCS_APNS_TEAM_ID, default ABCDE12345
 	APNSTopic  string // PCS_APNS_TOPIC, default com.example.podcasts
-	LogLevel   slog.Level
+	// Episode watcher: poll the public catalog for new episodes and push.
+	EpisodePoll time.Duration // PCS_EPISODE_POLL, default 10m; "off"/"0" disables
+	NotifyMode  string        // PCS_NOTIFY: "synced" (per-podcast toggle, default), "all", "off"
+	LogLevel    slog.Level
 }
 
 func FromEnv() Config {
@@ -34,6 +38,8 @@ func FromEnv() Config {
 		APNSKeyID:     os.Getenv("PCS_APNS_KEY_ID"),
 		APNSTeamID:    envOr("PCS_APNS_TEAM_ID", "ABCDE12345"),
 		APNSTopic:     envOr("PCS_APNS_TOPIC", "com.example.podcasts"),
+		EpisodePoll:   parsePoll(envOr("PCS_EPISODE_POLL", "10m")),
+		NotifyMode:    envOr("PCS_NOTIFY", "synced"),
 		LogLevel:      slog.LevelInfo,
 	}
 	if os.Getenv("PCS_DEBUG") != "" {
@@ -47,6 +53,22 @@ func envOr(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// parsePoll turns PCS_EPISODE_POLL into a duration; "off"/"0"/garbage → 0
+// (watcher disabled). A floor of 1m protects the catalog from typo-hammering.
+func parsePoll(v string) time.Duration {
+	if v == "off" || v == "0" {
+		return 0
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil || d <= 0 {
+		return 0
+	}
+	if d < time.Minute {
+		return time.Minute
+	}
+	return d
 }
 
 func splitList(v string) []string {

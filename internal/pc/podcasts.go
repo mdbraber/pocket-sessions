@@ -15,6 +15,9 @@ type Podcast struct {
 	Author       string `json:"author,omitempty"`
 	FolderUUID   string `json:"folderUuid,omitempty"`
 	SortPosition int    `json:"sortPosition,omitempty"`
+	// The synced per-podcast "notify me of new episodes" toggle — drives the
+	// watcher's visible pushes.
+	NotifyEnabled bool `json:"notifyEnabled,omitempty"`
 }
 
 type PodcastFolder struct {
@@ -88,6 +91,15 @@ func parsePodcastList(data []byte) (PodcastList, error) {
 		}
 		if wrapped, err := parseAllFields(fields.bytes[15]); err == nil {
 			p.SortPosition = int(wrapped.varints[1])
+		}
+		// settings(17).notification(1: BoolSetting).value(1: BoolValue).1 — the
+		// synced notification toggle, three wrappers deep.
+		if settings, err := parseAllFields(fields.bytes[17]); err == nil {
+			if setting, err := parseAllFields(settings.bytes[1]); err == nil {
+				if value, err := parseAllFields(setting.bytes[1]); err == nil {
+					p.NotifyEnabled = value.varints[1] == 1
+				}
+			}
 		}
 		out.Podcasts = append(out.Podcasts, p)
 	}

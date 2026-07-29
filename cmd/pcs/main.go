@@ -29,6 +29,7 @@ import (
 	"github.com/mdbraber/pocket-sessions-server/internal/pc"
 	"github.com/mdbraber/pocket-sessions-server/internal/push"
 	"github.com/mdbraber/pocket-sessions-server/internal/store"
+	"github.com/mdbraber/pocket-sessions-server/internal/watch"
 )
 
 func main() {
@@ -100,6 +101,16 @@ func serve() {
 		Addr:              cfg.Listen,
 		Handler:           api.New(st, pusher, logger, cfg.AllowedEmails),
 		ReadHeaderTimeout: 10 * time.Second,
+	}
+
+	// The new-episode watcher — this fork's replacement for PC's own episode
+	// pushes, which can never reach this bundle id.
+	watchCtx, stopWatcher := context.WithCancel(context.Background())
+	defer stopWatcher()
+	if cfg.EpisodePoll > 0 {
+		go watch.Run(watchCtx, st, pusher, logger, cfg.EpisodePoll, cfg.NotifyMode)
+	} else {
+		logger.Info("episode watcher disabled (PCS_EPISODE_POLL)")
 	}
 
 	go func() {

@@ -21,6 +21,9 @@ services:
       # team id and topic default in code (ABCDE12345 / com.example.podcasts).
       - PCS_APNS_KEY=${PCS_APNS_KEY_ID:+/data/AuthKey_${PCS_APNS_KEY_ID}.p8}
       - PCS_APNS_KEY_ID=${PCS_APNS_KEY_ID:-}
+      # Episode watcher cadence and visible-alert policy (synced|all|off).
+      - PCS_EPISODE_POLL=${PCS_EPISODE_POLL:-10m}
+      - PCS_NOTIFY=${PCS_NOTIFY:-synced}
     volumes:
       - ./data:/data
     networks:
