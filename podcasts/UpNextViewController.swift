@@ -382,8 +382,6 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     /// Fork: the session-lineup "detail" chrome — a blurred artwork backdrop plus a collapsing
     /// title, matching the playlist detail. Active only while a session lineup is shown; the
     /// queue and the chooser keep the pinned chrome.
-    private let sessionArtworkModel = SessionArtworkBackdropModel()
-    private weak var sessionArtworkBackdrop: UIView?
     private var sessionLineupChromeActive = false
 
     /// Activating the tab lands on the session list — the home of the Queue tab, with the
@@ -1365,38 +1363,12 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
             stickyChromeBackground.bottomAnchor.constraint(equalTo: stickyChrome.bottomAnchor)
         ])
 
-        setupSessionLineupChrome()
         refreshSections()
     }
 
     // MARK: - Session lineup "detail" chrome (fork)
 
     /// One-time setup for the lineup's artwork backdrop and its scrolling/nav title labels.
-    private func setupSessionLineupChrome() {
-        // The blurred artwork sits behind the rows (clear-backed cells) and bleeds up behind the
-        // transparent nav bar, exactly like the playlist detail's `PlaylistBlurHeaderView`.
-        let host = ThemedHostingController(rootView: SessionArtworkBackdropView(model: sessionArtworkModel))
-        addChild(host)
-        host.view.backgroundColor = .clear
-        host.view.isUserInteractionEnabled = false
-        host.view.layer.zPosition = -1000
-        host.view.isHidden = true
-        host.view.translatesAutoresizingMaskIntoConstraints = false
-        upNextTable.addSubview(host.view)
-        host.didMove(toParent: self)
-        sessionArtworkBackdrop = host.view
-        // Inside a scroll view, edge anchors attach to the CONTENT origin — a
-        // trailing constraint would collapse the view into a 40pt sliver at the
-        // left edge (it renders as a dark gutter strip). Width must come from the
-        // controller's view; only the leading edge is content-anchored.
-        NSLayoutConstraint.activate([
-            host.view.bottomAnchor.constraint(equalTo: upNextTable.topAnchor, constant: 220),
-            host.view.heightAnchor.constraint(equalTo: view.widthAnchor, constant: 40),
-            host.view.leadingAnchor.constraint(equalTo: upNextTable.leadingAnchor, constant: -20),
-            host.view.widthAnchor.constraint(equalTo: view.widthAnchor, constant: 40)
-        ])
-    }
-
     /// Which "detail" screen the artwork-backdrop chrome is presenting. The title itself is the
     /// standard nav-bar title on every one; only the backdrop and info row differ.
     private enum DetailChromeKind { case queue, chooser, lineup }
@@ -1441,18 +1413,6 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
             navigationItem.titleView = nil
             navigationItem.title = sessionHeaderLabel.text
         }
-
-        // The queue and a session lineup show a blurred artwork backdrop behind the list; the
-        // chooser is a plain list of sessions, so it has none.
-        let episodes: [BaseEpisode]?
-        switch kind {
-        case .queue: episodes = DataManager.sharedManager.allUpNextEpisodes()
-        case .lineup: episodes = sessionEpisodes
-        case .chooser: episodes = nil
-        }
-        let items = artworkItems(from: episodes)
-        if sessionArtworkModel.items != items { sessionArtworkModel.items = items }
-        sessionArtworkBackdrop?.isHidden = items.isEmpty
     }
 
     /// Fork: a session lineup's nav title, styled like the standard centered title but tappable — it
@@ -1487,24 +1447,9 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     private func removeSessionLineupChrome() {
         sessionLineupChromeActive = false
         upNextTable.tableHeaderView = nil
-        sessionArtworkBackdrop?.isHidden = true
         navigationItem.titleView = nil
         navigationItem.title = nil
         stickyChromeBackground.isHidden = false
-    }
-
-    /// Distinct podcast artworks of the given episodes (up to 4), for the blurred backdrop.
-    private func artworkItems(from episodes: [BaseEpisode]?) -> [PlaylistArtworkView.ImageItem] {
-        var seen = Set<String>()
-        var uuids: [String] = []
-        for episode in episodes ?? [] {
-            guard let uuid = (episode as? Episode)?.podcastUuid, !uuid.isEmpty else { continue }
-            if seen.insert(uuid).inserted { uuids.append(uuid) }
-            if uuids.count == 4 { break }
-        }
-        return uuids.map {
-            PlaylistArtworkView.ImageItem(id: $0, url: ImageManager.sharedManager.podcastUrl(imageSize: .detail, uuid: $0))
-        }
     }
 
     /// Tells the nav controller which scroll view drives the scroll-edge → standard bar

@@ -509,7 +509,8 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
             let emptyCell = tableView.dequeueReusableCell(withIdentifier: EmptyStateCell.reuseIdentifier, for: indexPath) as! EmptyStateCell
             emptyCell.configure(title: searchTerm.isEmpty ? L10n.inboxEmptyTitle : L10n.discoverNoEpisodesFound,
                                 message: searchTerm.isEmpty ? L10n.inboxEmptyMessage : L10n.discoverNoPodcastsFoundMsg,
-                                icon: { Image(systemName: "tray") })
+                                icon: { Image(systemName: "tray") },
+                                fillsHeight: true)
             return emptyCell
         }
 
@@ -624,7 +625,13 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
     }
 
     func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
-        episode(at: indexPath) == nil ? UpNextViewController.emptyStateRowHeight : UITableView.automaticDimension
+        guard episode(at: indexPath) == nil else { return UITableView.automaticDimension }
+        // The empty state fills the visible area so its content centers vertically.
+        let visible = tableView.bounds.height
+            - tableView.adjustedContentInset.top
+            - tableView.adjustedContentInset.bottom
+            - (tableView.tableHeaderView?.frame.height ?? 0)
+        return max(320, visible)
     }
 
     // MARK: - Swipes

@@ -13,7 +13,10 @@ class EmptyStateCell: UITableViewCell {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func configure<Style: EmptyStateViewStyle>(title: String, message: String? = nil, icon: (() -> Image)? = nil, style: Style = DefaultEmptyStateStyle.defaultStyle, actions: [EmptyStateAction] = []) {
+    /// `fillsHeight` centers the content vertically in whatever row height the
+    /// table gives the cell — used by screens that size the empty row to fill
+    /// the visible area (e.g. the Inbox at inbox zero).
+    func configure<Style: EmptyStateViewStyle>(title: String, message: String? = nil, icon: (() -> Image)? = nil, style: Style = DefaultEmptyStateStyle.defaultStyle, actions: [EmptyStateAction] = [], fillsHeight: Bool = false) {
         self.contentConfiguration = UIHostingConfiguration {
             VStack {
                 EmptyStateView(
@@ -24,7 +27,7 @@ class EmptyStateCell: UITableViewCell {
                     style: style
                 )
             }
-            .frame(maxWidth: .infinity, alignment: .center)
+            .frame(maxWidth: .infinity, maxHeight: fillsHeight ? .infinity : nil, alignment: .center)
         }
         .margins(.horizontal, 16)
         .margins(.vertical, 8)
