@@ -56,7 +56,16 @@ class SyncTask: ApiBaseTask, @unchecked Sendable {
 
     private func performSync(token: String) {
         if let lastServerModified = UserDefaults.standard.string(forKey: ServerConstants.UserDefaults.lastModifiedServerDate), !lastServerModified.isEmpty {
-            if ServerSettings.homeGridNeedsRefresh() {
+            // Fork: an install that predates podcast-settings sync holds only what
+            // it typed locally — the incremental sync carries podcast records ONLY
+            // when they changed server-side, so speeds/effects/skips would never
+            // arrive. Backfill once from the podcast list, which returns the
+            // settings blob for every subscription.
+            if !ServerSettings.podcastSettingsBackfilled() {
+                FileLog.shared.addMessage("Backfilling podcast settings from the server (one time)")
+                performHomeGridRefresh()
+                ServerSettings.setPodcastSettingsBackfilled(true)
+            } else if ServerSettings.homeGridNeedsRefresh() {
                 performHomeGridRefresh()
             }
 
@@ -102,6 +111,13 @@ class SyncTask: ApiBaseTask, @unchecked Sendable {
                     }
                     if let sortOrder = podcast.sortPosition, serverReturnsSortPosition {
                         localPodcast.sortOrder = sortOrder
+                    }
+
+                    // Fork: the list carries the synced settings blob (speed, effects,
+                    // skips) — merge it here too, so a refresh restores them without
+                    // needing a full sync (i.e. without signing out and back in).
+                    if let settings = podcast.settings {
+                        self.applySettings(settings, to: localPodcast)
                     }
 
                     // mark podcast as unsynced so that if our addedDate or sortOrder was preserved that gets sent to the server

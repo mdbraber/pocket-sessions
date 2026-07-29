@@ -112,6 +112,21 @@ public class ServerSettings {
         UserDefaults.standard.bool(forKey: homeGridNeedsRefreshKey)
     }
 
+    // MARK: Podcast settings backfill (fork)
+
+    /// Whether this install has pulled the server's per-podcast settings blob
+    /// (speed, effects, skips) at least once. Installs that predate settings
+    /// sync need one catch-up pass; the incremental sync alone never delivers
+    /// records that didn't change server-side.
+    private static let podcastSettingsBackfilledKey = "SJPodcastSettingsBackfilled"
+    public class func setPodcastSettingsBackfilled(_ value: Bool) {
+        UserDefaults.standard.set(value, forKey: podcastSettingsBackfilledKey)
+    }
+
+    public class func podcastSettingsBackfilled() -> Bool {
+        UserDefaults.standard.bool(forKey: podcastSettingsBackfilledKey)
+    }
+
     // MARK: Clear Listening History Date
 
     public class func setLastClearHistoryDate(_ value: Date?) {

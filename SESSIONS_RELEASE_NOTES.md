@@ -27,6 +27,8 @@ progress, playlists and Up Next as always. Settings → Synchronization.
 were silently device-local before — the machinery existed but was never wired
 up. They now travel with your account in both directions, per-setting and
 last-writer-wins, so a fresh install or a second device gets them back.
+Existing installs get a one-time catch-up on the first sync after updating —
+no need to sign out and back in.
 Note: stock Pocket Casts never uploaded playback speeds, so speeds set only on
 a stock install can't be recovered — set them once here and they'll stick.
 

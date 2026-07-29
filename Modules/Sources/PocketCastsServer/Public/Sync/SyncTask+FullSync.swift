@@ -205,6 +205,14 @@ private extension BookmarkDataManager {
 
 // MARK: - Settings
 
+extension SyncTask {
+    /// Fork: shared by the full sync and the podcast-list refresh (the backfill
+    /// path) — both receive the server's settings blob for a podcast.
+    func applySettings(_ settings: PodcastSettings, to podcast: Podcast) {
+        processSettings(settings, to: podcast)
+    }
+}
+
 private extension SyncTask {
     func processSettings(_ settings: PodcastSettings, to podcast: Podcast) {
         let oldSettings = podcast.settings
