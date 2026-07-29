@@ -1,0 +1,66 @@
+# PCS behind a WireGuard client, for hooks that must reach a LAN-only service
+# (see hooks/README.md). Same stack as docker-compose.yml, except PCS runs in
+# the tunnel container's network namespace — so Caddy reaches PCS *through*
+# that container, which is why the routing labels live there.
+#
+# Deploy with:  make deploy WIREGUARD=1
+#
+# Host-side layout (created by `make wireguard-scaffold`):
+#   ./wireguard-config/wg_confs/wg0.conf   <- paste your client config here
+#
+# Keep the tunnel SPLIT: AllowedIPs should list only the home subnet(s), so
+# Pocket Casts and APNs traffic keeps going out directly. If your OwnTube
+# hostname resolves on a home DNS server, set DNS= in the config too.
+services:
+  wireguard:
+    image: lscr.io/linuxserver/wireguard
+    container_name: pcs-wireguard
+    cap_add:
+      - NET_ADMIN
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Amsterdam
+    volumes:
+      - ./wireguard-config:/config
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+    restart: always
+    networks:
+      - caddy
+    labels:
+      caddy: ${PCS_DOMAIN}
+      caddy.reverse_proxy: "{{upstreams 8080}}"
+
+  pocket-sessions:
+    container_name: pocket-sessions
+    build: ./src
+    restart: always
+    # No `networks:` or caddy labels here on purpose — this container has no
+    # network identity of its own while it shares the tunnel's namespace.
+    network_mode: service:wireguard
+    depends_on:
+      - wireguard
+    environment:
+      - PCS_LISTEN=:8080
+      - PCS_DB=/data/pcsessions.db
+      - PCS_AUTH_TOKEN=${PCS_AUTH_TOKEN}
+      - PCS_ALLOWED_EMAILS=${PCS_ALLOWED_EMAILS:-}
+      - PCS_APNS_KEY=${PCS_APNS_KEY_ID:+/data/AuthKey_${PCS_APNS_KEY_ID}.p8}
+      - PCS_APNS_KEY_ID=${PCS_APNS_KEY_ID:-}
+      - PCS_APNS_KEY_SANDBOX=${PCS_APNS_KEY_ID_SANDBOX:+/data/AuthKey_${PCS_APNS_KEY_ID_SANDBOX}.p8}
+      - PCS_APNS_KEY_ID_SANDBOX=${PCS_APNS_KEY_ID_SANDBOX:-}
+      - PCS_EPISODE_POLL=${PCS_EPISODE_POLL:-10m}
+      - PCS_NOTIFY=${PCS_NOTIFY:-synced}
+      - PCS_PROGRESS_POLL=${PCS_PROGRESS_POLL:-15m}
+      - PCS_PROGRESS_MIN_DELTA=${PCS_PROGRESS_MIN_DELTA:-30}
+      - PCS_HOOKS_DIR=${PCS_HOOKS_DIR:-/data/hooks}
+      - PCS_HOOK_TIMEOUT=${PCS_HOOK_TIMEOUT:-30s}
+      - OWNTUBE_URL=${OWNTUBE_URL:-}
+      - OWNTUBE_TOKEN=${OWNTUBE_TOKEN:-}
+    volumes:
+      - ./data:/data
+
+networks:
+  caddy:
+    external: true

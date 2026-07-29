@@ -75,25 +75,30 @@ It resolves the video's `channelId` via `video.detail`, then calls
 
 ### Reaching a LAN-only OwnTube
 
-The VPS can't route to `*.home.example.com` on its own. Add a WireGuard
-sidecar and put PCS in its network namespace (the same pattern as the podimo
-stack on this host):
+The VPS can't route to `*.home.example.com` on its own, so PCS can run inside
+a WireGuard client's network namespace (the pattern the podimo stack on this
+host already uses). `deploy/docker-compose.wireguard.yml` is that variant,
+ready to go — the only thing missing is your tunnel config.
 
-```yaml
-  wireguard:
-    image: lscr.io/linuxserver/wireguard
-    cap_add: [NET_ADMIN]
-    volumes: [./wireguard-config:/config]
-    sysctls: ["net.ipv4.conf.all.src_valid_mark=1"]
-    networks: [caddy]
-    labels:            # Caddy now reaches PCS through this container
-      caddy: ${PCS_DOMAIN}
-      caddy.reverse_proxy: "{{upstreams 8080}}"
-
-  pocket-sessions:
-    network_mode: service:wireguard   # replaces `networks:` and the labels
+```
+make wireguard-scaffold      # creates the config dir, installs owntube.sh
+# paste your client config into <deploy-dir>/wireguard-config/wg_confs/wg0.conf
+# add OWNTUBE_URL and OWNTUBE_TOKEN to <deploy-dir>/.env
+make deploy WIREGUARD=1
 ```
 
-Keep the tunnel **split**: set `AllowedIPs` to the home subnet only (e.g.
-`192.168.1.0/24`), so Pocket Casts and APNs traffic keeps going out directly
-and only home-bound requests take the tunnel.
+Three things to get right in that config:
+
+- **Split tunnel.** `AllowedIPs` should list only your home subnet(s) — e.g.
+  `192.168.1.0/24` — so Pocket Casts and APNs traffic keeps going out directly.
+  `0.0.0.0/0` would route *everything* through home.
+- **DNS.** If `owntube.home.example.com` only resolves on a home resolver, set
+  `DNS = <home-dns-ip>` in the `[Interface]` section; `wg-quick` applies it.
+- **Keepalive.** `PersistentKeepalive = 25` on the peer, since the VPS sits
+  behind the peer's NAT and would otherwise go quiet.
+
+Switching is deliberately opt-in (`WIREGUARD=1`) rather than automatic: while
+PCS shares the tunnel's namespace, Caddy reaches PCS *through* that container,
+so a tunnel that won't start takes the whole server offline with it. `make
+deploy` (without the flag) always puts back the plain, no-VPN stack — that's
+the rollback if anything goes wrong.
