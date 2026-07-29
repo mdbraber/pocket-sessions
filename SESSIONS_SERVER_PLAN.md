@@ -100,9 +100,14 @@ the public catalog for every subscription (PCS_EPISODE_POLL, default 10m),
 diffs against a seen_episodes ledger (seeded silently, 21.8k episodes),
 and pushes: a silent wake for every device plus visible alerts shaped like
 PC's own (category "ep", eu, podcast_uuid — the app's notification actions
-work unchanged). PCS_NOTIFY=synced|all|off; NOTE: the synced per-podcast
-notification toggle is empty for this account (0/110 — settings sync never
-ran on the fork), so the deployment currently runs PCS_NOTIFY=all.
+work unchanged). PCS_NOTIFY=synced|all|off. PC's synced per-podcast toggle is
+empty for this account (settings sync never ran on the fork), so the app
+reports its own Podcast.pushEnabled set to POST /session/v1/notify-podcasts
+(full set per device, fingerprint-deduped, on launch + podcastUpdated) and
+synced mode alerts on the union across devices OR'd with PC's setting.
+Verified: sim reported 0 → enabled one podcast (first permission grant
+flips ALL on — stock PC behavior; curate in Settings → Notifications) →
+110 rows in notify_podcasts. Deployment runs PCS_NOTIFY=synced.
 Verified end-to-end minus APNs delivery (devices=0 until the phone
 registers a token): resurrected a fresh episode → detected, alert composed,
 wake sent. Settings UI collapsed the same day: Server URL + one Pocket
