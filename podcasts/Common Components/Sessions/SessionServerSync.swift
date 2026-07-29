@@ -1,4 +1,5 @@
 import Foundation
+import PocketCastsDataModel
 import PocketCastsServer
 import PocketCastsUtils
 import UIKit
@@ -58,6 +59,7 @@ final class SessionServerSync {
         queue.async { [weak self] in
             self?.bootstrapIfNeeded()
             self?.registerDevice()
+            self?.pushNotifyTogglesIfChanged()
             self?.fetch()
         }
 
@@ -66,9 +68,35 @@ final class SessionServerSync {
         DispatchQueue.main.async { UIApplication.shared.registerForRemoteNotifications() }
 
         // Foreground → catch up; PC sync completed → nudge the server (wakes other
-        // devices now; triggers the mirror pull in M2).
+        // devices now; triggers the mirror pull in M2). podcastUpdated fires when a
+        // notification toggle flips (among other changes) — re-report the toggle set.
         NotificationCenter.default.addObserver(self, selector: #selector(appDidBecomeActive), name: UIApplication.didBecomeActiveNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(pcSyncCompleted), name: ServerNotifications.syncCompleted, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(podcastUpdated), name: Constants.Notifications.podcastUpdated, object: nil)
+    }
+
+    @objc private func podcastUpdated() {
+        queue.async { [weak self] in self?.pushNotifyTogglesIfChanged() }
+    }
+
+    /// Reports this device's per-podcast notification toggles (Podcast.pushEnabled)
+    /// so the server's episode watcher can alert on them — the fork's replacement
+    /// for PC's server-side notification settings. Sends the full set, but only
+    /// when it differs from what this device last reported.
+    private var notifyTogglesKey: String { "SJSessionNotifyToggles-\(baseURL.host ?? "server")" }
+
+    private func pushNotifyTogglesIfChanged() {
+        let uuids = DataManager.sharedManager.allPodcasts(includeUnsubscribed: false)
+            .filter { $0.pushEnabled }
+            .map(\.uuid)
+            .sorted()
+        let fingerprint = uuids.joined(separator: ",")
+        guard fingerprint != UserDefaults.standard.string(forKey: notifyTogglesKey) else { return }
+        request(path: "/session/v1/notify-podcasts", method: "POST", body: ["uuids": uuids]) { [weak self] result in
+            guard case .success = result, let self else { return }
+            UserDefaults.standard.set(fingerprint, forKey: self.notifyTogglesKey)
+            FileLog.shared.addMessage("SessionServerSync: reported \(uuids.count) notification toggles")
+        }
     }
 
     /// Called from the AppDelegate when APNs hands over (a possibly new) device
