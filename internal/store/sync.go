@@ -30,6 +30,13 @@ type PlaybackPointer struct {
 	Payload   json.RawMessage `json:"payload"`
 }
 
+// NudgeInfo tells pollers that PC-side data moved: seq increments on every
+// nudge, deviceId names the originator so devices can ignore their own.
+type NudgeInfo struct {
+	Seq      int64  `json:"seq"`
+	DeviceID string `json:"deviceId,omitempty"`
+}
+
 type Changes struct {
 	Cursor   int64            `json:"cursor"`
 	Sessions []Record         `json:"sessions,omitempty"`
@@ -37,6 +44,14 @@ type Changes struct {
 	Offered  map[string]int64 `json:"offered,omitempty"`
 	Ledger   *SeenLedger      `json:"seenLedger,omitempty"`
 	Playback *PlaybackPointer `json:"playback,omitempty"`
+	Nudge    *NudgeInfo       `json:"nudge,omitempty"`
+}
+
+// BumpNudge records "device X just put fresh data on PC" — pollers compare seq
+// and re-sync with PC when it advances (push delivery alone is best-effort).
+func (s *Store) BumpNudge(userID int64, deviceID string) error {
+	_, err := s.db.Exec(`UPDATE meta SET nudge_seq = nudge_seq + 1, nudge_device = ? WHERE user_id = ?`, deviceID, userID)
+	return err
 }
 
 // ApplyChanges merges a client batch and returns the new cursor. Merge rules
@@ -148,12 +163,20 @@ ON CONFLICT(user_id) DO UPDATE SET payload = excluded.payload, cursor = excluded
 // documents — the same grain the CloudKit engine used.
 func (s *Store) ChangesSince(userID, since int64) (Changes, error) {
 	out := Changes{}
-	if err := s.db.QueryRow(`SELECT COALESCE(cursor, 0) FROM meta WHERE user_id = ?`, userID).Scan(&out.Cursor); err != nil && err != sql.ErrNoRows {
+	var nudge NudgeInfo
+	err := s.db.QueryRow(`SELECT COALESCE(cursor, 0), COALESCE(nudge_seq, 0), COALESCE(nudge_device, '') FROM meta WHERE user_id = ?`, userID).
+		Scan(&out.Cursor, &nudge.Seq, &nudge.DeviceID)
+	if err != nil && err != sql.ErrNoRows {
 		return out, err
+	}
+	// The nudge rides EVERY response, cursor movement or not — it's how a
+	// foreground poller learns that PC-side data (progress, queue) moved.
+	if nudge.Seq > 0 {
+		out.Nudge = &nudge
 	}
 	if out.Cursor <= since {
 		out.Cursor = maxInt64(out.Cursor, since)
-		return out, nil // nothing new
+		return out, nil // nothing new in session data
 	}
 
 	for _, q := range []struct {

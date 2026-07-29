@@ -182,6 +182,9 @@ func (s *Server) handlePostChanges(w http.ResponseWriter, r *http.Request, userI
 // OTHER devices (they may want to refresh from PC too); in M2 it will also
 // trigger a mirror pull from PC.
 func (s *Server) handleNudge(w http.ResponseWriter, r *http.Request, userID int64) {
+	if err := s.store.BumpNudge(userID, r.Header.Get("X-Device-Id")); err != nil {
+		s.logger.Warn("nudge bump", "err", err)
+	}
 	changes, err := s.store.ChangesSince(userID, 0)
 	if err != nil {
 		http.Error(w, "store failed", http.StatusInternalServerError)

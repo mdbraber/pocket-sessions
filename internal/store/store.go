@@ -140,6 +140,14 @@ CREATE INDEX IF NOT EXISTS idx_presets_cursor  ON presets(user_id, cursor);
 	if _, err := s.db.Exec(`ALTER TABLE pc_links ADD COLUMN pc_scope TEXT NOT NULL DEFAULT 'mobile'`); err != nil && !isDuplicateColumn(err) {
 		return err
 	}
+	// Additive migration: the nudge sequence — pollers re-sync with PC when it
+	// advances (see BumpNudge).
+	if _, err := s.db.Exec(`ALTER TABLE meta ADD COLUMN nudge_seq INTEGER NOT NULL DEFAULT 0`); err != nil && !isDuplicateColumn(err) {
+		return err
+	}
+	if _, err := s.db.Exec(`ALTER TABLE meta ADD COLUMN nudge_device TEXT NOT NULL DEFAULT ''`); err != nil && !isDuplicateColumn(err) {
+		return err
+	}
 	return nil
 }
 
