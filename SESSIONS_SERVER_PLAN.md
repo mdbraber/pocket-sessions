@@ -107,8 +107,9 @@ Remaining: optional M4 passthrough.
 - **APNs**: pusher implemented behind push.Pusher (sideshow/apns2, .p8
   token auth, per-device sandbox/production, 2 s debounce, silent
   {content-available, pcsCursor} payload). Activates when PCS_APNS_KEY(_ID)
-  are set — drop AuthKey_<KEYID>.p8 in the host's ./data and set
-  PCS_APNS_KEY_ID in .env; log pusher until then. App side: registers for
+  are set — LIVE since 2026-07-29 (key KEYID67890 in the host's ./data,
+  PCS_APNS_KEY_ID in .env; "apns pusher active" + clean flush verified,
+  devices=0 until the phone registers a token). App side: registers for
   remote notifications unconditionally (silent pushes need no permission),
   sends the hex token + env in device registration, and a pcsCursor push
   triggers a session fetch + PC refresh. Sim gets no real APNs token; the
