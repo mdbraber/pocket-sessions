@@ -418,6 +418,16 @@ class Settings: NSObject {
         UserDefaults.standard.set(token, forKey: sessionServerTokenKey)
     }
 
+    /// The raw APNs device token (hex), for the PCS server's silent-push fan-out.
+    private static let sessionAPNSTokenKey = "SJSessionAPNSToken"
+    class func sessionAPNSToken() -> String? {
+        guard let token = UserDefaults.standard.string(forKey: sessionAPNSTokenKey), !token.isEmpty else { return nil }
+        return token
+    }
+    class func setSessionAPNSToken(_ token: String?) {
+        UserDefaults.standard.set(token, forKey: sessionAPNSTokenKey)
+    }
+
     /// A stable per-install device id — the server's push fan-out excludes the originator by it.
     private static let sessionServerDeviceIdKey = "SJSessionServerDeviceId"
     class func sessionServerDeviceId() -> String {

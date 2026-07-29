@@ -91,8 +91,28 @@ GET /api/v1/up-next, /history, POST /api/v1/pull, POST /api/v1/up-next
 (write-through: add/remove verified end-to-end). Single-episode queue actions
 are MEMBERSHIP changes — play_next on an already-queued episode is a no-op by
 design; reordering needs the replace action (5) with a full order list.
-Remaining: APNs push (needs a .p8 key), reorder via replace, podcast-list
-mirror, optional M4 passthrough.
+Remaining: optional M4 passthrough.
+
+**Backlog cleared 2026-07-29:**
+- **Reorder**: POST /api/v1/up-next `{action:"replace", uuids:[...]}` — PC's
+  action 5 with the full ordered episode list riding in the change
+  (Change{2:action,3:modified,7:repeated UpNextEpisodeRequest}). Pure
+  reorder/remove (unknown uuids rejected; adds via play_next/play_last).
+  Verified with a no-op replace: 200, order preserved.
+- **Podcast mirror**: /user/podcast/list returns ONLY uuid + folder/sort (no
+  names — verified); titles/authors are enriched from the public catalog
+  (podcast-api.pocketcasts.com/podcast/full/<uuid>, one fetch per uuid,
+  cached in podcast_meta). GET /api/v1/podcasts serves 110 titled podcasts
+  + 12 folders.
+- **APNs**: pusher implemented behind push.Pusher (sideshow/apns2, .p8
+  token auth, per-device sandbox/production, 2 s debounce, silent
+  {content-available, pcsCursor} payload). Activates when PCS_APNS_KEY(_ID)
+  are set — drop AuthKey_<KEYID>.p8 in the host's ./data and set
+  PCS_APNS_KEY_ID in .env; log pusher until then. App side: registers for
+  remote notifications unconditionally (silent pushes need no permission),
+  sends the hex token + env in device registration, and a pcsCursor push
+  triggers a session fetch + PC refresh. Sim gets no real APNs token; the
+  phone will.
 
 **PC link v2 (2026-07-28): the server's credential is self-sufficient.**
 Key findings, verified against the production API:

@@ -61,10 +61,27 @@ final class SessionServerSync {
             self?.fetch()
         }
 
+        // Silent pushes need no user permission — register unconditionally so the
+        // server can wake this device; the token arrives via the AppDelegate.
+        DispatchQueue.main.async { UIApplication.shared.registerForRemoteNotifications() }
+
         // Foreground → catch up; PC sync completed → nudge the server (wakes other
         // devices now; triggers the mirror pull in M2).
         NotificationCenter.default.addObserver(self, selector: #selector(appDidBecomeActive), name: UIApplication.didBecomeActiveNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(pcSyncCompleted), name: ServerNotifications.syncCompleted, object: nil)
+    }
+
+    /// Called from the AppDelegate when APNs hands over (a possibly new) device
+    /// token; re-registers so the server's fan-out set stays current.
+    func updateAPNSToken(_ token: String) {
+        guard token != Settings.sessionAPNSToken() else { return }
+        Settings.setSessionAPNSToken(token)
+        queue.async { [weak self] in self?.registerDevice() }
+    }
+
+    /// A PCS silent push landed ("your data moved") — pull session changes now.
+    func fetchFromPush() {
+        queue.async { [weak self] in self?.fetch() }
     }
 
     @objc private func appDidBecomeActive() {
@@ -453,10 +470,17 @@ final class SessionServerSync {
     // MARK: - Registration + nudge
 
     private func registerDevice() {
-        // APNs token registration lands with the push milestone; the registration itself
-        // already puts this device in the server's fan-out set for the log pusher.
+        // Dev-signed builds (Debug — both simulator and `make device`) get sandbox
+        // APNs tokens; TestFlight/App Store builds would be production.
+        #if DEBUG
+        let apnsEnv = "sandbox"
+        #else
+        let apnsEnv = "production"
+        #endif
         request(path: "/session/v1/devices", method: "POST",
-                body: ["deviceId": Settings.sessionServerDeviceId(), "apnsToken": "", "apnsEnv": "sandbox"]) { _ in }
+                body: ["deviceId": Settings.sessionServerDeviceId(),
+                       "apnsToken": Settings.sessionAPNSToken() ?? "",
+                       "apnsEnv": apnsEnv]) { _ in }
     }
 
     private func postNudge() {
