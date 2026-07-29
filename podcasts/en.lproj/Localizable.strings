@@ -7167,6 +7167,9 @@
 /* Toast shown while the Pocket Casts link handshake is in progress */
 "session_sync_pc_linking" = "Linking…";
 
+/* Switch on the Synchronization screen: follow the session playing on other devices */
+"session_sync_follow_playback" = "Follow Now Playing";
+
 /* Fork: Synchronization screen — footer under the server section. */
 "session_sync_server_footer" = "The server can run anywhere the phone can reach — a Mac on your network for testing, or your own VPS. Changes take effect the next time the app launches.";
 

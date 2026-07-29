@@ -82,10 +82,17 @@ final class ForkSettingsSync {
         }
     }
 
+    /// In server mode the PCS channel owns the playback pointer (opt-in, richer
+    /// semantics: it also loads the episode) — the KV store must not fight it.
+    private var syncedExactKeys: [String] {
+        guard Settings.sessionSyncMode() == .server else { return Self.exactKeys }
+        return Self.exactKeys.filter { !Self.pointerKeys.contains($0) }
+    }
+
     private func pushAll() {
         let defaults = UserDefaults.standard.dictionaryRepresentation()
         var changed = false
-        for key in Self.exactKeys {
+        for key in syncedExactKeys {
             changed = push(key: key, value: defaults[key]) || changed
         }
         for (key, value) in defaults where Self.prefixes.contains(where: { key.hasPrefix($0) }) {
@@ -124,7 +131,7 @@ final class ForkSettingsSync {
 
     private func pull(keys: [String]) {
         let synced = keys.filter { key in
-            Self.exactKeys.contains(key) || Self.prefixes.contains(where: { key.hasPrefix($0) })
+            syncedExactKeys.contains(key) || Self.prefixes.contains(where: { key.hasPrefix($0) })
         }
         guard !synced.isEmpty else { return }
 

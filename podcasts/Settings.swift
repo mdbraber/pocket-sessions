@@ -418,6 +418,17 @@ class Settings: NSObject {
         UserDefaults.standard.set(token, forKey: sessionServerTokenKey)
     }
 
+    /// Whether the active playback session follows across devices via the PCS server:
+    /// the leader publishes its session pointer + current episode, and idle devices
+    /// adopt it AND load the episode into the mini player (paused). Off by default.
+    private static let sessionSyncPlaybackKey = "SJSessionSyncPlayback"
+    class func sessionSyncPlayback() -> Bool {
+        UserDefaults.standard.bool(forKey: sessionSyncPlaybackKey)
+    }
+    class func setSessionSyncPlayback(_ enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: sessionSyncPlaybackKey)
+    }
+
     /// The raw APNs device token (hex), for the PCS server's silent-push fan-out.
     private static let sessionAPNSTokenKey = "SJSessionAPNSToken"
     class func sessionAPNSToken() -> String? {

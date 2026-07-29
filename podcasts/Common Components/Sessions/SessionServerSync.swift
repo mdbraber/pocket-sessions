@@ -73,6 +73,83 @@ final class SessionServerSync {
         NotificationCenter.default.addObserver(self, selector: #selector(appDidBecomeActive), name: UIApplication.didBecomeActiveNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(pcSyncCompleted), name: ServerNotifications.syncCompleted, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(podcastUpdated), name: Constants.Notifications.podcastUpdated, object: nil)
+        // Follow-playback (opt-in): the session pointer and its playing episode
+        // travel through the server so idle devices can follow along.
+        NotificationCenter.default.addObserver(self, selector: #selector(playbackStateChanged), name: Constants.Notifications.playbackSessionChanged, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(playbackStateChanged), name: Constants.Notifications.playbackTrackChanged, object: nil)
+    }
+
+    @objc private func playbackStateChanged() {
+        queue.async { [weak self] in self?.publishPlaybackPointer() }
+    }
+
+    // MARK: - Follow playback (opt-in)
+
+    /// What this device last published or adopted — publishing is suppressed while
+    /// unchanged, which also breaks the echo loop after adopting a remote pointer.
+    private var playbackFingerprintKey: String { "SJSessionPlaybackFingerprint-\(baseURL.host ?? "server")" }
+    private var playbackAppliedAtKey: String { "SJSessionPlaybackAppliedAt-\(baseURL.host ?? "server")" }
+
+    /// Publishes this device's active session + playing episode. A cleared pointer
+    /// publishes too — "nothing playing anywhere" is state worth following.
+    private func publishPlaybackPointer() {
+        guard Settings.sessionSyncPlayback() else { return }
+        var payload: [String: Any] = ["deviceId": Settings.sessionServerDeviceId()]
+        if let session = Settings.playbackSession() {
+            payload["type"] = session.type.rawValue
+            payload["uuid"] = session.uuid
+            if !Settings.playbackSessionPaused(), let episode = PlaybackManager.shared.currentEpisode() {
+                payload["episodeUuid"] = episode.uuid
+            }
+        } else {
+            payload["cleared"] = true
+        }
+        let fingerprint = "\(payload["type"] ?? "")|\(payload["uuid"] ?? "")|\(payload["episodeUuid"] ?? "")|\(payload["cleared"] ?? "")"
+        guard fingerprint != UserDefaults.standard.string(forKey: playbackFingerprintKey) else { return }
+        request(path: "/session/v1/changes", method: "POST",
+                body: ["playback": ["updatedAt": Self.nowMs(), "payload": payload]]) { [weak self] result in
+            guard case .success = result, let self else { return }
+            UserDefaults.standard.set(fingerprint, forKey: self.playbackFingerprintKey)
+            FileLog.shared.addMessage("SessionServerSync: published playback pointer \(fingerprint)")
+        }
+    }
+
+    /// Adopts a remote playback pointer: idle devices switch their active session
+    /// AND load the leader's episode into the mini player, paused at the position
+    /// PC's own sync carries. A device that is actively playing is never yanked.
+    private func applyRemotePlayback(_ playback: [String: Any]) {
+        guard Settings.sessionSyncPlayback(),
+              let updatedAt = (playback["updatedAt"] as? NSNumber)?.int64Value,
+              let payload = playback["payload"] as? [String: Any],
+              payload["deviceId"] as? String != Settings.sessionServerDeviceId(),
+              updatedAt > UserDefaults.standard.object(forKey: playbackAppliedAtKey) as? Int64 ?? 0 else { return }
+        UserDefaults.standard.set(updatedAt, forKey: playbackAppliedAtKey)
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self, !PlaybackManager.shared.playing() else { return }
+            if payload["cleared"] as? Bool == true {
+                guard Settings.playbackSession() != nil else { return }
+                UserDefaults.standard.set("|||true", forKey: self.playbackFingerprintKey)
+                Settings.setPlaybackSession(nil)
+                FileLog.shared.addMessage("SessionServerSync: adopted cleared playback pointer")
+                return
+            }
+            guard let typeRaw = payload["type"] as? String,
+                  let type = PlaybackSessionType(rawValue: typeRaw),
+                  let uuid = payload["uuid"] as? String else { return }
+            let episodeUuid = payload["episodeUuid"] as? String ?? ""
+            // Pre-set the fingerprint so our own change notifications don't republish.
+            UserDefaults.standard.set("\(typeRaw)|\(uuid)|\(episodeUuid)|", forKey: self.playbackFingerprintKey)
+            if Settings.playbackSession() != PlaybackSession(type: type, uuid: uuid) {
+                Settings.setPlaybackSession(PlaybackSession(type: type, uuid: uuid))
+            }
+            if !episodeUuid.isEmpty,
+               PlaybackManager.shared.currentEpisode()?.uuid != episodeUuid,
+               let episode = DataManager.sharedManager.findBaseEpisode(uuid: episodeUuid) {
+                PlaybackManager.shared.load(episode: episode, autoPlay: false, overrideUpNext: false)
+            }
+            FileLog.shared.addMessage("SessionServerSync: adopted playback pointer \(typeRaw)/\(uuid) episode \(episodeUuid)")
+        }
     }
 
     @objc private func podcastUpdated() {
@@ -393,6 +470,9 @@ final class SessionServerSync {
             InboxStore.shared.applyRemote {
                 InboxStore.shared.applyRemoteSeenLedger(InboxSeenLedgerPayload(seenAt: seenAt, unseenAt: unseenAt))
             }
+        }
+        if let playback = dict["playback"] as? [String: Any] {
+            applyRemotePlayback(playback)
         }
         if let cursor = dict["cursor"] as? NSNumber {
             UserDefaults.standard.set(cursor.int64Value, forKey: cursorKey)

@@ -9,13 +9,13 @@ import UIKit
 class SyncSettingsViewController: PCViewController, UITableViewDataSource, UITableViewDelegate {
     private static let cellId = "SyncSettingsCell"
 
-    private enum TableRow { case modeServer, modeICloud, modeLocal, serverURL, account, syncNow, pushWins, pullWins }
+    private enum TableRow { case modeServer, modeICloud, modeLocal, serverURL, account, followPlayback, syncNow, pushWins, pullWins }
 
     /// The server-detail and manual-sync sections only show while the server mode is selected.
     private var sections: [[TableRow]] {
         var sections: [[TableRow]] = [[.modeServer, .modeICloud, .modeLocal]]
         if Settings.sessionSyncMode() == .server {
-            sections.append([.serverURL, .account])
+            sections.append([.serverURL, .account, .followPlayback])
             sections.append([.syncNow, .pushWins, .pullWins])
         }
         return sections
@@ -105,6 +105,15 @@ class SyncSettingsViewController: PCViewController, UITableViewDataSource, UITab
             cell.textLabel?.text = L10n.sessionSyncAccount
             cell.detailTextLabel?.text = pcLinkEmail.map { $0.isEmpty ? L10n.sessionSyncLinked : $0 } ?? L10n.sessionSyncNotLinked
             cell.accessoryType = .disclosureIndicator
+        case .followPlayback:
+            cell.textLabel?.text = L10n.sessionSyncFollowPlayback
+            cell.detailTextLabel?.text = nil
+            cell.accessoryType = .none
+            cell.selectionStyle = .none
+            let toggle = UISwitch()
+            toggle.isOn = Settings.sessionSyncPlayback()
+            toggle.addTarget(self, action: #selector(followPlaybackToggled(_:)), for: .valueChanged)
+            cell.accessoryView = toggle
         case .syncNow:
             cell.textLabel?.text = L10n.sessionSyncNow
             cell.detailTextLabel?.text = nil
@@ -137,6 +146,8 @@ class SyncSettingsViewController: PCViewController, UITableViewDataSource, UITab
             promptForServerURL()
         case .account:
             showAccountOptions()
+        case .followPlayback:
+            break // the switch handles it
         case .syncNow:
             withActiveSync { $0.syncNow { ok in Toast.show(ok ? L10n.sessionSyncNowDone : L10n.sessionSyncFailed) } }
         case .pushWins:
@@ -218,6 +229,10 @@ class SyncSettingsViewController: PCViewController, UITableViewDataSource, UITab
                 Toast.show(L10n.sessionSyncFailed)
             }
         }
+    }
+
+    @objc private func followPlaybackToggled(_ toggle: UISwitch) {
+        Settings.setSessionSyncPlayback(toggle.isOn)
     }
 
     /// The Account row's sheet: re-link is the one action anyone needs; manual
