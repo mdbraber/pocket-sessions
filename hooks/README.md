@@ -94,6 +94,11 @@ Three things to get right in that config:
   `0.0.0.0/0` would route *everything* through home.
 - **DNS.** If `owntube.home.example.com` only resolves on a home resolver, set
   `DNS = <home-dns-ip>` in the `[Interface]` section; `wg-quick` applies it.
+- **IPv4 only, deliberately.** The hook forces `curl -4`. A home resolver
+  typically answers AAAA first, so anything unaware tries IPv6 — and a peer
+  whose server-side `AllowedIPs` lists only the v4 address blackholes v6
+  silently (the client looks perfect: address assigned, route present, zero
+  replies). Forcing v4 sidesteps that whether or not v6 works.
 - **Keepalive.** `PersistentKeepalive = 25` on the peer, since the VPS sits
   behind the peer's NAT and would otherwise go quiet.
 
@@ -102,3 +107,15 @@ PCS shares the tunnel's namespace, Caddy reaches PCS *through* that container,
 so a tunnel that won't start takes the whole server offline with it. `make
 deploy` (without the flag) always puts back the plain, no-VPN stack — that's
 the rollback if anything goes wrong.
+
+**Never restart the tunnel container on its own.** Restarting it destroys the
+network namespace PCS is sharing, which orphans PCS — it keeps pointing at a
+dead namespace and starts answering 502 through Caddy. Restart both together:
+
+```
+docker compose up -d --force-recreate
+```
+
+`make wireguard-scaffold` is also what re-installs the hook scripts: `make
+deploy` only ships the server and compose file, never the contents of
+`data/hooks`, so run the scaffold again after changing a hook.
