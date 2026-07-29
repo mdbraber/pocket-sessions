@@ -114,6 +114,16 @@ CREATE TABLE IF NOT EXISTS seen_episodes (
     seen_at      TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (user_id, episode_uuid)
 );
+CREATE TABLE IF NOT EXISTS episode_progress (
+    user_id       INTEGER NOT NULL, -- last-seen playback state per episode; the
+    episode_uuid  TEXT NOT NULL,    -- watcher diffs against it to fire hooks
+    podcast_uuid  TEXT NOT NULL DEFAULT '',
+    played_up_to  INTEGER NOT NULL DEFAULT 0,
+    playing_status INTEGER NOT NULL DEFAULT 0,
+    duration      INTEGER NOT NULL DEFAULT 0,
+    updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (user_id, episode_uuid)
+);
 CREATE TABLE IF NOT EXISTS podcast_meta (
     uuid       TEXT PRIMARY KEY, -- catalog cache: titles aren't in PC's sync list
     title      TEXT NOT NULL,
@@ -146,6 +156,10 @@ CREATE INDEX IF NOT EXISTS idx_presets_cursor  ON presets(user_id, cursor);
 		return err
 	}
 	if _, err := s.db.Exec(`ALTER TABLE meta ADD COLUMN nudge_device TEXT NOT NULL DEFAULT ''`); err != nil && !isDuplicateColumn(err) {
+		return err
+	}
+	// PC's lastModified cursor for progress polling (see store/progress.go).
+	if _, err := s.db.Exec(`ALTER TABLE meta ADD COLUMN progress_cursor INTEGER NOT NULL DEFAULT 0`); err != nil && !isDuplicateColumn(err) {
 		return err
 	}
 	return nil

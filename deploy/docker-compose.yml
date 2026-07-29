@@ -28,6 +28,14 @@ services:
       # Episode watcher cadence and visible-alert policy (synced|all|off).
       - PCS_EPISODE_POLL=${PCS_EPISODE_POLL:-10m}
       - PCS_NOTIFY=${PCS_NOTIFY:-synced}
+      # Playback-progress watcher + local hook scripts (see hooks/README.md).
+      - PCS_PROGRESS_POLL=${PCS_PROGRESS_POLL:-15m}
+      - PCS_PROGRESS_MIN_DELTA=${PCS_PROGRESS_MIN_DELTA:-30}
+      - PCS_HOOKS_DIR=${PCS_HOOKS_DIR:-/data/hooks}
+      - PCS_HOOK_TIMEOUT=${PCS_HOOK_TIMEOUT:-30s}
+      # Consumed by hooks/owntube.sh, not by the server itself.
+      - OWNTUBE_URL=${OWNTUBE_URL:-}
+      - OWNTUBE_TOKEN=${OWNTUBE_TOKEN:-}
     volumes:
       - ./data:/data
     networks:

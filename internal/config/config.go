@@ -3,6 +3,7 @@ package config
 import (
 	"log/slog"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -29,7 +30,12 @@ type Config struct {
 	// Episode watcher: poll the public catalog for new episodes and push.
 	EpisodePoll time.Duration // PCS_EPISODE_POLL, default 10m; "off"/"0" disables
 	NotifyMode  string        // PCS_NOTIFY: "synced" (per-podcast toggle, default), "all", "off"
-	LogLevel    slog.Level
+	// Playback-progress watcher + local hook scripts.
+	ProgressPoll     time.Duration // PCS_PROGRESS_POLL, default 15m; "off" disables
+	ProgressMinDelta int64         // PCS_PROGRESS_MIN_DELTA seconds, default 30
+	HooksDir         string        // PCS_HOOKS_DIR — executables run per playback event
+	HookTimeout      time.Duration // PCS_HOOK_TIMEOUT, default 30s
+	LogLevel         slog.Level
 }
 
 func FromEnv() Config {
@@ -46,6 +52,10 @@ func FromEnv() Config {
 		APNSTopic:        envOr("PCS_APNS_TOPIC", "com.example.podcasts"),
 		EpisodePoll:      parsePoll(envOr("PCS_EPISODE_POLL", "10m")),
 		NotifyMode:       envOr("PCS_NOTIFY", "synced"),
+		ProgressPoll:     parsePoll(envOr("PCS_PROGRESS_POLL", "15m")),
+		ProgressMinDelta: parseInt(os.Getenv("PCS_PROGRESS_MIN_DELTA"), 30),
+		HooksDir:         os.Getenv("PCS_HOOKS_DIR"),
+		HookTimeout:      parsePoll(envOr("PCS_HOOK_TIMEOUT", "30s")),
 		LogLevel:         slog.LevelInfo,
 	}
 	if os.Getenv("PCS_DEBUG") != "" {
@@ -75,6 +85,17 @@ func parsePoll(v string) time.Duration {
 		return time.Minute
 	}
 	return d
+}
+
+func parseInt(v string, fallback int64) int64 {
+	if v == "" {
+		return fallback
+	}
+	n, err := strconv.ParseInt(v, 10, 64)
+	if err != nil || n < 0 {
+		return fallback
+	}
+	return n
 }
 
 func splitList(v string) []string {

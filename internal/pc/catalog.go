@@ -17,6 +17,7 @@ const catalogBase = "https://podcast-api.pocketcasts.com"
 type CatalogEpisode struct {
 	UUID      string
 	Title     string
+	URL       string // the enclosure — how a hook recognizes where an episode came from
 	Published time.Time
 }
 
@@ -50,6 +51,7 @@ func FetchCatalog(ctx context.Context, uuid string) (CatalogPodcast, error) {
 			Episodes []struct {
 				UUID      string `json:"uuid"`
 				Title     string `json:"title"`
+				URL       string `json:"url"`
 				Published string `json:"published"`
 			} `json:"episodes"`
 		} `json:"podcast"`
@@ -60,7 +62,7 @@ func FetchCatalog(ctx context.Context, uuid string) (CatalogPodcast, error) {
 	out := CatalogPodcast{Title: doc.Podcast.Title, Author: doc.Podcast.Author}
 	for _, ep := range doc.Podcast.Episodes {
 		published, _ := time.Parse(time.RFC3339, ep.Published)
-		out.Episodes = append(out.Episodes, CatalogEpisode{UUID: ep.UUID, Title: ep.Title, Published: published})
+		out.Episodes = append(out.Episodes, CatalogEpisode{UUID: ep.UUID, Title: ep.Title, URL: ep.URL, Published: published})
 	}
 	return out, nil
 }

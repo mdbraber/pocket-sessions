@@ -26,6 +26,7 @@ import (
 
 	"github.com/mdbraber/pocket-sessions-server/internal/api"
 	"github.com/mdbraber/pocket-sessions-server/internal/config"
+	"github.com/mdbraber/pocket-sessions-server/internal/hooks"
 	"github.com/mdbraber/pocket-sessions-server/internal/pc"
 	"github.com/mdbraber/pocket-sessions-server/internal/push"
 	"github.com/mdbraber/pocket-sessions-server/internal/store"
@@ -101,9 +102,15 @@ func serve() {
 		}
 	}
 
+	// Playback-progress watcher: diffs PC's episode progress and runs local
+	// hook scripts (see internal/hooks). Also driven by the nudge, so a
+	// finished episode reaches a hook in seconds rather than at the next tick.
+	hookRunner := hooks.New(cfg.HooksDir, cfg.HookTimeout, logger)
+	progressWatcher := watch.NewProgressWatcher(st, hookRunner, logger, cfg.ProgressMinDelta)
+
 	srv := &http.Server{
 		Addr:              cfg.Listen,
-		Handler:           api.New(st, pusher, logger, cfg.AllowedEmails),
+		Handler:           api.New(st, pusher, logger, cfg.AllowedEmails, progressWatcher),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -115,6 +122,14 @@ func serve() {
 		go watch.Run(watchCtx, st, pusher, logger, cfg.EpisodePoll, cfg.NotifyMode)
 	} else {
 		logger.Info("episode watcher disabled (PCS_EPISODE_POLL)")
+	}
+	if cfg.ProgressPoll > 0 {
+		if cfg.HooksDir == "" {
+			logger.Info("progress watcher running without hooks (PCS_HOOKS_DIR unset)")
+		}
+		go progressWatcher.Run(watchCtx, cfg.ProgressPoll)
+	} else {
+		logger.Info("progress watcher disabled (PCS_PROGRESS_POLL)")
 	}
 
 	go func() {

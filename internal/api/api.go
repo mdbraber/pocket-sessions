@@ -27,6 +27,9 @@ type Server struct {
 	// on a completely fresh server).
 	allowedEmails []string
 
+	// Polled on nudge so a just-finished episode reaches its hooks in seconds.
+	progress progressPoller
+
 	// Device-code links awaiting approval, keyed by linkId. In-memory on purpose:
 	// codes live 30 minutes and a lost pending link just means re-tapping Link.
 	pendingMu    sync.Mutex
@@ -38,8 +41,13 @@ type pendingLink struct {
 	expires    time.Time
 }
 
-func New(st *store.Store, pusher push.Pusher, logger *slog.Logger, allowedEmails []string) http.Handler {
-	s := &Server{store: st, pusher: pusher, logger: logger, allowedEmails: allowedEmails, pendingLinks: map[string]pendingLink{}}
+// progressPoller is the playback-progress watcher, as the API needs it.
+type progressPoller interface {
+	PollUser(ctx context.Context, userID int64) error
+}
+
+func New(st *store.Store, pusher push.Pusher, logger *slog.Logger, allowedEmails []string, progress progressPoller) http.Handler {
+	s := &Server{store: st, pusher: pusher, logger: logger, allowedEmails: allowedEmails, progress: progress, pendingLinks: map[string]pendingLink{}}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -198,6 +206,13 @@ func (s *Server) handleNudge(w http.ResponseWriter, r *http.Request, userID int6
 		defer cancel()
 		if err := s.refreshMirror(ctx, userID); err != nil && !errors.Is(err, errNotLinked) {
 			s.logger.Warn("mirror refresh after nudge", "err", err)
+		}
+		// The app nudges right after finishing a PC sync, so this is the moment
+		// fresh playback progress exists — poll it and let the hooks run.
+		if s.progress != nil {
+			if err := s.progress.PollUser(ctx, userID); err != nil {
+				s.logger.Warn("progress poll after nudge", "err", err)
+			}
 		}
 	}()
 	w.WriteHeader(http.StatusNoContent)
