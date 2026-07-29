@@ -113,6 +113,22 @@ registers a token): resurrected a fresh episode → detected, alert composed,
 wake sent. Settings UI collapsed the same day: Server URL + one Pocket
 Casts Account row (re-link + manual token in its action sheet).
 
+**Follow Now Playing (2026-07-29, opt-in switch under Synchronization).**
+LWW playback-pointer document in the sync channel (session type/uuid +
+playing episode + device). Hard-won rules from live testing:
+- Only a device that is actually PLAYING publishes (1.5 s-delayed check) —
+  an idle launch republishing stale state once yanked the live leader.
+- Adoption = startPlaybackSession(autoPlay:false) — the app's own session
+  entry point — never a hand-rolled pointer+load.
+- Foreground poll every 20 s (cursor no-op): foreground push delivery is
+  best-effort and sim-flaky.
+- Position: pause uploads to PC immediately but fires no sync → pause now
+  NUDGES (3 s grace); the server's nudge seq (+ origin device) rides every
+  changes response; a poller seeing a foreign nudge runs a forced refresh
+  (main SyncTask → seekToFromSync moves the loaded-paused player).
+  Nudge-triggered syncs never re-nudge (suppression) — no ping-pong.
+- ForkSettingsSync yields the pointer keys to PCS in server mode.
+
 **Backlog cleared 2026-07-29:**
 - **Reorder**: POST /api/v1/up-next `{action:"replace", uuids:[...]}` — PC's
   action 5 with the full ordered episode list riding in the change
