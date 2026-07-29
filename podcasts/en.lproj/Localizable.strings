@@ -7158,14 +7158,11 @@
 /* Fork: prompt text when entering the server access token. */
 "session_sync_server_token_message" = "The bearer token your server expects (PCS_AUTH_TOKEN). Leave empty if your server runs in open mode.";
 
-/* Status shown for the Access Token row when the token was issued by the server during Link Pocket Casts */
-"session_sync_server_token_auto" = "Set Automatically";
+/* The single account-status row on the Synchronization screen (shows the linked PC account) */
+"session_sync_account" = "Pocket Casts Account";
 
-/* Alert message explaining the Access Token row; manual entry is the advanced escape hatch */
-"session_sync_server_token_status" = "A token is issued automatically when your Pocket Casts account is linked — there is nothing to type here. Manual entry exists only for unusual setups, like a server whose enrollment is restricted to other accounts.";
-
-/* Button that opens manual entry of the server access token */
-"session_sync_server_token_manual" = "Enter Manually";
+/* Button that opens manual entry of the server access token (last-resort escape hatch) */
+"session_sync_server_token_manual" = "Enter Access Token Manually";
 
 /* Toast shown while the Pocket Casts link handshake is in progress */
 "session_sync_pc_linking" = "Linking…";

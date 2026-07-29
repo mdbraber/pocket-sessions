@@ -9,13 +9,13 @@ import UIKit
 class SyncSettingsViewController: PCViewController, UITableViewDataSource, UITableViewDelegate {
     private static let cellId = "SyncSettingsCell"
 
-    private enum TableRow { case modeServer, modeICloud, modeLocal, serverURL, serverToken, pcLink, syncNow, pushWins, pullWins }
+    private enum TableRow { case modeServer, modeICloud, modeLocal, serverURL, account, syncNow, pushWins, pullWins }
 
     /// The server-detail and manual-sync sections only show while the server mode is selected.
     private var sections: [[TableRow]] {
         var sections: [[TableRow]] = [[.modeServer, .modeICloud, .modeLocal]]
         if Settings.sessionSyncMode() == .server {
-            sections.append([.serverURL, .serverToken, .pcLink])
+            sections.append([.serverURL, .account])
             sections.append([.syncNow, .pushWins, .pullWins])
         }
         return sections
@@ -99,18 +99,10 @@ class SyncSettingsViewController: PCViewController, UITableViewDataSource, UITab
             cell.textLabel?.text = L10n.sessionSyncServerUrl
             cell.detailTextLabel?.text = Settings.sessionServerURL()?.absoluteString ?? L10n.sessionSyncNotSet
             cell.accessoryType = .disclosureIndicator
-        case .serverToken:
-            cell.textLabel?.text = L10n.sessionSyncServerToken
-            // Server-issued tokens (minted on PC link, "pcs_" prefix) show as status —
-            // the field is no longer something to type, just to inspect.
-            if let token = Settings.sessionServerToken() {
-                cell.detailTextLabel?.text = token.hasPrefix("pcs_") ? L10n.sessionSyncServerTokenAuto : "••••••"
-            } else {
-                cell.detailTextLabel?.text = L10n.sessionSyncNotSet
-            }
-            cell.accessoryType = .disclosureIndicator
-        case .pcLink:
-            cell.textLabel?.text = L10n.sessionSyncPcLink
+        case .account:
+            // Everything credential-shaped collapses into one status row: the URL
+            // save enrolls automatically, so this only ever shows the outcome.
+            cell.textLabel?.text = L10n.sessionSyncAccount
             cell.detailTextLabel?.text = pcLinkEmail.map { $0.isEmpty ? L10n.sessionSyncLinked : $0 } ?? L10n.sessionSyncNotLinked
             cell.accessoryType = .disclosureIndicator
         case .syncNow:
@@ -143,12 +135,8 @@ class SyncSettingsViewController: PCViewController, UITableViewDataSource, UITab
             select(mode: .local)
         case .serverURL:
             promptForServerURL()
-        case .serverToken:
-            showTokenStatus()
-        case .pcLink:
-            confirm(title: L10n.sessionSyncPcLink, message: L10n.sessionSyncPcLinkMessage) { [weak self] in
-                self?.linkPCAccount()
-            }
+        case .account:
+            showAccountOptions()
         case .syncNow:
             withActiveSync { $0.syncNow { ok in Toast.show(ok ? L10n.sessionSyncNowDone : L10n.sessionSyncFailed) } }
         case .pushWins:
@@ -232,14 +220,17 @@ class SyncSettingsViewController: PCViewController, UITableViewDataSource, UITab
         }
     }
 
-    /// The Access Token row is status-first — it's provisioned automatically on PC
-    /// link; manual entry remains as the advanced escape hatch (bootstrap token).
-    private func showTokenStatus() {
-        let alert = UIAlertController(title: L10n.sessionSyncServerToken, message: L10n.sessionSyncServerTokenStatus, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: L10n.cancel, style: .cancel))
+    /// The Account row's sheet: re-link is the one action anyone needs; manual
+    /// token entry hides here as the last-resort escape hatch.
+    private func showAccountOptions() {
+        let alert = UIAlertController(title: L10n.sessionSyncAccount, message: L10n.sessionSyncPcLinkMessage, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: L10n.sessionSyncPcLink, style: .default) { [weak self] _ in
+            self?.linkPCAccount()
+        })
         alert.addAction(UIAlertAction(title: L10n.sessionSyncServerTokenManual, style: .default) { [weak self] _ in
             self?.promptForToken()
         })
+        alert.addAction(UIAlertAction(title: L10n.cancel, style: .cancel))
         present(alert, animated: true)
     }
 

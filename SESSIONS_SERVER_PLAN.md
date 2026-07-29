@@ -93,6 +93,21 @@ are MEMBERSHIP changes — play_next on an already-queued episode is a no-op by
 design; reordering needs the replace action (5) with a full order list.
 Remaining: optional M4 passthrough.
 
+**Episode watcher (2026-07-29): the fork's own new-episode push.** PC's
+episode pushes can never reach this fork (APNs is keyed to the bundle id;
+PC only signs for theirs — they were dead all along). The server now polls
+the public catalog for every subscription (PCS_EPISODE_POLL, default 10m),
+diffs against a seen_episodes ledger (seeded silently, 21.8k episodes),
+and pushes: a silent wake for every device plus visible alerts shaped like
+PC's own (category "ep", eu, podcast_uuid — the app's notification actions
+work unchanged). PCS_NOTIFY=synced|all|off; NOTE: the synced per-podcast
+notification toggle is empty for this account (0/110 — settings sync never
+ran on the fork), so the deployment currently runs PCS_NOTIFY=all.
+Verified end-to-end minus APNs delivery (devices=0 until the phone
+registers a token): resurrected a fresh episode → detected, alert composed,
+wake sent. Settings UI collapsed the same day: Server URL + one Pocket
+Casts Account row (re-link + manual token in its action sheet).
+
 **Backlog cleared 2026-07-29:**
 - **Reorder**: POST /api/v1/up-next `{action:"replace", uuids:[...]}` — PC's
   action 5 with the full ordered episode list riding in the change
