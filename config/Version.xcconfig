@@ -2,7 +2,7 @@
 // stays discernible from stock Pocket Casts in App Store Connect / TestFlight.
 //   VERSION_SHORT (marketing) = the sessions version    -> shows as "Version"
 //   VERSION_LONG  (build)     = the stock base it's on  -> shows as "Build"
-// TestFlight then reads e.g. "0.5 (8.17.0.2)" — clearly the sessions fork, cut from
+// TestFlight then reads e.g. "0.6 (8.17.0.2)" — clearly the sessions fork, cut from
 // 8.17.0.x, and in a separate version train so a regular 8.17.0.x can't collide.
 VERSION_LONG = 8.17.0.2
-VERSION_SHORT = 0.5
+VERSION_SHORT = 0.6
