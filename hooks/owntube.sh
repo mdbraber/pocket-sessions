@@ -38,7 +38,9 @@ if [ -z "$video_id" ]; then
 fi
 
 trpc() { # trpc <procedure> <json-input>
-  curl -sS -X POST \
+  # -4 on purpose: a split-tunnel WireGuard peer commonly routes only the home
+  # IPv4 range, while DNS hands back AAAA first — resolving v6 would hang.
+  curl -sS -4 -X POST \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $OWNTUBE_TOKEN" \
     --max-time 20 \
