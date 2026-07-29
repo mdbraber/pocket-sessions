@@ -1,8 +1,7 @@
-// Package push abstracts the "tell other devices to sync" signal. M1 ships
-// the log pusher — locally there is no APNs key, and sync still works via
-// foreground fetches and nudges. The APNs implementation (sideshow/apns2,
-// token-based .p8 auth, sandbox vs production per device) slots in behind the
-// same interface at deploy time.
+// Package push abstracts the "tell other devices to sync" signal. Locally the
+// log pusher runs (no APNs key needed — sync still works via foreground fetches
+// and nudges); deployment slots the APNs implementation (apns.go) behind the
+// same interface once a .p8 key is configured.
 package push
 
 import (
@@ -19,10 +18,12 @@ type Pusher interface {
 	NotifyChanged(userID int64, cursor int64, devices []store.Device)
 }
 
-// LogPusher logs what an APNs pusher would send. It still debounces, so the
-// log mirrors real push behavior (one line per burst, not per write).
-type LogPusher struct {
-	logger *slog.Logger
+const debounce = 2 * time.Second
+
+// debouncer coalesces bursts of NotifyChanged per user: one flush per burst,
+// carrying the latest cursor and device set. Shared by the log and APNs pushers.
+type debouncer struct {
+	flush func(userID int64, cursor int64, devices []store.Device)
 
 	mu      sync.Mutex
 	pending map[int64]*pendingPush
@@ -34,31 +35,40 @@ type pendingPush struct {
 	devices []store.Device
 }
 
-const debounce = 2 * time.Second
-
-func NewLogPusher(logger *slog.Logger) *LogPusher {
-	return &LogPusher{logger: logger, pending: map[int64]*pendingPush{}}
+func newDebouncer(flush func(int64, int64, []store.Device)) *debouncer {
+	return &debouncer{flush: flush, pending: map[int64]*pendingPush{}}
 }
 
-func (p *LogPusher) NotifyChanged(userID int64, cursor int64, devices []store.Device) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if existing, ok := p.pending[userID]; ok {
+func (d *debouncer) NotifyChanged(userID int64, cursor int64, devices []store.Device) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if existing, ok := d.pending[userID]; ok {
 		existing.cursor = cursor
 		existing.devices = devices
 		return // timer already running; latest cursor rides the same flush
 	}
 	pend := &pendingPush{cursor: cursor, devices: devices}
 	pend.timer = time.AfterFunc(debounce, func() {
-		p.mu.Lock()
-		flush := p.pending[userID]
-		delete(p.pending, userID)
-		p.mu.Unlock()
+		d.mu.Lock()
+		flush := d.pending[userID]
+		delete(d.pending, userID)
+		d.mu.Unlock()
 		if flush == nil {
 			return
 		}
-		p.logger.Info("push (log-only): would send content-available",
-			"user", userID, "cursor", flush.cursor, "devices", len(flush.devices))
+		d.flush(userID, flush.cursor, flush.devices)
 	})
-	p.pending[userID] = pend
+	d.pending[userID] = pend
+}
+
+// LogPusher logs what an APNs pusher would send.
+type LogPusher struct {
+	*debouncer
+}
+
+func NewLogPusher(logger *slog.Logger) *LogPusher {
+	return &LogPusher{debouncer: newDebouncer(func(userID, cursor int64, devices []store.Device) {
+		logger.Info("push (log-only): would send content-available",
+			"user", userID, "cursor", cursor, "devices", len(devices))
+	})}
 }

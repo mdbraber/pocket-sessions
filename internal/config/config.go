@@ -16,7 +16,12 @@ type Config struct {
 	// through the unauthenticated device-pairing link. Empty list = the email
 	// already linked counts; a completely fresh server trusts the first link.
 	AllowedEmails []string
-	LogLevel      slog.Level
+	// APNs (silent-push fan-out). Unset = the log pusher runs instead.
+	APNSKey    string // PCS_APNS_KEY — path to AuthKey_<KEYID>.p8
+	APNSKeyID  string // PCS_APNS_KEY_ID
+	APNSTeamID string // PCS_APNS_TEAM_ID, default ABCDE12345
+	APNSTopic  string // PCS_APNS_TOPIC, default com.example.podcasts
+	LogLevel   slog.Level
 }
 
 func FromEnv() Config {
@@ -25,6 +30,10 @@ func FromEnv() Config {
 		DBPath:        envOr("PCS_DB", "pcsessions.db"),
 		AuthToken:     os.Getenv("PCS_AUTH_TOKEN"),
 		AllowedEmails: splitList(os.Getenv("PCS_ALLOWED_EMAILS")),
+		APNSKey:       os.Getenv("PCS_APNS_KEY"),
+		APNSKeyID:     os.Getenv("PCS_APNS_KEY_ID"),
+		APNSTeamID:    envOr("PCS_APNS_TEAM_ID", "ABCDE12345"),
+		APNSTopic:     envOr("PCS_APNS_TOPIC", "com.example.podcasts"),
 		LogLevel:      slog.LevelInfo,
 	}
 	if os.Getenv("PCS_DEBUG") != "" {

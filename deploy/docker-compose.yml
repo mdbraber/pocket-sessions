@@ -6,6 +6,7 @@
 #   PCS_DOMAIN=sessions.example.com
 #   PCS_AUTH_TOKEN=<openssl rand -hex 24>       # operator credential (curl/scripts)
 #   PCS_ALLOWED_EMAILS=you@example.com          # PC accounts allowed to enroll (optional)
+#   PCS_APNS_KEY_ID=ABC123DEFG                  # with the .p8 dropped in ./data (optional)
 services:
   pocket-sessions:
     container_name: pocket-sessions
@@ -16,6 +17,10 @@ services:
       - PCS_DB=/data/pcsessions.db
       - PCS_AUTH_TOKEN=${PCS_AUTH_TOKEN}
       - PCS_ALLOWED_EMAILS=${PCS_ALLOWED_EMAILS:-}
+      # APNs: put AuthKey_<KEYID>.p8 in ./data and set PCS_APNS_KEY_ID in .env;
+      # team id and topic default in code (ABCDE12345 / com.example.podcasts).
+      - PCS_APNS_KEY=${PCS_APNS_KEY_ID:+/data/AuthKey_${PCS_APNS_KEY_ID}.p8}
+      - PCS_APNS_KEY_ID=${PCS_APNS_KEY_ID:-}
     volumes:
       - ./data:/data
     networks:

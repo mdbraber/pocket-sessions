@@ -45,6 +45,58 @@ func ParseQueueAction(s string) (QueueAction, error) {
 	return 0, fmt.Errorf("unknown action %q (want play_now, play_next, play_last, remove)", s)
 }
 
+// ReplaceUpNext sets the ENTIRE queue to the given ordered episode list — PC's
+// replace action (5), the only way to reorder (single-episode actions are
+// membership changes). The app sends the full episode list inside the change
+// (Change{2:action=5, 3:modified, 7:repeated UpNextEpisodeRequest{1:uuid,
+// 4:title, 5:url, 6:podcast}}), so entries PC can't resolve still resolve;
+// anything not in the list is REMOVED from the queue.
+func ReplaceUpNext(ctx context.Context, accessToken, deviceID string, episodes []UpNextEpisode, serverModified int64) (UpNext, error) {
+	now := time.Now().UnixMilli()
+
+	change := appendVarintField(nil, 2, 5) // action: replace
+	change = appendVarintField(change, 3, uint64(now))
+	for _, ep := range episodes {
+		entry := appendStringField(nil, 1, ep.UUID)
+		entry = appendStringField(entry, 4, ep.Title)
+		entry = appendStringField(entry, 5, ep.URL)
+		entry = appendStringField(entry, 6, ep.PodcastUUID)
+		change = appendBytesField(change, 7, entry)
+	}
+
+	changes := appendVarintField(nil, 1, uint64(serverModified))
+	changes = appendBytesField(changes, 2, change)
+
+	body := appendVarintField(nil, 1, uint64(now))
+	body = appendStringField(body, 2, "2")
+	body = appendBytesField(body, 4, changes)
+	body = appendStringField(body, 6, deviceID)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiBase+"/up_next/sync", bytesReader(body))
+	if err != nil {
+		return UpNext{}, err
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Content-Type", "application/octet-stream")
+	req.Header.Set("Accept", "application/octet-stream")
+	req.Header.Set("User-Agent", "Pocket Casts")
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return UpNext{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return UpNext{}, fmt.Errorf("up_next/sync (replace): HTTP %d", resp.StatusCode)
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	if err != nil {
+		return UpNext{}, err
+	}
+	return parseUpNextResponse(data)
+}
+
 // ChangeUpNext applies one queue change and returns the queue PC reports back.
 // Title/podcast are optional: PC needs them when ADDING an episode it can't
 // resolve, and ignores them otherwise. serverModified is the value from the last

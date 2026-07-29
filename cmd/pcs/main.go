@@ -84,9 +84,17 @@ func serve() {
 		os.Exit(1)
 	}
 
-	// M1 ships with the log pusher; the APNs implementation slots in behind the
-	// same interface once a .p8 key is configured (deployment concern).
+	// APNs when a .p8 key is configured; the log pusher otherwise (local dev).
 	var pusher push.Pusher = push.NewLogPusher(logger)
+	apnsCfg := push.APNSConfig{KeyPath: cfg.APNSKey, KeyID: cfg.APNSKeyID, TeamID: cfg.APNSTeamID, Topic: cfg.APNSTopic}
+	if apnsCfg.Configured() {
+		if apns, err := push.NewAPNSPusher(apnsCfg, logger); err == nil {
+			pusher = apns
+			logger.Info("apns pusher active", "topic", cfg.APNSTopic, "keyId", cfg.APNSKeyID)
+		} else {
+			logger.Error("apns setup failed, falling back to log pusher", "err", err)
+		}
+	}
 
 	srv := &http.Server{
 		Addr:              cfg.Listen,
