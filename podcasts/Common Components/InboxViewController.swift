@@ -28,6 +28,7 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
     private var groups: [Group] = []
     private var searchTerm = ""
     private var searchController: PCSearchBarController?
+    private var searchHeaderContainer: UIView?
     private var clearButton: UIBarButtonItem?
     private var ellipsisButton: UIBarButtonItem?
     private var clearFooterHost: UIHostingController<AnyView>?
@@ -212,7 +213,15 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
             search.view.bottomAnchor.constraint(equalTo: container.bottomAnchor)
         ])
 
+        searchHeaderContainer = container
         table.tableHeaderView = container
+    }
+
+    /// Inbox zero needs no search box (or counts) — but a search that merely has
+    /// no RESULTS must keep the bar, or there'd be no way to clear the term.
+    private func updateSearchHeaderVisibility() {
+        let hideHeader = allEpisodes.isEmpty && searchTerm.isEmpty
+        table.tableHeaderView = hideHeader ? nil : searchHeaderContainer
     }
 
     /// The Clear button under the list — the inbox pill every other inbox surface
@@ -253,6 +262,7 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
             self.navigationItem.leftBarButtonItem?.isEnabled = self.isMultiSelectEnabled || !self.allEpisodes.isEmpty
             self.updateCountsLabel()
             self.updateClearFooter()
+            self.updateSearchHeaderVisibility()
             self.table.reloadData()
         }
     }
