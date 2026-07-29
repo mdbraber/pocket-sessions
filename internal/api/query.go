@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"sync"
 
 	"github.com/mdbraber/pocket-sessions-server/internal/pc"
 )
@@ -81,6 +82,7 @@ func (s *Server) refreshMirror(ctx context.Context, userID int64) error {
 		s.logger.Warn("mirror fetch (history)", "err", hErr)
 	}
 	if podcasts, pErr := pc.FetchPodcasts(ctx, link.AccessToken); pErr == nil {
+		s.enrichPodcasts(ctx, &podcasts)
 		if sErr := s.store.SaveMirror(userID, "podcasts", podcasts); sErr != nil {
 			s.logger.Warn("mirror save (podcasts)", "err", sErr)
 		}
@@ -88,6 +90,57 @@ func (s *Server) refreshMirror(ctx context.Context, userID int64) error {
 		s.logger.Warn("mirror fetch (podcasts)", "err", pErr)
 	}
 	return nil
+}
+
+// enrichPodcasts fills titles/authors: PC's sync list carries only uuids, so
+// names come from the public catalog — fetched once per uuid, cached in
+// podcast_meta. Failures leave the entry uuid-only (warn, never fail the pull).
+func (s *Server) enrichPodcasts(ctx context.Context, list *pc.PodcastList) {
+	cached, err := s.store.AllPodcastMeta()
+	if err != nil {
+		s.logger.Warn("podcast meta cache read", "err", err)
+		cached = map[string][2]string{}
+	}
+	var missing []int
+	for i := range list.Podcasts {
+		if meta, ok := cached[list.Podcasts[i].UUID]; ok {
+			list.Podcasts[i].Title = meta[0]
+			list.Podcasts[i].Author = meta[1]
+		} else {
+			missing = append(missing, i)
+		}
+	}
+	if len(missing) == 0 {
+		return
+	}
+
+	// First pull resolves the whole library (~a few seconds); afterwards only
+	// new subscriptions miss the cache.
+	sem := make(chan struct{}, 6)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	for _, i := range missing {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			uuid := list.Podcasts[i].UUID
+			title, author, err := pc.FetchPodcastMeta(ctx, uuid)
+			if err != nil || title == "" {
+				s.logger.Warn("podcast catalog lookup", "uuid", uuid, "err", err)
+				return
+			}
+			mu.Lock()
+			list.Podcasts[i].Title = title
+			list.Podcasts[i].Author = author
+			mu.Unlock()
+			if err := s.store.SavePodcastMeta(uuid, title, author); err != nil {
+				s.logger.Warn("podcast meta cache write", "uuid", uuid, "err", err)
+			}
+		}(i)
+	}
+	wg.Wait()
 }
 
 func (s *Server) handlePodcasts(w http.ResponseWriter, r *http.Request, userID int64) {

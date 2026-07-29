@@ -95,6 +95,12 @@ CREATE TABLE IF NOT EXISTS mirror (
     fetched_at TEXT NOT NULL,
     PRIMARY KEY (user_id, kind)
 );
+CREATE TABLE IF NOT EXISTS podcast_meta (
+    uuid       TEXT PRIMARY KEY, -- catalog cache: titles aren't in PC's sync list
+    title      TEXT NOT NULL,
+    author     TEXT NOT NULL DEFAULT '',
+    fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 CREATE TABLE IF NOT EXISTS pc_links (
     user_id          INTEGER PRIMARY KEY,
     pc_email         TEXT NOT NULL DEFAULT '',
