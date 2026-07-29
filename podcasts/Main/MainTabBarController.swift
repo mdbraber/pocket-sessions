@@ -102,6 +102,14 @@ class MainTabBarController: UITabBarController, NavigationProtocol {
     override func viewDidLoad() {
         super.viewDidLoad()
 
+        registerForTraitChanges([UITraitUserInterfaceStyle.self, UITraitHorizontalSizeClass.self]) { (controller: MainTabBarController, _) in
+            if let scene = controller.view.window?.windowScene {
+                Theme.systemIsDark = (scene.traitCollection.userInterfaceStyle == .dark)
+            }
+            controller.fixTarBarTraitCollectionOnIpadForiOS18()
+            controller.fireSystemThemeMayHaveChanged()
+        }
+
         fixTarBarTraitCollectionOnIpadForiOS18()
 
         // Fork tab bar: the global Inbox leads; Discover is parked under Profile.
@@ -183,6 +191,7 @@ class MainTabBarController: UITabBarController, NavigationProtocol {
 
         observersForEndOfYearStats()
         addBookmarkCreatedToastHandler()
+        addBookmarkEnrichmentHandler()
         if FeatureFlag.displayErrorsOnPlayer.enabled {
             setupErrorBanner()
             setupErrorObservers()
@@ -296,15 +305,6 @@ class MainTabBarController: UITabBarController, NavigationProtocol {
                 }
             }
         }
-    }
-
-    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
-        super.traitCollectionDidChange(previousTraitCollection)
-        if let scene = view.window?.windowScene {
-            Theme.systemIsDark = (scene.traitCollection.userInterfaceStyle == .dark)
-        }
-        fixTarBarTraitCollectionOnIpadForiOS18()
-        fireSystemThemeMayHaveChanged()
     }
 
     @objc func themeDidChange() {
@@ -1026,6 +1026,31 @@ class MainTabBarController: UITabBarController, NavigationProtocol {
 // MARK: - Bookmarks
 
 private extension MainTabBarController {
+    /// The edit sheet, where a bookmark is normally titled, only opens over the full screen player
+    /// with the app in the foreground — see `BookmarksPlayerTabController`
+    static var showsBookmarkEditSheet: Bool {
+        UIApplication.shared.applicationState == .active
+        && !CarPlayHelper.isConnectedToCarPlay
+        && NavigationManager.sharedManager.miniPlayer?.playerOpenState != .closed
+    }
+
+    /// Generates the title and passage for the bookmarks that are never shown the edit sheet:
+    /// the ones made with a headphone button, in CarPlay, or while the app is in the background
+    func addBookmarkEnrichmentHandler() {
+        let bookmarkManager = PlaybackManager.shared.bookmarkManager
+
+        bookmarkManager.onBookmarkCreated
+            .receive(on: RunLoop.main)
+            .filter { !$0.isDuplicate && !Self.showsBookmarkEditSheet }
+            .compactMap { bookmarkManager.bookmark(for: $0.uuid) }
+            .sink { bookmark in
+                Task {
+                    await bookmarkManager.enrich(bookmark)
+                }
+            }
+            .store(in: &cancellables)
+    }
+
     // Shows a toast notification when a bookmark is created and we're not in the full screen player
     func addBookmarkCreatedToastHandler() {
         let bookmarkManager = PlaybackManager.shared.bookmarkManager
@@ -1053,7 +1078,11 @@ private extension MainTabBarController {
         let message = title == L10n.bookmarkDefaultTitle ? L10n.bookmarkAdded : L10n.bookmarkAddedNotification(title)
 
         let action = Toast.Action(title: L10n.changeBookmarkTitle) { [weak self] in
-            let controller = BookmarkEditTitleViewController(manager: bookmarkManager, bookmark: bookmark, state: .updating, onDismiss: { [weak self] updatedTitle, _ in
+            // Re-read: a generated title may have been saved since the toast was shown
+            let bookmark = bookmarkManager.bookmark(for: bookmark.uuid) ?? bookmark
+            let title = bookmark.title
+
+            let controller = BookmarkEditTitleViewController(manager: bookmarkManager, bookmark: bookmark, state: .updating, style: .themed, onDismiss: { [weak self] updatedTitle, _ in
                 guard title != updatedTitle else { return }
 
                 self?.handleBookmarkTitleUpdated(updatedTitle: updatedTitle)

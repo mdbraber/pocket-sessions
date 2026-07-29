@@ -262,6 +262,15 @@ class NowPlayingPlayerItemViewController: PlayerItemViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
 
+        registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) { (controller: NowPlayingPlayerItemViewController, _) in
+            #if !APPCLIP
+            if FeatureFlag.bannerAdPlayer.enabled {
+                controller.updateBannerAdHeight()
+            }
+            #endif
+            controller.updateSize()
+        }
+
         setUpArtworkImageView()
         setUpSessionCaption()
 
@@ -475,23 +484,6 @@ class NowPlayingPlayerItemViewController: PlayerItemViewController {
     override func themeDidChange() {
         lastShelfLoadState = ShelfLoadState()
         update(notification: nil)
-    }
-
-    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
-        super.traitCollectionDidChange(previousTraitCollection)
-
-        #if !APPCLIP
-        if FeatureFlag.bannerAdPlayer.enabled {
-            // Update banner height when text size category changes
-            if traitCollection.preferredContentSizeCategory != previousTraitCollection?.preferredContentSizeCategory {
-                updateBannerAdHeight()
-            }
-        }
-        #endif
-
-        if traitCollection.preferredContentSizeCategory != previousTraitCollection?.preferredContentSizeCategory {
-            updateSize()
-        }
     }
 
     var shelfIconSize: CGFloat {

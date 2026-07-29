@@ -33,6 +33,10 @@ class FolderListCell: ThemeableCollectionCell {
         isAccessibilityElement = true
         addFlexSpacer()
         updateSize()
+
+        registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) { (view: FolderListCell, _) in
+            view.updateSize()
+        }
     }
 
     /// The row's slack lives in this invisible flex view, so the badge and chevron
@@ -112,11 +116,5 @@ class FolderListCell: ThemeableCollectionCell {
             unplayedHeight.constant = max(10, badgeMetric.scaledValue(for: 10))
         }
         unplayedBadge.layoutIfNeeded()
-    }
-
-    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
-        super.traitCollectionDidChange(previousTraitCollection)
-        guard traitCollection.preferredContentSizeCategory != previousTraitCollection?.preferredContentSizeCategory else { return }
-        updateSize()
     }
 }

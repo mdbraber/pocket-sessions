@@ -3,13 +3,26 @@ import NaturalLanguage
 import PocketCastsDataModel
 import PocketCastsUtils
 
+/// The transcript passage captured for a bookmark, kept alongside the transcript it was
+/// taken from so it can be re-selected later.
+struct BookmarkTranscriptSnippet {
+    let transcript: TranscriptModel
+    var range: NSRange
+
+    var text: String {
+        BookmarkTranscriptSnippetExtractor.text(in: range, of: transcript.attributedText)
+    }
+}
+
 /// Extracts the transcript text surrounding a bookmark's position, used as the
 /// input for generating a bookmark title.
 ///
-/// Generated transcripts are timed against a reference copy of the episode audio
-/// that dynamic ads shift away from, so the bookmark's playback time is first
-/// resolved to the reference timeline (see `docs/transcripts.md`), falling back
-/// to the raw playback time when a confident mapping isn't available.
+/// Limited to fingerprinted transcripts. Generated transcripts are timed against a
+/// reference copy of the episode audio that dynamic ads shift away from, so the
+/// bookmark's playback time has to be resolved to the reference timeline (see
+/// `docs/transcripts.md`) before it points at the right words. Anything else — an
+/// externally supplied transcript, or a fingerprint that doesn't confidently match —
+/// yields no snippet rather than one taken from the raw playback time.
 struct BookmarkTranscriptSnippetExtractor {
 
     /// The window reaches further back than forward: by the time a user bookmarks
@@ -20,23 +33,35 @@ struct BookmarkTranscriptSnippetExtractor {
     /// Snippets with fewer words than this carry too little signal to generate a meaningful title from
     static let minimumWordCount = 10
 
-    func snippet(forTime time: TimeInterval, episode: BaseEpisode) async -> String? {
+    func snippet(forTime time: TimeInterval, episode: BaseEpisode) async -> BookmarkTranscriptSnippet? {
         let transcriptManager = TranscriptManager(episodeUUID: episode.uuid, podcastUUID: episode.parentIdentifier())
         guard let model = try? await transcriptManager.loadTranscript() else {
             return nil
         }
 
-        // Only generated transcripts have a reference fingerprint to re-anchor against.
-        var center = time
-        if transcriptManager.isDisplayingGeneratedTranscript, FeatureFlag.syncedTranscripts.enabled,
-           let referenceTime = await FingerprintTimingManager.shared.resolveReferenceTime(forPlaybackTime: time, episode: episode) {
-            center = referenceTime
+        // Only generated transcripts have a reference fingerprint to re-anchor against, and
+        // without a confident match there's no telling how far dynamic ads have pushed the
+        // playback time from the timeline the transcript is cued against. Either way, capture
+        // nothing rather than a passage from somewhere else in the episode.
+        guard transcriptManager.isDisplayingGeneratedTranscript, FeatureFlag.syncedTranscripts.enabled,
+              let referenceTime = await FingerprintTimingManager.shared.resolveReferenceTime(forPlaybackTime: time, episode: episode) else {
+            return nil
         }
 
-        return Self.extractSnippet(from: model, at: center)
+        return Self.extractSnippet(from: model, at: referenceTime)
     }
 
-    static func extractSnippet(from model: TranscriptModel, at time: TimeInterval) -> String? {
+    func snippet(forPassage passage: String, at location: Int?, episode: BaseEpisode) async -> BookmarkTranscriptSnippet? {
+        let transcriptManager = TranscriptManager(episodeUUID: episode.uuid, podcastUUID: episode.parentIdentifier())
+        guard let model = try? await transcriptManager.loadTranscript(),
+              let range = Self.passageRange(for: passage, at: location, in: model.attributedText) else {
+            return nil
+        }
+
+        return BookmarkTranscriptSnippet(transcript: model, range: range)
+    }
+
+    static func extractSnippet(from model: TranscriptModel, at time: TimeInterval) -> BookmarkTranscriptSnippet? {
         let windowStart = max(0, time - backwardWindowSeconds)
         let windowEnd = time + forwardWindowSeconds
 
@@ -49,12 +74,21 @@ struct BookmarkTranscriptSnippetExtractor {
         let windowRange = NSRange(location: location, length: last.characterRange.upperBound - location)
         let snappedRange = snapToSentenceBoundaries(windowRange, in: model.attributedText.string)
 
-        let raw = plainText(in: snappedRange, of: model.attributedText)
-        let words = raw.split(whereSeparator: \.isWhitespace)
-        guard words.count >= minimumWordCount else {
+        let snippet = BookmarkTranscriptSnippet(transcript: model, range: snappedRange)
+        guard snippet.text.split(whereSeparator: \.isWhitespace).count >= minimumWordCount else {
             return nil
         }
-        return words.joined(separator: " ")
+        return snippet
+    }
+
+    static func sentenceRange(containing index: Int, in text: String) -> NSRange {
+        let length = (text as NSString).length
+        guard length > 0 else {
+            return NSRange(location: 0, length: 0)
+        }
+
+        let clamped = min(max(index, 0), length - 1)
+        return snapToSentenceBoundaries(NSRange(location: clamped, length: 1), in: text)
     }
 
     private static func snapToSentenceBoundaries(_ range: NSRange, in text: String) -> NSRange {
@@ -73,8 +107,109 @@ struct BookmarkTranscriptSnippetExtractor {
         return NSRange(lowerBound..<upperBound, in: text)
     }
 
-    /// The plain text within `range`, skipping the speaker-name runs interleaved between cues
-    private static func plainText(in range: NSRange, of attributedText: NSAttributedString) -> String {
+    // MARK: - Locating a passage
+
+    /// Finds the range to highlight for a bookmark's captured passage within a transcript.
+    ///
+    /// The passage text is the source of truth; `location` only disambiguates when the same
+    /// passage appears more than once. So the captured location is tried first, and only when
+    /// the text there no longer lines up does it fall back to the first match of the passage
+    /// text anywhere in the transcript.
+    ///
+    /// - Parameter location: The passage's captured start within `attributedText`, or `nil`
+    ///   for bookmarks made before the location was recorded.
+    static func passageRange(for passage: String, at location: Int?, in attributedText: NSAttributedString) -> NSRange? {
+        guard !passage.isEmpty else { return nil }
+
+        // Location first: is the passage still exactly where it was captured?
+        if let location {
+            let suffix = cleaned(attributedText, from: location)
+            if suffix.text.hasPrefix(passage),
+               let end = suffix.text.index(suffix.text.startIndex, offsetBy: passage.count, limitedBy: suffix.text.endIndex) {
+                return suffix.transcriptRange(for: suffix.text.startIndex..<end)
+            }
+        }
+
+        // Otherwise search the whole transcript, taking the first occurrence
+        let full = cleaned(attributedText, from: 0)
+        guard let match = full.text.range(of: passage) else { return nil }
+        return full.transcriptRange(for: match)
+    }
+
+    /// The transcript's text collapsed the same way a passage is, paired with a map back to
+    /// the character positions each piece came from
+    private struct CleanedText {
+        let text: String
+        /// Start position in the transcript of each character in `text`
+        let starts: [Int]
+        /// Position in the transcript just past each character in `text`
+        let ends: [Int]
+
+        /// Maps a range found within `text` back to the transcript's character positions
+        func transcriptRange(for cleanedRange: Range<String.Index>) -> NSRange? {
+            let lower = text.distance(from: text.startIndex, to: cleanedRange.lowerBound)
+            let upper = text.distance(from: text.startIndex, to: cleanedRange.upperBound)
+            guard lower >= 0, upper > lower, upper <= starts.count else { return nil }
+            return NSRange(location: starts[lower], length: ends[upper - 1] - starts[lower])
+        }
+    }
+
+    /// Cleans the transcript from `startLocation` onward the same way `text(in:)` cleans a
+    /// passage — skipping speaker runs, collapsing whitespace — while recording where each
+    /// surviving character came from, so a match can be mapped back to the transcript.
+    private static func cleaned(_ attributedText: NSAttributedString, from startLocation: Int) -> CleanedText {
+        let string = attributedText.string as NSString
+        let total = string.length
+        let start = min(max(startLocation, 0), total)
+        guard start < total else { return CleanedText(text: "", starts: [], ends: []) }
+
+        let scanRange = NSRange(location: start, length: total - start)
+
+        var text = ""
+        var starts = [Int]()
+        var ends = [Int]()
+        // A run of whitespace (real or the boundary between two cue parts) collapses to a
+        // single space, dropped entirely at the start or end
+        var pendingSpace: (start: Int, end: Int)?
+        var isFirstPart = true
+
+        attributedText.enumerateAttribute(.transcriptSpeaker, in: scanRange, options: []) { value, subrange, _ in
+            guard value == nil else { return }
+
+            if !isFirstPart {
+                pendingSpace = pendingSpace ?? (subrange.location, subrange.location)
+            }
+            isFirstPart = false
+
+            string.enumerateSubstrings(in: subrange, options: .byComposedCharacterSequences) { substring, characterRange, _, _ in
+                guard let substring else { return }
+
+                if substring.allSatisfy(\.isWhitespace) {
+                    if !text.isEmpty {
+                        pendingSpace = pendingSpace ?? (characterRange.location, characterRange.location + characterRange.length)
+                    }
+                    return
+                }
+
+                if let space = pendingSpace {
+                    text.append(" ")
+                    starts.append(space.start)
+                    ends.append(space.end)
+                    pendingSpace = nil
+                }
+
+                text.append(substring)
+                starts.append(characterRange.location)
+                ends.append(characterRange.location + characterRange.length)
+            }
+        }
+
+        return CleanedText(text: text, starts: starts, ends: ends)
+    }
+
+    /// The plain text within `range`, skipping the speaker-name runs interleaved between
+    /// cues and collapsing the line breaks between them
+    static func text(in range: NSRange, of attributedText: NSAttributedString) -> String {
         let clamped = NSIntersectionRange(range, NSRange(location: 0, length: attributedText.length))
         guard clamped.length > 0 else {
             return ""
@@ -86,6 +221,6 @@ struct BookmarkTranscriptSnippetExtractor {
             guard value == nil else { return }
             parts.append(string.substring(with: subrange))
         }
-        return parts.joined(separator: " ")
+        return parts.joined(separator: " ").split(whereSeparator: \.isWhitespace).joined(separator: " ")
     }
 }

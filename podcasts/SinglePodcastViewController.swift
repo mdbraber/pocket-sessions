@@ -16,7 +16,6 @@ class SinglePodcastViewController: UIViewController, DiscoverSummaryProtocol {
         didSet {
             podcastDescription.style = .primaryText02
             podcastDescription.adjustsFontForContentSizeCategory = true
-            podcastDescription.updateNumberOfLines(regular: 4, accessibility: 6)
         }
     }
 
@@ -51,6 +50,10 @@ class SinglePodcastViewController: UIViewController, DiscoverSummaryProtocol {
     override func viewDidLoad() {
         super.viewDidLoad()
         (view as? ThemeableView)?.style = .primaryUi02
+
+        registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) { (controller: SinglePodcastViewController, _) in
+            controller.updateSize()
+        }
 
         let tapGesture = UITapGestureRecognizer(target: self, action: #selector(showPodcast))
         view.addGestureRecognizer(tapGesture)
@@ -190,15 +193,8 @@ class SinglePodcastViewController: UIViewController, DiscoverSummaryProtocol {
     }
 
     func updateSize() {
+        let isSponsored = item?.isSponsored ?? false
         podcastTitle.updateNumberOfLines(regular: 2, accessibility: 3)
-        podcastDescription.updateNumberOfLines(regular: 4, accessibility: 6)
-    }
-
-    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
-        super.traitCollectionDidChange(previousTraitCollection)
-
-        if previousTraitCollection?.preferredContentSizeCategory != traitCollection.preferredContentSizeCategory {
-            updateSize()
-        }
+        podcastDescription.updateNumberOfLines(regular: isSponsored ? 0 : 4, accessibility: isSponsored ? 0 : 6)
     }
 }

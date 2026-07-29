@@ -1295,6 +1295,10 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     override func viewDidLoad() {
         super.viewDidLoad()
 
+        registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) { (controller: UpNextViewController, _) in
+            controller.updateSize()
+        }
+
         // No nav-bar title — the world's name lives in the title block above the pills.
         title = nil
 
@@ -2396,12 +2400,6 @@ extension UpNextViewController {
         }
         sessionListSortButton.updateSizeConstraints(to: buttonSize)
         sessionListMoreButton.updateSizeConstraints(to: buttonSize)
-    }
-
-    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
-        super.traitCollectionDidChange(previousTraitCollection)
-        guard traitCollection.preferredContentSizeCategory != previousTraitCollection?.preferredContentSizeCategory else { return }
-        updateSize()
     }
 }
 

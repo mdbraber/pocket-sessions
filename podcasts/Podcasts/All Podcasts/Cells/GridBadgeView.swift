@@ -79,6 +79,10 @@ class GridBadgeView: UIView {
     }
 
     private func setup() {
+        registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) { (view: GridBadgeView, _) in
+            view.updateSize()
+        }
+
         badgeLabel.font = UIFont.font(ofSize: 13, weight: .bold, scalingWith: .largeTitle)
         badgeLabel.adjustsFontForContentSizeCategory = true
         badgeLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -126,14 +130,6 @@ class GridBadgeView: UIView {
         simpleBadge.borderColor = ThemeColor.primaryUi02()
         simpleBadge.centerColor = ThemeColor.primaryInteractive01()
         simpleBadge.backgroundColor = .clear
-    }
-
-    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
-        super.traitCollectionDidChange(previousTraitCollection)
-
-        if traitCollection.preferredContentSizeCategory != previousTraitCollection?.preferredContentSizeCategory {
-            updateSize()
-        }
     }
 
     private func updateSize() {

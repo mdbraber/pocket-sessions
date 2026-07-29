@@ -2,6 +2,7 @@ import Foundation
 import PocketCastsDataModel
 import PocketCastsServer
 import Combine
+import UserNotifications
 
 class BadgeHelper {
     deinit {
@@ -11,21 +12,23 @@ class BadgeHelper {
     private var cancelable: Cancellable?
 
     func setup() {
-        let notifications: [NSNotification.Name] = [Constants.Notifications.playlistChanged,
-                                                    Constants.Notifications.episodePlayStatusChanged,
-                                                    Constants.Notifications.episodeArchiveStatusChanged,
-                                                    Constants.Notifications.episodeStarredChanged,
-                                                    Constants.Notifications.episodeDownloadStatusChanged,
-                                                    Constants.Notifications.manyEpisodesChanged,
-                                                    ServerNotifications.podcastsRefreshed,
-                                                    Constants.Notifications.opmlImportCompleted,
-                                                    Constants.Notifications.episodeDownloaded,
-                                                    Constants.Notifications.playbackTrackChanged,
-                                                    Constants.Notifications.playbackEnded,
-                                                    Constants.Notifications.playbackStarted,
-                                                    // Fork: the Inbox Count badge moves with triage state and the queue.
-                                                    SessionStore.changed,
-                                                    Constants.Notifications.upNextQueueChanged]
+        let notifications: [NSNotification.Name] = [
+            Constants.Notifications.playlistChanged,
+            Constants.Notifications.episodePlayStatusChanged,
+            Constants.Notifications.episodeArchiveStatusChanged,
+            Constants.Notifications.episodeStarredChanged,
+            Constants.Notifications.episodeDownloadStatusChanged,
+            Constants.Notifications.manyEpisodesChanged,
+            ServerNotifications.podcastsRefreshed,
+            Constants.Notifications.opmlImportCompleted,
+            Constants.Notifications.episodeDownloaded,
+            Constants.Notifications.playbackTrackChanged,
+            Constants.Notifications.playbackEnded,
+            Constants.Notifications.playbackStarted,
+            // Fork: the Inbox Count badge moves with triage state and the queue.
+            SessionStore.changed,
+            Constants.Notifications.upNextQueueChanged
+        ]
 
         let mergedNotifications = notifications
             .map { NotificationCenter.default.publisher(for: $0) }
@@ -48,17 +51,16 @@ class BadgeHelper {
         guard let badgeSetting = Settings.appBadge else { return }
 
         // Fork: the badge is independent of New Episodes push notifications — it
-        // renders under its own (badge-only) authorization.
+        // renders under its own (badge-only) authorization, so an off setting
+        // just clears rather than bailing out on push being disabled.
         if badgeSetting == .off {
-            // clearBadge no-ops at zero, so an off setting never triggers a
-            // permission prompt.
-            clearBadge(clearNotificationsToo: false)
+            clearBadge()
         } else if badgeSetting == .totalUnplayed {
             let unplayedCount = DataManager.sharedManager.count(query: "SELECT COUNT(e.id) FROM SJEpisode e LEFT JOIN SJPodcast p ON p.id = e.podcast_id WHERE p.subscribed = 1 AND e.playingStatus == 1 AND e.archived = 0", values: nil)
             setBadgeTo(unplayedCount)
         } else if badgeSetting == .newSinceLastOpened {
             guard let lastClosedDate = UserDefaults.standard.object(forKey: Constants.UserDefaults.lastAppCloseDate) as? Date else {
-                clearBadge(clearNotificationsToo: false)
+                clearBadge()
 
                 return
             }
@@ -89,27 +91,11 @@ class BadgeHelper {
         }
     }
 
-    func clearNotifications() {
-        clearBadge(clearNotificationsToo: true)
-        updateBadge()
-    }
-
-    private func clearBadge(clearNotificationsToo: Bool) {
-        DispatchQueue.main.async {
-            let currentBadgeValue = UIApplication.shared.applicationIconBadgeNumber
-            if clearNotificationsToo, currentBadgeValue == 0 {
-                // if the badge is already 0, set it to 1 to clear out things like notifications, setting a badge that's 0 to 0 won't do that
-                UIApplication.shared.applicationIconBadgeNumber = 1
-            }
-            if !clearNotificationsToo, currentBadgeValue == 0 { return }
-
-            UIApplication.shared.applicationIconBadgeNumber = 0
-        }
+    private func clearBadge() {
+        UNUserNotificationCenter.current().setBadgeCount(0)
     }
 
     private func setBadgeTo(_ badgeNumber: Int) {
-        DispatchQueue.main.async {
-            UIApplication.shared.applicationIconBadgeNumber = badgeNumber
-        }
+        UNUserNotificationCenter.current().setBadgeCount(badgeNumber)
     }
 }
