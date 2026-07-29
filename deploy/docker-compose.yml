@@ -19,8 +19,12 @@ services:
       - PCS_ALLOWED_EMAILS=${PCS_ALLOWED_EMAILS:-}
       # APNs: put AuthKey_<KEYID>.p8 in ./data and set PCS_APNS_KEY_ID in .env;
       # team id and topic default in code (ABCDE12345 / com.example.podcasts).
+      # Environment-restricted keys: PCS_APNS_KEY_ID = production (or both),
+      # PCS_APNS_KEY_ID_SANDBOX = sandbox-only key (dev-signed builds).
       - PCS_APNS_KEY=${PCS_APNS_KEY_ID:+/data/AuthKey_${PCS_APNS_KEY_ID}.p8}
       - PCS_APNS_KEY_ID=${PCS_APNS_KEY_ID:-}
+      - PCS_APNS_KEY_SANDBOX=${PCS_APNS_KEY_ID_SANDBOX:+/data/AuthKey_${PCS_APNS_KEY_ID_SANDBOX}.p8}
+      - PCS_APNS_KEY_ID_SANDBOX=${PCS_APNS_KEY_ID_SANDBOX:-}
       # Episode watcher cadence and visible-alert policy (synced|all|off).
       - PCS_EPISODE_POLL=${PCS_EPISODE_POLL:-10m}
       - PCS_NOTIFY=${PCS_NOTIFY:-synced}

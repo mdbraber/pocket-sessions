@@ -87,7 +87,11 @@ func serve() {
 
 	// APNs when a .p8 key is configured; the log pusher otherwise (local dev).
 	var pusher push.Pusher = push.NewLogPusher(logger)
-	apnsCfg := push.APNSConfig{KeyPath: cfg.APNSKey, KeyID: cfg.APNSKeyID, TeamID: cfg.APNSTeamID, Topic: cfg.APNSTopic}
+	apnsCfg := push.APNSConfig{
+		KeyPath: cfg.APNSKey, KeyID: cfg.APNSKeyID,
+		SandboxKeyPath: cfg.APNSSandboxKey, SandboxKeyID: cfg.APNSSandboxKeyID,
+		TeamID: cfg.APNSTeamID, Topic: cfg.APNSTopic,
+	}
 	if apnsCfg.Configured() {
 		if apns, err := push.NewAPNSPusher(apnsCfg, logger); err == nil {
 			pusher = apns

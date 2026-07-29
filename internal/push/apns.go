@@ -11,17 +11,22 @@ import (
 	"github.com/mdbraber/pocket-sessions-server/internal/store"
 )
 
-// APNSConfig comes from the environment (see config.FromEnv). The .p8 key is
-// token-based auth: one key for the whole team, sandbox and production alike.
+// APNSConfig comes from the environment (see config.FromEnv). Token-based .p8
+// auth. Keys can be environment-restricted in the developer portal, so sandbox
+// and production may use SEPARATE keys; with only one configured it serves
+// both environments (valid when the key covers both).
 type APNSConfig struct {
-	KeyPath string // PCS_APNS_KEY — path to AuthKey_<KEYID>.p8
-	KeyID   string // PCS_APNS_KEY_ID — the 10-char id from the developer portal
-	TeamID  string // PCS_APNS_TEAM_ID
-	Topic   string // PCS_APNS_TOPIC — the app's bundle id
+	KeyPath        string // PCS_APNS_KEY — production (or both-environments) key
+	KeyID          string // PCS_APNS_KEY_ID
+	SandboxKeyPath string // PCS_APNS_KEY_SANDBOX — sandbox-restricted key (optional)
+	SandboxKeyID   string // PCS_APNS_KEY_ID_SANDBOX
+	TeamID         string // PCS_APNS_TEAM_ID
+	Topic          string // PCS_APNS_TOPIC — the app's bundle id
 }
 
 func (c APNSConfig) Configured() bool {
-	return c.KeyPath != "" && c.KeyID != "" && c.TeamID != "" && c.Topic != ""
+	hasKey := (c.KeyPath != "" && c.KeyID != "") || (c.SandboxKeyPath != "" && c.SandboxKeyID != "")
+	return hasKey && c.TeamID != "" && c.Topic != ""
 }
 
 // APNSPusher sends silent pushes ({content-available:1, cursor}) so the user's
@@ -38,16 +43,40 @@ type APNSPusher struct {
 }
 
 func NewAPNSPusher(cfg APNSConfig, logger *slog.Logger) (*APNSPusher, error) {
-	authKey, err := token.AuthKeyFromFile(cfg.KeyPath)
-	if err != nil {
-		return nil, fmt.Errorf("apns key %s: %w", cfg.KeyPath, err)
+	tokenFor := func(path, keyID string) (*token.Token, error) {
+		authKey, err := token.AuthKeyFromFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("apns key %s: %w", path, err)
+		}
+		return &token.Token{AuthKey: authKey, KeyID: keyID, TeamID: cfg.TeamID}, nil
 	}
-	tok := &token.Token{AuthKey: authKey, KeyID: cfg.KeyID, TeamID: cfg.TeamID}
+
+	// Each environment prefers its own key and falls back to the other's — a
+	// single both-environments key configured either way just works.
+	var prodToken, sandboxToken *token.Token
+	var err error
+	if cfg.KeyPath != "" && cfg.KeyID != "" {
+		if prodToken, err = tokenFor(cfg.KeyPath, cfg.KeyID); err != nil {
+			return nil, err
+		}
+	}
+	if cfg.SandboxKeyPath != "" && cfg.SandboxKeyID != "" {
+		if sandboxToken, err = tokenFor(cfg.SandboxKeyPath, cfg.SandboxKeyID); err != nil {
+			return nil, err
+		}
+	}
+	if prodToken == nil {
+		prodToken = sandboxToken
+	}
+	if sandboxToken == nil {
+		sandboxToken = prodToken
+	}
+
 	p := &APNSPusher{
 		logger:     logger,
 		topic:      cfg.Topic,
-		sandbox:    apns2.NewTokenClient(tok).Development(),
-		production: apns2.NewTokenClient(tok).Production(),
+		sandbox:    apns2.NewTokenClient(sandboxToken).Development(),
+		production: apns2.NewTokenClient(prodToken).Production(),
 	}
 
 	p.debouncer = newDebouncer(func(userID, cursor int64, devices []store.Device) {

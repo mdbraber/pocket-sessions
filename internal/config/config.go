@@ -17,11 +17,15 @@ type Config struct {
 	// through the unauthenticated device-pairing link. Empty list = the email
 	// already linked counts; a completely fresh server trusts the first link.
 	AllowedEmails []string
-	// APNs (silent-push fan-out). Unset = the log pusher runs instead.
-	APNSKey    string // PCS_APNS_KEY — path to AuthKey_<KEYID>.p8
-	APNSKeyID  string // PCS_APNS_KEY_ID
-	APNSTeamID string // PCS_APNS_TEAM_ID, default ABCDE12345
-	APNSTopic  string // PCS_APNS_TOPIC, default com.example.podcasts
+	// APNs (silent-push fan-out). Unset = the log pusher runs instead. Keys can
+	// be environment-restricted, so sandbox may use its own key; one key with
+	// both environments needs only the first pair.
+	APNSKey          string // PCS_APNS_KEY — production (or both-envs) AuthKey_<KEYID>.p8
+	APNSKeyID        string // PCS_APNS_KEY_ID
+	APNSSandboxKey   string // PCS_APNS_KEY_SANDBOX — sandbox-restricted key (optional)
+	APNSSandboxKeyID string // PCS_APNS_KEY_ID_SANDBOX
+	APNSTeamID       string // PCS_APNS_TEAM_ID, default ABCDE12345
+	APNSTopic        string // PCS_APNS_TOPIC, default com.example.podcasts
 	// Episode watcher: poll the public catalog for new episodes and push.
 	EpisodePoll time.Duration // PCS_EPISODE_POLL, default 10m; "off"/"0" disables
 	NotifyMode  string        // PCS_NOTIFY: "synced" (per-podcast toggle, default), "all", "off"
@@ -30,17 +34,19 @@ type Config struct {
 
 func FromEnv() Config {
 	cfg := Config{
-		Listen:        envOr("PCS_LISTEN", ":8080"),
-		DBPath:        envOr("PCS_DB", "pcsessions.db"),
-		AuthToken:     os.Getenv("PCS_AUTH_TOKEN"),
-		AllowedEmails: splitList(os.Getenv("PCS_ALLOWED_EMAILS")),
-		APNSKey:       os.Getenv("PCS_APNS_KEY"),
-		APNSKeyID:     os.Getenv("PCS_APNS_KEY_ID"),
-		APNSTeamID:    envOr("PCS_APNS_TEAM_ID", "ABCDE12345"),
-		APNSTopic:     envOr("PCS_APNS_TOPIC", "com.example.podcasts"),
-		EpisodePoll:   parsePoll(envOr("PCS_EPISODE_POLL", "10m")),
-		NotifyMode:    envOr("PCS_NOTIFY", "synced"),
-		LogLevel:      slog.LevelInfo,
+		Listen:           envOr("PCS_LISTEN", ":8080"),
+		DBPath:           envOr("PCS_DB", "pcsessions.db"),
+		AuthToken:        os.Getenv("PCS_AUTH_TOKEN"),
+		AllowedEmails:    splitList(os.Getenv("PCS_ALLOWED_EMAILS")),
+		APNSKey:          os.Getenv("PCS_APNS_KEY"),
+		APNSKeyID:        os.Getenv("PCS_APNS_KEY_ID"),
+		APNSSandboxKey:   os.Getenv("PCS_APNS_KEY_SANDBOX"),
+		APNSSandboxKeyID: os.Getenv("PCS_APNS_KEY_ID_SANDBOX"),
+		APNSTeamID:       envOr("PCS_APNS_TEAM_ID", "ABCDE12345"),
+		APNSTopic:        envOr("PCS_APNS_TOPIC", "com.example.podcasts"),
+		EpisodePoll:      parsePoll(envOr("PCS_EPISODE_POLL", "10m")),
+		NotifyMode:       envOr("PCS_NOTIFY", "synced"),
+		LogLevel:         slog.LevelInfo,
 	}
 	if os.Getenv("PCS_DEBUG") != "" {
 		cfg.LogLevel = slog.LevelDebug
