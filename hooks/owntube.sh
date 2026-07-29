@@ -15,8 +15,10 @@
 
 set -eu
 
-: "${OWNTUBE_URL:?OWNTUBE_URL not set}"
-: "${OWNTUBE_TOKEN:?OWNTUBE_TOKEN not set}"
+# Not configured yet is not a failure — stay silent so the server log doesn't
+# fill with warnings before OWNTUBE_URL/OWNTUBE_TOKEN are set.
+[ -n "${OWNTUBE_URL:-}" ] || exit 0
+[ -n "${OWNTUBE_TOKEN:-}" ] || exit 0
 
 [ -n "${PCS_EPISODE_URL:-}" ] || exit 0
 
