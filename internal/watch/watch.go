@@ -80,6 +80,13 @@ func cycleUser(ctx context.Context, st *store.Store, pusher push.Pusher, logger 
 	if err != nil {
 		return err
 	}
+	// "synced" alerts on either signal: PC's synced per-podcast setting (empty
+	// on accounts that never ran settings-sync) or the toggles the app reports
+	// through /session/v1/notify-podcasts.
+	appToggles, err := st.NotifyPodcastUUIDs(userID)
+	if err != nil {
+		return err
+	}
 
 	type feedResult struct {
 		podcast pc.Podcast
@@ -133,7 +140,7 @@ func cycleUser(ctx context.Context, st *store.Store, pusher push.Pusher, logger 
 		}
 		newCount += len(res.fresh)
 
-		notify := notifyMode == "all" || (notifyMode == "synced" && res.podcast.NotifyEnabled)
+		notify := notifyMode == "all" || (notifyMode == "synced" && (res.podcast.NotifyEnabled || appToggles[res.podcast.UUID]))
 		if !notify {
 			continue
 		}

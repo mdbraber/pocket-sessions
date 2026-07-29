@@ -95,6 +95,12 @@ CREATE TABLE IF NOT EXISTS mirror (
     fetched_at TEXT NOT NULL,
     PRIMARY KEY (user_id, kind)
 );
+CREATE TABLE IF NOT EXISTS notify_podcasts (
+    user_id      INTEGER NOT NULL, -- app-reported per-podcast notification toggles,
+    device_id    TEXT NOT NULL,    -- per device (toggles are device-local on the fork);
+    podcast_uuid TEXT NOT NULL,    -- the watcher alerts on the union across devices
+    PRIMARY KEY (user_id, device_id, podcast_uuid)
+);
 CREATE TABLE IF NOT EXISTS seen_episodes (
     user_id      INTEGER NOT NULL, -- the episode watcher's "already knew about this" ledger
     episode_uuid TEXT NOT NULL,

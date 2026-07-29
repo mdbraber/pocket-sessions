@@ -36,6 +36,46 @@ func (s *Store) MarkEpisodesSeen(userID int64, podcastUUID string, episodeUUIDs 
 	return tx.Commit()
 }
 
+// SetNotifyPodcasts replaces one device's reported notification toggles — the
+// payload is that device's authoritative full set.
+func (s *Store) SetNotifyPodcasts(userID int64, deviceID string, podcastUUIDs []string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`DELETE FROM notify_podcasts WHERE user_id = ? AND device_id = ?`, userID, deviceID); err != nil {
+		return err
+	}
+	for _, uuid := range podcastUUIDs {
+		if _, err := tx.Exec(`INSERT OR IGNORE INTO notify_podcasts(user_id, device_id, podcast_uuid) VALUES (?, ?, ?)`,
+			userID, deviceID, uuid); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// NotifyPodcastUUIDs is the union of every device's toggles — if any device
+// wants alerts for a podcast, the user gets them (on all devices; APNs has no
+// per-device opt-out worth modeling here).
+func (s *Store) NotifyPodcastUUIDs(userID int64) (map[string]bool, error) {
+	rows, err := s.db.Query(`SELECT DISTINCT podcast_uuid FROM notify_podcasts WHERE user_id = ?`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]bool{}
+	for rows.Next() {
+		var uuid string
+		if err := rows.Scan(&uuid); err != nil {
+			return nil, err
+		}
+		out[uuid] = true
+	}
+	return out, rows.Err()
+}
+
 // LinkedUserIDs lists users with a PC link — the set the episode watcher serves.
 func (s *Store) LinkedUserIDs() ([]int64, error) {
 	rows, err := s.db.Query(`SELECT user_id FROM pc_links`)

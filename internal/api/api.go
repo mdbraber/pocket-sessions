@@ -50,6 +50,7 @@ func New(st *store.Store, pusher push.Pusher, logger *slog.Logger, allowedEmails
 	mux.Handle("GET /session/v1/changes", s.authed(s.handleGetChanges))
 	mux.Handle("POST /session/v1/changes", s.authed(s.handlePostChanges))
 	mux.Handle("POST /session/v1/nudge", s.authed(s.handleNudge))
+	mux.Handle("POST /session/v1/notify-podcasts", s.authed(s.handleNotifyPodcasts))
 	mux.Handle("GET /session/v1/pc-link", s.authed(s.handlePCLinkStatus))
 	mux.Handle("POST /session/v1/pc-link", s.authed(s.handlePCLink))
 	// Enrollment is unauthenticated by design: approving the pairing code with an
@@ -108,6 +109,30 @@ type deviceRegistration struct {
 	DeviceID  string `json:"deviceId"`
 	APNSToken string `json:"apnsToken"`
 	APNSEnv   string `json:"apnsEnv"` // "sandbox" (dev-signed builds) or "production"
+}
+
+// handleNotifyPodcasts stores a device's per-podcast notification toggles —
+// the app reports its full set on launch and whenever a toggle changes, and
+// the episode watcher alerts on the union across devices (PCS_NOTIFY=synced).
+func (s *Server) handleNotifyPodcasts(w http.ResponseWriter, r *http.Request, userID int64) {
+	var in struct {
+		UUIDs []string `json:"uuids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		http.Error(w, "bad request: need {uuids: [...]}", http.StatusBadRequest)
+		return
+	}
+	deviceID := r.Header.Get("X-Device-Id")
+	if deviceID == "" {
+		http.Error(w, "X-Device-Id header required", http.StatusBadRequest)
+		return
+	}
+	if err := s.store.SetNotifyPodcasts(userID, deviceID, in.UUIDs); err != nil {
+		http.Error(w, "store failed", http.StatusInternalServerError)
+		return
+	}
+	s.logger.Info("notify toggles updated", "user", userID, "device", deviceID, "podcasts", len(in.UUIDs))
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleRegisterDevice(w http.ResponseWriter, r *http.Request, userID int64) {
