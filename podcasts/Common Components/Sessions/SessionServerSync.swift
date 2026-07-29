@@ -86,6 +86,15 @@ final class SessionServerSync {
         // travel through the server so idle devices can follow along.
         NotificationCenter.default.addObserver(self, selector: #selector(playbackStateChanged), name: Constants.Notifications.playbackSessionChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(playbackStateChanged), name: Constants.Notifications.playbackTrackChanged, object: nil)
+        // Pausing uploads the position to PC immediately (recordPlaybackPosition)
+        // but fires no sync — nudge so other devices pull the fresh position and
+        // their paused players seek to it (stock seekToFromSync handles the rest).
+        NotificationCenter.default.addObserver(self, selector: #selector(playbackDidPause), name: Constants.Notifications.playbackPaused, object: nil)
+    }
+
+    @objc private func playbackDidPause() {
+        // Give the position upload a beat to land before waking the others.
+        queue.asyncAfter(deadline: .now() + 3) { [weak self] in self?.postNudge() }
     }
 
     @objc private func playbackStateChanged() {
@@ -210,10 +219,19 @@ final class SessionServerSync {
         queue.async { [weak self] in self?.fetch() }
     }
 
+    /// Set when a sync was nudge-triggered: that sync only PULLED remote changes,
+    /// so announcing it would ping-pong nudges between devices forever.
+    private var suppressNextNudge = false
+
     @objc private func pcSyncCompleted() {
-        // No PC-token upkeep here anymore: the server's device-flow lineage renews
-        // itself (a donated token would only ever downgrade it).
-        queue.async { [weak self] in self?.postNudge() }
+        queue.async { [weak self] in
+            guard let self else { return }
+            if self.suppressNextNudge {
+                self.suppressNextNudge = false
+                return
+            }
+            self.postNudge()
+        }
     }
 
     // MARK: - Local → server (diffs, mirroring SessionCloudSync's enqueue rules)
@@ -491,9 +509,31 @@ final class SessionServerSync {
         if let playback = dict["playback"] as? [String: Any] {
             applyRemotePlayback(playback)
         }
+        if let nudge = dict["nudge"] as? [String: Any], let seq = (nudge["seq"] as? NSNumber)?.int64Value {
+            applyNudge(seq: seq, deviceId: nudge["deviceId"] as? String ?? "")
+        }
         if let cursor = dict["cursor"] as? NSNumber {
             UserDefaults.standard.set(cursor.int64Value, forKey: cursorKey)
         }
+    }
+
+    /// Another device put fresh data on PC (paused with a new position, finished a
+    /// sync) — pull it, so progress and queue stay current even when the silent
+    /// push didn't reach this foregrounded app and only the poll saw the nudge.
+    private var nudgeSeqKey: String { "SJSessionNudgeSeq-\(baseURL.host ?? "server")" }
+
+    private func applyNudge(seq: Int64, deviceId: String) {
+        let last = UserDefaults.standard.object(forKey: nudgeSeqKey) as? Int64 ?? 0
+        guard seq > last else { return }
+        UserDefaults.standard.set(seq, forKey: nudgeSeqKey)
+        // First observation only baselines; and our own nudges aren't news.
+        guard last > 0, deviceId != Settings.sessionServerDeviceId() else { return }
+        suppressNextNudge = true
+        FileLog.shared.addMessage("SessionServerSync: nudge \(seq) from another device — refreshing PC data")
+        // The main SyncTask (episode progress incl. seekToFromSync for the loaded
+        // episode) only runs inside the refresh pipeline; forced, because a nudge
+        // is an explicit "there IS fresh data" signal, not a speculative poll.
+        DispatchQueue.main.async { RefreshManager.shared.refreshPodcasts(forceEvenIfRefreshedRecently: true) }
     }
 
     // MARK: - Pocket Casts account link (M2)
