@@ -1385,11 +1385,15 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         upNextTable.addSubview(host.view)
         host.didMove(toParent: self)
         sessionArtworkBackdrop = host.view
+        // Inside a scroll view, edge anchors attach to the CONTENT origin — a
+        // trailing constraint would collapse the view into a 40pt sliver at the
+        // left edge (it renders as a dark gutter strip). Width must come from the
+        // controller's view; only the leading edge is content-anchored.
         NSLayoutConstraint.activate([
             host.view.bottomAnchor.constraint(equalTo: upNextTable.topAnchor, constant: 220),
             host.view.heightAnchor.constraint(equalTo: view.widthAnchor, constant: 40),
             host.view.leadingAnchor.constraint(equalTo: upNextTable.leadingAnchor, constant: -20),
-            host.view.trailingAnchor.constraint(equalTo: upNextTable.trailingAnchor, constant: 20)
+            host.view.widthAnchor.constraint(equalTo: view.widthAnchor, constant: 40)
         ])
     }
 
