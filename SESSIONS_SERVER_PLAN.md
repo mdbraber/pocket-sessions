@@ -129,6 +129,23 @@ playing episode + device). Hard-won rules from live testing:
   Nudge-triggered syncs never re-nudge (suppression) — no ping-pong.
 - ForkSettingsSync yields the pointer keys to PCS in server mode.
 
+**Podcast settings sync (2026-07-29): speed/effects/skips both ways.**
+Prompted by a TestFlight report of settings lost when migrating from
+stock. Root reality (verified against upstream trunk, which the fork
+rebases onto weekly): upstream iOS ships this HALF-LANDED — the
+Api_PodcastSettings blob, ModifiedDate machinery and full-sync
+processSettings exist, but nothing converts the blob, the SJPodcast
+settings column is missing on DBs that predate upstream's amendment of
+shipped migration 43, and Podcast.settings never persisted (the GRDB
+macro only stores @objc properties). Stock iOS uploads only legacy skip
+fields — speeds/effects never leave a stock device.
+The fork now completes it: blob↔struct conversion with per-field
+modified_at LWW in both directions, accepted-fields-only mirror into the
+legacy columns (scope: effects/skips/notification), write-through UI
+setters, @objc settingsJSON persistence, idempotent column catch-up.
+Verified end-to-end both ways on device against the real account.
+Expect to resolve toward upstream's own version if they ever land it.
+
 **Backlog cleared 2026-07-29:**
 - **Reorder**: POST /api/v1/up-next `{action:"replace", uuids:[...]}` — PC's
   action 5 with the full ordered episode list riding in the change
