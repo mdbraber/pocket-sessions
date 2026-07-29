@@ -88,6 +88,12 @@ CREATE TABLE IF NOT EXISTS meta (
     user_id INTEGER PRIMARY KEY,
     cursor  INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS active_playback (
+    user_id    INTEGER PRIMARY KEY, -- "what's playing where": one LWW doc per user
+    payload    TEXT NOT NULL,
+    updated_at INTEGER NOT NULL,
+    cursor     INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS mirror (
     user_id    INTEGER NOT NULL,
     kind       TEXT NOT NULL,   -- 'up_next', later 'history', 'podcasts'

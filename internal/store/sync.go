@@ -22,12 +22,21 @@ type SeenLedger struct {
 	UnseenAt map[string]int64 `json:"unseenAt"`
 }
 
+// PlaybackPointer is the "what's playing where" document — an opaque client
+// blob (session pointer + current episode + originating device), single row
+// per user, last-writer-wins. Powers the opt-in follow-playback feature.
+type PlaybackPointer struct {
+	UpdatedAt int64           `json:"updatedAt"`
+	Payload   json.RawMessage `json:"payload"`
+}
+
 type Changes struct {
 	Cursor   int64            `json:"cursor"`
 	Sessions []Record         `json:"sessions,omitempty"`
 	Presets  []Record         `json:"presets,omitempty"`
 	Offered  map[string]int64 `json:"offered,omitempty"`
 	Ledger   *SeenLedger      `json:"seenLedger,omitempty"`
+	Playback *PlaybackPointer `json:"playback,omitempty"`
 }
 
 // ApplyChanges merges a client batch and returns the new cursor. Merge rules
@@ -78,6 +87,21 @@ INSERT INTO offered_through (user_id, podcast_uuid, date, cursor) VALUES (?, ?, 
 ON CONFLICT(user_id, podcast_uuid) DO UPDATE
 SET date = excluded.date, cursor = excluded.cursor
 WHERE excluded.date > offered_through.date`, userID, podcast, date, cursor)
+		if err != nil {
+			return 0, false, err
+		}
+		if n, _ := res.RowsAffected(); n > 0 {
+			changed = true
+		}
+	}
+
+	if in.Playback != nil {
+		res, err := tx.Exec(`
+INSERT INTO active_playback (user_id, payload, updated_at, cursor) VALUES (?, ?, ?, ?)
+ON CONFLICT(user_id) DO UPDATE
+SET payload = excluded.payload, updated_at = excluded.updated_at, cursor = excluded.cursor
+WHERE excluded.updated_at > active_playback.updated_at`,
+			userID, string(in.Playback.Payload), in.Playback.UpdatedAt, cursor)
 		if err != nil {
 			return 0, false, err
 		}
@@ -181,6 +205,18 @@ func (s *Store) ChangesSince(userID, since int64) (Changes, error) {
 		if err := json.Unmarshal([]byte(ledgerPayload), &ledger); err == nil {
 			out.Ledger = &ledger
 		}
+	} else if err != nil && err != sql.ErrNoRows {
+		return out, err
+	}
+
+	var playbackPayload string
+	var playback PlaybackPointer
+	var playbackCursor int64
+	err = s.db.QueryRow(`SELECT payload, updated_at, cursor FROM active_playback WHERE user_id = ?`, userID).
+		Scan(&playbackPayload, &playback.UpdatedAt, &playbackCursor)
+	if err == nil && playbackCursor > since {
+		playback.Payload = json.RawMessage(playbackPayload)
+		out.Playback = &playback
 	} else if err != nil && err != sql.ErrNoRows {
 		return out, err
 	}
