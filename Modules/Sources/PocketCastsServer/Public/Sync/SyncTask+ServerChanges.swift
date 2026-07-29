@@ -161,6 +161,15 @@ extension SyncTask {
             podcast.sortOrder = podcastItem.sortPosition.value
         }
 
+        // Fork: the settings blob (playback speed/effects, skips, notification, …)
+        // merges per field on the server's modified_at; only accepted fields reach
+        // the legacy columns the app reads.
+        if podcastItem.hasSettings {
+            let oldSettings = podcast.settings
+            podcast.settings.mergeLWW(api: podcastItem.settings)
+            podcast.mirrorAcceptedSettings(from: oldSettings)
+        }
+
         if checkIsDeleted, podcastItem.hasIsDeleted {
             podcast.subscribed = podcastItem.isDeleted.value ? 0 : 1
         }

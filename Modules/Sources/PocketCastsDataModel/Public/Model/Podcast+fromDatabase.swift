@@ -58,6 +58,8 @@ extension Podcast {
         podcast.isPrivate = rs.bool(forColumn: "isPrivate")
         podcast.fundingURL = rs.string(forColumn: "fundingURL")
         podcast.isExplicit = rs.bool(forColumn: "isExplicit")
+        // Fork: the synced settings blob (JSON with per-field modified dates).
+        podcast.settingsJSON = rs.string(forColumn: "settings") ?? ""
 
         return podcast
     }

@@ -225,5 +225,7 @@ private extension SyncTask {
         podcast.settings.$episodeGrouping = settings.$episodeGrouping
         podcast.settings.$showArchived = settings.$showArchived
         oldSettings.printDiff(from: podcast.settings, withIdentifier: podcast.uuid)
+        // Fork: the app reads legacy columns — carry the accepted values over.
+        podcast.mirrorAcceptedSettings(from: oldSettings)
     }
 }

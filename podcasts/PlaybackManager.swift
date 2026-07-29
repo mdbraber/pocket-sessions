@@ -1313,9 +1313,9 @@ class PlaybackManager: ServerPlaybackDelegate {
             UserDefaults.standard.set(effects.volumeBoost, forKey: Constants.UserDefaults.globalVolumeBoost)
             UserDefaults.standard.set(effects.playbackSpeed, forKey: Constants.UserDefaults.globalPlaybackSpeed)
         } else if let episode = episode as? Episode, let podcast = episode.parentPodcast() {
-            podcast.trimSilenceAmount = Int32(effects.trimSilence.rawValue)
-            podcast.playbackSpeed = effects.playbackSpeed
-            podcast.boostVolume = effects.volumeBoost
+            podcast.updateTrimSilenceSetting(effects.trimSilence)
+            podcast.updatePlaybackSpeedSetting(effects.playbackSpeed)
+            podcast.updateBoostVolumeSetting(effects.volumeBoost)
 
             DataManager.sharedManager.save(podcast: podcast)
             NotificationCenter.postOnMainThread(notification: Constants.Notifications.podcastUpdated, object: podcast.uuid)
@@ -1366,7 +1366,7 @@ class PlaybackManager: ServerPlaybackDelegate {
     }
 
     func overrideEffectsToggled(applyLocalSettings: Bool, for podcast: Podcast) {
-        podcast.overrideGlobalEffects = applyLocalSettings
+        podcast.updateOverrideGlobalEffectsSetting(applyLocalSettings)
 
         DataManager.sharedManager.save(podcast: podcast)
         NotificationCenter.postOnMainThread(notification: Constants.Notifications.podcastUpdated, object: podcast.uuid)

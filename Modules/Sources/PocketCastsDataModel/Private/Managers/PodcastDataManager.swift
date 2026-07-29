@@ -75,7 +75,8 @@ class PodcastDataManager {
         "usedCustomEffectsBefore",
         "isPrivate",
         "fundingURL",
-        "isExplicit"
+        "isExplicit",
+        "settings"
     ]
 
     func setup(dbQueue: PCDBQueue) {
@@ -665,6 +666,7 @@ class PodcastDataManager {
         values.append(podcast.isPrivate)
         values.append(DBUtils.nullIfNil(value: podcast.fundingURL))
         values.append(podcast.isExplicit)
+        values.append(podcast.settingsJSON)
 
         if includeIdForWhere {
             values.append(podcast.id)

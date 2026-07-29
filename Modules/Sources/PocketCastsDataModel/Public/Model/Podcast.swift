@@ -61,8 +61,30 @@ public class Podcast: NSObject, Identifiable {
     @objc public var isExplicit = false
     @objc public var fundingURL: String?
 
+    /// Fork: the synced settings blob, persisted as JSON — the GRDB macro can't
+    /// store the struct itself (and only persists @objc properties), so the JSON
+    /// string is the column and `settings` is a decoded facade over it.
+    @GRDBColumn("settings")
+    @objc public var settingsJSON = ""
+
     @GRDBIgnore
-    public var settings = PodcastSettings.defaults
+    private var settingsCache: PodcastSettings?
+
+    /// The synced per-podcast settings (per-field modified dates for LWW sync).
+    public var settings: PodcastSettings {
+        get {
+            if let settingsCache { return settingsCache }
+            let decoded = settingsJSON.isEmpty
+                ? PodcastSettings.defaults
+                : ((try? JSONDecoder().decode(PodcastSettings.self, from: Data(settingsJSON.utf8))) ?? PodcastSettings.defaults)
+            settingsCache = decoded
+            return decoded
+        }
+        set {
+            settingsCache = newValue
+            settingsJSON = newValue.jsonData.flatMap { String(data: $0, encoding: .utf8) } ?? ""
+        }
+    }
 
     // transient not saved to database
     @GRDBIgnore

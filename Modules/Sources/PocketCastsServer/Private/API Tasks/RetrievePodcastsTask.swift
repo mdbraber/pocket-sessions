@@ -57,6 +57,9 @@ class RetrievePodcastsTask: ApiBaseTask, @unchecked Sendable {
         podcast.folderUuid = (protoPodcast.hasFolderUuid && protoPodcast.folderUuid.value != DataConstants.homeGridFolderUuid) ? protoPodcast.folderUuid.value : nil
         podcast.sortPosition = protoPodcast.hasSortPosition ? protoPodcast.sortPosition.value : nil
         podcast.dateAdded = protoPodcast.hasDateAdded ? protoPodcast.dateAdded.date : nil
+        // Fork: this was the dropped link — the blob carries playback speed,
+        // effects and skips; without it a migrating account loses them all.
+        podcast.settings = protoPodcast.hasSettings ? PodcastSettings(api: protoPodcast.settings) : nil
 
         return podcast
     }

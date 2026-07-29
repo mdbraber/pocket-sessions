@@ -58,6 +58,25 @@ class DatabaseHelper {
         } catch {
             FileLog.shared.addMessage("Fork schema additions failed \(db.lastErrorCode()): \(db.lastErrorMessage())")
         }
+
+        // SJPodcast.settings (the synced per-podcast settings blob) was added by
+        // upstream AMENDING already-shipped migration 43 — databases that had
+        // passed it before the amendment never got the column. Idempotent catch-up.
+        do {
+            var podcastColumns = Set<String>()
+            let resultSet = try db.executeQuery("PRAGMA table_info(SJPodcast)", values: nil)
+            while resultSet.next() {
+                if let name = resultSet.string(forColumn: "name") {
+                    podcastColumns.insert(name)
+                }
+            }
+            if !podcastColumns.contains("settings") {
+                try db.executeUpdate("ALTER TABLE SJPodcast ADD COLUMN settings TEXT NOT NULL DEFAULT '';", values: nil)
+                FileLog.shared.addMessage("Fork schema: added SJPodcast.settings")
+            }
+        } catch {
+            FileLog.shared.addMessage("Fork schema additions (SJPodcast.settings) failed \(db.lastErrorCode()): \(db.lastErrorMessage())")
+        }
     }
 
     private class func upgradeIfRequired(schemaVersion: inout Int32, db: PCDatabase) {

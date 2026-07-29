@@ -163,8 +163,7 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
             cell.onValueChanged = { [weak self] value in
                 guard let podcast = self?.podcast else { return }
 
-                podcast.startFrom = Int32(value)
-                podcast.syncStatus = SyncStatus.notSynced.rawValue
+                podcast.updateStartFromSetting(Int32(value))
                 DataManager.sharedManager.save(podcast: podcast)
                 cell.cellSecondaryLabel.text = L10n.timeShorthand(Int(podcast.startFrom))
 
@@ -189,8 +188,7 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
             cell.onValueChanged = { [weak self] value in
                 guard let podcast = self?.podcast else { return }
 
-                podcast.skipLast = Int32(value)
-                podcast.syncStatus = SyncStatus.notSynced.rawValue
+                podcast.updateSkipLastSetting(Int32(value))
                 DataManager.sharedManager.save(podcast: podcast)
                 cell.cellSecondaryLabel.text = L10n.timeShorthand(Int(podcast.skipLast))
 

@@ -29,6 +29,14 @@ extension SyncTask {
                 podcastRecord.dateAdded = Google_Protobuf_Timestamp(date: addedDate)
             }
 
+            // Fork: fields changed on this device (those with a local modifiedAt)
+            // ride along in the settings blob — how speed/effects reach the server
+            // at all, and how stock devices see them.
+            let apiSettings = Api_PodcastSettings(from: podcast.settings)
+            if apiSettings != Api_PodcastSettings() {
+                podcastRecord.settings = apiSettings
+            }
+
             var apiRecord = Api_Record()
             apiRecord.podcast = podcastRecord
             podcastRecords.append(apiRecord)

@@ -59,7 +59,10 @@ class PodcastManager: NSObject {
                 }
             }
 
-            dataManager.savePushSetting(podcast: podcast, pushEnabled: enabled)
+            // Fork: the toggle also rides the synced settings blob (stock devices
+            // follow it, and the PCS episode watcher's "synced" mode reads it).
+            podcast.updateNotificationSetting(enabled)
+            DataManager.sharedManager.save(podcast: podcast)
         }
     #endif
 
