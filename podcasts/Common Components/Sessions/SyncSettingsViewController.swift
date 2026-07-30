@@ -24,7 +24,29 @@ class SyncSettingsViewController: PCViewController, UITableViewDataSource, UITab
     private let settingsTable = ThemeableTable(frame: .zero, style: .grouped)
 
     /// Last-known PC link state on the server, refreshed on appear.
-    private var pcLinkEmail: String?
+    ///
+    /// Deliberately NOT an email. Enrollment approves the pairing code with this device's own
+    /// Pocket Casts session (`SessionServerSync.enroll`), so the linked account is always the
+    /// account the app signed in with — printing it back tells the user nothing they didn't
+    /// already know, and goes stale the moment the two diverge.
+    private enum PCLinkState {
+        case notLinked
+        case linked
+        /// The server IS linked, but to a different account than the one signed in here — the
+        /// only case where the account is worth saying anything about, because re-linking is
+        /// the fix and "Not Linked" would be a lie.
+        case linkedToAnotherAccount
+
+        var title: String {
+            switch self {
+            case .notLinked: return L10n.sessionSyncNotLinked
+            case .linked: return L10n.sessionSyncLinked
+            case .linkedToAnotherAccount: return L10n.sessionSyncLinkedOtherAccount
+            }
+        }
+    }
+
+    private var pcLinkState: PCLinkState = .notLinked
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -46,7 +68,17 @@ class SyncSettingsViewController: PCViewController, UITableViewDataSource, UITab
         super.viewWillAppear(animated)
         settingsTable.reloadData()
         SessionServerSync.shared?.pcLinkStatus { [weak self] linked, email in
-            self?.pcLinkEmail = linked ? (email ?? "") : nil
+            guard linked else {
+                self?.pcLinkState = .notLinked
+                self?.settingsTable.reloadData()
+                return
+            }
+            // A link the server can't name, or one naming the account signed in here, is simply
+            // "Linked". Only a genuine mismatch is worth reporting — it survives signing out and
+            // back in as someone else, and only re-linking clears it.
+            let signedIn = ServerSettings.syncingEmail()
+            let mismatch = (email?.isEmpty == false) && signedIn != nil && email != signedIn
+            self?.pcLinkState = mismatch ? .linkedToAnotherAccount : .linked
             self?.settingsTable.reloadData()
         }
     }
@@ -103,7 +135,7 @@ class SyncSettingsViewController: PCViewController, UITableViewDataSource, UITab
             // Everything credential-shaped collapses into one status row: the URL
             // save enrolls automatically, so this only ever shows the outcome.
             cell.textLabel?.text = L10n.sessionSyncAccount
-            cell.detailTextLabel?.text = pcLinkEmail.map { $0.isEmpty ? L10n.sessionSyncLinked : $0 } ?? L10n.sessionSyncNotLinked
+            cell.detailTextLabel?.text = pcLinkState.title
             cell.accessoryType = .disclosureIndicator
         case .followPlayback:
             cell.textLabel?.text = L10n.sessionSyncFollowPlayback
@@ -222,7 +254,7 @@ class SyncSettingsViewController: PCViewController, UITableViewDataSource, UITab
         Toast.show(L10n.sessionSyncPcLinking)
         SessionServerSync.enroll { [weak self] email in
             if let email {
-                self?.pcLinkEmail = email
+                self?.pcLinkState = .linked
                 self?.settingsTable.reloadData()
                 Toast.show(L10n.sessionSyncPcLinkDone(email.isEmpty ? L10n.sessionSyncLinked : email))
             } else {
