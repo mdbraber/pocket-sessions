@@ -84,6 +84,11 @@ class EpisodeDetailViewController: FakeNavViewController, UIDocumentInteractionC
     var showNotesWebViewTopConstraint: NSLayoutConstraint?
     @IBOutlet var transcriptExcerpt: UIView?
 
+    /// Fork: the constraints installed by `applyArtworkAspectRatio`, kept so a second load can
+    /// replace rather than stack them.
+    private var artworkAspectConstraints: [NSLayoutConstraint] = []
+    private var appliedArtworkAspect: CGFloat = 0
+
     /// Fork: hosts the episode screen's chapter list. See EpisodeDetailViewController+Chapters.
     var chaptersHostingController: UIViewController?
 
@@ -487,11 +492,61 @@ class EpisodeDetailViewController: FakeNavViewController, UIDocumentInteractionC
         if Settings.loadEmbeddedImages, !didResolveEpisodeArtwork {
             podcastImage.setPlaceholder(size: .page)
         } else if let episodeArtworkURL {
-            podcastImage.setEpisodeArtwork(url: episodeArtworkURL, size: .page)
+            podcastImage.setEpisodeArtwork(url: episodeArtworkURL, size: .page) { [weak self] image in
+                self?.applyArtworkAspectRatio(of: image)
+            }
         } else if let uuid = episode.parentPodcast()?.uuid {
             podcastImage.setPodcast(uuid: uuid, size: .page)
         }
     }
+
+    /// Fork: gives the artwork box one of two shapes — 1:1 or 16:9.
+    ///
+    /// The XIB pins it to 1:1 and `PodcastImageView` crops to fill, which is right for podcast
+    /// covers, square by convention. A video podcast's episode image is a 16:9 frame, and squaring
+    /// it cut both ends off, taking the title text with them.
+    ///
+    /// Snapped to those two ratios rather than tracking the image's own: thumbnails are rarely
+    /// exactly 16:9 (letterboxing, odd encoder sizes), and honouring each one's true ratio makes
+    /// the box jitter between episodes. Two shapes read as deliberate; a hundred near-16:9 ones
+    /// read as broken.
+    private func applyArtworkAspectRatio(of image: UIImage) {
+        guard image.size.width > 0, image.size.height > 0 else { return }
+        // Anything meaningfully wider than tall is treated as widescreen. The midpoint between 1:1
+        // and 16:9 keeps a 4:3 frame (1.33) on the widescreen side, where it belongs — cropping it
+        // to a square would lose just as much.
+        let wide = (image.size.width / image.size.height) > 1.2
+        let aspect: CGFloat = wide ? 16.0 / 9.0 : 1.0
+
+        guard artworkAspectConstraints.isEmpty || appliedArtworkAspect != aspect else { return }
+
+        NSLayoutConstraint.deactivate(artworkAspectConstraints)
+        artworkAspectConstraints = []
+        appliedArtworkAspect = aspect
+
+        // Square is the XIB's own state — restore it by reactivating what is already there rather
+        // than layering an equivalent constraint on top.
+        let xibRatio = podcastImage.constraints.filter {
+            $0.firstAttribute == .width && $0.secondAttribute == .height && $0.firstItem === podcastImage
+        }
+        guard wide else {
+            xibRatio.forEach { $0.isActive = true }
+            view.layoutIfNeeded()
+            return
+        }
+
+        xibRatio.forEach { $0.isActive = false }
+        // The XIB leaves the size ambiguous (two `<=175` limits tied together by 1:1), so pin the
+        // width explicitly — without it, dropping 1:1 leaves nothing to resolve the width against.
+        let width = podcastImage.widthAnchor.constraint(equalToConstant: Self.artworkMaxDimension)
+        width.priority = .required - 1 // stays under the XIB's own <=175 limits
+        let ratio = podcastImage.widthAnchor.constraint(equalTo: podcastImage.heightAnchor, multiplier: aspect)
+        artworkAspectConstraints = [width, ratio]
+        NSLayoutConstraint.activate(artworkAspectConstraints)
+        view.layoutIfNeeded()
+    }
+
+    private static let artworkMaxDimension: CGFloat = 175
 
     private func loadEpisodeArtwork() {
         guard Settings.loadEmbeddedImages, !didResolveEpisodeArtwork else { return }

@@ -45,14 +45,21 @@ class PodcastImageView: UIView {
         adjustForSize(size)
     }
 
-    func setEpisodeArtwork(url: URL, size: PodcastThumbnailSize) {
+    /// - Parameter onLoad: the decoded image, so a caller can react to its shape. Episode artwork is
+    ///   not always square — a video podcast's episode image is typically a 16:9 frame — and the
+    ///   view crops to fill, so a caller that cares has to be told the real dimensions.
+    func setEpisodeArtwork(url: URL, size: PodcastThumbnailSize, onLoad: ((UIImage) -> Void)? = nil) {
         guard let imageView else { return }
         adjustForSize(size)
 
         imageView.kf.setImage(with: url, options: [
             .processor(DefaultImageProcessor.default),
             .transition(.fade(Constants.Animation.defaultAnimationTime))
-        ])
+        ], completionHandler: { result in
+            if case .success(let value) = result {
+                onLoad?(value.image)
+            }
+        })
     }
 
     func setPlaceholder(size: PodcastThumbnailSize) {
