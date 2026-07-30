@@ -39,7 +39,7 @@ extension NowPlayingPlayerItemViewController {
     @objc private func videoPlaybackEngineSwitched() {
         // Video may have been detected at runtime (e.g. an HLS stream) or toggled via the shelf,
         // so refresh to reveal or hide the view accordingly.
-        if PlaybackManager.shared.shouldRenderVideo() {
+        if PlaybackManager.shared.shouldRenderVideo(), !GoogleCastManager.sharedManager.connectedOrConnectingToDevice() {
             floatingVideoView.player = PlaybackManager.shared.internalPlayerForVideoPlayback()
         }
         update(notification: nil)
@@ -48,7 +48,14 @@ extension NowPlayingPlayerItemViewController {
     @objc func update(notification: NSNotification?) {
         guard let playingEpisode = PlaybackManager.shared.currentEpisode() else { return }
 
-        if PlaybackManager.shared.shouldRenderVideo() {
+        // Fork: `shouldRenderVideo()` asks whether this EPISODE has video to show, not whether
+        // there is a local player to show it with. While casting there isn't one
+        // (`internalPlayerForVideoPlayback()` returns nil), so the video slot rendered as an empty
+        // transparent rectangle with the artwork deliberately hidden behind it. Fall back to the
+        // artwork instead: the cast button already says where the video went, and blank space
+        // explains nothing. The googleCastStatusChanged observer already drives this method, so
+        // the slot swaps back the moment casting ends.
+        if PlaybackManager.shared.shouldRenderVideo(), !GoogleCastManager.sharedManager.connectedOrConnectingToDevice() {
             if floatingVideoView.isHidden {
                 floatingVideoView.isHidden = false
                 floatingVideoView.player = PlaybackManager.shared.internalPlayerForVideoPlayback()

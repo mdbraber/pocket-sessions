@@ -109,6 +109,42 @@ class VideoViewController: SimpleNotificationsViewController, AVPictureInPicture
         }
     }
 
+    /// Fork: while casting there is nothing to render locally — `GoogleCastPlayer` has no local
+    /// player, so `attachPlayer()` sets `videoPlayerView.player = nil` and the surface is solid
+    /// black. Unexplained, that reads as a broken screen. This chip sits over it and says where the
+    /// video actually went.
+    ///
+    /// Deliberately a sibling of `controlsOverlay` rather than a child of it: the controls fade out
+    /// after 3 seconds (see VideoViewController+Controls), and a black screen needs explaining most
+    /// once the controls are gone.
+    private lazy var castInfoView: UIView = {
+        let container = UIStackView()
+        container.axis = .horizontal
+        container.alignment = .center
+        container.spacing = 8
+        container.isUserInteractionEnabled = false // taps belong to the video surface below
+        container.translatesAutoresizingMaskIntoConstraints = false
+
+        let icon = UIImageView(image: UIImage(named: "nav_cast_on")?.withRenderingMode(.alwaysTemplate))
+        icon.tintColor = ThemeColor.contrast01(for: .extraDark)
+        icon.contentMode = .scaleAspectFit
+        icon.setContentHuggingPriority(.required, for: .horizontal)
+
+        container.addArrangedSubview(icon)
+        container.addArrangedSubview(castInfoLabel)
+        return container
+    }()
+
+    private lazy var castInfoLabel: UILabel = {
+        let label = UILabel()
+        // Matches the player's error banner: 14pt medium on the extra-dark contrast colour.
+        label.font = UIFont.systemFont(ofSize: 14, weight: .medium)
+        label.textColor = ThemeColor.contrast01(for: .extraDark)
+        label.textAlignment = .center
+        label.numberOfLines = 2
+        return label
+    }()
+
     deinit {
         teardownPictureInPicturePlayback()
     }
@@ -127,6 +163,32 @@ class VideoViewController: SimpleNotificationsViewController, AVPictureInPicture
 
         let skipFwdAmount = Settings.skipForwardTime
         skipForwardBtn.skipAmount = skipFwdAmount
+
+        setupCastInfoView()
+    }
+
+    /// Adds the casting chip ABOVE `controlsOverlay`, so hiding the controls leaves it in place.
+    private func setupCastInfoView() {
+        view.addSubview(castInfoView)
+        view.bringSubviewToFront(castInfoView)
+        NSLayoutConstraint.activate([
+            castInfoView.centerXAnchor.constraint(equalTo: videoPlayerView.centerXAnchor),
+            castInfoView.centerYAnchor.constraint(equalTo: videoPlayerView.centerYAnchor),
+            castInfoView.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 24),
+            castInfoView.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -24)
+        ])
+        updateCastInfoView()
+    }
+
+    /// Casting is the only state where the local surface is black on purpose, so the chip's
+    /// visibility tracks it exactly. Refreshed from `update()` (which the googleCastStatusChanged
+    /// observer drives) and from `attachPlayer()`, the two moments the surface can change.
+    private func updateCastInfoView() {
+        let casting = GoogleCastManager.sharedManager.connectedOrConnectingToDevice()
+        castInfoView.isHidden = !casting
+        guard casting else { return }
+        let device = GoogleCastManager.sharedManager.connectedDevice()?.friendlyName ?? L10n.chromecastUnnamedDevice
+        castInfoLabel.text = L10n.videoPlayingOnDevice(device)
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -307,6 +369,7 @@ class VideoViewController: SimpleNotificationsViewController, AVPictureInPicture
         updatePlayPauseButton()
         progressUpdated()
         updateFillScreenBtn()
+        updateCastInfoView()
     }
 
     private func updateFillScreenBtn() {
@@ -332,6 +395,8 @@ class VideoViewController: SimpleNotificationsViewController, AVPictureInPicture
         willAttachPlayer?()
         videoPlayerView.player = PlaybackManager.shared.internalPlayerForVideoPlayback()
         setupPictureInPicturePlayback()
+        // A nil player here IS the black surface — keep the explanation in step with it.
+        updateCastInfoView()
     }
 
     private func updateTimeLabels(upTo: TimeInterval, remaining: TimeInterval) {

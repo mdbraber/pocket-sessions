@@ -394,6 +394,9 @@
 /* Placeholder name for when ChromeCast doesn't have a device name. */
 "chromecast_unnamed_device" = "Un-named device";
 
+/* Fork: video player — shown over the (necessarily black) local video surface while casting. '%1$@' is the Chromecast device's name. */
+"video_playing_on_device" = "Playing on %1$@";
+
 /* A common string used throughout the app. Prompt to perform a clean up operation on the selected items. */
 "clean_up" = "Clean Up";
 
