@@ -471,6 +471,18 @@ class EpisodeManager: NSObject {
             if hasHLSStream(episode), let hlsUrl = episode.hlsUrl, let url = URL(string: hlsUrl) {
                 return url
             }
+            // Fork: our own feeds are private, so PC never parses their alternate enclosures and
+            // `hlsUrl` above is always empty for them — derive the ladder from the enclosure
+            // instead. Streaming only; downloads go through DownloadManager, which reads
+            // `downloadUrl` directly and so keeps the progressive file. See DerivedHLSStream.
+            //
+            // Phone-only: this file is shared with the Watch App, which has no video player and
+            // does not build the fork's Sessions sources.
+            #if !os(watchOS)
+            if let derived = DerivedHLSStream.playbackUrl(for: episode) {
+                return derived
+            }
+            #endif
             if let url = episode.downloadUrl {
                 return URL(string: url)
             }

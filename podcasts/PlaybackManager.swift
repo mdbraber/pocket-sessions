@@ -1652,6 +1652,23 @@ class PlaybackManager: ServerPlaybackDelegate {
             return
         }
 
+        #if !os(watchOS)
+        // Fork: a derived HLS ladder is a guess — the companion is expected to publish one at a
+        // fixed path, but nothing advertises it, so it can be absent or broken. If that is what
+        // just failed, remember it and reload the episode; `urlForEpisode` will now hand back the
+        // progressive enclosure. Only one retry is possible: the failure is remembered before the
+        // reload, so a second failure falls through to the normal error handling below.
+        if let episode = episode as? Episode,
+           !DerivedHLSStream.hasFailed(episodeUuid: episode.uuid),
+           let derived = DerivedHLSStream.playbackUrl(for: episode),
+           EpisodeManager.urlForEpisode(episode) == derived {
+            DerivedHLSStream.markFailed(episodeUuid: episode.uuid)
+            FileLog.shared.addMessage("[PlaybackManager] Derived HLS failed, retrying with the progressive enclosure")
+            load(episode: episode, autoPlay: true, overrideUpNext: false, completion: nil)
+            return
+        }
+        #endif
+
         // sometimes the end of a file can be corrupt, we handle this here with a few basic checks:
         // - Did we get more than a minute into the show?
         // - Is where we are up to close to the duration?
