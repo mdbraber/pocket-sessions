@@ -188,6 +188,11 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         if userInfo["pcsCursor"] != nil {
             SessionServerSync.shared?.fetchFromPush()
         }
+        // Fork: an episode push can name an episode the ordinary refresh below will never return,
+        // because PC's refresh service answers this device from its own delivery cursor rather than
+        // the anchor we post. Ask again for just that podcast, from an older anchor, first.
+        // See NewEpisodePushRecovery.
+        NewEpisodePushRecovery.recover(userInfo: userInfo)
         RefreshManager.shared.refreshPodcasts(completion: { refreshFetchResult in
             completionHandler(self.convertRefreshResult(result: refreshFetchResult))
         })

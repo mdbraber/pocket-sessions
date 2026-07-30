@@ -144,6 +144,12 @@ class NotificationsHelper: NSObject, UNUserNotificationCenterDelegate {
             return
         }
 
+        // Fork: every action below resolves the episode through `findEpisode`, whose fallback is the
+        // ordinary refresh — the exact call PC answers with "nothing new" once its cursor for this
+        // device has passed the episode. Recover first so Download / Play Now / Add to Up Next act
+        // on a real episode instead of silently doing nothing. See NewEpisodePushRecovery.
+        NewEpisodePushRecovery.recover(userInfo: response.notification.request.content.userInfo)
+
         if downloadEpisodeActionId == response.actionIdentifier {
             AnalyticsHelper.downloadFromNotification()
             findEpisode(episodeUuid: episodeUuid) { episode in
@@ -202,6 +208,9 @@ class NotificationsHelper: NSObject, UNUserNotificationCenterDelegate {
 
     // Called when a notification is delivered to a foreground app.
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        // Fork: the banner is the first moment we see this payload when the app is already open, so
+        // it is also the first chance to notice the episode is missing and re-ask for it properly.
+        NewEpisodePushRecovery.recover(userInfo: notification.request.content.userInfo)
         completionHandler([.banner, .sound])
     }
 
