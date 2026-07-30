@@ -44,6 +44,43 @@ final class NewEpisodePushRecoveryTests: XCTestCase {
         XCTAssertTrue(recoverSynchronously(payload(episode: UUID().uuidString, podcast: UUID().uuidString)))
     }
 
+    /// Recovery is payload-driven and touches nothing but `DataManager` and `RefreshManager`, so it
+    /// must work on a build with no session server configured at all — and equally on PC's OWN
+    /// episode push, which carries the same `eu` + `podcast_uuid` shape and no PCS keys whatsoever.
+    func testAPocketCastsOwnEpisodePushIsHandledWithoutAnySessionServer() {
+        XCTAssertNil(SessionServerSync.shared, "this test asserts the no-server case")
+        XCTAssertTrue(recoverSynchronously(payload(episode: UUID().uuidString, podcast: UUID().uuidString)))
+    }
+
+    // MARK: - Batched recovery payload (the silent counterpart to the visible alert)
+
+    func testABatchOfUnknownPodcastsIsHandledWithoutFalling() {
+        let batch: [[String: Any]] = [
+            ["podcast_uuid": UUID().uuidString, "eu": UUID().uuidString],
+            ["podcast_uuid": UUID().uuidString, "eu": UUID().uuidString]
+        ]
+        XCTAssertTrue(recoverSynchronously(["pcsCursor": 7, "pcsNewEpisodes": batch]))
+    }
+
+    func testAMalformedBatchEntryIsSkippedRatherThanAbortingTheBatch() {
+        // One bad entry must not cost the others their recovery.
+        let batch: [[String: Any]] = [
+            ["eu": UUID().uuidString],                                        // no podcast
+            ["podcast_uuid": UUID().uuidString],                              // no episode
+            ["podcast_uuid": "", "eu": ""],                                   // empty
+            ["podcast_uuid": UUID().uuidString, "eu": UUID().uuidString]      // valid
+        ]
+        XCTAssertTrue(recoverSynchronously(["pcsNewEpisodes": batch]))
+    }
+
+    func testAnEmptyBatchFallsThroughToTheSingleEpisodeShape() {
+        // An empty array must not be mistaken for "this is a batch push, nothing to do" when the
+        // payload also carries the alert-shaped uuids.
+        var userInfo = payload(episode: UUID().uuidString, podcast: UUID().uuidString)
+        userInfo["pcsNewEpisodes"] = [[String: Any]]()
+        XCTAssertTrue(recoverSynchronously(userInfo))
+    }
+
     func testAnEpisodeWeAlreadyHoldIsNotRecovered() throws {
         // The overwhelmingly common case: the ordinary refresh already worked. Recovery must be a
         // no-op so it never re-anchors a podcast that is perfectly up to date.

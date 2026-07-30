@@ -30,6 +30,14 @@ enum NewEpisodePushRecovery {
     /// The push keys PC uses for an episode notification, which the PCS watcher mirrors.
     private static let episodeUuidKey = "eu"
     private static let podcastUuidKey = "podcast_uuid"
+    /// PCS's silent counterpart to the visible alert: `[{podcast_uuid, eu}, …]`.
+    ///
+    /// It exists because the two push types have complementary halves of what recovery needs. A
+    /// VISIBLE alert carries the uuids but has no `content-available`, so iOS draws the banner
+    /// itself and this app never runs unless the user taps. A BACKGROUND push runs code but the
+    /// general "your data moved" wake carries only a cursor. This key rides a background push and
+    /// carries the uuids, so a backgrounded app repairs itself with no tap required.
+    private static let newEpisodesKey = "pcsNewEpisodes"
 
     /// Re-fetches the podcast named in `userInfo` when it announces an episode we do not have.
     ///
@@ -38,6 +46,18 @@ enum NewEpisodePushRecovery {
     /// disturbed. `completion` runs once the targeted refresh finishes, or immediately when there
     /// is nothing to recover.
     static func recover(userInfo: [AnyHashable: Any], completion: (() -> Void)? = nil) {
+        // A background recovery push names several episodes at once (one watcher cycle can find
+        // more than one), so handle the batch before the single-episode alert shape.
+        if let batch = userInfo[newEpisodesKey] as? [[String: Any]], !batch.isEmpty {
+            for entry in batch {
+                guard let episodeUuid = entry[episodeUuidKey] as? String, !episodeUuid.isEmpty,
+                      let podcastUuid = entry[podcastUuidKey] as? String, !podcastUuid.isEmpty else { continue }
+                recover(episodeUuid: episodeUuid, podcastUuid: podcastUuid)
+            }
+            completion?()
+            return
+        }
+
         guard let episodeUuid = userInfo[episodeUuidKey] as? String, !episodeUuid.isEmpty,
               let podcastUuid = userInfo[podcastUuidKey] as? String, !podcastUuid.isEmpty else {
             completion?()
