@@ -5,9 +5,9 @@
 # come from the configured OwnTube host are ignored, so this can sit alongside
 # hooks for other services.
 #
-# Install: copy into the hooks directory (PCS_HOOKS_DIR, e.g. /data/hooks),
-# `chmod +x`, and set in the host .env:
-#   OWNTUBE_URL=http://owntube.home.example.com      # reachable over WireGuard
+# Install: `make hooks` (ships this into data/hooks on the deploy host), and
+# set in the host .env:
+#   OWNTUBE_URL=https://owntube.home.example.com   # reachable over the host's site-to-site tunnel
 #   OWNTUBE_TOKEN=<device token from auth.deviceLogin / device pairing>
 #
 # PCS passes the event as PCS_* environment variables (and JSON on stdin, which

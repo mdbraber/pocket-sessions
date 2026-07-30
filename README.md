@@ -82,7 +82,13 @@ Then locally, create a gitignored `deploy.env` with `DEPLOY_HOST=<ssh-host>` and
 
 ```
 make deploy   # rsync source + docker compose up -d --build
+make hooks    # install/update playback hook scripts (deploy never touches them)
 ```
+
+The compose also joins an external `seg15-media` network — a tier of this
+host's site-to-site tunnel home, which is how playback hooks reach LAN-only
+services (see `hooks/README.md`). On a host without that setup, drop the
+`seg15-media`/`dns:` entries and keep just the `caddy` network.
 
 Devices never need a typed token: enrollment is PC-identity based. A device
 POSTs `/session/v1/pc-link/start` (unauthenticated), approves the pairing

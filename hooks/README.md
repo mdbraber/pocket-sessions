@@ -64,7 +64,7 @@ through Pocket Casts. It ignores episodes whose enclosure isn't served by the
 configured OwnTube host, so it's safe alongside other hooks.
 
 ```
-OWNTUBE_URL=http://owntube.home.example.com
+OWNTUBE_URL=https://owntube.home.example.com
 OWNTUBE_TOKEN=<device token — auth.deviceLogin or the device-pairing flow>
 ```
 
@@ -93,49 +93,32 @@ exits 0. Anything else exits non-zero, which PCS logs.
 
 ### Reaching a LAN-only OwnTube
 
-The VPS can't route to `*.home.example.com` on its own, so PCS can run inside
-a WireGuard client's network namespace (the pattern the podimo stack on this
-host already uses). `deploy/docker-compose.wireguard.yml` is that variant,
-ready to go — the only thing missing is your tunnel config.
+The VPS can't route to `*.home.example.com` on its own. PCS therefore joins
+`seg15-media`, a tier network on the host's permanent site-to-site WireGuard
+tunnel to home. The network is created host-side, outside compose — hence
+`external: true` — and the home firewall grants each tier its own access.
+Three compose settings, already in `deploy/docker-compose.yml`, carry the
+whole thing:
 
-```
-make wireguard-scaffold      # creates the config dir, installs owntube.sh
-# paste your client config into <deploy-dir>/wireguard-config/wg_confs/wg0.conf
-# add OWNTUBE_URL and OWNTUBE_TOKEN to <deploy-dir>/.env
-make deploy WIREGUARD=1
-```
+- the tier network is the **default route** (`gw_priority: 100`), so all
+  outbound traffic carries the tier's source identity; inbound from Caddy
+  still works because the caddy subnet is on-link, and on-link beats the
+  default route;
+- `dns:` points at the segment gateway, where the host resolver serves the
+  home zone over the tunnel and everything else publicly;
+- `cap_drop: NET_RAW`, so the container can't forge another tier's source.
 
-Three things to get right in that config:
+Nothing is configured per deploy: `make deploy` ships it, and widening access
+(another host, another port) is a firewall change at home, not a repo one.
+The tunnel carries both address families and the home resolver answers AAAA
+first, which is why the hook forces neither.
 
-- **Split tunnel.** `AllowedIPs` should list only your home subnet(s) — e.g.
-  `192.168.1.0/24` — so Pocket Casts and APNs traffic keeps going out directly.
-  `0.0.0.0/0` would route *everything* through home.
-- **DNS.** If `owntube.home.example.com` only resolves on a home resolver, set
-  `DNS = <home-dns-ip>` in the `[Interface]` section; `wg-quick` applies it.
-- **A pass rule per address family.** The hook forces no address family — the
-  tunnel carries both, and a home resolver usually answers AAAA first. Note
-  that firewall rules are per-family: on OPNsense a v4-only "pass in" rule on
-  the VPN interface drops v6 into the default deny, which looks like a routing
-  bug rather than a firewall one (client shows the address assigned, the route
-  present, `ip -6 route get` correct — and zero replies). Each family needs its
-  own rule with the client's tunnel address as source.
-- **Keepalive.** `PersistentKeepalive = 25` on the peer, since the VPS sits
-  behind the peer's NAT and would otherwise go quiet.
+An earlier variant ran PCS inside a per-stack WireGuard client's network
+namespace (`docker-compose.wireguard.yml`, `make deploy WIREGUARD=1`). It is
+retired and deleted: its peer no longer exists on the home side, so a stack
+resurrected from git history has a tunnel that can never connect — and since
+Caddy reached PCS through that container, it takes the server down with it.
 
-Switching is deliberately opt-in (`WIREGUARD=1`) rather than automatic: while
-PCS shares the tunnel's namespace, Caddy reaches PCS *through* that container,
-so a tunnel that won't start takes the whole server offline with it. `make
-deploy` (without the flag) always puts back the plain, no-VPN stack — that's
-the rollback if anything goes wrong.
-
-**Never restart the tunnel container on its own.** Restarting it destroys the
-network namespace PCS is sharing, which orphans PCS — it keeps pointing at a
-dead namespace and starts answering 502 through Caddy. Restart both together:
-
-```
-docker compose up -d --force-recreate
-```
-
-`make wireguard-scaffold` is also what re-installs the hook scripts: `make
-deploy` only ships the server and compose file, never the contents of
-`data/hooks`, so run the scaffold again after changing a hook.
+`make hooks` installs the hook scripts: `make deploy` only ships the server
+and compose file, never the contents of `data/hooks`, so run `make hooks`
+again after changing a hook.
