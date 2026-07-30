@@ -488,6 +488,17 @@ class PodcastListViewController: PCViewController, ShareListDelegate {
         sortAction.submenu = { [weak self] in self?.makeSortOrderOptionsPicker() }
         optionsPicker.addAction(action: sortAction)
 
+        // Fork: reordering sits directly under Sort By — they're the two ways to change what order
+        // the grid is in. It only appears under the hand-made (drag & drop) order: under any other
+        // sort the grid is computed, so a hand arrangement would have nowhere to be kept.
+        if sortOption == .custom {
+            let reorderAction = OptionAction(label: L10n.podcastsEdit, icon: "filter_manual_episode_order") { [weak self] in
+                self?.setEditingOrder(true)
+                Analytics.track(.podcastsListModalOptionTapped, properties: ["option": "edit"])
+            }
+            optionsPicker.addAction(action: reorderAction)
+        }
+
         let largeGridAction = OptionAction(label: L10n.podcastsLargeGrid, icon: "podcastlist_largegrid", selected: Settings.libraryType() == .threeByThree) { [weak self] in
             Settings.setLibraryType(.threeByThree)
             self?.gridTypeChanged()
@@ -523,12 +534,6 @@ class PodcastListViewController: PCViewController, ShareListDelegate {
             Analytics.track(.podcastsListModalOptionTapped, properties: ["option": "share"])
         }
         optionsPicker.addAction(action: shareAction)
-
-        let editAction = OptionAction(label: L10n.podcastsEdit, icon: "filter_manual_episode_order") { [weak self] in
-            self?.setEditingOrder(true)
-            Analytics.track(.podcastsListModalOptionTapped, properties: ["option": "edit"])
-        }
-        optionsPicker.addAction(action: editAction)
 
         optionsPicker.present(from: self)
 

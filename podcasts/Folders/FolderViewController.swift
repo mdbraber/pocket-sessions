@@ -134,6 +134,17 @@ class FolderViewController: PCViewController {
         sortAction.submenu = { [weak self] in self?.makeSortOptions() }
         optionsPicker.addAction(action: sortAction)
 
+        // Fork: reordering sits directly under Sort By — they're the two ways to change what order
+        // the grid is in. It only appears under the hand-made (drag & drop) order: under any other
+        // sort the grid is computed, so a hand arrangement would have nowhere to be kept.
+        if sortOption == .custom {
+            let reorderAction = OptionAction(label: L10n.podcastsEdit, icon: "filter_manual_episode_order") { [weak self] in
+                self?.setEditingOrder(true)
+                Analytics.track(.folderOptionsModalOptionTapped, properties: ["option": "edit"])
+            }
+            optionsPicker.addAction(action: reorderAction)
+        }
+
         let editAction = OptionAction(label: L10n.folderEdit, icon: "folder-edit") { [weak self] in
             guard let folder = self?.folder else { return }
 
@@ -164,12 +175,6 @@ class FolderViewController: PCViewController {
             Analytics.track(.folderOptionsModalOptionTapped, properties: ["option": "add_or_remove_podcasts"])
         }
         optionsPicker.addAction(action: addRemoveAction)
-
-        let reorderAction = OptionAction(label: L10n.podcastsEdit, icon: "filter_manual_episode_order") { [weak self] in
-            self?.setEditingOrder(true)
-            Analytics.track(.folderOptionsModalOptionTapped, properties: ["option": "edit"])
-        }
-        optionsPicker.addAction(action: reorderAction)
 
         optionsPicker.present(from: self)
 
