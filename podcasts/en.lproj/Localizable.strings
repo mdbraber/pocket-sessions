@@ -5356,6 +5356,12 @@
 
 /* Playlist header button that starts a playback session from the playlist (replaces 'Play All' while sessions are enabled) */
 "playlist_play_as_session" = "Play Session";
+/* Fork: podcast group sheet — start this group of episodes playing as the podcast's session. Reads "as" to contrast with "Queue as Session" directly below it. */
+"session_play_as" = "Play as Session";
+
+/* Fork: podcast group sheet — put the group in the podcast's session and float it to the top of the Queue, without starting playback. */
+"session_queue_as" = "Queue as Session";
+
 /* Fork: outline button beside Play Session — floats the session to the top of the Queue page. */
 "playlist_queue_session" = "Queue Session";
 /* Fork: toast confirming Queue Session moved it to the top of the session list. */
@@ -5465,7 +5471,7 @@
 "session_empty_message" = "Add episodes from the Inbox or the Episodes tab, or swipe any episode and choose Add to Session.";
 
 /* Group header action: the session's lineup becomes exactly this group, then plays */
-"session_replace_with" = "Make This the Session";
+"session_replace_with" = "Replace Session";
 
 /* Fork: toast when Play as Session is tapped on a session with an empty lineup. */
 "session_empty_toast" = "Session is empty — add episodes from the Inbox or Episodes tab";

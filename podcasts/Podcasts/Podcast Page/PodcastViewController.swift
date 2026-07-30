@@ -1257,17 +1257,31 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
 
         let optionPicker = OptionsPicker(title: nil)
 
-        optionPicker.addActions([
-            .init(label: L10n.playlistPlayAsSession, icon: "filter_play") { [weak self] in
-                self?.playGroupAsSession(group)
-            },
-            .init(label: L10n.playlistAddToLineup, icon: "rectangle.stack.badge.plus") { [weak self] in
-                self?.addGroupToSession(group)
-            },
-            .init(label: L10n.sessionReplaceWith, icon: "rectangle.stack") { [weak self] in
-                self?.replaceSessionWithGroup(group)
-            }
-        ])
+        // Fork: the session verbs only exist for a podcast you actually follow — an unsubscribed
+        // podcast has no session to play, queue, add to or replace, so offering them here promised
+        // something the rest of the app can't deliver. Add to Playlist stands outside that: a
+        // manual playlist is yours regardless of what you're subscribed to.
+        var firstBlock = [OptionAction]()
+        if podcast?.isSubscribed() == true {
+            firstBlock += [
+                .init(label: L10n.sessionPlayAs, icon: "filter_play") { [weak self] in
+                    self?.playGroupAsSession(group)
+                },
+                .init(label: L10n.sessionQueueAs, icon: "rectangle.stack") { [weak self] in
+                    self?.queueGroupAsSession(group)
+                },
+                .init(label: L10n.playlistAddToLineup, icon: "rectangle.stack.badge.plus") { [weak self] in
+                    self?.addGroupToSession(group)
+                },
+                .init(label: L10n.sessionReplaceWith, icon: "rectangle.stack") { [weak self] in
+                    self?.replaceSessionWithGroup(group)
+                }
+            ]
+        }
+        firstBlock.append(.init(label: L10n.playlistManualEpisodeAddToPlaylist, icon: "plus-circle") { [weak self] in
+            self?.addGroupToPlaylist(group)
+        })
+        optionPicker.addActions(firstBlock)
         optionPicker.addActions([
             .init(label: L10n.selectAll, icon: "option-multiselect") { [weak self] in
                 self?.selectGroup(group)
@@ -1309,6 +1323,28 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
         guard let podcast else { return }
         let session = SessionManager.shared.findOrCreateSession(forPodcast: podcast)
         SessionManager.shared.addToSessions(episodeUuids: group.map { $0.episode.uuid }, preferred: session, presenting: self)
+    }
+
+    /// Fork: queue the group without playing it — the group joins the podcast's session and that
+    /// session floats to the top of the Queue screen, so it's the next thing you'd reach for. Same
+    /// shape as the playlist page's Queue button (`PlaylistDetailViewController.queueSession`).
+    private func queueGroupAsSession(_ group: [ListEpisode]) {
+        guard let podcast, !group.isEmpty,
+              let session = SessionManager.shared.findOrCreateSession(forPodcast: podcast) else { return }
+        SessionManager.shared.addToLineup(episodeUuids: group.map { $0.episode.uuid }, session: session)
+        // Float it to the front of the session order, keeping every other session's relative order.
+        let order = [session.uuid] + SessionStore.shared.sessions.map(\.uuid).filter { $0 != session.uuid }
+        SessionStore.shared.reorderSessions(order)
+        Toast.show(L10n.playlistQueueSessionToast)
+    }
+
+    /// Fork: the group goes to a manual playlist of the user's choosing — the same bulk chooser
+    /// multi-select uses, so a group header and a hand-made selection behave identically.
+    private func addGroupToPlaylist(_ group: [ListEpisode]) {
+        let episodes = group.compactMap { $0.episode as? Episode }
+        guard !episodes.isEmpty else { return }
+        let chooser = ManualPlaylistsChooserViewController(episodes: episodes, analyticsSource: "podcast_group")
+        present(UINavigationController(rootViewController: chooser), animated: true)
     }
 
     /// Fork: the lineup becomes exactly this group. Former members return to triage.
