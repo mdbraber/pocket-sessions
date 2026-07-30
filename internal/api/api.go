@@ -125,6 +125,9 @@ type deviceRegistration struct {
 func (s *Server) handleNotifyPodcasts(w http.ResponseWriter, r *http.Request, userID int64) {
 	var in struct {
 		UUIDs []string `json:"uuids"`
+		// The app's GLOBAL "New Episodes" switch. A pointer so an older build that
+		// omits it keeps its previous meaning (enabled) instead of being silenced.
+		Enabled *bool `json:"enabled"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 		http.Error(w, "bad request: need {uuids: [...]}", http.StatusBadRequest)
@@ -139,7 +142,14 @@ func (s *Server) handleNotifyPodcasts(w http.ResponseWriter, r *http.Request, us
 		http.Error(w, "store failed", http.StatusInternalServerError)
 		return
 	}
-	s.logger.Info("notify toggles updated", "user", userID, "device", deviceID, "podcasts", len(in.UUIDs))
+	if in.Enabled != nil {
+		if err := s.store.SetNotifyEnabled(userID, deviceID, *in.Enabled); err != nil {
+			http.Error(w, "store failed", http.StatusInternalServerError)
+			return
+		}
+	}
+	s.logger.Info("notify toggles updated", "user", userID, "device", deviceID,
+		"podcasts", len(in.UUIDs), "enabled", in.Enabled)
 	w.WriteHeader(http.StatusNoContent)
 }
 

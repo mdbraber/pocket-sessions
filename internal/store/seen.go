@@ -76,6 +76,34 @@ func (s *Store) NotifyPodcastUUIDs(userID int64) (map[string]bool, error) {
 	return out, rows.Err()
 }
 
+// SetNotifyEnabled records a device's GLOBAL "New Episodes" switch. The app's own
+// toggle used to be purely local, so turning it off changed nothing here and the
+// watcher kept alerting on every podcast the account had ever enabled.
+func (s *Store) SetNotifyEnabled(userID int64, deviceID string, enabled bool) error {
+	_, err := s.db.Exec(`INSERT INTO notify_settings(user_id, device_id, enabled) VALUES (?, ?, ?)
+		ON CONFLICT(user_id, device_id) DO UPDATE SET enabled = excluded.enabled`,
+		userID, deviceID, enabled)
+	return err
+}
+
+// NotifyGloballyEnabled reports whether ANY device still wants new-episode alerts.
+//
+// Silence requires every device that has an opinion to say no; a device that never
+// reported (an older build) has no row and therefore no say, so an account with no
+// rows at all behaves exactly as it did before this switch existed.
+func (s *Store) NotifyGloballyEnabled(userID int64) (bool, error) {
+	var total, enabled int
+	err := s.db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(enabled), 0) FROM notify_settings WHERE user_id = ?`,
+		userID).Scan(&total, &enabled)
+	if err != nil {
+		return true, err // fail open: a store hiccup must not silently stop alerts
+	}
+	if total == 0 {
+		return true, nil
+	}
+	return enabled > 0, nil
+}
+
 // LinkedUserIDs lists users with a PC link — the set the episode watcher serves.
 func (s *Store) LinkedUserIDs() ([]int64, error) {
 	rows, err := s.db.Query(`SELECT user_id FROM pc_links`)

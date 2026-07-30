@@ -107,6 +107,12 @@ CREATE TABLE IF NOT EXISTS notify_podcasts (
     podcast_uuid TEXT NOT NULL,    -- the watcher alerts on the union across devices
     PRIMARY KEY (user_id, device_id, podcast_uuid)
 );
+CREATE TABLE IF NOT EXISTS notify_settings (
+    user_id   INTEGER NOT NULL, -- the app's GLOBAL "New Episodes" switch, per device.
+    device_id TEXT NOT NULL,    -- Absent = enabled, so devices that never report it
+    enabled   INTEGER NOT NULL, -- (older builds) keep behaving exactly as before.
+    PRIMARY KEY (user_id, device_id)
+);
 CREATE TABLE IF NOT EXISTS seen_episodes (
     user_id      INTEGER NOT NULL, -- the episode watcher's "already knew about this" ledger
     episode_uuid TEXT NOT NULL,

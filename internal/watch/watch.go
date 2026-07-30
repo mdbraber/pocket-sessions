@@ -87,6 +87,13 @@ func cycleUser(ctx context.Context, st *store.Store, pusher push.Pusher, logger 
 	if err != nil {
 		return err
 	}
+	// The app's GLOBAL "New Episodes" switch. Without this gate the per-podcast flags
+	// were the only signal, so turning the switch off in the app changed nothing here —
+	// every podcast the account had ever enabled kept alerting.
+	notifyGlobally, err := st.NotifyGloballyEnabled(userID)
+	if err != nil {
+		return err
+	}
 
 	type feedResult struct {
 		podcast pc.Podcast
@@ -140,7 +147,8 @@ func cycleUser(ctx context.Context, st *store.Store, pusher push.Pusher, logger 
 		}
 		newCount += len(res.fresh)
 
-		notify := notifyMode == "all" || (notifyMode == "synced" && (res.podcast.NotifyEnabled || appToggles[res.podcast.UUID]))
+		notify := notifyMode == "all" ||
+			(notifyMode == "synced" && notifyGlobally && (res.podcast.NotifyEnabled || appToggles[res.podcast.UUID]))
 		if !notify {
 			continue
 		}
