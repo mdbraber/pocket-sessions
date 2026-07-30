@@ -38,12 +38,26 @@ services:
       - OWNTUBE_TOKEN=${OWNTUBE_TOKEN:-}
     volumes:
       - ./data:/data
+    # seg15-media: host-level site-to-site tier network (replaces the old
+    # per-stack WireGuard sidecar; see docker-compose.wireguard.yml, retired).
+    # gw_priority makes it the default route so home-bound and public egress
+    # carry the media-tier source identity; Caddy still reaches :8080 over the
+    # caddy network. dns: is the segment gateway (split DNS: home zone via
+    # the tunnel). cap_drop NET_RAW: container can't forge tier sources.
     networks:
-      - caddy
+      caddy:
+      seg15-media:
+        gw_priority: 100
+    dns:
+      - 2001:db8:1015::1
+    cap_drop:
+      - NET_RAW
     labels:
       caddy: ${PCS_DOMAIN}
       caddy.reverse_proxy: "{{upstreams 8080}}"
 
 networks:
   caddy:
+    external: true
+  seg15-media:
     external: true
