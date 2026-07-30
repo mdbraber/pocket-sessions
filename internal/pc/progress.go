@@ -70,7 +70,12 @@ func FetchProgress(ctx context.Context, accessToken, deviceID string, lastModifi
 	if err != nil {
 		return ProgressSync{}, err
 	}
+	return parseProgressResponse(data)
+}
 
+// parseProgressResponse decodes a SyncUpdateResponse — shared by the read
+// (FetchProgress) and write (PushProgress) paths.
+func parseProgressResponse(data []byte) (ProgressSync, error) {
 	top, err := parseAllFields(data)
 	if err != nil {
 		return ProgressSync{}, err

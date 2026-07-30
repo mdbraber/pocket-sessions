@@ -70,6 +70,7 @@ func New(st *store.Store, pusher push.Pusher, logger *slog.Logger, allowedEmails
 	mux.Handle("POST /api/v1/pull", s.authed(s.handlePullMirror))
 	mux.Handle("POST /api/v1/up-next", s.authed(s.handleUpNextChange))
 	mux.Handle("GET /api/v1/history", s.authed(s.handleHistory))
+	mux.Handle("POST /api/v1/playback", s.authed(s.handlePlaybackReport))
 	mux.Handle("GET /api/v1/podcasts", s.authed(s.handlePodcasts))
 
 	return s.logged(mux)

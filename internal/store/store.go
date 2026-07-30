@@ -144,6 +144,14 @@ CREATE TABLE IF NOT EXISTS pc_links (
     linked_at        TEXT NOT NULL DEFAULT (datetime('now')),
     last_pull_at     TEXT
 );
+CREATE TABLE IF NOT EXISTS episode_enclosures (
+    user_id      INTEGER NOT NULL, -- enclosure-URL index over the subscribed podcasts'
+    episode_uuid TEXT NOT NULL,    -- catalogs; how an external playback report finds
+    podcast_uuid TEXT NOT NULL,    -- its episode (see POST /api/v1/playback)
+    url          TEXT NOT NULL,
+    updated_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (user_id, episode_uuid)
+);
 CREATE INDEX IF NOT EXISTS idx_sessions_cursor ON sessions(user_id, cursor);
 CREATE INDEX IF NOT EXISTS idx_presets_cursor  ON presets(user_id, cursor);
 `)

@@ -99,3 +99,22 @@ func TestDeltaCursor(t *testing.T) {
 		t.Fatalf("delta wrong: %+v", out.Sessions)
 	}
 }
+
+func TestFindEpisodeByEnclosure(t *testing.T) {
+	s := testStore(t)
+	err := s.SaveEpisodeEnclosures(1, []EpisodeEnclosure{
+		{EpisodeUUID: "e1", PodcastUUID: "p1", URL: "https://media.example/enclosure/qyPCVqFUyDo.m4a"},
+		{EpisodeUUID: "e2", PodcastUUID: "p1", URL: "https://media.example/enclosure/Tn4iP3H3TXI.mp4"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hit, found, err := s.FindEpisodeByEnclosure(1, "Tn4iP3H3TXI")
+	if err != nil || !found || hit.EpisodeUUID != "e2" {
+		t.Fatalf("find = %+v found=%v err=%v", hit, found, err)
+	}
+	_, found, err = s.FindEpisodeByEnclosure(1, "nosuchvideo")
+	if err != nil || found {
+		t.Fatalf("miss should be (false, nil), got found=%v err=%v", found, err)
+	}
+}
