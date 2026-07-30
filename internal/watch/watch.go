@@ -87,13 +87,6 @@ func cycleUser(ctx context.Context, st *store.Store, pusher push.Pusher, logger 
 	if err != nil {
 		return err
 	}
-	// The app's GLOBAL "New Episodes" switch. Without this gate the per-podcast flags
-	// were the only signal, so turning the switch off in the app changed nothing here —
-	// every podcast the account had ever enabled kept alerting.
-	notifyGlobally, err := st.NotifyGloballyEnabled(userID)
-	if err != nil {
-		return err
-	}
 
 	type feedResult struct {
 		podcast pc.Podcast
@@ -147,8 +140,7 @@ func cycleUser(ctx context.Context, st *store.Store, pusher push.Pusher, logger 
 		}
 		newCount += len(res.fresh)
 
-		notify := notifyMode == "all" ||
-			(notifyMode == "synced" && notifyGlobally && (res.podcast.NotifyEnabled || appToggles[res.podcast.UUID]))
+		notify := notifyMode == "all" || (notifyMode == "synced" && (res.podcast.NotifyEnabled || appToggles[res.podcast.UUID]))
 		if !notify {
 			continue
 		}
@@ -179,11 +171,21 @@ func cycleUser(ctx context.Context, st *store.Store, pusher push.Pusher, logger 
 		return err
 	}
 	logger.Info("watcher: new episodes", "user", userID, "episodes", newCount, "alerts", len(alerts))
-	// Silent wake first: devices refresh and the Inbox fills even where no
-	// visible alert is due. The cursor value is unused by the handler.
+	// Silent wake first: EVERY device refreshes so the Inbox fills, whatever each one has
+	// chosen about visible alerts. The cursor value is unused by the handler.
 	pusher.NotifyChanged(userID, 0, devices)
 	if len(alerts) > 0 {
-		pusher.NotifyNewEpisodes(userID, alerts, devices)
+		// The "New Episodes" switch is per device — turning it off on one silences that one
+		// and says nothing about the others, so the ALERT fan-out is filtered while the
+		// silent wake above is not.
+		alertDevices, err := st.NotifyEnabledDevices(userID, devices)
+		if err != nil {
+			logger.Warn("watcher: notify settings", "err", err)
+			alertDevices = devices
+		}
+		if len(alertDevices) > 0 {
+			pusher.NotifyNewEpisodes(userID, alerts, alertDevices)
+		}
 	}
 	return nil
 }

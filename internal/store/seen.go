@@ -76,7 +76,7 @@ func (s *Store) NotifyPodcastUUIDs(userID int64) (map[string]bool, error) {
 	return out, rows.Err()
 }
 
-// SetNotifyEnabled records a device's GLOBAL "New Episodes" switch. The app's own
+// SetNotifyEnabled records a device's "New Episodes" switch. The app's own
 // toggle used to be purely local, so turning it off changed nothing here and the
 // watcher kept alerting on every podcast the account had ever enabled.
 func (s *Store) SetNotifyEnabled(userID int64, deviceID string, enabled bool) error {
@@ -86,22 +86,36 @@ func (s *Store) SetNotifyEnabled(userID int64, deviceID string, enabled bool) er
 	return err
 }
 
-// NotifyGloballyEnabled reports whether ANY device still wants new-episode alerts.
+// NotifyEnabledDevices filters a device list down to those that still want visible
+// new-episode alerts.
 //
-// Silence requires every device that has an opinion to say no; a device that never
-// reported (an older build) has no row and therefore no say, so an account with no
-// rows at all behaves exactly as it did before this switch existed.
-func (s *Store) NotifyGloballyEnabled(userID int64) (bool, error) {
-	var total, enabled int
-	err := s.db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(enabled), 0) FROM notify_settings WHERE user_id = ?`,
-		userID).Scan(&total, &enabled)
+// The switch is PER DEVICE: turning New Episodes off on your phone silences the phone
+// and says nothing about your iPad. A device that has never reported (an older build)
+// has no row and keeps its previous behaviour — alerts on.
+func (s *Store) NotifyEnabledDevices(userID int64, devices []Device) ([]Device, error) {
+	rows, err := s.db.Query(`SELECT device_id FROM notify_settings WHERE user_id = ? AND enabled = 0`, userID)
 	if err != nil {
-		return true, err // fail open: a store hiccup must not silently stop alerts
+		return devices, err // fail open: a store hiccup must not silently stop alerts
 	}
-	if total == 0 {
-		return true, nil
+	defer rows.Close()
+	disabled := map[string]bool{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return devices, err
+		}
+		disabled[id] = true
 	}
-	return enabled > 0, nil
+	if err := rows.Err(); err != nil {
+		return devices, err
+	}
+	out := make([]Device, 0, len(devices))
+	for _, d := range devices {
+		if !disabled[d.DeviceID] {
+			out = append(out, d)
+		}
+	}
+	return out, nil
 }
 
 // LinkedUserIDs lists users with a PC link — the set the episode watcher serves.
