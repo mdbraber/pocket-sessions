@@ -2002,6 +2002,9 @@
 /* Fork: empty-list text when a filter/search is hiding everything. */
 "playlist_no_episodes_match_filter" = "No episodes match this filter";
 
+/* Fork: shown in the Queue's session list when a search matches no sessions. */
+"session_search_no_results" = "No sessions found";
+
 /* Informational message informing the user that no episodes are being displayed because they're all archived. '%1$@' is a placeholder for the number of episodes. */
 "podcast_archived_msg" = "All %1$@ episodes of this podcast have been archived";
 
@@ -2198,7 +2201,7 @@
 "podcasts_badges" = "Badges";
 
 /* Prompt to enter the mode for reordering the podcasts grid. */
-"podcasts_edit" = "Edit Podcasts";
+"podcasts_edit" = "Reorder Podcasts";
 
 /* Episodes will be displayed in order from the longest to the shortest. */
 "podcasts_episode_sort_title_a_to_z" = "Title (A-Z)";
@@ -2210,10 +2213,10 @@
 "podcasts_episode_sort_longest_to_shortest" = "Longest to Shortest";
 
 /* Episodes will be displayed in order from the most resent to the oldest. */
-"podcasts_episode_sort_newest_to_oldest" = "Newest to oldest";
+"podcasts_episode_sort_newest_to_oldest" = "Newest to Oldest";
 
 /* Episodes will be displayed in order from the oldest to the most resent. */
-"podcasts_episode_sort_oldest_to_newest" = "Oldest to newest";
+"podcasts_episode_sort_oldest_to_newest" = "Oldest to Newest";
 
 /* Episodes will be displayed in order from the shortest to the longest. */
 "podcasts_episode_sort_shortest_to_longest" = "Shortest to Longest";
@@ -7098,7 +7101,7 @@
 /* Fork: session list sort — most-progressed session first. */
 "session_sort_progress" = "Progress";
 /* Fork: session-list sort option — by type (Smart, Podcast, Manual). */
-"session_sort_type" = "Type";
+"session_sort_type" = "Session Type";
 
 /* Fork: session list search field placeholder. */
 "session_search_placeholder" = "Search Sessions";
@@ -7117,7 +7120,19 @@
 "session_up_next_position_in_list" = "In Session List";
 
 /* Fork: session chooser sort — most recently played first (the default). */
-"session_sort_recent" = "Recently Played";
+"session_sort_recent" = "Last Played";
+
+/* Fork: session-list sort — by each session's most recently published episode. "(episode)" marks that this dates the session by its episodes, not by when you last touched it. */
+"session_sort_newest_episode" = "Newest to Oldest (episode)";
+
+/* Fork: session-list sort — by each session's oldest published episode. */
+"session_sort_oldest_episode" = "Oldest to Newest (episode)";
+
+/* Fork: session-list sort — by the session's full length, shortest first. */
+"session_sort_shortest" = "Shortest to Longest";
+
+/* Fork: session-list sort — by the session's full length, longest first. */
+"session_sort_longest" = "Longest to Shortest";
 
 /* Fork: session chooser sort — alphabetical by session name. */
 "session_sort_name" = "Name A–Z";
@@ -7138,11 +7153,23 @@
 /* Fork: session list ⋯ menu — enter drag-to-reorder mode (sits under Sort). */
 "session_reorder_items" = "Reorder Items";
 
+/* Fork: lineup ⋯ menu and sort button — opens the re-arrange picker for a session's episode order. */
+"lineup_reorder" = "Reorder";
+
+/* Fork: lineup reorder picker — enters drag-handle mode so episodes can be dragged into a new order. */
+"lineup_reorder_episodes" = "Reorder Episodes";
+
+/* Fork: lineup reorder picker — heading above the one-shot orders (Newest to oldest, Title A–Z, …). */
+"lineup_reorder_arrange_by" = "Arrange By";
+
 /* Fork: session chooser ⋯ menu — hide sessions whose lineup is empty. */
 "session_show_hide_empty" = "Show Empty Playlists";
 
 /* Fork: session chooser ⋯ menu — noun label for the empty-sessions visibility toggle (secondary label is Hide/Show). */
 "session_empty_sessions" = "Empty Sessions";
+
+/* Fork: session chooser ⋯ menu — noun label for the empty-Up-Next visibility toggle (secondary label is Hide/Show). */
+"session_empty_up_next" = "Empty Up Next";
 
 /* Fork: session chooser ⋯ menu — noun label for the smart-playlist-podcast visibility toggle (secondary label is Hide/Show). */
 "session_podcasts_in_smart_playlists" = "Podcasts in Smart Playlists";
