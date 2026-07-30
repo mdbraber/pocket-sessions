@@ -75,10 +75,13 @@ enum SessionListSort: Int, CaseIterable {
         case .timeLeft: L10n.sessionSortTimeLeft
         case .recentlyUpdated: L10n.sessionSortUpdated
         case .manual: L10n.sessionSortManual
-        case .newestToOldest: L10n.podcastsEpisodeSortNewestToOldest
-        case .oldestToNewest: L10n.podcastsEpisodeSortOldestToNewest
-        case .shortestToLongest: L10n.podcastsEpisodeSortShortestToLongest
-        case .longestToShortest: L10n.podcastsEpisodeSortLongestToShortest
+        // Fork: session-specific labels rather than the podcast page's. These date/measure the
+        // SESSION by its episodes, so "(episode)" says so outright — otherwise "Newest to Oldest"
+        // reads as "when I last touched this session", which is the separate Last Played sort.
+        case .newestToOldest: L10n.sessionSortNewestEpisode
+        case .oldestToNewest: L10n.sessionSortOldestEpisode
+        case .shortestToLongest: L10n.sessionSortShortest
+        case .longestToShortest: L10n.sessionSortLongest
         case .progress: L10n.sessionSortProgress
         case .type: L10n.sessionSortType
         }
@@ -94,9 +97,13 @@ enum SessionListSort: Int, CaseIterable {
         }
     }
 
-    /// Fork: the options the session list's ⋯ Sort menu offers, in order — Manual (the drag order)
-    /// plus the episode-style sorts (Serial deliberately excluded), Progress, and Type.
-    static let sessionMenuOrder: [SessionListSort] = [.manual, .newestToOldest, .oldestToNewest, .shortestToLongest, .longestToShortest, .progress, .type]
+    /// Fork: the options the session list's ⋯ Reorder menu offers, in order — Manual (the drag
+    /// order) first, then the arrangements.
+    ///
+    /// The three that describe the SESSION lead: Last Played, Progress, Session Type. The
+    /// episode-derived orders (dates and durations, Serial deliberately excluded) follow, since they
+    /// rank a session by what happens to be inside it rather than by the session itself.
+    static let sessionMenuOrder: [SessionListSort] = [.manual, .recentlyPlayed, .progress, .type, .newestToOldest, .oldestToNewest, .shortestToLongest, .longestToShortest]
 }
 
 /// Fork: which sessions the chooser shows. Every `SessionFeeder` case maps to exactly one
@@ -380,26 +387,31 @@ enum SessionListRows {
     }
 
     /// Most recently used first; never-played sessions last, newest created first.
+    ///
+    /// "Recently played" means the SESSION was played — `Session.lastUsed`, stamped by
+    /// `SessionStore.markUsed` when audio starts for that session. It deliberately does NOT consider
+    /// the next episode's progress as a first-class signal: one episode can belong to many sessions,
+    /// so ranking on it floated every session merely CONTAINING a part-played episode above the
+    /// session you were actually listening to.
     private static func byRecency(_ lhs: Entry, _ rhs: Entry) -> Bool {
-        // A part-played episode IS recency: you were in this session recently enough to be
-        // mid-episode, whatever the stored timestamp says (it can be missing entirely when
-        // the progress arrived by sync). So started sessions tier above untouched ones.
-        if (lhs.row.progress > 0) != (rhs.row.progress > 0) { return lhs.row.progress > 0 }
-
         switch (lhs.session.lastUsed, rhs.session.lastUsed) {
         case (let left?, let right?):
             if left != right { return left > right }
+            return lhs.index > rhs.index
         case (.some, .none):
-            // Played sessions sort above never-played ones.
+            // Genuinely played sessions sort above ones we have no record for.
             return true
         case (.none, .some):
             return false
         case (.none, .none):
+            // No timestamp either side — only here is a part-played episode worth something: the
+            // stamp can be missing entirely when the progress arrived by sync, so it's the best
+            // remaining hint that this session was touched at all.
+            if (lhs.row.progress > 0) != (rhs.row.progress > 0) { return lhs.row.progress > 0 }
             // Never played: newest created first. SessionStore appends on create, so a
             // higher index is the newer session.
             return lhs.index > rhs.index
         }
-        return lhs.index > rhs.index
     }
 
     /// Case- and diacritic-insensitive localized compare, with the store order as a stable
