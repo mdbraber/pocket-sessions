@@ -568,7 +568,7 @@ class MainTabBarController: UITabBarController, NavigationProtocol {
         guard let navController = selectedViewController as? UINavigationController else {
             return
         }
-        let manualPlaylistsChooser = ManualPlaylistsChooserViewController(episode: episode, analyticsSource: source)
+        let manualPlaylistsChooser = ManualPlaylistsChooserViewController(episode: episode, analyticsSource: source, suggestedName: PlaylistNameSuggestion.forEpisode(episode))
         let navVC = SJUIUtils.navController(for: manualPlaylistsChooser)
         if presentedViewController is PlayerContainerViewController {
             presentedViewController?.present(navVC, animated: true, completion: nil)

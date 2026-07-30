@@ -367,7 +367,7 @@ class MultiSelectHelper {
         }
 
         let presentingVC = actionDelegate.multiSelectPresentingViewController()
-        let chooser = ManualPlaylistsChooserViewController(episodes: episodes, analyticsSource: "multi_select")
+        let chooser = ManualPlaylistsChooserViewController(episodes: episodes, analyticsSource: "multi_select", suggestedName: PlaylistNameSuggestion.forEpisodes(episodes))
         let navController = UINavigationController(rootViewController: chooser)
         presentingVC.present(navController, animated: true)
     }

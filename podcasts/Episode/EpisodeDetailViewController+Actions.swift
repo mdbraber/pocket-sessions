@@ -11,7 +11,7 @@ extension EpisodeDetailViewController {
         // Add to Playlist (manual) — kept as a standalone action.
         let addToPlaylistAction = OptionAction(label: L10n.playlistManualEpisodeAddToPlaylist, icon: "plus-circle") { [weak self] in
             guard let self else { return }
-            let chooser = ManualPlaylistsChooserViewController(episode: self.episode, analyticsSource: "episode_details")
+            let chooser = ManualPlaylistsChooserViewController(episode: self.episode, analyticsSource: "episode_details", suggestedName: PlaylistNameSuggestion.forEpisode(self.episode))
             let navVC = SJUIUtils.navController(for: chooser)
             self.present(navVC, animated: true, completion: nil)
         }

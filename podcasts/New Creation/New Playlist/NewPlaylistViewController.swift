@@ -28,6 +28,7 @@ class NewPlaylistViewController: PCViewController {
     }
 
     private let creationType: CreationType
+    private let suggestedName: String?
     private let analyticsSource: String?
 
     private var creationView: UIView?
@@ -40,7 +41,7 @@ class NewPlaylistViewController: PCViewController {
         didSet {
             playlistNameTextField.translatesAutoresizingMaskIntoConstraints = false
             playlistNameTextField.placeholder = L10n.playlistsDefaultNewPlaylist
-            playlistNameTextField.text = L10n.playlistsDefaultNewPlaylist
+            playlistNameTextField.text = suggestedName ?? L10n.playlistsDefaultNewPlaylist
             playlistNameTextField.placeholderStyle = .primaryText01
             playlistNameTextField.delegate = self
             playlistNameTextField.addTarget(self, action: #selector(textFieldDidChange), for: UIControl.Event.editingChanged)
@@ -84,9 +85,16 @@ class NewPlaylistViewController: PCViewController {
         }
     }
 
-    init(creationType: CreationType = .default, analyticsSource: String? = nil) {
+    /// Fork: `suggestedName` seeds the name field from where the user came from — adding a
+    /// podcast's Season 2 group offers "Serial - Season 2" rather than the generic default. It is a
+    /// starting point, not a decision: the field is editable and the placeholder still reads
+    /// "New Playlist", so clearing it falls back exactly as before.
+    init(creationType: CreationType = .default, analyticsSource: String? = nil, suggestedName: String? = nil) {
         self.creationType = creationType
         self.analyticsSource = analyticsSource
+        self.suggestedName = suggestedName
+        // Seed the saved value too, so accepting the suggestion needs no typing.
+        self.playlistName = suggestedName ?? ""
         super.init(nibName: nil, bundle: nil)
     }
 

@@ -1279,7 +1279,7 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
             ]
         }
         firstBlock.append(.init(label: L10n.playlistManualEpisodeAddToPlaylist, icon: "plus-circle") { [weak self] in
-            self?.addGroupToPlaylist(group)
+            self?.addGroupToPlaylist(group, groupTitle: self?.groupTitle(forHeaderAt: headerIndexPath))
         })
         optionPicker.addActions(firstBlock)
         optionPicker.addActions([
@@ -1340,11 +1340,23 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
 
     /// Fork: the group goes to a manual playlist of the user's choosing — the same bulk chooser
     /// multi-select uses, so a group header and a hand-made selection behave identically.
-    private func addGroupToPlaylist(_ group: [ListEpisode]) {
+    ///
+    /// A new playlist is offered the route that got here as its name ("Serial - Season 2"), since
+    /// that is what the user would otherwise type out by hand.
+    private func addGroupToPlaylist(_ group: [ListEpisode], groupTitle: String?) {
         let episodes = group.compactMap { $0.episode as? Episode }
         guard !episodes.isEmpty else { return }
-        let chooser = ManualPlaylistsChooserViewController(episodes: episodes, analyticsSource: "podcast_group")
+        let chooser = ManualPlaylistsChooserViewController(
+            episodes: episodes,
+            analyticsSource: "podcast_group",
+            suggestedName: PlaylistNameSuggestion.joined(podcast?.title, groupTitle)
+        )
         present(UINavigationController(rootViewController: chooser), animated: true)
+    }
+
+    /// The title shown on a grouped header, for naming a playlist made from that group.
+    private func groupTitle(forHeaderAt indexPath: IndexPath) -> String? {
+        (episodeInfo[safe: indexPath.section]?.elements[safe: indexPath.row] as? ListHeader)?.headerTitle
     }
 
     /// Fork: the lineup becomes exactly this group. Former members return to triage.

@@ -17,6 +17,7 @@ class ManualPlaylistsChooserViewController: PCViewController {
     private var newSelectedPlaylists: Set<String> = []
     private var searchController: PCSearchBarController?
     private let episodes: [Episode]
+    private let suggestedName: String?
     private let analyticsSource: String
     private let dataManager = DataManager.sharedManager
 
@@ -52,14 +53,18 @@ class ManualPlaylistsChooserViewController: PCViewController {
         }
     }
 
-    init(episodes: [Episode], analyticsSource: String) {
+    /// Fork: `suggestedName` is the lineage of how the user got here — a podcast, a season, a
+    /// screen — offered as the new playlist's name so they don't retype what they just navigated
+    /// through. Purely a suggestion; the field stays editable.
+    init(episodes: [Episode], analyticsSource: String, suggestedName: String? = nil) {
+        self.suggestedName = suggestedName
         self.episodes = episodes
         self.analyticsSource = analyticsSource
         super.init(nibName: nil, bundle: nil)
     }
 
-    convenience init(episode: Episode, analyticsSource: String) {
-        self.init(episodes: [episode], analyticsSource: analyticsSource)
+    convenience init(episode: Episode, analyticsSource: String, suggestedName: String? = nil) {
+        self.init(episodes: [episode], analyticsSource: analyticsSource, suggestedName: suggestedName)
     }
 
     @MainActor required init?(coder: NSCoder) {
@@ -336,7 +341,7 @@ extension ManualPlaylistsChooserViewController: UITableViewDelegate, UITableView
         let creationType: NewPlaylistViewController.CreationType = episodes.count == 1
             ? .addEpisode(episode: episodes[0])
             : .addEpisodes(episodes: episodes)
-        let createPlaylistViewController = NewPlaylistViewController(creationType: creationType, analyticsSource: analyticsSource)
+        let createPlaylistViewController = NewPlaylistViewController(creationType: creationType, analyticsSource: analyticsSource, suggestedName: suggestedName)
         navigationController?.pushViewController(createPlaylistViewController, animated: true)
     }
 }
