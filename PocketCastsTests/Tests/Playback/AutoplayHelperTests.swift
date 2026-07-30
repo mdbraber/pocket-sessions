@@ -6,12 +6,22 @@ import XCTest
 class AutoplayHelperTests: XCTestCase {
     var autoplayHelper: AutoplayHelper!
 
+    private var suiteName: String!
+
     override func setUp() {
-        let userDefaults = UserDefaults(suiteName: "\(Int.random(in: 0..<1000))")!
+        // A random Int in 0..<1000 collides across runs, and these suites PERSIST — a later run
+        // could inherit an earlier one's saved playlist and fail "the initial value is nil".
+        suiteName = "AutoplayHelperTests-\(UUID().uuidString)"
+        let userDefaults = UserDefaults(suiteName: suiteName)!
         autoplayHelper = AutoplayHelper(
             userDefaults: userDefaults
         )
         SettingsStore.appSettings = SettingsStore(userDefaults: userDefaults, key: "app_settings", value: AppSettings.defaults)
+    }
+
+    override func tearDown() {
+        UserDefaults.standard.removePersistentDomain(forName: suiteName)
+        super.tearDown()
     }
 
     func testInitialValueIsNil() {

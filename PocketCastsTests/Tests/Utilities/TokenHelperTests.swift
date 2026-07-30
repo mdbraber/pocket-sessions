@@ -13,6 +13,20 @@ fileprivate extension URL {
 
 class TokenHelperTests: XCTestCase {
 
+    /// ServerSettings is the REAL app's account state (these tests run inside the app), so the
+    /// signed-in email has to survive the suite.
+    private var realSyncingEmail: String?
+
+    override func setUp() {
+        super.setUp()
+        realSyncingEmail = ServerSettings.syncingEmail()
+    }
+
+    override func tearDown() {
+        ServerSettings.setSyncingEmail(email: realSyncingEmail)
+        super.tearDown()
+    }
+
     /// Tests the acquirePasswordToken function
     func testAcquirePasswordToken() {
         ServerSettings.setSyncingEmail(email: "test@test.com")

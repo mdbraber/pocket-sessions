@@ -29,8 +29,10 @@ final class PodcastManagerTests: DBTestCase {
     }
 
     func testCleanupKeepsDownloadsInPlaylist() async throws {
+        let realSyncingEmail = ServerSettings.syncingEmail()
         ServerSettings.setSyncingEmail(email: "test@example.com")
-        defer { ServerSettings.setSyncingEmail(email: nil) }
+        // Restoring to nil would sign the REAL app out — these tests run inside it.
+        defer { ServerSettings.setSyncingEmail(email: realSyncingEmail) }
 
         let (_, episode) = makeDownloadedPodcastAndEpisode()
         let playlist = EpisodeFilter()
@@ -49,8 +51,10 @@ final class PodcastManagerTests: DBTestCase {
     }
 
     func testCleanupKeepsDownloadsNotInPlaylist() async throws {
+        let realSyncingEmail = ServerSettings.syncingEmail()
         ServerSettings.setSyncingEmail(email: "test@example.com")
-        defer { ServerSettings.setSyncingEmail(email: nil) }
+        // Restoring to nil would sign the REAL app out — these tests run inside it.
+        defer { ServerSettings.setSyncingEmail(email: realSyncingEmail) }
 
         let (_, episode) = makeDownloadedPodcastAndEpisode()
 
@@ -63,8 +67,10 @@ final class PodcastManagerTests: DBTestCase {
     }
 
     func testUnsubscribeRemovesDownloadsInPlaylist() throws {
+        let realSyncingEmail = ServerSettings.syncingEmail()
         ServerSettings.setSyncingEmail(email: "test@example.com")
-        defer { ServerSettings.setSyncingEmail(email: nil) }
+        // Restoring to nil would sign the REAL app out — these tests run inside it.
+        defer { ServerSettings.setSyncingEmail(email: realSyncingEmail) }
 
         let (podcast, episode) = makeDownloadedPodcastAndEpisode()
         let playlist = EpisodeFilter()
@@ -83,8 +89,10 @@ final class PodcastManagerTests: DBTestCase {
     }
 
     func testUnsubscribeRemovesDownloadsNotInPlaylist() throws {
+        let realSyncingEmail = ServerSettings.syncingEmail()
         ServerSettings.setSyncingEmail(email: "test@example.com")
-        defer { ServerSettings.setSyncingEmail(email: nil) }
+        // Restoring to nil would sign the REAL app out — these tests run inside it.
+        defer { ServerSettings.setSyncingEmail(email: realSyncingEmail) }
 
         let (podcast, episode) = makeDownloadedPodcastAndEpisode()
         let podcastManager = PodcastManager(dataManager: dataManager, downloadManager: downloadManager)

@@ -5,12 +5,21 @@ import XCTest
 @testable import PocketCastsServer
 
 class EndOfYearStoriesBuilderTests: XCTestCase {
+    /// ServerSettings is the REAL app's account state — these tests run inside the app, so
+    /// overwriting the syncing email signs the running app out of Pocket Casts. Put it back.
+    private var realSyncingEmail: String?
+
     override func setUp() {
         // Do not sync for episodes
         Settings.setHasSyncedEpisodesForPlayback(true, year: 2023)
 
         // Pretend we're logged in
+        realSyncingEmail = ServerSettings.syncingEmail()
         ServerSettings.setSyncingEmail(email: "test@test.com")
+    }
+
+    override func tearDown() {
+        ServerSettings.setSyncingEmail(email: realSyncingEmail)
     }
 
     func testReturnListeningTimeStoryIfBiggerThanZero() async {
