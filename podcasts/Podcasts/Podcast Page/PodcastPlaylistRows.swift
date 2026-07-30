@@ -15,16 +15,12 @@ struct PodcastPlaylistRow {
         case manualPlaylist
         case smartPlaylist
         case smartPlaylistSession
-        case podcastSession
-        case folderSession
 
         var title: String {
             switch self {
             case .manualPlaylist: return L10n.podcastPlaylistsKindManual
             case .smartPlaylist: return L10n.podcastPlaylistsKindSmart
             case .smartPlaylistSession: return L10n.podcastPlaylistsKindSmartSession
-            case .podcastSession: return L10n.podcastPlaylistsKindPodcastSession
-            case .folderSession: return L10n.podcastPlaylistsKindFolderSession
             }
         }
 
@@ -35,19 +31,17 @@ struct PodcastPlaylistRow {
             case .manualPlaylist: return L10n.podcastPlaylistsGroupManual
             case .smartPlaylist: return L10n.podcastPlaylistsGroupSmart
             case .smartPlaylistSession: return L10n.podcastPlaylistsGroupSmartSession
-            case .podcastSession: return L10n.podcastPlaylistsGroupPodcastSession
-            case .folderSession: return L10n.podcastPlaylistsGroupFolderSession
             }
         }
 
         /// Group order down the tab: the playlists you built, then the sessions built from them.
-        static let groupOrder: [Kind] = [.smartPlaylist, .manualPlaylist, .smartPlaylistSession, .podcastSession, .folderSession]
+        static let groupOrder: [Kind] = [.smartPlaylist, .manualPlaylist, .smartPlaylistSession]
 
         /// Sessions and plain playlists are the two halves the Show filter chooses between.
         var isSession: Bool {
             switch self {
             case .manualPlaylist, .smartPlaylist: return false
-            case .smartPlaylistSession, .podcastSession, .folderSession: return true
+            case .smartPlaylistSession: return true
             }
         }
     }
@@ -194,7 +188,9 @@ enum PodcastPlaylistRows {
             || playlist.podcastUuids.components(separatedBy: ",").contains(podcastUuid)
     }
 
-    /// nil for a list that shouldn't appear at all (the global Inbox's store).
+    /// nil for a list that shouldn't appear at all — the global Inbox's store, and every PODCAST
+    /// session: a podcast session holds one podcast's episodes, so on a podcast page the only one
+    /// that could ever match is this podcast's own, and that already has its own Session tab.
     private static func kind(for playlist: EpisodeFilter) -> PodcastPlaylistRow.Kind? {
         guard let session = SessionStore.shared.session(forStore: playlist.uuid) else {
             return playlist.manual ? .manualPlaylist : .smartPlaylist
@@ -202,11 +198,9 @@ enum PodcastPlaylistRows {
         guard session.uuid != SessionStore.globalInboxUuid else { return nil }
         switch session.feeder {
         case .smartPlaylist: return .smartPlaylistSession
-        case .podcast: return .podcastSession
-        case .folder: return .folderSession
         // A hand-made session's store IS its identity — it behaves like a manual playlist.
         case .none: return .manualPlaylist
-        case .allPodcasts: return nil
+        case .podcast, .allPodcasts: return nil
         }
     }
 }

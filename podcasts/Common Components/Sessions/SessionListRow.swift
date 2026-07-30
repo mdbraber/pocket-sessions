@@ -87,13 +87,12 @@ enum SessionListSort: Int, CaseIterable {
         }
     }
 
-    /// Fork: rank for the `.type` sort — Smart (0), Podcast/Folder (1/2), Manual (3).
+    /// Fork: rank for the `.type` sort — Smart (0), Podcast (1), Manual (2).
     static func typeRank(_ feeder: SessionFeeder) -> Int {
         switch feeder {
         case .smartPlaylist: return 0
         case .podcast, .allPodcasts: return 1
-        case .folder: return 2
-        case .none: return 3
+        case .none: return 2
         }
     }
 
@@ -107,20 +106,17 @@ enum SessionListSort: Int, CaseIterable {
 }
 
 /// Fork: which sessions the chooser shows. Every `SessionFeeder` case maps to exactly one
-/// bucket, so the three type toggles between them cover the whole enum:
-/// `.podcast` → podcasts, `.folder` → folders, `.smartPlaylist` and `.none` → playlists
-/// (a `.none` session is hand-made — it behaves like a manual playlist, which is where a
-/// user would look for it), `.allPodcasts` → podcasts (only the global Inbox uses it, and
-/// that never reaches the chooser).
+/// bucket, so the two type toggles between them cover the whole enum:
+/// `.podcast` → podcasts, `.smartPlaylist` and `.none` → playlists (a `.none` session is
+/// hand-made — it behaves like a manual playlist, which is where a user would look for it),
+/// `.allPodcasts` → podcasts (only the global Inbox uses it, and that never reaches the chooser).
 enum SessionListTypeBucket {
     case podcast
     case playlist
-    case folder
 
     init(feeder: SessionFeeder) {
         switch feeder {
         case .podcast, .allPodcasts: self = .podcast
-        case .folder: self = .folder
         case .smartPlaylist, .none: self = .playlist
         }
     }
@@ -133,10 +129,9 @@ struct SessionListFilters {
     var hideUnplayed: Bool
     var showPodcasts: Bool
     var showPlaylists: Bool
-    var showFolders: Bool
 
     /// Shows everything — what the Switch Session sheet uses.
-    static let unfiltered = SessionListFilters(hideEmpty: false, hideUnplayed: false, showPodcasts: true, showPlaylists: true, showFolders: true)
+    static let unfiltered = SessionListFilters(hideEmpty: false, hideUnplayed: false, showPodcasts: true, showPlaylists: true)
 
     /// What the user picked in the chooser's ⋯ menu.
     static var current: SessionListFilters {
@@ -144,13 +139,12 @@ struct SessionListFilters {
             hideEmpty: Settings.sessionListHideEmpty(),
             hideUnplayed: Settings.sessionListHideUnplayed(),
             showPodcasts: Settings.sessionListShowPodcasts(),
-            showPlaylists: Settings.sessionListShowPlaylists(),
-            showFolders: Settings.sessionListShowFolders()
+            showPlaylists: Settings.sessionListShowPlaylists()
         )
     }
 
     var isDefault: Bool {
-        !hideEmpty && !hideUnplayed && showPodcasts && showPlaylists && showFolders
+        !hideEmpty && !hideUnplayed && showPodcasts && showPlaylists
     }
 
     func allows(episodeCount: Int, feeder: SessionFeeder, hasBeenPlayed: Bool) -> Bool {
@@ -159,7 +153,6 @@ struct SessionListFilters {
         switch SessionListTypeBucket(feeder: feeder) {
         case .podcast: return showPodcasts
         case .playlist: return showPlaylists
-        case .folder: return showFolders
         }
     }
 }
@@ -481,9 +474,8 @@ extension Settings {
     static let sessionListHideUnplayedKey = "SJSessionListHideUnplayed"
     static let sessionListShowPodcastsKey = "SJSessionListShowPodcasts"
     static let sessionListShowPlaylistsKey = "SJSessionListShowPlaylists"
-    static let sessionListShowFoldersKey = "SJSessionListShowFolders"
 
-    /// The chooser's "Show" toggles. The three type toggles default to on (show
+    /// The chooser's "Show" toggles. Both type toggles default to on (show
     /// everything); hiding empty sessions is opt-in.
     static let hidePodcastSessionsInSmartPlaylistKey = "SJHidePodcastSessionsInSmartPlaylist"
 
@@ -527,14 +519,6 @@ extension Settings {
 
     class func setSessionListShowPlaylists(_ show: Bool) {
         UserDefaults.standard.set(show, forKey: Settings.sessionListShowPlaylistsKey)
-    }
-
-    class func sessionListShowFolders() -> Bool {
-        boolDefaultingToTrue(Settings.sessionListShowFoldersKey)
-    }
-
-    class func setSessionListShowFolders(_ show: Bool) {
-        UserDefaults.standard.set(show, forKey: Settings.sessionListShowFoldersKey)
     }
 
     /// `UserDefaults.bool(forKey:)` reads a missing key as false, which is the wrong

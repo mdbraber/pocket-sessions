@@ -120,4 +120,14 @@ final class PodcastPlaylistRowsTests: XCTestCase {
         XCTAssertNotEqual(smart.differenceIdentifier, manual.differenceIdentifier)
         XCTAssertFalse(smart.handleIsEqual(manual))
     }
+
+    /// A podcast session holds one podcast's episodes, so the only one that could ever match on a
+    /// podcast page is that podcast's own — and it already has its own Session tab. Folder sessions
+    /// are gone from the app entirely.
+    func testTheTabListsNeitherPodcastNorFolderSessions() {
+        let kinds = Set(PodcastPlaylistRow.Kind.allCases.map(\.groupTitle))
+        XCTAssertEqual(kinds.count, 3)
+        XCTAssertFalse(kinds.contains { $0.localizedCaseInsensitiveContains("Folder") })
+        XCTAssertFalse(kinds.contains { $0.localizedCaseInsensitiveContains("Podcast Session") })
+    }
 }

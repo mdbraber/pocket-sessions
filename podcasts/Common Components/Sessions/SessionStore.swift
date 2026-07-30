@@ -3,13 +3,17 @@ import Foundation
 import PocketCastsDataModel
 import PocketCastsUtils
 
-/// Fork: what feeds a session — candidates come from a podcast, a folder, a smart
-/// playlist's rules, every followed podcast (the global Inbox), or nothing (a static
-/// store). Descriptors reference stable synced uuids only.
+/// Fork: what feeds a session — candidates come from a podcast, a smart playlist's rules,
+/// every followed podcast (the global Inbox), or nothing (a static store). Descriptors
+/// reference stable synced uuids only.
+///
+/// There was once a `.folder` feeder too. A smart playlist scoped to a folder does the same
+/// job and is editable, so folder feeders were dropped rather than kept as a second way to
+/// say the same thing. A stored session still carrying one no longer decodes; `LenientlyDecoded`
+/// drops that one row rather than the document (see `Session.init(from:)`).
 enum SessionFeeder: Codable, Equatable {
     case none
     case podcast(uuid: String)
-    case folder(uuid: String)
     case smartPlaylist(uuid: String)
     case allPodcasts
 
@@ -24,7 +28,6 @@ enum SessionFeeder: Codable, Equatable {
     var identityKey: String? {
         switch self {
         case .podcast(let uuid): return "podcast:\(uuid)"
-        case .folder(let uuid): return "folder:\(uuid)"
         case .smartPlaylist(let uuid): return "smart:\(uuid)"
         case .allPodcasts: return "allPodcasts"
         case .none: return nil
@@ -220,15 +223,6 @@ final class SessionStore {
 
     func session(forStore storePlaylistUuid: String) -> Session? {
         queue.sync { document.sessions.first { $0.storePlaylistUuid == storePlaylistUuid } }
-    }
-
-    func session(forFolder folderUuid: String) -> Session? {
-        queue.sync {
-            document.sessions.first {
-                if case .folder(let uuid) = $0.feeder { return uuid == folderUuid }
-                return false
-            }
-        }
     }
 
     func session(forPodcast podcastUuid: String) -> Session? {

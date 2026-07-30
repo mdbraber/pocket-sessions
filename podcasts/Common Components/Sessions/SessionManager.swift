@@ -1045,8 +1045,6 @@ class SessionManager {
             return true
         case .podcast(let uuid):
             return uuid == podcastUuid
-        case .folder(let uuid):
-            return DataManager.sharedManager.findPodcast(uuid: podcastUuid)?.folderUuid == uuid
         case .smartPlaylist(let uuid):
             // A playlist that opted out of being a session playlist covers nothing: it must never
             // be offered as an add target, nor gathered into by any sweep. Its existing lineup is
@@ -1109,7 +1107,7 @@ class SessionManager {
         switch session.feeder {
         case .none:
             return Settings.showManualSessions()
-        case .smartPlaylist, .folder, .allPodcasts:
+        case .smartPlaylist, .allPodcasts:
             return Settings.showSmartPlaylistSessions()
         case .podcast(let podcastUuid):
             if Settings.showPodcastSessionPodcasts().contains(podcastUuid) { return true }
@@ -1126,8 +1124,6 @@ class SessionManager {
             return 0
         case .podcast:
             return 1
-        case .folder(let uuid):
-            return DataManager.sharedManager.allPodcasts(includeUnsubscribed: false).filter { $0.folderUuid == uuid }.count
         case .smartPlaylist(let uuid):
             guard let playlist = DataManager.sharedManager.findPlaylist(uuid: uuid) else { return 0 }
             if playlist.filterAllPodcasts { return Int.max }
@@ -1372,12 +1368,6 @@ class SessionManager {
                 updated.feeder = .none
                 SessionStore.shared.upsert(updated)
             }
-            if case .folder(let folderUuid) = session.feeder,
-               DataManager.sharedManager.findFolder(uuid: folderUuid) == nil {
-                var updated = session
-                updated.feeder = .none
-                SessionStore.shared.upsert(updated)
-            }
         }
     }
 
@@ -1404,11 +1394,6 @@ extension Session {
         switch feeder {
         case .podcast(let uuid):
             return [uuid]
-        case .folder(let uuid):
-            return DataManager.sharedManager.allPodcasts(includeUnsubscribed: false)
-                .filter { $0.folderUuid == uuid }
-                .map(\.uuid)
-                .sorted()
         case .smartPlaylist(let feederUuid):
             guard let feeder = DataManager.sharedManager.findPlaylist(uuid: feederUuid), !feeder.filterAllPodcasts else { return [] }
             return feeder.podcastUuids.components(separatedBy: ",").filter { !$0.isEmpty && $0 != "none" }

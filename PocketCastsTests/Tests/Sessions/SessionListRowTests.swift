@@ -36,7 +36,6 @@ final class SessionListRowTests: DBTestCase {
                     Settings.sessionListHideUnplayedKey,
                     Settings.sessionListShowPodcastsKey,
                     Settings.sessionListShowPlaylistsKey,
-                    Settings.sessionListShowFoldersKey,
                     // The chooser's ⋯ toggles. `hideEmptySessions` is a SECOND hide-empty setting,
                     // read by `SessionListRows.current` directly rather than through
                     // `SessionListFilters` — leaving it set (as using the app does) filtered empty
@@ -500,16 +499,16 @@ final class SessionListRowTests: DBTestCase {
         XCTAssertEqual(SessionListRows.current().map(\.name), ["Full"])
     }
 
-    /// One type toggle, to pin the feeder→bucket mapping: folder-fed sessions are folders,
-    /// and turning folders off leaves the podcast-fed one alone.
-    func testTypeFilterHidesFolderFedSessions() {
+    /// One type toggle, to pin the feeder→bucket mapping: a hand-made session is a playlist,
+    /// and turning playlists off leaves the podcast-fed one alone.
+    func testTypeFilterHidesManualSessions() {
         let podcast = makePodcast()
         makeSession(name: "From podcast", podcast: podcast, episodes: [makeEpisode(title: "A", podcast: podcast)])
-        makeSession(name: "From folder", feeder: .folder(uuid: UUID().uuidString), episodes: [makeEpisode(title: "B", podcast: podcast)])
+        makeSession(name: "Hand made", feeder: .none, episodes: [makeEpisode(title: "B", podcast: podcast)])
 
-        XCTAssertEqual(Set(SessionListRows.current().map(\.name)), ["From podcast", "From folder"])
+        XCTAssertEqual(Set(SessionListRows.current().map(\.name)), ["From podcast", "Hand made"])
 
-        Settings.setSessionListShowFolders(false)
+        Settings.setSessionListShowPlaylists(false)
         XCTAssertEqual(SessionListRows.current().map(\.name), ["From podcast"])
     }
 
@@ -517,15 +516,15 @@ final class SessionListRowTests: DBTestCase {
     func testPlayingSessionSurvivesAFilterThatWouldExcludeIt() {
         let podcast = makePodcast()
         makeSession(name: "From podcast", podcast: podcast, episodes: [makeEpisode(title: "A", podcast: podcast)])
-        let folderSession = makeSession(name: "From folder", feeder: .folder(uuid: UUID().uuidString), episodes: [makeEpisode(title: "B", podcast: podcast)])
+        let manualSession = makeSession(name: "Hand made", feeder: .none, episodes: [makeEpisode(title: "B", podcast: podcast)])
 
-        Settings.setSessionListShowFolders(false)
-        activate(folderSession)
+        Settings.setSessionListShowPlaylists(false)
+        activate(manualSession)
 
         // The playing session is exempt from the filters (so both still appear); its position is its
         // normal sorted slot — `current()` no longer hoists the active session (the Queue surfaces it
         // via its own row-1 extraction). Default sort is `.manual`, so this is creation order.
-        XCTAssertEqual(SessionListRows.current().map(\.name), ["From podcast", "From folder"],
+        XCTAssertEqual(SessionListRows.current().map(\.name), ["From podcast", "Hand made"],
                        "the playing session is exempt from the filters (but is no longer hoisted)")
     }
 

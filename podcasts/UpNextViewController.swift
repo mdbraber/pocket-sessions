@@ -1273,17 +1273,9 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
                 }
             }
         }
-        let openFolder: (Folder) -> () -> Void = { folder in
-            return {
-                NavigationManager.sharedManager.navigateTo(
-                    NavigationManager.folderPageKey,
-                    data: [NavigationManager.folderKey: folder]
-                )
-            }
-        }
 
-        // Prefer the feeder (the Smart Playlist / podcast / folder that fills this session)
-        // over the session's own store playlist, when one is available.
+        // Prefer the feeder (the Smart Playlist or podcast that fills this session) over the
+        // session's own store playlist, when one is available.
         let feeder = SessionStore.shared.session(forStore: session.uuid)?.feeder
         let navigate: () -> Void
         switch (session.type, feeder) {
@@ -1297,11 +1289,6 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
                 navigate = pushPlaylist(session.uuid); break
             }
             navigate = pushPodcast(podcast)
-        case (_, .folder(let uuid)):
-            guard let folder = DataManager.sharedManager.findFolder(uuid: uuid) else {
-                navigate = pushPlaylist(session.uuid); break
-            }
-            navigate = openFolder(folder)
         default:
             // .none / .allPodcasts / no feeder → the session's own store playlist.
             navigate = pushPlaylist(session.uuid)
@@ -1851,13 +1838,13 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         upNextTable.setContentOffset(CGPoint(x: 0, y: sessionListRestingTopOffsetY), animated: false)
     }
 
-    /// Fork: swipe-to-remove a session from the list. A podcast/folder session's store is a
-    /// dedicated lineup, safe to delete fully (and "Play as Session" recreates it). A smart-playlist
-    /// or manual session's store may be a user-facing playlist, so only the session bookkeeping is
+    /// Fork: swipe-to-remove a session from the list. A podcast session's store is a dedicated
+    /// lineup, safe to delete fully (and "Play as Session" recreates it). A smart-playlist or
+    /// manual session's store may be a user-facing playlist, so only the session bookkeeping is
     /// removed — the playlist survives.
     func removeSessionFromList(_ session: Session) {
         switch session.feeder {
-        case .podcast, .folder:
+        case .podcast:
             SessionManager.shared.deleteSession(session)
         default:
             SessionStore.shared.delete(sessionUuid: session.uuid)

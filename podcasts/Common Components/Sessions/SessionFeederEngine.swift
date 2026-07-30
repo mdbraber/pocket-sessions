@@ -143,16 +143,6 @@ enum SessionFeederEngine {
                 customWhere: "podcastUuid = ?\(archivedClause) ORDER BY publishedDate DESC",
                 arguments: [uuid] + presetArgs
             )
-        case .folder(let uuid):
-            let podcastUuids = DataManager.sharedManager.allPodcasts(includeUnsubscribed: false)
-                .filter { $0.folderUuid == uuid }
-                .map(\.uuid)
-            guard !podcastUuids.isEmpty else { return [] }
-            let placeholders = podcastUuids.map { _ in "?" }.joined(separator: ",")
-            return DataManager.sharedManager.findEpisodesWhere(
-                customWhere: "podcastUuid IN (\(placeholders))\(archivedClause) ORDER BY publishedDate DESC",
-                arguments: podcastUuids + presetArgs
-            )
         case .smartPlaylist(let uuid):
             guard let playlist = DataManager.sharedManager.findPlaylist(uuid: uuid) else { return [] }
             return EpisodesDataManager().playlistEpisodes(for: playlist, limit: 0, preset: preset)

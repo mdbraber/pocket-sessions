@@ -7225,12 +7225,6 @@
 /* Fork: podcast Playlists tab — group heading above the sessions fed by a smart playlist. */
 "podcast_playlists_group_smart_session" = "Smart Playlist Sessions";
 
-/* Fork: podcast Playlists tab — group heading above other podcasts' own sessions. */
-"podcast_playlists_group_podcast_session" = "Podcast Sessions";
-
-/* Fork: podcast Playlists tab — group heading above folders' sessions. */
-"podcast_playlists_group_folder_session" = "Folder Sessions";
-
 /* Fork: podcast Playlists tab — row subtitle for a hand-made playlist. */
 "podcast_playlists_kind_manual" = "Manual Playlist";
 
@@ -7239,12 +7233,6 @@
 
 /* Fork: podcast Playlists tab — row subtitle for the session a smart playlist feeds. */
 "podcast_playlists_kind_smart_session" = "Smart Playlist Session";
-
-/* Fork: podcast Playlists tab — row subtitle for another podcast's own session. */
-"podcast_playlists_kind_podcast_session" = "Podcast Session";
-
-/* Fork: podcast Playlists tab — row subtitle for a folder's session. */
-"podcast_playlists_kind_folder_session" = "Folder Session";
 
 /* Fork: podcast Playlists tab ⋯ — heading for the filter choosing which half of a smart playlist + its session to list. */
 "podcast_playlists_show" = "Show Smart Lists";
@@ -7269,9 +7257,6 @@
 
 /* Fork: session chooser ⋯ menu — include sessions fed by a playlist. */
 "session_show_playlists" = "Playlist Sessions";
-
-/* Fork: session chooser ⋯ menu — include sessions fed by a folder. */
-"session_show_folders" = "Folder Sessions";
 
 /* Fork: session chooser ⋯ menu — hide sessions the user has never started listening to. */
 "session_show_hide_unplayed" = "Hide Unplayed Sessions";
