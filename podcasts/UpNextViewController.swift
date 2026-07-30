@@ -1511,18 +1511,34 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         // Fork: a standard centered nav-bar title (never a large left-aligned one), so "Queue",
         // "Up Next", and a session name all read the same way the app's other tab titles do.
         navigationItem.largeTitleDisplayMode = .never
-        upNextTable.tableHeaderView = nil
+        // Assigning tableHeaderView forces a full table layout pass even when the value is already
+        // nil — on every play/pause that reads as the whole list flickering. Only clear it when
+        // there is something to clear.
+        if upNextTable.tableHeaderView != nil { upNextTable.tableHeaderView = nil }
         stickyChromeBackground.isHidden = true
         // A session lineup's title is TAPPABLE — it opens that session's SOURCE (playlist / podcast /
         // folder). The queue ("Up Next") has no source, so it stays a plain title.
+        // Fork: assign the title ONLY when it actually changes. This runs on every chrome refresh,
+        // and play/pause triggers one — so re-stating it meant building a fresh titleView (or
+        // swapping title and titleView) several times a second, which UIKit cross-fades. That is
+        // the title "flying in" and the bar flickering on every play tap.
+        let titleText = sessionHeaderLabel.text
         if kind == .lineup {
-            navigationItem.title = nil
-            navigationItem.titleView = makeTappableSessionTitleView(sessionHeaderLabel.text)
+            if navigationItem.title != nil { navigationItem.title = nil }
+            if navigationItem.titleView == nil || lineupNavTitleText != titleText {
+                lineupNavTitleText = titleText
+                navigationItem.titleView = makeTappableSessionTitleView(titleText)
+            }
         } else {
-            navigationItem.titleView = nil
-            navigationItem.title = sessionHeaderLabel.text
+            lineupNavTitleText = nil
+            if navigationItem.titleView != nil { navigationItem.titleView = nil }
+            if navigationItem.title != titleText { navigationItem.title = titleText }
         }
     }
+
+    /// What `titleView` is currently showing, so a lineup's tappable title is rebuilt only when the
+    /// session's name actually changes rather than on every refresh.
+    private var lineupNavTitleText: String?
 
     /// Fork: a session lineup's nav title, styled like the standard centered title but tappable — it
     /// opens the session's source (its playlist / podcast / folder), via `openSessionSource`.
@@ -1569,6 +1585,9 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        // Rebuild the bar unconditionally on appearance — the cached signature only exists to skip
+        // redundant refreshes while the screen is up, never to leave a fresh appearance bare.
+        lastNavBarSignature = nil
         updateNavBarButtons()
         setupActionButtonsIfNecessary()
         if FeatureFlag.upNextShuffle.enabled {
@@ -2268,6 +2287,10 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         track(.upNextSelectAllButtonTapped, properties: ["select_all": false])
     }
 
+    /// The state the nav bar was last built from, so an unchanged refresh is a no-op. Reset it to
+    /// nil to force the next `updateNavBarButtons` through.
+    private var lastNavBarSignature: String?
+
     func updateNavBarButtons(animated: Bool = false) {
         navigationController?.navigationBar.tintColor = AppTheme.navBarIconsColor(themeOverride: themeOverride)
 
@@ -2285,6 +2308,17 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         // iOS back button (chevron) that steps back up to the session list, in place of the
         // world's usual Clear/Done.
         let inSessionLineup = inSession && sessionLevel == .lineup && browsedPlaybackSession != nil
+
+        // Fork: every branch below is a pure function of this state, and rebuilding the items when
+        // none of it moved makes UIKit re-lay-out the bar — visible as a flicker whenever a frequent
+        // caller (play/pause) refreshes the chrome. Skip the rebuild when the bar would be identical.
+        let signature = [
+            String(isMultiSelectEnabled), String(selectedCount), String(worldCount),
+            String(inSession), String(sessionLevel == .lineup), String(inSessionLineup),
+            String(lineupReorderMode), String(sessionListReorderMode), String(showingInTab)
+        ].joined(separator: "|")
+        if signature == lastNavBarSignature { return }
+        lastNavBarSignature = signature
 
         if isMultiSelectEnabled {
             if MultiSelectHelper.shouldSelectAll(onCount: selectedCount, totalCount: worldCount) {
