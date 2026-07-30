@@ -21,6 +21,25 @@ type Pusher interface {
 	// never reach this bundle id). No debounce: the watcher's poll interval is
 	// the cadence, and each alert is user-facing.
 	NotifyNewEpisodes(userID int64, alerts []EpisodeAlert, devices []store.Device)
+	// NotifyEpisodeRecovery sends a SILENT push naming the episodes just found,
+	// so a backgrounded app can repair a delivery PC's refresh service will not
+	// repeat. The visible alert above carries the same uuids but cannot run app
+	// code: an alert push has no content-available, so iOS draws the banner and
+	// the app only sees it if the user taps. A background push runs code but the
+	// general NotifyChanged wake carries no uuids — hence this third signal,
+	// which carries both. See NewEpisodePushRecovery in the app.
+	//
+	// Deliberately NOT gated on notification settings: recovery is about the
+	// app's data being correct, which has nothing to do with whether the user
+	// wanted to be told. No debounce, for the same reason as NotifyNewEpisodes.
+	NotifyEpisodeRecovery(userID int64, episodes []EpisodeRef, devices []store.Device)
+}
+
+// EpisodeRef is the minimum an app needs to re-anchor one podcast's refresh:
+// which podcast, and which episode it is missing.
+type EpisodeRef struct {
+	PodcastUUID string `json:"podcast_uuid"`
+	EpisodeUUID string `json:"eu"`
 }
 
 // EpisodeAlert mimics PC's episode notification payload (category "ep",
@@ -94,4 +113,9 @@ func (p *LogPusher) NotifyNewEpisodes(userID int64, alerts []EpisodeAlert, devic
 		p.logger.Info("push (log-only): would send episode alert",
 			"user", userID, "podcast", alert.PodcastTitle, "episode", alert.EpisodeTitle, "devices", len(devices))
 	}
+}
+
+func (p *LogPusher) NotifyEpisodeRecovery(userID int64, episodes []EpisodeRef, devices []store.Device) {
+	p.logger.Info("push (log-only): would send episode recovery",
+		"user", userID, "episodes", len(episodes), "devices", len(devices))
 }

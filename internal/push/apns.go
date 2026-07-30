@@ -146,3 +146,39 @@ func (p *APNSPusher) NotifyNewEpisodes(userID int64, alerts []EpisodeAlert, devi
 		p.logger.Info("episode alert sent", "user", userID, "podcast", alert.PodcastTitle, "episode", alert.EpisodeTitle, "devices", sent)
 	}
 }
+
+// maxRecoveryEpisodes bounds the silent recovery payload. APNs caps a
+// notification at 4KB and each entry is ~80 bytes of uuids; a catch-up cycle
+// after a long offline stretch could otherwise blow past that and the whole
+// push would be rejected. Anything dropped is logged rather than passed over in
+// silence — the app still gets the ordinary refresh, which handles every
+// episode PC is willing to hand over.
+const maxRecoveryEpisodes = 30
+
+// NotifyEpisodeRecovery sends the silent counterpart to the visible alert: same
+// uuids, but content-available so a backgrounded app can act on them without
+// the user tapping anything.
+func (p *APNSPusher) NotifyEpisodeRecovery(userID int64, episodes []EpisodeRef, devices []store.Device) {
+	if len(episodes) == 0 {
+		return
+	}
+	if len(episodes) > maxRecoveryEpisodes {
+		p.logger.Info("episode recovery truncated", "user", userID, "found", len(episodes), "sending", maxRecoveryEpisodes)
+		episodes = episodes[:maxRecoveryEpisodes]
+	}
+	payload, err := json.Marshal(map[string]any{
+		"aps":            map[string]any{"content-available": 1},
+		"pcsNewEpisodes": episodes,
+	})
+	if err != nil {
+		return
+	}
+	sent := 0
+	for _, device := range devices {
+		// Background push: PriorityLow is what APNs requires for content-available.
+		if p.send(device, apns2.PushTypeBackground, apns2.PriorityLow, payload) {
+			sent++
+		}
+	}
+	p.logger.Info("episode recovery sent", "user", userID, "episodes", len(episodes), "devices", sent)
+}

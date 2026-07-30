@@ -8,6 +8,7 @@
 # Install: `make hooks` (ships this into data/hooks on the deploy host), and
 # set in the host .env:
 #   OWNTUBE_URL=https://owntube.home.example.com   # reachable over the host's site-to-site tunnel
+#   OWNTUBE_MEDIA_HOST=owntube-media.home.example.com   # enclosure origin, when feeds use one
 #   OWNTUBE_TOKEN=<device token from auth.deviceLogin / device pairing>
 #
 # PCS passes the event as PCS_* environment variables (and JSON on stdin, which
@@ -22,10 +23,14 @@ set -eu
 
 [ -n "${PCS_EPISODE_URL:-}" ] || exit 0
 
-# Only handle enclosures served by this OwnTube instance.
+# Only handle enclosures served by this OwnTube instance: the app host, or the
+# separate media origin the companion feeds put in enclosure URLs.
 owntube_host=$(printf '%s' "$OWNTUBE_URL" | sed -E 's#^[a-z]+://##; s#/.*$##; s#:.*$##')
+media_host=$(printf '%s' "${OWNTUBE_MEDIA_HOST:-}" | sed -E 's#^[a-z]+://##; s#/.*$##; s#:.*$##')
 episode_host=$(printf '%s' "$PCS_EPISODE_URL" | sed -E 's#^[a-z]+://##; s#/.*$##; s#:.*$##')
-[ "$episode_host" = "$owntube_host" ] || exit 0
+if [ "$episode_host" != "$owntube_host" ]; then
+  [ -n "$media_host" ] && [ "$episode_host" = "$media_host" ] || exit 0
+fi
 
 # The YouTube id OwnTube keys history on. Accepts the shapes a feed is likely
 # to use: ?v=<id>, /watch/<id>, or <id>.<ext> as the last path segment.

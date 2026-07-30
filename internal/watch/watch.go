@@ -125,6 +125,9 @@ func cycleUser(ctx context.Context, st *store.Store, pusher push.Pusher, logger 
 	wg.Wait()
 
 	var alerts []push.EpisodeAlert
+	// Every fresh episode, alert-worthy or not: recovery repairs the app's DATA, so it is not
+	// gated on notification settings the way `alerts` is.
+	var recovery []push.EpisodeRef
 	newCount := 0
 	for _, res := range results {
 		uuids := make([]string, 0, len(res.fresh))
@@ -139,6 +142,14 @@ func cycleUser(ctx context.Context, st *store.Store, pusher push.Pusher, logger 
 			continue // first sight of this podcast: current episodes are old news
 		}
 		newCount += len(res.fresh)
+		for _, ep := range res.fresh {
+			// Same freshness bound as the alerts: a back-catalog episode surfacing is not a
+			// delivery the app can have missed, so there is nothing to recover.
+			if time.Since(ep.Published) > alertFreshnessWindow {
+				continue
+			}
+			recovery = append(recovery, push.EpisodeRef{PodcastUUID: res.podcast.UUID, EpisodeUUID: ep.UUID})
+		}
 
 		notify := notifyMode == "all" || (notifyMode == "synced" && (res.podcast.NotifyEnabled || appToggles[res.podcast.UUID]))
 		if !notify {
@@ -174,6 +185,10 @@ func cycleUser(ctx context.Context, st *store.Store, pusher push.Pusher, logger 
 	// Silent wake first: EVERY device refreshes so the Inbox fills, whatever each one has
 	// chosen about visible alerts. The cursor value is unused by the handler.
 	pusher.NotifyChanged(userID, 0, devices)
+	// Then the silent recovery signal, to EVERY device: it carries the uuids the visible alert
+	// carries but cannot deliver in the background, and it repairs data rather than notifying,
+	// so the per-device "New Episodes" switch does not apply to it.
+	pusher.NotifyEpisodeRecovery(userID, recovery, devices)
 	if len(alerts) > 0 {
 		// The "New Episodes" switch is per device — turning it off on one silences that one
 		// and says nothing about the others, so the ALERT fan-out is filtered while the

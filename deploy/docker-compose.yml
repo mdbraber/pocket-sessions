@@ -35,6 +35,7 @@ services:
       - PCS_HOOK_TIMEOUT=${PCS_HOOK_TIMEOUT:-30s}
       # Consumed by hooks/owntube.sh, not by the server itself.
       - OWNTUBE_URL=${OWNTUBE_URL:-}
+      - OWNTUBE_MEDIA_HOST=${OWNTUBE_MEDIA_HOST:-}
       - OWNTUBE_TOKEN=${OWNTUBE_TOKEN:-}
     volumes:
       - ./data:/data

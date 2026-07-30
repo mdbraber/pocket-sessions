@@ -65,8 +65,13 @@ configured OwnTube host, so it's safe alongside other hooks.
 
 ```
 OWNTUBE_URL=https://owntube.home.example.com
+OWNTUBE_MEDIA_HOST=owntube-media.home.example.com
 OWNTUBE_TOKEN=<device token — auth.deviceLogin or the device-pairing flow>
 ```
+
+`OWNTUBE_MEDIA_HOST` is the enclosure origin: the companion's podcast feeds
+point enclosures at the media host, not the app host, and the hook accepts
+either. Leave it unset if feeds enclose from `OWNTUBE_URL` itself.
 
 It resolves the video's `channelId` via `video.detail`, then calls
 `history.upsertEvent` with `positionSeconds` = `playedUpTo` and `completed` =
