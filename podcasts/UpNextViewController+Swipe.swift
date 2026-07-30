@@ -5,7 +5,8 @@ import SwipeCellKit
 
 extension UpNextViewController: SwipeTableViewCellDelegate, SwipeHandler {
     func swipeCurrentlyAllowed() -> Bool {
-        return isReorderInProgress == false
+        // Reorder mode suspends swipes — a horizontal drag there is an attempt to grab the grip.
+        return isReorderInProgress == false && !lineupReorderMode
     }
 
     func tableView(_ tableView: UITableView, editActionsForRowAt indexPath: IndexPath, for orientation: SwipeActionsOrientation) -> [SwipeAction]? {

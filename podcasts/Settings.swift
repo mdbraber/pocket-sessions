@@ -370,6 +370,16 @@ class Settings: NSObject {
     }
     class func setHideEmptySessions(_ on: Bool) { UserDefaults.standard.set(on, forKey: hideEmptySessionsKey) }
 
+    static let hideEmptyUpNextKey = "SJHideEmptyUpNext"
+
+    /// Hide the pinned Up Next row in the session chooser while the queue is empty. Separate from
+    /// `hideEmptySessions`: Up Next is a permanent lane, not one of the sessions in the pool, so
+    /// hiding empty sessions must not silently take the queue away with them.
+    class func hideEmptyUpNext() -> Bool {
+        UserDefaults.standard.bool(forKey: hideEmptyUpNextKey)
+    }
+    class func setHideEmptyUpNext(_ on: Bool) { UserDefaults.standard.set(on, forKey: hideEmptyUpNextKey) }
+
     // MARK: Fork: Pocket Sessions sync
 
     /// How Sessions data (sessions, seen state, presets) syncs — entirely separate from the

@@ -154,15 +154,6 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         return browsedPlaybackSession == active
     }
 
-    /// Whether the browsed session's playlist is in Drag & Drop sort — the ONLY sort where the lineup
-    /// is hand-reorderable. Under any other sort the list is sorted, so dragging is disabled (no
-    /// handles) and the info-line sort icon is drawn in the accent colour to show a sort is active.
-    var browsedSessionSortIsDragAndDrop: Bool {
-        guard let uuid = browsedPlaybackSession?.uuid,
-              let playlist = DataManager.sharedManager.findPlaylist(uuid: uuid) else { return false }
-        return playlist.sortType == PlaylistSort.dragAndDrop.rawValue
-    }
-
     /// The lineup shows a Now Playing card only when the session it is browsing is the active one
     /// AND the player is holding one of its episodes — the card lives in whichever world owns
     /// playback (green here in the Session world, blue in Up Next).
@@ -208,8 +199,15 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     /// Fork: where a session-list row sits — row 0 is Up Next, row 1 is the current session (each
     /// its own tinted card); the rest are the flat pool.
     func sessionPlacement(at index: Int) -> SessionListCell.Placement {
-        if index == 0 { return .upNext }
-        if index == 1, sessionListHasCurrent { return .current }
+        // Fork: Up Next can be hidden (⋯ → Empty Up Next → Hide), so the pinned block is 0, 1 or 2
+        // rows deep — reading placement off fixed indices drew the current session as a second
+        // Up Next row.
+        var index = index
+        if sessionListHasUpNext {
+            if index == 0 { return .upNext }
+            index -= 1
+        }
+        if index == 0, sessionListHasCurrent { return .current }
         return .pool
     }
 
@@ -229,6 +227,10 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     /// tap-to-open / swipe are suspended until Done. Normally the pool shows white play buttons.
     var sessionListReorderMode = false
 
+    /// Fork: "Reorder Episodes" mode on a session LINEUP — every tail row grows a grip and
+    /// long-press drag, tap-to-play and swipes stand down until Done.
+    var lineupReorderMode = false
+
     /// The current search term filtering the pool (Up Next + current session always stay).
     var sessionSearchText = ""
 
@@ -239,9 +241,14 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     /// Up Next.
     var sessionListHasCurrent = false
 
+    /// Fork: whether the pinned Up Next row is in the list at all (see `Settings.hideEmptyUpNext`).
+    var sessionListHasUpNext = true
+
     /// Fork: the search + ⋯ header sits directly UNDER the pinned Up Next (row 0) and Current Session
     /// (row 1) rows — so table row 2 (or row 1 when there are no sessions). The pool follows.
-    var sessionSearchTableRow: Int { 1 + (sessionListHasCurrent ? 1 : 0) }
+    /// Fork: the search + ⋯ header sits directly UNDER the pinned Up Next and Current Session rows.
+    /// Up Next can be hidden, so the pinned block is 0, 1 or 2 rows deep.
+    var sessionSearchTableRow: Int { (sessionListHasUpNext ? 1 : 0) + (sessionListHasCurrent ? 1 : 0) }
 
     /// The pool's size BEFORE the search filter — so the search bar stays put when a query filters
     /// every pool row out.
@@ -249,13 +256,24 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
 
     var showSessionSearchRow: Bool {
         guard showingSessionList else { return false }
-        return sessionListPoolCount > 0 || !sessionSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return sessionListPoolCount > 0 || sessionSearchIsActive
+    }
+
+    var sessionSearchIsActive: Bool {
+        !sessionSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// Fork: a live query that matched no session. The list then needs an explicit "No sessions
+    /// found" row — dropping to zero rows reads as "everything vanished", and it took the search
+    /// bar's own Cancel button down with it.
+    var sessionSearchHasNoResults: Bool {
+        showingSessionList && sessionSearchIsActive && sessionListPoolCount > 0
+            && sessionListRows.count == (sessionListHasUpNext ? 1 : 0) + (sessionListHasCurrent ? 1 : 0)
     }
 
     func isSessionSearchRow(_ indexPath: IndexPath) -> Bool {
         showSessionSearchRow && tableData[safe: indexPath.section] == .sessionSection && indexPath.row == sessionSearchTableRow
     }
-
 
     /// Maps a session-section TABLE row to its index in `sessionListRows`, or nil for the search row.
     func sessionListIndex(forTableRow row: Int) -> Int? {
@@ -265,11 +283,21 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     }
 
     /// The search bar — same component + dimensions as the podcast/playlist page.
+    /// Fork: the row a search bar sits in matches the LIST around it (`primaryUi02`), not the table's
+    /// own `primaryUi04`. The two differ by a visible step in every dark theme — the search bar read
+    /// as a darker band cut into the list. The component's own strip stays transparent so this is
+    /// the only thing painting it.
+    var searchRowBackgroundColor: UIColor {
+        AppTheme.colorForStyle(.primaryUi02, themeOverride: themeOverride)
+    }
+
     lazy var sessionSearchController: PCSearchBarController = {
         let controller = PCSearchBarController()
-        // Sit on the queue screen's own background — without this the component paints its
-        // stock secondaryUi01 strip, a visibly different rectangle behind the field.
-        controller.backgroundColorOverride = AppTheme.colorForStyle(.primaryUi04, themeOverride: themeOverride)
+        // Fork: a TRANSPARENT strip, so whatever the search bar sits on shows through rather than
+        // the component painting its own rectangle. Naming a colour here (even the screen's own)
+        // meant any drift between the two showed as a visible band behind the field. Non-nil keeps
+        // the primary field/text palette; only the backdrop goes away.
+        controller.backgroundColorOverride = .clear
         controller.searchDebounce = 0.2
         controller.placeholderText = L10n.sessionSearchPlaceholder
         controller.searchDelegate = self
@@ -287,34 +315,24 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
 
     /// The ⋯ button beside the search field — carries the session-list menu (Sort, hides), matching
     /// the playlist page's search + sort row.
-    lazy var sessionSearchOverflowButton: ThemeSecondaryButton = {
-        let button = ThemeSecondaryButton(type: .custom)
-        button.setImage(UIImage(named: "podcast-more-options")?.withRenderingMode(.alwaysTemplate), for: .normal)
-        button.accessibilityLabel = L10n.accessibilityMoreActions
-        button.addTarget(self, action: #selector(sessionListMoreTapped), for: .touchUpInside)
-        button.translatesAutoresizingMaskIntoConstraints = false
-        return button
-    }()
-
-    /// The search row's content view — the search field with the ⋯ beside it (playlist-page layout).
+    /// The search row's content view — the search field alone. The ⋯ moved to the nav bar's top
+    /// right (matching the Playlists world), so the field runs the full width of the row.
     lazy var sessionSearchHeaderView: UIView = {
         let header = UIView()
+        header.backgroundColor = searchRowBackgroundColor
         let search = sessionSearchController.view!
         header.addSubview(search)
-        header.addSubview(sessionSearchOverflowButton)
         NSLayoutConstraint.activate([
             search.leadingAnchor.constraint(equalTo: header.leadingAnchor),
-            search.trailingAnchor.constraint(equalTo: sessionSearchOverflowButton.leadingAnchor, constant: 4),
+            search.trailingAnchor.constraint(equalTo: header.trailingAnchor),
             search.centerYAnchor.constraint(equalTo: header.centerYAnchor),
-            search.heightAnchor.constraint(equalToConstant: 36),
-            sessionSearchOverflowButton.trailingAnchor.constraint(equalTo: header.trailingAnchor, constant: -13),
-            sessionSearchOverflowButton.centerYAnchor.constraint(equalTo: sessionSearchController.searchTextField.centerYAnchor),
-            sessionSearchOverflowButton.widthAnchor.constraint(equalToConstant: 36),
-            sessionSearchOverflowButton.heightAnchor.constraint(equalToConstant: 36)
+            search.heightAnchor.constraint(equalToConstant: 36)
         ])
         return header
     }()
 
+    /// A single, persistent cell that hosts the search header — returning the SAME instance from
+    /// cellForRow keeps the text field's focus across reloads (a dequeued cell would drop it).
     /// A single, persistent cell that hosts the search header — returning the SAME instance from
     /// cellForRow keeps the text field's focus across reloads (a dequeued cell would drop it).
     lazy var sessionSearchCell: UITableViewCell = {
@@ -338,8 +356,8 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     /// routes by world (`showingSessionList`), so the two never collide.
     lazy var lineupSearchController: PCSearchBarController = {
         let controller = PCSearchBarController()
-        // Same background rule as the session-list search — the queue screen's own color.
-        controller.backgroundColorOverride = AppTheme.colorForStyle(.primaryUi04, themeOverride: themeOverride)
+        // Same rule as the session-list search: a transparent strip.
+        controller.backgroundColorOverride = .clear
         controller.searchDebounce = 0.2
         controller.placeholderText = L10n.search
         controller.searchDelegate = self
@@ -356,7 +374,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
         cell.selectionStyle = .none
         cell.backgroundColor = .clear
-        cell.contentView.backgroundColor = .clear
+        cell.contentView.backgroundColor = searchRowBackgroundColor
         let search = lineupSearchController.view!
         search.translatesAutoresizingMaskIntoConstraints = false
         cell.contentView.addSubview(search)
@@ -589,6 +607,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     /// Fork: open the queue world from the pinned "Up Next" list row.
     func enterUpNextWorld() {
         clearLineupSearch()
+        lineupReorderMode = false
         displayedWorld = .upNext
         reloadTable()
         resetLineupScrollToTop()
@@ -606,6 +625,33 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     @objc func exitSessionReorderMode() {
         sessionListReorderMode = false
         reloadTable()
+    }
+
+    /// Fork: enter "Reorder Episodes" mode on a session lineup (⋯/sort → Reorder Episodes). Every
+    /// tail row shows a grip; play buttons, swipe and tap-to-open are suspended until Done.
+    ///
+    /// A long-press drag is invisible until you know it's there — the grips say "this list is yours
+    /// to arrange" out loud, which is the whole reason the mode exists alongside the drag.
+    func enterLineupReorderMode() {
+        guard !showingSessionList, browsedPlaybackSession != nil, !lineupReorderMode else { return }
+        if isMultiSelectEnabled { isMultiSelectEnabled = false }
+        clearLineupSearch()
+        lineupReorderMode = true
+        reloadTable()
+    }
+
+    /// Fork: leave "Reorder Episodes" mode (the Done button).
+    @objc func exitLineupReorderMode() {
+        guard lineupReorderMode else { return }
+        lineupReorderMode = false
+        reloadTable()
+    }
+
+    /// Backing out of the lineup (or into the chooser) leaves the mode rather than stranding the
+    /// user in it on a screen with no grips.
+    func exitLineupReorderModeIfNeeded() {
+        guard lineupReorderMode, showingSessionList || browsedPlaybackSession == nil else { return }
+        lineupReorderMode = false
     }
 
     /// Fork: from the session-list home, drill straight into the ACTIVE lane — the active session's
@@ -629,6 +675,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     /// Fork: back to the session list (the home) from a session lineup OR the queue world.
     @objc func exitToSessionList() {
         clearLineupSearch()
+        lineupReorderMode = false
         displayedWorld = .session
         browsedSessionUuid = nil
         sessionLevel = .list
@@ -651,17 +698,72 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     private func applySessionSearch(_ term: String) {
         sessionSearchText = term
         guard showingSessionList else { return }
-        // The search field lives in a table CELL, so reloadData resigns its first-responder even with
-        // the persistent-cell reuse. Capture focus + cursor and restore them so the user can keep
-        // typing without the keyboard dropping after each letter.
-        let field = sessionSearchController.searchTextField
-        let wasFocused = field?.isFirstResponder ?? false
-        let cursor = field?.selectedTextRange
+        // Fork: filtering must NOT rebuild the row that hosts the search field. The field lives in a
+        // table cell, so `reloadData` tears it out of the hierarchy, it resigns first responder, and
+        // the keyboard drops and comes back on every keystroke (restoring focus afterwards is what
+        // made it flicker rather than fixing it). Only pool rows change, so diff them and move just
+        // those — the search row is never touched and the field never loses focus.
+        let previous = sessionSectionRowIdentities()
         deriveSessionListRows(from: lastSessionSource)
-        upNextTable.reloadData()
-        if wasFocused, field?.isFirstResponder == false {
-            field?.becomeFirstResponder()
-            if let cursor { field?.selectedTextRange = cursor }
+        applySessionSectionDiff(from: previous)
+    }
+
+    /// One identity per session-section table row: the session's uuid, a marker for the search row,
+    /// and an ordinal marker for the empty / no-results placeholders. Identities are unique, which is
+    /// what lets the diff below be a simple set difference.
+    private func sessionSectionRowIdentities() -> [String] {
+        let listCount = max(sessionListRows.count, 1)
+        let total = listCount + (showSessionSearchRow ? 1 : 0) + (sessionSearchHasNoResults ? 1 : 0)
+        var identities = [String]()
+        identities.reserveCapacity(total)
+        var placeholder = 0
+        for row in 0 ..< total {
+            if showSessionSearchRow, row == sessionSearchTableRow {
+                identities.append("search")
+                continue
+            }
+            if let listIndex = sessionListIndex(forTableRow: row), let entry = sessionListRows[safe: listIndex] {
+                identities.append("session:\(entry.sessionUuid)")
+            } else {
+                identities.append("placeholder:\(placeholder)")
+                placeholder += 1
+            }
+        }
+        return identities
+    }
+
+    /// Applies the row changes between two identity lists as inserts and deletes. Falls back to a
+    /// full reload whenever the change isn't a pure insert/delete — a reorder, or a duplicate
+    /// identity, would make the index maths wrong, and a wrong batch update crashes UIKit.
+    private func applySessionSectionDiff(from old: [String]) {
+        guard let section = tableData.firstIndex(of: .sessionSection) else {
+            upNextTable.reloadData()
+            return
+        }
+
+        let new = sessionSectionRowIdentities()
+        let oldSet = Set(old), newSet = Set(new)
+        guard oldSet.count == old.count, newSet.count == new.count,
+              old.filter({ newSet.contains($0) }) == new.filter({ oldSet.contains($0) }) else {
+            upNextTable.reloadData()
+            return
+        }
+
+        let deletions = old.enumerated()
+            .filter { !newSet.contains($0.element) }
+            .map { IndexPath(row: $0.offset, section: section) }
+        let insertions = new.enumerated()
+            .filter { !oldSet.contains($0.element) }
+            .map { IndexPath(row: $0.offset, section: section) }
+        guard !deletions.isEmpty || !insertions.isEmpty else { return }
+
+        // No animation: rows appearing and vanishing under the caret as you type is noise, and an
+        // animated batch update fights the keyboard for the runloop.
+        UIView.performWithoutAnimation {
+            upNextTable.performBatchUpdates {
+                upNextTable.deleteRows(at: deletions, with: .none)
+                upNextTable.insertRows(at: insertions, with: .none)
+            }
         }
     }
 
@@ -697,7 +799,12 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         if !query.isEmpty {
             pool = pool.filter { $0.name.localizedCaseInsensitiveContains(query) }
         }
-        sessionListRows = [upNextListRow()] + (currentRow.map { [$0] } ?? []) + pool
+        // Fork: Up Next is a permanent lane, so it's pinned even at zero — unless the user has
+        // asked for empty Up Next to be hidden, in which case it only appears once it has episodes
+        // (or is what's playing, where hiding it would strand the now-playing lane).
+        let upNext = upNextListRow()
+        sessionListHasUpNext = !Settings.hideEmptyUpNext() || upNext.episodeCount > 0 || upNext.isActive
+        sessionListRows = (sessionListHasUpNext ? [upNext] : []) + (currentRow.map { [$0] } ?? []) + pool
     }
 
     /// Fork: a single tap on a session-list row PEEKS at that lane's page (its lineup) — pure
@@ -939,14 +1046,12 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         }
         sessionInboxLabel.textColor = AppTheme.colorForStyle(.primaryInteractive01, themeOverride: themeOverride)
         sessionSortButton.isHidden = !(session.type == .smartPlaylist || session.type == .playlist)
-        // Accent the sort icon while a non-default (non-Drag & Drop) sort is active, so it's clear the
-        // lineup is sorted (and therefore not hand-reorderable); neutral under Drag & Drop.
-        let sortTint = browsedSessionSortIsDragAndDrop
-            ? AppTheme.colorForStyle(.primaryIcon02, themeOverride: themeOverride)
-            : nowPlayingWorldAccent
+        // Fork: always neutral. The button opens the REORDER picker, and a lineup has one saved
+        // order — there is no "sorted" state left for an accent to warn about.
+        let sortTint = AppTheme.colorForStyle(.primaryIcon02, themeOverride: themeOverride)
         let sortImage = UIImage(named: "podcast-sort")?.withTintColor(sortTint, renderingMode: .alwaysOriginal)
         sessionSortButton.setImage(sortImage, for: .normal)
-        sessionSortButton.accessibilityLabel = L10n.playbackSessionSortTitle
+        sessionSortButton.accessibilityLabel = L10n.lineupReorder
     }
 
     /// Ticks the under-card "… left" line while a session episode plays.
@@ -1527,11 +1632,10 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     @objc private func themeDidChange() {
         FileLog.shared.addMessage("UpNext themeDidChange: user has active subscription: \(SubscriptionHelper.hasActiveSubscription()) and is logged in: \(SyncManager.isUserLoggedIn())")
 
-        // Fork: the embedded search bars sit on the screen's own background — refresh their
-        // override so a theme switch doesn't leave them wearing the old theme's color.
-        let searchBackground = AppTheme.colorForStyle(.primaryUi04, themeOverride: themeOverride)
-        sessionSearchController.backgroundColorOverride = searchBackground
-        lineupSearchController.backgroundColorOverride = searchBackground
+        // The search rows paint the list's background themselves — repaint them here rather than
+        // waiting on a reload, or a theme switch leaves them wearing the old theme's colour.
+        sessionSearchHeaderView.backgroundColor = searchRowBackgroundColor
+        lineupSearchCell.contentView.backgroundColor = searchRowBackgroundColor
 
         if !SubscriptionHelper.hasActiveSubscription() || !SyncManager.isUserLoggedIn() {
             shuffleButton.setImage(UIImage(named: "shuffle-plus"), for: .normal)
@@ -1598,9 +1702,9 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         sessionListMoreButton.isHidden = true
     }
 
-    /// Fork: the round top-right ⋯ for the session chooser — opens the same "Show Session
-    /// Playlists" selector the in-header button used to, now that the "Sessions" title block
-    /// is gone. A circular button matching the iOS 26 nav-bar treatment.
+    /// Fork: the round top-right ⋯ for the session chooser — the chooser's whole view menu
+    /// (Reorder Sessions plus the Hide/Show toggles). A circular button matching the iOS 26
+    /// nav-bar treatment.
     private func roundSessionListMoreButton() -> UIBarButtonItem {
         // Fork: a plain bar button (the system draws it as a round glass button on iOS 26); tapping
         // opens a sheet of the session list's view toggles, matching the app's other ⋯ menus.
@@ -1634,11 +1738,18 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     @objc private func sessionListMoreTapped() {
         // Fork: the session list's view toggles as a sheet, matching the app's other ⋯ menus.
         let picker = OptionsPicker(title: nil, themeOverride: themeOverride)
+        // Visibility toggles: noun label + a Hide/Show secondary that reads back the current state.
+        // Up Next leads — it's the pinned lane at the very top of the list, so the toggle that
+        // governs it sits at the top of the menu too.
+        let emptyUpNextHidden = Settings.hideEmptyUpNext()
+        picker.addAction(action: OptionAction(label: L10n.sessionEmptyUpNext, secondaryLabel: emptyUpNextHidden ? L10n.settingsGeneralHide : L10n.settingsGeneralShow, icon: "list.bullet") { [weak self] in
+            Settings.setHideEmptyUpNext(!emptyUpNextHidden)
+            self?.reloadSessionListAndScrollToTop()
+        })
         // "Reorder Sessions" — a one-shot re-arrange of the drag order (submenu, no sticky selection).
         let sortAction = OptionAction(label: L10n.sessionSortOnce, icon: "podcastlist_sort") {}
         sortAction.submenu = { [weak self] in self?.makeSessionSortPicker() }
         picker.addAction(action: sortAction)
-        // Visibility toggles: noun label + a Hide/Show secondary that reads back the current state.
         let emptyHidden = Settings.hideEmptySessions()
         picker.addAction(action: OptionAction(label: L10n.sessionEmptySessions, secondaryLabel: emptyHidden ? L10n.settingsGeneralHide : L10n.settingsGeneralShow, icon: "square.stack") { [weak self] in
             Settings.setHideEmptySessions(!emptyHidden)
@@ -1687,7 +1798,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
 
     @objc private func sessionSortTapped() {
         guard let session = browsedPlaybackSession, session.type == .smartPlaylist || session.type == .playlist else { return }
-        presentSessionSortPicker(for: session)
+        presentLineupReorderPicker(for: session)
     }
 
     /// Dragging a session row reorders the source playlist itself — the session is a live
@@ -1859,34 +1970,28 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         self.sessionEpisodes = updated
     }
 
-    /// Sorting during a playlist session edits the playlist's own sort order (the session
-    /// is a live mirror), with the same options the playlist screen offers — including
-    /// custom order. A new order means a new "up first", so playback restarts from the top.
-    private func presentSessionSortPicker(for session: PlaybackSession) {
+    /// Fork: re-arranging the browsed session's lineup. A lineup has ONE saved order — the session
+    /// is a live mirror of its playlist — so this is not a sort mode you switch on: hand-ordering
+    /// first (the base state), then one-shot arrangements that rewrite the stored order and leave
+    /// the list hand-ordered again. Nothing carries a checkmark, because nothing sticks.
+    ///
+    /// Re-arranging never disturbs playback: what's playing keeps playing and keeps position 0.
+    private func presentLineupReorderPicker(for session: PlaybackSession) {
         guard let playlist = DataManager.sharedManager.findPlaylist(uuid: session.uuid) else { return }
-        let optionsPicker = OptionsPicker(title: L10n.playbackSessionSortTitle.localizedUppercase, themeOverride: themeOverride)
-        for option in [PlaylistSort.newestToOldest, .oldestToNewest, .shortestToLongest, .longestToShortest, .dragAndDrop] {
-            optionsPicker.addAction(action: OptionAction(label: option.description, selected: playlist.sortType == option.rawValue) { [weak self] in
-                guard let self, playlist.sortType != option.rawValue else { return }
 
-                // Same semantics as the playlist screen: the first switch to custom order
-                // seeds the lineup from the current order; switching away KEEPS the
-                // positions, so returning to custom restores the hand-made order.
-                if !playlist.manual, option == .dragAndDrop, DataManager.sharedManager.positionedEpisodeUuids(for: playlist).isEmpty {
-                    playlist.customOrderLastInsertedUuid = ""
-                    DataManager.sharedManager.setCustomOrder(episodeUuids: session.orderedEpisodes().map { $0.uuid }, for: playlist)
-                }
-                playlist.syncStatus = SyncStatus.notSynced.rawValue
-                playlist.sortType = option.rawValue
-                DataManager.sharedManager.save(playlist: playlist)
-                NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged, object: playlist)
-
-                // Sorting only re-orders the list — what's playing keeps playing; the new
-                // order takes effect from the next advance.
+        let picker = OptionsPicker(title: L10n.lineupReorder.localizedUppercase, themeOverride: themeOverride)
+        picker.addAction(action: OptionAction(label: L10n.lineupReorderEpisodes, icon: "line.3.horizontal") { [weak self] in
+            guard let self else { return }
+            self.enterLineupReorderMode()
+        })
+        for option in LineupReorder.options {
+            picker.addAction(action: OptionAction(label: option.title) { [weak self] in
+                guard let self else { return }
+                LineupReorder.apply(option, to: playlist, episodes: session.orderedEpisodes())
                 self.reloadTable()
             })
         }
-        optionsPicker.present(from: self)
+        picker.present(from: self)
     }
 
     @objc private func sessionStateDidChange() {
@@ -2189,19 +2294,26 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
             }
             leftButton = UIBarButtonItem(title: L10n.cancel, style: .plain, target: self, action: #selector(cancelTapped))
         } else if inSessionLineup {
-            rightButton = worldCount > 0 ? UIBarButtonItem(title: L10n.select, style: .plain, target: self, action: #selector(selectTapped)) : nil
-            let backButton = UIBarButtonItem(image: UIImage(systemName: "chevron.backward"), style: .plain, target: self, action: #selector(sessionBreadcrumbTapped))
-            backButton.accessibilityLabel = L10n.sessions
-            leftButton = backButton
+            if lineupReorderMode {
+                // Reorder Episodes mode owns the bar: Done exits it, and there's no way back out of
+                // the lineup until then (leaving mid-reorder would strand the mode).
+                rightButton = UIBarButtonItem(title: L10n.done, style: .done, target: self, action: #selector(exitLineupReorderMode))
+                leftButton = nil
+            } else {
+                rightButton = worldCount > 0 ? UIBarButtonItem(title: L10n.select, style: .plain, target: self, action: #selector(selectTapped)) : nil
+                let backButton = UIBarButtonItem(image: UIImage(systemName: "chevron.backward"), style: .plain, target: self, action: #selector(sessionBreadcrumbTapped))
+                backButton.accessibilityLabel = L10n.sessions
+                leftButton = backButton
+            }
         } else if inSession, sessionLevel == .list {
             if sessionListReorderMode {
                 // Reorder Items mode owns the bar: Done exits it.
                 rightButton = UIBarButtonItem(title: L10n.done, style: .done, target: self, action: #selector(exitSessionReorderMode))
                 leftButton = nil
             } else {
-                // Fork: the ⋯ rides beside the inline search bar (see sessionSearchOverflowButton), so
-                // the nav bar carries nothing here (just Done when presented modally).
-                rightButton = nil
+                // Fork: the ⋯ lives top-right, matching the Playlists world (it used to ride beside
+                // the inline search bar). Left stays free for Done when presented modally.
+                rightButton = roundSessionListMoreButton()
                 leftButton = showingInTab ? nil : UIBarButtonItem(title: L10n.done, style: .plain, target: self, action: #selector(doneTapped))
             }
         } else {
@@ -2677,10 +2789,20 @@ class SwitchSessionViewController: UIViewController, UITableViewDataSource, UITa
 
 extension UpNextViewController: PCSearchBarDelegate {
     func searchDidBegin() {}
-    func searchDidEnd() {}
+
+    /// Cancel has to drop the QUERY, not just the text box. `PCSearchBarController.cancelTapped`
+    /// empties the field and dismisses the keyboard, but the filter itself lives here — leaving this
+    /// empty left the list narrowed by a term no longer on screen, which reads as "Cancel did nothing".
+    func searchDidEnd() {
+        clearActiveSearch()
+    }
 
     func searchWasCleared() {
-        // Both search bars share this delegate; the visible screen decides which query is cleared.
+        clearActiveSearch()
+    }
+
+    /// Both search bars share this delegate; the visible screen decides which query is cleared.
+    private func clearActiveSearch() {
         if showingSessionList { applySessionSearch("") } else { applyLineupSearch("") }
     }
 

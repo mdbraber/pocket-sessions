@@ -158,19 +158,25 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         case .nowPlayingSection:
             return (topBlockHasCard ? 1 : 0) + (topBlockHasLineupSearch ? 1 : 0) + (topBlockHasControls ? 1 : 0)
         case .sessionSection:
-            if showingSessionList { return max(sessionListRows.count, 1) + (showSessionSearchRow ? 1 : 0) } // 1 = empty state cell
+            if showingSessionList {
+                // Fork: a search that matched nothing still gets a row — "No sessions found" (see
+                // `sessionSearchHasNoResults`) rather than a list that silently empties out.
+                return max(sessionListRows.count, 1) + (showSessionSearchRow ? 1 : 0) + (sessionSearchHasNoResults ? 1 : 0)
+            }
             if browsedPlaybackSession == nil { return 1 } // empty state cell
             // A browsed session with no current episode (no card) and no tail is truly empty —
             // same world-level rule as Up Next: the card counts, so only card-less emptiness
             // shows the empty state.
             if !lineupSearchActive, filteredLineupTail.isEmpty, sessionCurrentEpisode == nil { return 1 } // empty state cell
+            // A search with no matches says so, rather than rendering nothing at all.
+            if lineupSearchActive, filteredLineupTail.isEmpty { return 1 }
             // The pinned current is the top-block card; this section is the reorderable tail
             // (filtered by the lineup search when a query is active).
             return filteredLineupTail.count
         case .upNextSection:
             // Same shape as the session tail: the reorderable tail below the pinned head (the queue's
             // own head sits on the card while a session plays), filtered by the lineup search.
-            if lineupSearchActive { return filteredLineupTail.count } // no empty-state during search
+            if lineupSearchActive { return max(filteredLineupTail.count, 1) } // 1 = "no results" cell
             // "Nothing in your queue" means the whole WORLD is empty — an episode on the pinned
             // card still counts as queued, so an empty tail under a card shows nothing at all.
             if filteredLineupTail.isEmpty { return topBlockHasCard ? 0 : 1 } // 1 = empty state cell
@@ -283,6 +289,14 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
                 guard let listIndex = sessionListIndex(forTableRow: indexPath.row),
                       let row = sessionListRows[safe: listIndex] else {
                     let emptyCell = tableView.dequeueReusableCell(withIdentifier: UpNextViewController.emptyStateCell, for: indexPath) as! EmptyStateCell
+                    // A live query that matched nothing is a SEARCH result, not an empty library —
+                    // saying "you have no sessions" there would be a lie, and the "find podcasts"
+                    // action would send the user somewhere they didn't ask to go.
+                    if sessionSearchIsActive {
+                        emptyCell.configure(title: L10n.sessionSearchNoResults,
+                                            icon: { Image(systemName: "magnifyingglass") })
+                        return emptyCell
+                    }
                     emptyCell.configure(title: L10n.sessionListNoneTitle,
                                         message: L10n.sessionListNoneMessage,
                                         icon: { Image(systemName: "rectangle.stack") },
@@ -300,13 +314,17 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
                 sessionCell.onPlayTapped = { [weak self] in self?.playSessionLane(row) }
                 sessionCell.onPlayLongPressed = { [weak self] in self?.makeSessionCurrentInheritingPlayState(row) }
                 sessionCell.upNextInSessionList = Settings.upNextInSessionList()
-                // The first session (list index 1, below the Up Next row) is the "top session".
-                sessionCell.isTopSession = listIndex == 1 && !row.isUpNext
-                sessionCell.populate(from: row, placement: sessionPlacement(at: listIndex), reordering: sessionListReorderMode)
+                // The "top session" is the CURRENT one — read it off the placement, not off a fixed
+                // index. Up Next can be hidden (⋯ → Empty Up Next → Hide), and a hardcoded index 1
+                // then landed on the first pool row, handing it the current session's green accent
+                // box and its wider bottom margin.
+                let placement = sessionPlacement(at: listIndex)
+                sessionCell.isTopSession = placement == .current
+                sessionCell.populate(from: row, placement: placement, reordering: sessionListReorderMode)
                 sessionCell.setActiveBoxSuppressed(activeBoxSuppressed)
                 // In Reorder Items mode the pool rows show a drag handle; Up Next and the current
                 // session are pinned. (All indices map through `sessionListIndex` for the search row.)
-                sessionCell.showsReorderControl = sessionListReorderMode && sessionPlacement(at: listIndex) == .pool
+                sessionCell.showsReorderControl = sessionListReorderMode && placement == .pool
                 return sessionCell
             }
             if browsedPlaybackSession == nil {
@@ -321,6 +339,12 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
             guard let episode = filteredLineupTail[safe: indexPath.row] else {
                 // The truly-empty session (no card, no tail) renders its empty state here; any
                 // other out-of-range ask (mid-animation) keeps the harmless blank episode cell.
+                if lineupSearchActive, filteredLineupTail.isEmpty {
+                    let emptyCell = tableView.dequeueReusableCell(withIdentifier: UpNextViewController.emptyStateCell, for: indexPath) as! EmptyStateCell
+                    emptyCell.configure(title: L10n.discoverNoEpisodesFound,
+                                        icon: { Image(systemName: "magnifyingglass") })
+                    return emptyCell
+                }
                 if filteredLineupTail.isEmpty, sessionCurrentEpisode == nil {
                     let emptyCell = tableView.dequeueReusableCell(withIdentifier: UpNextViewController.emptyStateCell, for: indexPath) as! EmptyStateCell
                     emptyCell.configure(title: L10n.sessionEmptyTitle,
@@ -342,7 +366,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
             // Empty tail (and not mid-search) → the "Up Next is empty" discover cell.
             let emptyCell = tableView.dequeueReusableCell(withIdentifier: UpNextViewController.emptyStateCell, for: indexPath) as! EmptyStateCell
             if lineupSearchActive {
-                emptyCell.configure(title: L10n.upNextEmptyTitle, icon: { Image("upnext") })
+                emptyCell.configure(title: L10n.discoverNoEpisodesFound, icon: { Image(systemName: "magnifyingglass") })
             } else {
                 emptyCell.configure(title: L10n.upNextEmptyTitle,
                                     message: L10n.upNextEmptyDescription,
@@ -368,8 +392,9 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         cell.hidesArtwork = false
         cell.episodeImageLeadConstraint.constant = 16.0
         cell.delegate = self
-        // No system reorder grip — episodes reorder via long-press (drag-and-drop).
-        cell.showsReorderControl = false
+        // The grip only appears in "Reorder Episodes" mode; otherwise episodes reorder via
+        // long-press (drag-and-drop) and a permanent grip would just be clutter.
+        cell.showsReorderControl = lineupReorderMode
         // Every row carries the play/pause action button now (the active row's shows pause).
         cell.hidesActionButton = false
         // The host drives the select control (this table is always editing — see the flag docs),
@@ -550,6 +575,12 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
             return
         }
 
+        // Reorder mode owns the touch: a tap here would start playback mid-drag.
+        if lineupReorderMode, tableData[indexPath.section] == .sessionSection {
+            tableView.deselectRow(at: indexPath, animated: false)
+            return
+        }
+
         if isMultiSelectEnabled, tableData[indexPath.section] == .sessionSection {
             guard let episode = filteredLineupTail[safe: indexPath.row] else { return }
             if !multiSelectGestureInProgress {
@@ -712,9 +743,16 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
 
     func tableView(_ tableView: UITableView, canMoveRowAt indexPath: IndexPath) -> Bool {
         // Fork: reorder is via drag-and-drop (the drag/drop delegate), not the editing-mode handle —
-        // except the chooser's "Reorder Items" mode, which keeps a real grip on pool rows.
-        guard tableData[indexPath.section] == .sessionSection, showingSessionList,
-              sessionListReorderMode, let listIndex = sessionListIndex(forTableRow: indexPath.row) else { return false }
+        // except the two explicit reorder modes, which keep a real grip on their rows.
+        guard tableData[indexPath.section] == .sessionSection else { return false }
+
+        guard showingSessionList else {
+            // A session lineup in "Reorder Episodes" mode: every tail row has a grip. The pinned
+            // current is the card above, not a row here, so it can't be dragged out of place.
+            return lineupReorderMode && indexPath.row < (sessionEpisodes?.count ?? 0)
+        }
+
+        guard sessionListReorderMode, let listIndex = sessionListIndex(forTableRow: indexPath.row) else { return false }
         return sessionPlacement(at: listIndex) == .pool
     }
 
@@ -776,11 +814,10 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         if tableData[proposedDestinationIndexPath.section] == tableData[sourceIndexPath.section] {
             if tableData[sourceIndexPath.section] == .sessionSection {
                 if showingSessionList {
-                    // Reorder: pool rows only — pinned below Up Next, the current session (when there
-                    // is one), and the search row (which rides in the table during reorder). Table
-                    // rows = list rows + 1 for the search row, so offset the clamp by it.
+                    // Reorder: pool rows only. The pinned block is Up Next (when shown) plus the
+                    // current session; the search row rides in the table too, so both offset the clamp.
                     let searchOffset = showSessionSearchRow ? 1 : 0
-                    let pinnedListRows = 1 + (sessionListHasCurrent ? 1 : 0) // Up Next [+ current]
+                    let pinnedListRows = (sessionListHasUpNext ? 1 : 0) + (sessionListHasCurrent ? 1 : 0)
                     let pinned = min(pinnedListRows + searchOffset, sessionListRows.count + searchOffset)
                     let maxRow = max(sessionListRows.count - 1 + searchOffset, 0)
                     let row = min(max(proposedDestinationIndexPath.row, pinned), maxRow)
@@ -947,10 +984,12 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
 
     @objc func reloadTable() {
         reloadScheduled = false // any pending coalesced reload is subsumed by this immediate one
-        // Fork: reorder uses UIKit drag-and-drop (long-press to lift), enabled everywhere. (UITableView
-        // has no programmatic interactive-move API — that's collection-view only — so a custom-gesture
+        // Fork: reorder uses UIKit drag-and-drop (long-press to lift). (UITableView has no
+        // programmatic interactive-move API — that's collection-view only — so a custom-gesture
         // live-swap isn't available here; drag-and-drop lifts the row and shows an insertion point.)
-        upNextTable.dragInteractionEnabled = true
+        // In either explicit reorder mode the grips take over, and drag has to stand down or the
+        // drag session intercepts the grip's own moveRowAt.
+        upNextTable.dragInteractionEnabled = !lineupReorderMode && !sessionListReorderMode
         refreshSessionMembership()
         refreshSessionState()
         refreshSections()
@@ -1067,12 +1106,14 @@ extension UpNextViewController: UITableViewDragDelegate, UITableViewDropDelegate
                 guard !isSessionSearchRow(indexPath), let listIndex = sessionListIndex(forTableRow: indexPath.row) else { return false }
                 return sessionPlacement(at: listIndex) == .pool
             }
-            // The lineup mirrors its playlist, so it's only reorderable in Drag & Drop sort (a sorted
-            // lineup shows the accent sort icon and can't be dragged — see `browsedSessionSortIsDragAndDrop`).
-            // A live title filter can't be reordered (the tail is a subset), so drag is off then.
-            guard browsedPlaybackSession != nil, !lineupSearchActive, indexPath.row < (sessionEpisodes?.count ?? 0) else { return false }
+            // Fork: the lineup has ONE saved order, so there is no sorted state left that would make
+            // dragging write the wrong thing — reorder is always live. (In "Reorder Episodes" mode
+            // the grips own the drag instead, so long-press stands down.) A live title filter can't
+            // be reordered either, since the tail on screen is only a subset.
+            guard browsedPlaybackSession != nil, !lineupSearchActive, !lineupReorderMode,
+                  indexPath.row < (sessionEpisodes?.count ?? 0) else { return false }
             let type = browsedPlaybackSession?.type
-            return (type == .playlist || type == .smartPlaylist) && browsedSessionSortIsDragAndDrop
+            return type == .playlist || type == .smartPlaylist
         case .upNextSection:
             // A live title filter can't be reordered (the tail is a subset), so drag is off then.
             return !lineupSearchActive && !filteredLineupTail.isEmpty
