@@ -84,6 +84,9 @@ class EpisodeDetailViewController: FakeNavViewController, UIDocumentInteractionC
     var showNotesWebViewTopConstraint: NSLayoutConstraint?
     @IBOutlet var transcriptExcerpt: UIView?
 
+    /// Fork: hosts the episode screen's chapter list. See EpisodeDetailViewController+Chapters.
+    var chaptersHostingController: UIViewController?
+
     @IBOutlet var mainScrollView: UIScrollView! {
         didSet {
             mainScrollView.contentInset = UIEdgeInsets(top: EpisodeDetailConstants.topPadding, left: 0, bottom: Constants.effectiveMiniPlayerOffset, right: 0)
@@ -306,6 +309,7 @@ class EpisodeDetailViewController: FakeNavViewController, UIDocumentInteractionC
 
         loadShowNotes()
         loadEpisodeArtwork()
+        loadChapters()
     }
 
     override func viewDidAppear(_ animated: Bool) {

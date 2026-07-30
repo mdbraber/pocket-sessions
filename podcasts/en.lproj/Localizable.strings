@@ -370,6 +370,12 @@
 /* A common string used throughout the app. Often refers to the Chapters list or Chapters tab in the player. */
 "chapters" = "Chapters";
 
+/* Fork: episode screen chapter list — expands a truncated list to every chapter. */
+"episode_chapters_show_all" = "Show all chapters";
+
+/* Fork: episode screen chapter list — collapses the list back to the first few. */
+"episode_chapters_show_less" = "Show less";
+
 /* A common string used throughout the app. Informs the user how many podcasts have been chosen. '%1$@' is a placeholder for the number of podcasts, this will be more than one. */
 "chosen_podcasts_plural_format" = "%1$@ Podcasts Chosen";
 
