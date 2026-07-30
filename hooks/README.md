@@ -127,3 +127,17 @@ Caddy reached PCS through that container, it takes the server down with it.
 `make hooks` installs the hook scripts: `make deploy` only ships the server
 and compose file, never the contents of `data/hooks`, so run `make hooks`
 again after changing a hook.
+
+## The reverse direction
+
+Hooks carry Pocket Casts playback *out*; `POST /api/v1/playback` carries
+external playback back *in*. A service the account also watches through
+(OwnTube) reports `{enclosureContains, positionSeconds, completed,
+durationSeconds}` with a bearer token; PCS resolves the episode by matching
+the fragment against the subscribed podcasts' catalog enclosures (indexed
+lazily on first miss) and writes the state to Pocket Casts as a sync record.
+
+Loops terminate by an ahead-only guard: a report that isn't ahead of the
+watcher's baseline is dropped (`behind` / `already-completed`), completion is
+sticky in both directions, and every accepted write advances the baseline so
+the watcher sees Pocket Casts' echo of it as a no-op — hooks don't re-fire.
