@@ -20,7 +20,9 @@ struct PlaylistCellView: View {
     }
 
     private var subtitle: String? {
-        if let overrideSubtitle = viewModel.overrideSubtitle { return overrideSubtitle }
+        // An EMPTY override means "this row has no subtitle" — the podcast page's Playlists tab
+        // groups by kind, so its headings say what each row's subtitle used to.
+        if let overrideSubtitle = viewModel.overrideSubtitle { return overrideSubtitle.isEmpty ? nil : overrideSubtitle }
         switch viewModel.displayType {
         case .check:
             let displayCount = isSelected ? viewModel.episodesCount + viewModel.additionalEpisodesCount : viewModel.episodesCount

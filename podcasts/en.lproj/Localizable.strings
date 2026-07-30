@@ -7189,6 +7189,48 @@
 /* Fork: podcast Playlists tab — explains the empty state. */
 "podcast_playlists_empty_message" = "Episodes from this podcast aren't in any of your playlists yet.";
 
+/* Fork: podcast Playlists tab — shown when the Show filter is Sessions and none of the user's sessions hold an episode of this podcast. */
+"podcast_playlists_empty_title_sessions" = "Not in any sessions";
+
+/* Fork: podcast Playlists tab — explains the sessions-only empty state. */
+"podcast_playlists_empty_message_sessions" = "Episodes from this podcast aren't in any of your sessions yet.";
+
+/* Fork: podcast Playlists tab — shown when neither the user's playlists nor their sessions hold an episode of this podcast. */
+"podcast_playlists_empty_title_both" = "Not in any playlists or sessions";
+
+/* Fork: podcast Playlists tab — explains the combined empty state. */
+"podcast_playlists_empty_message_both" = "Episodes from this podcast aren't in any of your playlists or sessions yet.";
+
+/* Fork: podcast Playlists tab — shown when a search matches none of the lists this podcast is in. */
+"podcast_playlists_search_no_results" = "No playlists found";
+
+/* Fork: podcast Playlists tab — explains that the search, not the podcast, is why the list is empty. */
+"podcast_playlists_search_no_results_message" = "No playlist holding this podcast matches your search.";
+
+/* Fork: podcast Playlists tab ⋯ — group the rows by what kind of list each one is. */
+"podcast_playlists_group_by_type" = "Type";
+
+/* Fork: podcast Playlists tab ⋯ — order the rows by name, A to Z. */
+"podcast_playlists_sort_title_a_to_z" = "Title (A-Z)";
+
+/* Fork: podcast Playlists tab ⋯ — order the rows by name, Z to A. */
+"podcast_playlists_sort_title_z_to_a" = "Title (Z-A)";
+
+/* Fork: podcast Playlists tab — group heading above the hand-made playlists. */
+"podcast_playlists_group_manual" = "Manual Playlists";
+
+/* Fork: podcast Playlists tab — group heading above the rule-based playlists. */
+"podcast_playlists_group_smart" = "Smart Playlists";
+
+/* Fork: podcast Playlists tab — group heading above the sessions fed by a smart playlist. */
+"podcast_playlists_group_smart_session" = "Smart Playlist Sessions";
+
+/* Fork: podcast Playlists tab — group heading above other podcasts' own sessions. */
+"podcast_playlists_group_podcast_session" = "Podcast Sessions";
+
+/* Fork: podcast Playlists tab — group heading above folders' sessions. */
+"podcast_playlists_group_folder_session" = "Folder Sessions";
+
 /* Fork: podcast Playlists tab — row subtitle for a hand-made playlist. */
 "podcast_playlists_kind_manual" = "Manual Playlist";
 

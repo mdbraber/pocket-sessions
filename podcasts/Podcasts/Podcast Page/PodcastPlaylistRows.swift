@@ -11,7 +11,7 @@ struct PodcastPlaylistRow {
     /// A smart playlist that feeds a session exists TWICE — the playlist itself, and the session's
     /// store — so both can hold episodes of this podcast. They're separate rows because they are
     /// separate lists with separate contents; the ⋯ Show filter picks which of the pair to see.
-    enum Kind {
+    enum Kind: CaseIterable {
         case manualPlaylist
         case smartPlaylist
         case smartPlaylistSession
@@ -27,6 +27,21 @@ struct PodcastPlaylistRow {
             case .folderSession: return L10n.podcastPlaylistsKindFolderSession
             }
         }
+
+        /// The heading this kind sits under. The tab groups by kind, so the heading names the
+        /// group and the rows below it drop the (now redundant) per-row subtitle.
+        var groupTitle: String {
+            switch self {
+            case .manualPlaylist: return L10n.podcastPlaylistsGroupManual
+            case .smartPlaylist: return L10n.podcastPlaylistsGroupSmart
+            case .smartPlaylistSession: return L10n.podcastPlaylistsGroupSmartSession
+            case .podcastSession: return L10n.podcastPlaylistsGroupPodcastSession
+            case .folderSession: return L10n.podcastPlaylistsGroupFolderSession
+            }
+        }
+
+        /// Group order down the tab: the playlists you built, then the sessions built from them.
+        static let groupOrder: [Kind] = [.smartPlaylist, .manualPlaylist, .smartPlaylistSession, .podcastSession, .folderSession]
 
         /// Sessions and plain playlists are the two halves the Show filter chooses between.
         var isSession: Bool {
@@ -66,6 +81,72 @@ enum PodcastPlaylistsShow: Int, CaseIterable {
     static var current: PodcastPlaylistsShow {
         get { PodcastPlaylistsShow(rawValue: UserDefaults.standard.integer(forKey: key)) ?? .both }
         set { UserDefaults.standard.set(newValue.rawValue, forKey: key) }
+    }
+}
+
+/// Fork: whether the Playlists tab groups its rows by kind, mirroring the Episodes tab's own
+/// "Group By". Type is the default — the tab's whole job is answering "what is this podcast in?",
+/// and the kinds answer it differently.
+enum PodcastPlaylistsGrouping: Int, CaseIterable {
+    case type = 0
+    case none = 1
+
+    var title: String {
+        switch self {
+        case .type: return L10n.podcastPlaylistsGroupByType
+        case .none: return L10n.inboxGroupNone
+        }
+    }
+
+    private static let key = "SJPodcastPlaylistsGrouping"
+
+    static var current: PodcastPlaylistsGrouping {
+        get { PodcastPlaylistsGrouping(rawValue: UserDefaults.standard.integer(forKey: key)) ?? .type }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: key) }
+    }
+}
+
+/// Fork: how the Playlists tab orders its rows. Lists have no date and no episode number, so title
+/// is the only ordering that means anything from the podcast's side.
+enum PodcastPlaylistsSort: Int, CaseIterable {
+    case titleAToZ = 0
+    case titleZToA = 1
+
+    var title: String {
+        switch self {
+        case .titleAToZ: return L10n.podcastPlaylistsSortTitleAToZ
+        case .titleZToA: return L10n.podcastPlaylistsSortTitleZToA
+        }
+    }
+
+    func sorted(_ rows: [PodcastPlaylistRow]) -> [PodcastPlaylistRow] {
+        rows.sorted { lhs, rhs in
+            let order = lhs.name.localizedCaseInsensitiveCompare(rhs.name)
+            return self == .titleAToZ ? order == .orderedAscending : order == .orderedDescending
+        }
+    }
+
+    private static let key = "SJPodcastPlaylistsSort"
+
+    static var current: PodcastPlaylistsSort {
+        get { PodcastPlaylistsSort(rawValue: UserDefaults.standard.integer(forKey: key)) ?? .titleAToZ }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: key) }
+    }
+}
+
+/// Which of the Playlists tab's group headings the user has folded away, per podcast — the same
+/// idea as `Settings.collapsedEpisodeGroups`, kept separate so the two never fight over a title.
+enum PodcastPlaylistsCollapsedGroups {
+    private static func key(_ podcastUuid: String) -> String { "SJPodcastPlaylistsCollapsed-\(podcastUuid)" }
+
+    static func current(podcastUuid: String) -> Set<String> {
+        Set(UserDefaults.standard.stringArray(forKey: key(podcastUuid)) ?? [])
+    }
+
+    static func toggle(podcastUuid: String, groupTitle: String) {
+        var set = current(podcastUuid: podcastUuid)
+        if set.contains(groupTitle) { set.remove(groupTitle) } else { set.insert(groupTitle) }
+        UserDefaults.standard.set(Array(set), forKey: key(podcastUuid))
     }
 }
 

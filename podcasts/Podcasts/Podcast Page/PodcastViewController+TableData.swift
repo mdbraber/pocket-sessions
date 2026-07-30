@@ -202,10 +202,23 @@ extension PodcastViewController: UITableViewDataSource, UITableViewDelegate {
                 })
                 return cell
             } else if let playlistItem = itemAtRow as? PodcastPlaylistListItem {
-                let isLast = indexPath.row == (episodeInfo[safe: indexPath.section]?.elements.count ?? 0) - 1
+                // The separator belongs BETWEEN rows of a group, so the last row of each group
+                // drops it — the next group's heading is the divider from there on.
+                let elements = episodeInfo[safe: indexPath.section]?.elements
+                let next = elements?[safe: indexPath.row + 1]
+                let isLast = next == nil || next is PodcastPlaylistsGroupHeaderItem
                 return podcastPlaylistCell(for: playlistItem, isLastRow: isLast, at: indexPath)
-            } else if itemAtRow is PodcastPlaylistsEmptyItem {
-                return podcastPlaylistsEmptyCell(at: indexPath)
+            } else if let groupHeader = itemAtRow as? PodcastPlaylistsGroupHeaderItem {
+                let cell = tableView.dequeueReusableCell(withIdentifier: PodcastViewController.groupHeadingCellId, for: indexPath) as! HeadingCell
+                // Same heading UI as an episode group: leading chevron, tap the row to fold it away.
+                cell.configure(title: groupHeader.title, collapsible: true, collapsed: groupHeader.collapsed)
+                // No actions menu though — the episode-group one acts on episodes, and there is
+                // nothing to do in bulk to a heading that just names a kind of list.
+                cell.button.isHidden = true
+                cell.action = nil
+                return cell
+            } else if let emptyItem = itemAtRow as? PodcastPlaylistsEmptyItem {
+                return podcastPlaylistsEmptyCell(for: emptyItem, at: indexPath)
             } else if let archivedPlaceholder = itemAtRow as? AllArchivedPlaceholder {
                 let cell = tableView.dequeueReusableCell(withIdentifier: EmptyStateCell.reuseIdentifier, for: indexPath) as! EmptyStateCell
                 cell.configure(title: L10n.episodeFilterNoEpisodesTitle, message: archivedPlaceholder.message, icon: {
@@ -328,16 +341,20 @@ extension PodcastViewController: UITableViewDataSource, UITableViewDelegate {
     func tableView(_ tableView: UITableView, willSelectRowAt indexPath: IndexPath) -> IndexPath? {
         // Reorder mode owns the touch: a tap here would open the episode mid-drag.
         if lineupReorderMode { return nil }
+        // A Playlists-tab row is selectable on its own terms — it is not an episode, so the
+        // episode guards below (which demand `episodeAtIndexPath`) would reject it and swallow
+        // the tap. Check it BEFORE them.
+        let playlistsItem = episodeInfo[safe: indexPath.section]?.elements[safe: indexPath.row]
+        if playlistsItem is PodcastPlaylistListItem || playlistsItem is PodcastPlaylistsGroupHeaderItem {
+            return indexPath
+        }
+
         // Special handling for episodes only to deal with multi gesture
         guard currentViewMode == .episodes else { return indexPath }
 
         guard indexPath.section == PodcastViewController.allEpisodesSection, episodeAtIndexPath(indexPath) != nil else { return nil }
 
         guard episodesTable.isEditing, !multiSelectGestureInProgress else { return indexPath }
-
-        if episodeInfo[safe: indexPath.section]?.elements[safe: indexPath.row] is PodcastPlaylistListItem {
-            return indexPath
-        }
         if let selectedEpisode = episodeInfo[indexPath.section].elements[safe: indexPath.row] as? ListEpisode {
             if selectedEpisodes.contains(selectedEpisode) {
                 tableView.deselectIndexPath(indexPath)
@@ -353,6 +370,12 @@ extension PodcastViewController: UITableViewDataSource, UITableViewDelegate {
         if let playlistItem = episodeInfo[safe: indexPath.section]?.elements[safe: indexPath.row] as? PodcastPlaylistListItem {
             tableView.deselectRow(at: indexPath, animated: true)
             openPodcastPlaylist(playlistItem)
+            return
+        }
+        // …and tapping its group heading folds that group away, as on the Episodes tab.
+        if let groupHeader = episodeInfo[safe: indexPath.section]?.elements[safe: indexPath.row] as? PodcastPlaylistsGroupHeaderItem {
+            tableView.deselectRow(at: indexPath, animated: true)
+            togglePodcastPlaylistGroup(groupHeader)
             return
         }
         switch currentViewMode {

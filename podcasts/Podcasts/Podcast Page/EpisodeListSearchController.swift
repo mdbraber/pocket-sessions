@@ -108,7 +108,7 @@ class EpisodeListSearchController: SimpleNotificationsViewController, UISearchBa
 
         searchTextField.backgroundColor = UIColor.clear
         searchTextField.textColor = ThemeColor.primaryText02()
-        searchTextField.attributedPlaceholder = NSAttributedString(string: L10n.searchEpisodes, attributes: [NSAttributedString.Key.foregroundColor: ThemeColor.primaryText02(), .font: UIFont.font(ofSize: 15, weight: .regular, scalingWith: .subheadline)])
+        updateSearchPlaceholder()
         searchTextField.keyboardAppearance = AppTheme.keyboardAppearance()
         roundedBackgroundView.backgroundColor = ThemeColor.primaryField01()
         searchIcon.tintColor = ThemeColor.primaryIcon02()
@@ -116,8 +116,62 @@ class EpisodeListSearchController: SimpleNotificationsViewController, UISearchBa
         showHideArchiveBtn.tintColor = ThemeColor.primaryInteractive01()
     }
 
+    /// The XIB's vertical chain — divider, then the counts label and the funnel, then the closing
+    /// divider — is what gives this view its height. Hiding those subviews alone leaves the space
+    /// they occupied, which reads as an empty row above the list, so their spacing and heights are
+    /// zeroed too. Originals are captured on the first collapse so restoring is exact.
+    private var infoRowSpacing: [(constraint: NSLayoutConstraint, original: CGFloat)] = []
+    private lazy var infoRowZeroHeights: [NSLayoutConstraint] = [episodeInfoLabel, showHideArchiveBtn]
+        .compactMap { $0?.heightAnchor.constraint(equalToConstant: 0) }
+
+    private func setInfoRowCollapsed(_ collapsed: Bool) {
+        guard let label = episodeInfoLabel, let container = label.superview else { return }
+        if infoRowSpacing.isEmpty {
+            let block: [UIView?] = [label, showHideArchiveBtn]
+            infoRowSpacing = container.constraints
+                .filter { constraint in
+                    guard constraint.firstAttribute == .top else { return false }
+                    return block.contains { $0 === constraint.firstItem as? UIView || $0 === constraint.secondItem as? UIView }
+                }
+                .map { ($0, $0.constant) }
+        }
+        for entry in infoRowSpacing {
+            entry.constraint.constant = collapsed ? 0 : entry.original
+        }
+        for constraint in infoRowZeroHeights {
+            constraint.isActive = collapsed
+        }
+        view.layoutIfNeeded()
+    }
+
+    /// The field searches whatever the tab lists — on the Playlists tab that is lists, not episodes.
+    private func updateSearchPlaceholder() {
+        let text = podcastDelegate?.isShowingPodcastPlaylists() == true ? L10n.podcastPlaylistsSearch : L10n.searchEpisodes
+        searchTextField?.attributedPlaceholder = NSAttributedString(
+            string: text,
+            attributes: [
+                .foregroundColor: ThemeColor.primaryText02(),
+                .font: UIFont.font(ofSize: 15, weight: .regular, scalingWith: .subheadline)
+            ]
+        )
+    }
+
     private func updateInfoView() {
+        updateSearchPlaceholder()
         guard let delegate = podcastDelegate, let podcast = delegate.displayedPodcast() else { return }
+
+        // Fork: the Playlists tab lists LISTS, not episodes, so every part of the counts line is
+        // about something else's episodes — the podcast's count, its archive limit, its filter
+        // preset. Blank the whole line and drop the funnel and sort; the ⋯ (which carries the
+        // tab's own "Show" menu) is the only control that still means anything here.
+        if delegate.isShowingPodcastPlaylists() {
+            episodeInfoLabel?.attributedText = nil
+            showHideArchiveBtn?.isHidden = true
+            sortButton.isHidden = true
+            setInfoRowCollapsed(true)
+            return
+        }
+        setInfoRowCollapsed(false)
 
         // Fork: on the inline Session tab the counts line describes the lineup, and the
         // funnel hides — its filters shape the Episodes list only.
