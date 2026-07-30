@@ -217,6 +217,12 @@ enum NotificationsGroup: CaseIterable {
                     RefreshManager.shared.refreshPodcasts(forceEvenIfRefreshedRecently: true)
                 }
                 Settings.notificationsNewEpisodes = newValue
+                // Fork: this switch is otherwise a purely local flag — new-episode alerts come from
+                // the sessions server, which only ever saw the PER-PODCAST toggles. Turning it off
+                // therefore changed nothing and the alerts kept arriving. Report it so the server's
+                // watcher can gate on it (the per-podcast choices are left alone, so flipping the
+                // switch back on restores exactly what was selected before).
+                SessionServerSync.shared?.notificationSettingsChanged()
             case .dailyReminders:
                 Settings.notificationsDailyReminders = newValue
             case .recommendations:

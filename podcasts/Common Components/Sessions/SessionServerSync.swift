@@ -188,17 +188,28 @@ final class SessionServerSync {
     /// when it differs from what this device last reported.
     private var notifyTogglesKey: String { "SJSessionNotifyToggles-\(baseURL.host ?? "server")" }
 
+    /// Fork: re-report after the GLOBAL "New Episodes" switch flips. Nothing else changes the
+    /// per-podcast toggles, so without this the server would keep the stale switch until the next
+    /// podcast edit.
+    func notificationSettingsChanged() {
+        queue.async { [weak self] in self?.pushNotifyTogglesIfChanged() }
+    }
+
     private func pushNotifyTogglesIfChanged() {
         let uuids = DataManager.sharedManager.allPodcasts(includeUnsubscribed: false)
             .filter { $0.pushEnabled }
             .map(\.uuid)
             .sorted()
-        let fingerprint = uuids.joined(separator: ",")
+        // The GLOBAL switch rides along. It used to be a local-only UserDefaults flag, so turning
+        // "New Episodes" off never reached the server and the watcher kept alerting on every
+        // podcast that was still individually enabled.
+        let enabled = Settings.notificationsNewEpisodes
+        let fingerprint = "\(enabled ? 1 : 0)|" + uuids.joined(separator: ",")
         guard fingerprint != UserDefaults.standard.string(forKey: notifyTogglesKey) else { return }
-        request(path: "/session/v1/notify-podcasts", method: "POST", body: ["uuids": uuids]) { [weak self] result in
+        request(path: "/session/v1/notify-podcasts", method: "POST", body: ["uuids": uuids, "enabled": enabled]) { [weak self] result in
             guard case .success = result, let self else { return }
             UserDefaults.standard.set(fingerprint, forKey: self.notifyTogglesKey)
-            FileLog.shared.addMessage("SessionServerSync: reported \(uuids.count) notification toggles")
+            FileLog.shared.addMessage("SessionServerSync: reported \(uuids.count) notification toggles (new episodes: \(enabled))")
         }
     }
 
