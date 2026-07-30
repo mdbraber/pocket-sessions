@@ -132,3 +132,75 @@ carries videoId per item — the enclosure index becomes derived data);
 §2 gap actions on top of the now-scoped, videoId-keyed core.
 
 Each step is independently shippable and none breaks the running system.
+
+## 5. The sharpened hub question: PCS holds the full Pocket Casts DB
+
+The real question (clarified): not "PCS owns both systems' state" but
+**"PCS maintains a complete replica of the PC account database"** — every
+record the sync protocol carries, not just the episode-progress slice —
+and possibly sits in the traffic path ("pass everything through").
+
+Two designs, which compose:
+
+### Design A — full replica via the sync protocol (pull)
+
+A cursor-0 sync already returns the entire account (the watcher's seed
+discards most of it today). Persisting *all* record types — episodes with
+every field (position, status, archived, starred, deselected chapters),
+podcasts, folders, up-next, bookmarks — plus the public-catalog episode
+lists PCS already fetches, yields a complete local PC DB kept fresh by the
+existing poll/nudge cycle.
+
+- **Feasibility: high.** The protobuf plumbing (parse and write, per-field
+  modified stamps) exists and is proven in both directions. Storage is
+  trivial (SQLite; thousands of rows). One important hedge: persist the
+  **raw record bytes** alongside parsed columns, so unknown/new PC fields
+  survive and re-parsing after schema learning is a local replay, not a
+  re-sync.
+- **What it buys immediately:** the §3 scoping problem evaporates (every
+  episode↔enclosure↔feed lookup is local and warm — no catalog sweeps
+  ever); the M2 mirror endpoints become complete rather than best-effort;
+  the M3 query/automation API gets a real database; the reverse-sync guard
+  gets full context (starred, archived, everything) instead of the
+  three-field baseline.
+- **What it does not buy: freshness.** A replica is only as current as the
+  last poll. Design A alone changes none of §1's latency story.
+
+### Design B — sync proxy: the fork routes PC traffic through PCS
+
+The iOS plan explicitly chose "the app never routes PC traffic through this
+server." This is the decision to revisit. If the fork points its PC API
+base at PCS and PCS relays byte-for-byte to api.pocketcasts.com while
+parsing a copy of both directions:
+
+- **Polling disappears for fork-originated activity.** Every archive, played
+  mark, scrub, queue edit is *seen by PCS at the moment the app syncs it* —
+  the sync request itself is the push. Tonight's archive gap (action
+  invisible until a manual nudge) cannot happen: the nudge becomes
+  redundant for the fork, and hooks fire off the live traffic. The 15m
+  backstop poll remains only for non-fork devices.
+- **The replica stays fresh for free** — Design A's DB is written from the
+  relayed responses instead of (mostly) from polls.
+- **Risks, honestly:** PCS availability becomes part of the app's sync path
+  — the fork must fall back to direct PC on PCS failure (a client-side
+  timeout + retry-direct, small but essential); token custody is unchanged
+  (PCS already holds a device lineage, and the relay uses the app's own
+  auth header untouched); fidelity is low-risk because the relay forwards
+  opaque bytes and parses a *copy* — a parse failure can never corrupt the
+  passthrough.
+
+### Verdict
+
+Design B **with** Design A's store is the architecture that actually
+delivers "push, not polling" — not because PC gained push, but because the
+fork's own traffic becomes the event stream, with the poll demoted to a
+backstop for foreign devices. It also subsumes the §1 nudge-on-action work
+(no longer needed for the fork) and the §3 scoping fix (lookups are local).
+
+Order that de-risks it: (1) Design A alone first — replica + raw-bytes
+store, fed by today's polls; every consumer (scoping, guard, query API)
+starts benefiting with zero new failure modes. (2) Then the relay, behind a
+fork setting, with direct-PC fallback; run it read-only (parse the copy,
+change nothing about routing decisions) until trusted. (3) Only then let
+hooks fire from relay traffic and retire the fork's nudges. The companion
+absorption (§4) is orthogonal and can proceed in parallel.
