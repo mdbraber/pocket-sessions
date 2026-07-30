@@ -79,11 +79,13 @@ It resolves the video's `channelId` via `video.detail`, then calls
 (status is played). OwnTube keeps one history row per video and treats
 `completed` as sticky, so repeated events are safe.
 
-An `archived` event instead calls `remote.archiveFromFeed`, which removes the
-video from the collection the feed was published from — queue, saved, or the
-playlist — resolved by the podcast's title against OwnTube's published-feeds
-ledger. Channel/tag/subscription feeds mirror uploads, so there is nothing to
-remove and the call reports that.
+An `archived` event means "done with this": the hook marks the video watched
+(`history.upsertEvent` with `completed`, which also dequeues it) and calls
+`remote.archiveFromFeed`, which removes it from the collection the feed was
+published from — queue, saved, or the playlist — resolved by the podcast's
+title against OwnTube's published-feeds ledger. Channel/tag/subscription
+feeds mirror uploads, so there is nothing to remove there beyond the
+mark-watched. Archiving fires even for a never-played episode.
 
 **The token expires after 30 days** (OwnTube's `DEVICE_TOKEN_MAX_AGE`), so this
 needs re-pairing monthly: `auth.startDevicePairing` → approve at

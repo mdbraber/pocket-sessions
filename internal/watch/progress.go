@@ -207,13 +207,14 @@ func (w *ProgressWatcher) enrich(ctx context.Context, event *hooks.Event) {
 // classify decides what (if anything) changed enough to report.
 func classify(known bool, previous, current store.EpisodeProgress, minDelta int64) string {
 	if !known {
-		// First sight: only worth reporting if it arrives already finished or
-		// meaningfully played — a brand-new unplayed episode is not an event.
-		// An archived first sight is history, not an action worth replaying.
-		if current.Archived == 1 {
-			return ""
-		}
+		// First sight: only worth reporting if it arrives already finished,
+		// meaningfully played, or archived — an untouched new episode is not an
+		// event. Archived first sights ARE events: an episode can be archived
+		// without ever being played (that's still a deliberate act, and the
+		// cursor-0 seed plus the bulk-burst cap already keep history quiet).
 		switch {
+		case current.Archived == 1:
+			return hooks.EventArchived
 		case current.PlayingStatus == pc.StatusCompleted:
 			return hooks.EventCompleted
 		case current.PlayedUpTo >= minDelta:

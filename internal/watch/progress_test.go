@@ -54,7 +54,9 @@ func TestClassify(t *testing.T) {
 			store.EpisodeProgress{PlayedUpTo: 400, PlayingStatus: pc.StatusInProgress, Archived: 1},
 			store.EpisodeProgress{PlayedUpTo: 400, PlayingStatus: pc.StatusInProgress, Archived: 0}, ""},
 		{"new and already archived", false, store.EpisodeProgress{},
-			store.EpisodeProgress{PlayedUpTo: 1900, PlayingStatus: pc.StatusCompleted, Archived: 1}, ""},
+			store.EpisodeProgress{PlayedUpTo: 1900, PlayingStatus: pc.StatusCompleted, Archived: 1}, hooks.EventArchived},
+		{"new, unplayed, archived", false, store.EpisodeProgress{},
+			store.EpisodeProgress{Archived: 1}, hooks.EventArchived},
 	}
 
 	for _, tc := range cases {

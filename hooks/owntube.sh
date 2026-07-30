@@ -105,10 +105,27 @@ trpc() { # trpc <get|post> <procedure> <json-input>
   printf '%s' "$_body"
 }
 
-# Archiving in the app removes the video from the collection this feed was
-# published from (queue / saved / playlist) — the server maps the podcast
-# title back to the feed. No history write: archiving is cleanup, not playback.
+# Archiving in the app means "done with this": mark the video watched in
+# OwnTube (which also dequeues it) and remove it from the collection this feed
+# was published from (queue / saved / playlist) — the server maps the podcast
+# title back to the feed.
 if [ "${PCS_EVENT:-}" = "archived" ]; then
+  rc=0
+  detail=$(trpc get "video.detail" "{\"videoId\":\"$video_id\"}") || rc=$?
+  if [ "$rc" = 0 ]; then
+    channel_id=$(printf '%s' "$detail" | sed -nE 's/.*"channelId"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' | head -1)
+    if [ -n "$channel_id" ]; then
+      mark=$(cat <<EOF
+{"videoId":"$video_id","channelId":"$channel_id","durationWatched":${PCS_PLAYED_UP_TO:-0},"positionSeconds":${PCS_PLAYED_UP_TO:-0},"completed":true,"videoDurationSeconds":${PCS_DURATION:-0}}
+EOF
+)
+      trpc post "history.upsertEvent" "$mark" >/dev/null \
+        || echo "owntube: archived $video_id — mark-watched failed" >&2
+    fi
+  elif [ "$rc" != 2 ]; then
+    echo "owntube: archived $video_id — video.detail failed, skipping mark-watched" >&2
+  fi
+
   [ -n "${PCS_PODCAST_TITLE:-}" ] || { echo "owntube: archived event without podcast title" >&2; exit 0; }
   title=$(printf '%s' "$PCS_PODCAST_TITLE" | sed 's/\\/\\\\/g; s/"/\\"/g')
   rc=0
@@ -118,7 +135,7 @@ if [ "${PCS_EVENT:-}" = "archived" ]; then
     exit 1
   fi
   removed=$(printf '%s' "$out" | sed -nE 's/.*"removed"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p')
-  echo "owntube: archived $video_id — removed from ${removed:-nothing (not in a removable feed)}"
+  echo "owntube: archived $video_id — marked watched, removed from ${removed:-no removable feed}"
   exit 0
 fi
 
