@@ -41,9 +41,9 @@ final class PodcastPlaylistsGroupHeaderItem: ListItem {
     }
 }
 
-/// Marks "this podcast is in nothing" so the tab can offer a way out of that state. Why it is empty
-/// decides what it says: the Show filter narrows what was looked at, and a search narrows it
-/// further — claiming "not in any playlists" when the user simply mistyped would be a lie.
+/// Marks "this podcast is in nothing". Why it is empty decides what it says: the Show filter
+/// narrows what was looked at, and a search narrows it further — claiming "not in any playlists"
+/// when the user simply mistyped would be a lie.
 final class PodcastPlaylistsEmptyItem: ListItem {
     enum Reason {
         case noPlaylists
@@ -68,10 +68,6 @@ final class PodcastPlaylistsEmptyItem: ListItem {
             case .noSearchMatches: return L10n.podcastPlaylistsSearchNoResultsMessage
             }
         }
-
-        /// Only a genuinely empty tab offers the way out — "Add to Playlist" would not answer a
-        /// search that matched nothing.
-        var offersAddToPlaylist: Bool { self != .noSearchMatches }
     }
 
     let reason: Reason
@@ -215,40 +211,17 @@ extension PodcastViewController {
         navigationController?.pushViewController(controller, animated: true)
     }
 
-    /// "Not in any playlists", with the way out attached — the same shape as every other empty
-    /// state in the app, so the tab is never a dead end.
+    /// "Not in any playlists" — a statement, with no action attached. The ways into a playlist all
+    /// live on the episodes themselves; offering a bulk "add this whole podcast" here would be a
+    /// different, much broader operation than the one the tab is about.
     func podcastPlaylistsEmptyCell(for item: PodcastPlaylistsEmptyItem, at indexPath: IndexPath) -> UITableViewCell {
         let cell = episodesTable.dequeueReusableCell(withIdentifier: EmptyStateCell.reuseIdentifier, for: indexPath) as! EmptyStateCell
         cell.configure(
             title: item.reason.title,
             message: item.reason.message,
-            icon: { Image(systemName: "rectangle.stack") },
-            actions: item.reason.offersAddToPlaylist ? [
-                .init(title: L10n.playlistManualEpisodeAddToPlaylist, action: { [weak self] in
-                    self?.addPodcastEpisodesToPlaylist()
-                })
-            ] : []
+            icon: { Image(systemName: "rectangle.stack") }
         )
         return cell
-    }
-
-    /// From the empty state: the podcast's episodes go to a playlist of the user's choosing, named
-    /// after the podcast by default (see `PlaylistNameSuggestion`).
-    private func addPodcastEpisodesToPlaylist() {
-        guard let podcast else { return }
-        let episodes = episodeInfo
-            .flatMap(\.elements)
-            .compactMap { ($0 as? ListEpisode)?.episode as? Episode }
-        let all = episodes.isEmpty
-            ? DataManager.sharedManager.allEpisodesForPodcast(id: podcast.id).compactMap { $0 as? Episode }
-            : episodes
-        guard !all.isEmpty else { return }
-        let chooser = ManualPlaylistsChooserViewController(
-            episodes: all,
-            analyticsSource: "podcast_playlists_tab",
-            suggestedName: PlaylistNameSuggestion.joined(podcast.title)
-        )
-        present(UINavigationController(rootViewController: chooser), animated: true)
     }
 
     /// Fork: the Playlists tab's ⋯ options. Only what applies here — the tab lists LISTS, so the

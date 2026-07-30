@@ -50,14 +50,6 @@ final class PodcastPlaylistRowsTests: XCTestCase {
         XCTAssertEqual(messages.count, Set(messages).count)
     }
 
-    func testOnlyAGenuinelyEmptyTabOffersAddToPlaylist() {
-        XCTAssertTrue(PodcastPlaylistsEmptyItem.Reason.noPlaylists.offersAddToPlaylist)
-        XCTAssertTrue(PodcastPlaylistsEmptyItem.Reason.noSessions.offersAddToPlaylist)
-        XCTAssertTrue(PodcastPlaylistsEmptyItem.Reason.neither.offersAddToPlaylist)
-        // Adding episodes to a playlist would not answer "your search matched nothing".
-        XCTAssertFalse(PodcastPlaylistsEmptyItem.Reason.noSearchMatches.offersAddToPlaylist)
-    }
-
     func testEmptyItemsDifferWhenTheirReasonDiffers() {
         let searchMiss = PodcastPlaylistsEmptyItem(reason: .noSearchMatches)
         XCTAssertFalse(searchMiss.handleIsEqual(PodcastPlaylistsEmptyItem(reason: .neither)))
