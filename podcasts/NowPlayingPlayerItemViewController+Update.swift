@@ -56,7 +56,13 @@ extension NowPlayingPlayerItemViewController {
         // explains nothing. The googleCastStatusChanged observer already drives this method, so
         // the slot swaps back the moment casting ends.
         if PlaybackManager.shared.shouldRenderVideo(), !GoogleCastManager.sharedManager.connectedOrConnectingToDevice() {
-            if floatingVideoView.isHidden {
+            // Fork: attach whenever the view is hidden OR visible-but-empty. It used to attach only
+            // on the hidden → shown transition, so a view revealed before the player existed (the
+            // player is created lazily, and the enclosure resolves through a redirect first) kept a
+            // nil player and rendered black. No later update could repair it, because the view was
+            // no longer hidden — it took something that hid it again, like a track change, which is
+            // why the picture appeared on the next interaction rather than on its own.
+            if floatingVideoView.isHidden || floatingVideoView.player == nil {
                 floatingVideoView.isHidden = false
                 floatingVideoView.player = PlaybackManager.shared.internalPlayerForVideoPlayback()
                 episodeImage.alpha = CGFloat.leastNonzeroMagnitude
