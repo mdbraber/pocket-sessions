@@ -29,24 +29,10 @@ class SyncSettingsViewController: PCViewController, UITableViewDataSource, UITab
     /// Pocket Casts session (`SessionServerSync.enroll`), so the linked account is always the
     /// account the app signed in with — printing it back tells the user nothing they didn't
     /// already know, and goes stale the moment the two diverge.
-    private enum PCLinkState {
-        case notLinked
-        case linked
-        /// The server IS linked, but to a different account than the one signed in here — the
-        /// only case where the account is worth saying anything about, because re-linking is
-        /// the fix and "Not Linked" would be a lie.
-        case linkedToAnotherAccount
-
-        var title: String {
-            switch self {
-            case .notLinked: return L10n.sessionSyncNotLinked
-            case .linked: return L10n.sessionSyncLinked
-            case .linkedToAnotherAccount: return L10n.sessionSyncLinkedOtherAccount
-            }
-        }
-    }
-
-    private var pcLinkState: PCLinkState = .notLinked
+    /// The Pocket Casts account the SERVER is linked to. Shown rather than hidden: seeing the
+    /// wrong address is exactly how you discover a stale link, and Unlink is right beside it.
+    private var pcLinkEmail: String?
+    private var pcLinked = false
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -68,17 +54,8 @@ class SyncSettingsViewController: PCViewController, UITableViewDataSource, UITab
         super.viewWillAppear(animated)
         settingsTable.reloadData()
         SessionServerSync.shared?.pcLinkStatus { [weak self] linked, email in
-            guard linked else {
-                self?.pcLinkState = .notLinked
-                self?.settingsTable.reloadData()
-                return
-            }
-            // A link the server can't name, or one naming the account signed in here, is simply
-            // "Linked". Only a genuine mismatch is worth reporting — it survives signing out and
-            // back in as someone else, and only re-linking clears it.
-            let signedIn = ServerSettings.syncingEmail()
-            let mismatch = (email?.isEmpty == false) && signedIn != nil && email != signedIn
-            self?.pcLinkState = mismatch ? .linkedToAnotherAccount : .linked
+            self?.pcLinked = linked
+            self?.pcLinkEmail = linked ? (email ?? "") : nil
             self?.settingsTable.reloadData()
         }
     }
@@ -135,7 +112,7 @@ class SyncSettingsViewController: PCViewController, UITableViewDataSource, UITab
             // Everything credential-shaped collapses into one status row: the URL
             // save enrolls automatically, so this only ever shows the outcome.
             cell.textLabel?.text = L10n.sessionSyncAccount
-            cell.detailTextLabel?.text = pcLinkState.title
+            cell.detailTextLabel?.text = pcLinkEmail.map { $0.isEmpty ? L10n.sessionSyncLinked : $0 } ?? L10n.sessionSyncNotLinked
             cell.accessoryType = .disclosureIndicator
         case .followPlayback:
             cell.textLabel?.text = L10n.sessionSyncFollowPlayback
@@ -254,7 +231,8 @@ class SyncSettingsViewController: PCViewController, UITableViewDataSource, UITab
         Toast.show(L10n.sessionSyncPcLinking)
         SessionServerSync.enroll { [weak self] email in
             if let email {
-                self?.pcLinkState = .linked
+                self?.pcLinked = true
+                self?.pcLinkEmail = email
                 self?.settingsTable.reloadData()
                 Toast.show(L10n.sessionSyncPcLinkDone(email.isEmpty ? L10n.sessionSyncLinked : email))
             } else {
@@ -267,33 +245,35 @@ class SyncSettingsViewController: PCViewController, UITableViewDataSource, UITab
         Settings.setSessionSyncPlayback(toggle.isOn)
     }
 
-    /// The Account row's sheet: re-link is the one action anyone needs; manual
-    /// token entry hides here as the last-resort escape hatch.
+    /// The Account row's sheet: link (or re-link), and unlink when there is a link to drop.
+    ///
+    /// Manual token entry used to hide here. It's gone: saving the server URL issues this device
+    /// its own token automatically, so hand-typing one could only ever disagree with the one the
+    /// server actually knows.
     private func showAccountOptions() {
         let alert = UIAlertController(title: L10n.sessionSyncAccount, message: L10n.sessionSyncPcLinkMessage, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: L10n.sessionSyncPcLink, style: .default) { [weak self] _ in
             self?.linkPCAccount()
         })
-        alert.addAction(UIAlertAction(title: L10n.sessionSyncServerTokenManual, style: .default) { [weak self] _ in
-            self?.promptForToken()
-        })
+        if pcLinked {
+            alert.addAction(UIAlertAction(title: L10n.sessionSyncPcUnlink, style: .destructive) { [weak self] _ in
+                self?.confirmUnlink()
+            })
+        }
         alert.addAction(UIAlertAction(title: L10n.cancel, style: .cancel))
         present(alert, animated: true)
     }
 
-    private func promptForToken() {
-        let alert = UIAlertController(title: L10n.sessionSyncServerToken, message: L10n.sessionSyncServerTokenMessage, preferredStyle: .alert)
-        alert.addTextField { field in
-            field.text = Settings.sessionServerToken()
-            field.autocapitalizationType = .none
-            field.autocorrectionType = .no
+    private func confirmUnlink() {
+        confirm(title: L10n.sessionSyncPcUnlink, message: L10n.sessionSyncPcUnlinkConfirm) { [weak self] in
+            SessionServerSync.shared?.pcUnlink { ok in
+                if ok {
+                    self?.pcLinked = false
+                    self?.pcLinkEmail = nil
+                    self?.settingsTable.reloadData()
+                }
+                Toast.show(ok ? L10n.sessionSyncPcUnlinkDone : L10n.sessionSyncFailed)
+            }
         }
-        alert.addAction(UIAlertAction(title: L10n.cancel, style: .cancel))
-        alert.addAction(UIAlertAction(title: L10n.fileUploadSave, style: .default) { [weak self, weak alert] _ in
-            let raw = alert?.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            Settings.setSessionServerToken(raw.isEmpty ? nil : raw)
-            self?.settingsTable.reloadData()
-        })
-        present(alert, animated: true)
     }
 }

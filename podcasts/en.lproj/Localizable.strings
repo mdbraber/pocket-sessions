@@ -7282,7 +7282,7 @@
 /* Fork: prompt text when entering the server access token. */
 "session_sync_server_token_message" = "The bearer token your server expects (PCS_AUTH_TOKEN). Leave empty if your server runs in open mode.";
 
-/* The single account-status row on the Synchronization screen (shows whether the server is linked) */
+/* The single account-status row on the Synchronization screen (shows the linked PC account) */
 "session_sync_account" = "Pocket Casts Account";
 
 /* Button that opens manual entry of the server access token (last-resort escape hatch) */
@@ -7356,3 +7356,12 @@
 
 /* Fork: PC link row state — the server is linked, but to a different Pocket Casts account than the one signed in here. Re-linking fixes it. */
 "session_sync_linked_other_account" = "Linked to another account";
+
+/* Fork: sync settings — drops the server's link to the Pocket Casts account. */
+"session_sync_pc_unlink" = "Unlink";
+
+/* Fork: sync settings — confirmation before unlinking. */
+"session_sync_pc_unlink_confirm" = "The server will stop syncing with Pocket Casts until you link it again. Your sessions and playlists are not deleted.";
+
+/* Fork: sync settings — the unlink succeeded. */
+"session_sync_pc_unlink_done" = "Unlinked";

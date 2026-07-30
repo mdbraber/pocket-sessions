@@ -7,6 +7,17 @@ final class PlaybackQueueTests: XCTestCase {
 
     let featureFlagMock = FeatureFlagMock()
 
+    /// These tests swap a MOCK into DataManager.sharedManager. They run inside the app, so
+    /// leaving it there hands the running app a mock data manager for the rest of the process —
+    /// which is how a fake "Current Episode" ends up looking like a real Up Next entry.
+    private var realSharedManager: DataManager!
+
+    override func setUp() {
+        super.setUp()
+        realSharedManager = DataManager.sharedManager
+    }
+
+
     func testOverrideAllEpisodesWith_shouldNotIncludeStaleEpisodesInReplace() {
         FeatureFlagMock().set(.replaceSpecificEpisode, value: true)
 
@@ -119,6 +130,8 @@ final class PlaybackQueueTests: XCTestCase {
 
     override func tearDown() {
         featureFlagMock.reset()
+        DataManager.sharedManager = realSharedManager
+        super.tearDown()
     }
 }
 

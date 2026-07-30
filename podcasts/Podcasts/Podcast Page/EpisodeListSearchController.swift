@@ -219,7 +219,7 @@ class EpisodeListSearchController: SimpleNotificationsViewController, UISearchBa
     /// falls back to), then the one-shot arrangements. Nothing carries a checkmark: none of it is
     /// a mode you stay in.
     private func makeLineupReorderPicker() -> OptionsPicker? {
-        guard let podcast = podcastDelegate?.displayedPodcast() else { return nil }
+        guard podcastDelegate?.displayedPodcast() != nil else { return nil }
 
         let picker = OptionsPicker(title: L10n.lineupReorder.localizedUppercase)
         picker.addAction(action: OptionAction(label: L10n.lineupReorderEpisodes, icon: "line.3.horizontal") { [weak self] in

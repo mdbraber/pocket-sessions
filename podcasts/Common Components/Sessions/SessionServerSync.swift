@@ -81,6 +81,7 @@ final class SessionServerSync {
         // notification toggle flips (among other changes) — re-report the toggle set.
         NotificationCenter.default.addObserver(self, selector: #selector(appDidBecomeActive), name: UIApplication.didBecomeActiveNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(pcSyncCompleted), name: ServerNotifications.syncCompleted, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(userSignedIn), name: .userSignedIn, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(podcastUpdated), name: Constants.Notifications.podcastUpdated, object: nil)
         // Follow-playback (opt-in): the session pointer and its playing episode
         // travel through the server so idle devices can follow along.
@@ -228,6 +229,29 @@ final class SessionServerSync {
 
     @objc private func appDidBecomeActive() {
         queue.async { [weak self] in self?.fetch() }
+    }
+
+    /// Fork: signing in pulls, without waiting to be asked.
+    ///
+    /// Signing in can mean signing in as SOMEONE ELSE, and everything held locally then belongs to
+    /// the previous account — so the server has to be consulted before any of it is trusted. When
+    /// the account matches the one the server is linked to, an ordinary merge is enough. When it
+    /// doesn't, local data isn't ours to merge and the server replaces it wholesale.
+    @objc private func userSignedIn() {
+        pcLinkStatus { [weak self] linked, linkedEmail in
+            guard let self else { return }
+            let signedIn = ServerSettings.syncingEmail()
+            let differentAccount = linked
+                && (linkedEmail?.isEmpty == false)
+                && signedIn != nil
+                && linkedEmail != signedIn
+            if differentAccount {
+                FileLog.shared.addMessage("SessionServerSync: signed in as a different account — replacing local data from the server")
+                self.pullReplacingLocal()
+            } else {
+                self.queue.async { [weak self] in self?.fetch() }
+            }
+        }
     }
 
     /// Set when a sync was nudge-triggered: that sync only PULLED remote changes,
@@ -550,6 +574,21 @@ final class SessionServerSync {
     // MARK: - Pocket Casts account link (M2)
 
     /// Whether the server holds a PC link, and for which email.
+    /// Fork: drops the server's link to the Pocket Casts account. The sessions and playlists it
+    /// already holds are untouched — this only stops it talking to Pocket Casts on your behalf.
+    func pcUnlink(completion: @escaping (Bool) -> Void) {
+        queue.async { [weak self] in
+            self?.request(path: "/session/v1/pc-link", method: "DELETE", body: nil) { result in
+                if case .success = result {
+                    FileLog.shared.addMessage("SessionServerSync: unlinked the PC account")
+                    DispatchQueue.main.async { completion(true) }
+                } else {
+                    DispatchQueue.main.async { completion(false) }
+                }
+            }
+        }
+    }
+
     func pcLinkStatus(completion: @escaping (Bool, String?) -> Void) {
         queue.async { [weak self] in
             self?.request(path: "/session/v1/pc-link", method: "GET", body: nil) { result in

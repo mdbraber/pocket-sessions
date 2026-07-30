@@ -14,12 +14,17 @@ final class SyncTaskManualPlaylistTests: XCTestCase {
         syncTask = SyncTask(dataManager: dataManager)
 
         // Ensure any static usage reads from this DB
+        realSharedManager = DataManager.sharedManager
         DataManager.sharedManager = dataManager
     }
 
     override func tearDown() {
         FeatureFlagMock().reset()
+        // Put the app's own data manager back — see DBTestCase.
+        if let real = realSharedManager { DataManager.sharedManager = real }
     }
+
+    private var realSharedManager: DataManager?
 
     func testChangedFiltersIncludesManualEpisodesAndFlag() {
         // Seed episodes used by the manual playlist

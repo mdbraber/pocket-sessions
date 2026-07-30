@@ -21,6 +21,14 @@ class DBTestCase: XCTestCase {
         try setupData()
     }
 
+    /// The app's own data manager, displaced by `setupData` and restored after every test.
+    private static var realSharedManager: DataManager?
+
+    override func tearDown() async throws {
+        if let real = Self.realSharedManager { DataManager.sharedManager = real }
+        try await super.tearDown()
+    }
+
     private func setupDatabase() throws -> DataManager {
         DataManager.newTestDataManager()
     }
@@ -28,6 +36,10 @@ class DBTestCase: XCTestCase {
     private func setupData() throws {
         let dataManager = Self.dataManager == nil ? try setupDatabase() : Self.dataManager!
         let downloadManager = DownloadManager(dataManager: dataManager)
+        // These tests run INSIDE the app, so repointing the global manager repoints the app's own
+        // data access with it. Remember the real one and put it back in tearDown, or everything
+        // after the suite — including the running app — keeps reading the test database.
+        if Self.realSharedManager == nil { Self.realSharedManager = DataManager.sharedManager }
         DataManager.sharedManager = dataManager
 
         let podcast = Podcast()
