@@ -28,14 +28,6 @@ class PlaylistDetailViewModel: ObservableObject {
     enum TriageTab {
         case lineup
         case browse
-
-        /// The tab's per-page sort key.
-        var sortKey: TriageTabSort.Tab {
-            switch self {
-            case .lineup: return .session
-            case .browse: return .episodes
-            }
-        }
     }
 
     /// Pages open on Episodes; only explicit navigation (`pendingInitialTab`) opens the Session tab.
@@ -201,6 +193,33 @@ class PlaylistDetailViewModel: ObservableObject {
             dataManager.setCustomOrder(episodeUuids: order, for: playlist)
         }
         reloadEpisodeList()
+    }
+
+    /// Fork: re-arrange the lineup ONCE into `order` and save it as the new canonical order.
+    ///
+    /// Not a sort: nothing is remembered beyond the positions themselves, so the list is
+    /// hand-ordered again the moment this returns. The playing episode keeps position 0 — a
+    /// lineup's head is what's playing, and re-arranging the rest never displaces it.
+    func reorderLineup(_ order: EpisodeOrder) {
+        guard let index = dataSource.firstIndex(where: { $0.model == .episodes }) else { return }
+
+        let episodes = dataSource[index].elements.compactMap { $0 as? ListEpisode }
+        guard episodes.count > 1 else { return }
+
+        var sorted = order.sorted(episodes) { $0.episode }
+        if let pinned = LineupReorder.pinnedEpisodeUuid(forPlaylistUuid: pinnedLineupPlaylistUuid),
+           let current = sorted.firstIndex(where: { $0.episode.uuid == pinned }) {
+            sorted.insert(sorted.remove(at: current), at: 0)
+        }
+
+        dataSource[index] = ArraySection(model: .episodes, elements: sorted)
+        commitLineupOrder()
+    }
+
+    /// The playlist whose lineup this page shows — a lens page renders its fed session's store,
+    /// not the smart playlist itself, so the "what's playing" pin has to be checked against that.
+    private var pinnedLineupPlaylistUuid: String {
+        (session ?? lensSession)?.storePlaylistUuid ?? playlist.uuid
     }
 
     var isManualPlaylist: Bool {
@@ -607,8 +626,11 @@ class PlaylistDetailViewModel: ObservableObject {
                     .map { ListEpisode(episode: $0, tintColor: tint) }
                 model = .browse
             }
-            // Fork: the tab's per-page sort.
-            shown = TriageTabSort.arrange(shown, tab: selectedTriageTab.sortKey, pageUuid: playlist.uuid)
+            // Fork: only the browsed list carries a display sort — the lineup renders in its one
+            // saved order (re-arranged, never sorted over; see `LineupReorder`).
+            if selectedTriageTab == .browse {
+                shown = TriageTabSort.arrange(shown, pageUuid: playlist.uuid)
+            }
             if selectedTriageTab == .browse {
                 triageBrowseCount = shown.count
                 triageBrowseDuration = shown.reduce(0.0) { $0 + max(0, $1.episode.duration - $1.episode.playedUpTo) }
@@ -668,8 +690,11 @@ class PlaylistDetailViewModel: ObservableObject {
                 shown = browse
                 model = .browse
             }
-            // Fork: the tab's per-page sort.
-            shown = TriageTabSort.arrange(shown, tab: selectedTriageTab.sortKey, pageUuid: playlist.uuid)
+            // Fork: only the browsed list carries a display sort — the lineup renders in its one
+            // saved order (re-arranged, never sorted over; see `LineupReorder`).
+            if selectedTriageTab == .browse {
+                shown = TriageTabSort.arrange(shown, pageUuid: playlist.uuid)
+            }
             let elements: [ListItem]
             if shown.isEmpty {
                 elements = [PlaylistTabEmptyPlaceholder()]

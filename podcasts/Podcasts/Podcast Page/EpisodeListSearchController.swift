@@ -174,24 +174,20 @@ class EpisodeListSearchController: SimpleNotificationsViewController, UISearchBa
         updateSortButton()
     }
 
-    /// The current tab's sort key on the podcast page.
-    private var currentSortTab: TriageTabSort.Tab {
-        guard let delegate = podcastDelegate else { return .episodes }
-        return delegate.isShowingSession() ? .session : .episodes
+    /// Whether the Session lineup is on screen. The lineup is REORDERED (one saved order,
+    /// re-arranged in place); the Episodes tab is SORTED (a sticky display preference). Same
+    /// button, two different jobs.
+    private var showingSessionLineup: Bool {
+        podcastDelegate?.isShowingSession() ?? false
     }
 
-    /// Fork: the per-tab sort control — accented whenever the shown order isn't the
-    /// tab's natural one (Episodes: the stock per-podcast sort, newest first by
-    /// default; Session: the custom lineup order; Inbox: newest first).
+    /// Fork: the sort/reorder control. On Episodes it accents whenever the stock per-podcast sort
+    /// isn't the default. On the Session tab there is nothing to accent — a lineup has one order
+    /// and re-arranging it isn't a state you can be "in".
     private func updateSortButton() {
         guard let podcast = podcastDelegate?.displayedPodcast() else { return }
-        let tab = currentSortTab
-        let nonDefault: Bool
-        if tab == .episodes {
-            nonDefault = (podcast.podcastSortOrder ?? .newestToOldest) != .newestToOldest
-        } else {
-            nonDefault = TriageTabSort.isNonDefault(tab, pageUuid: podcast.uuid)
-        }
+        let onLineup = showingSessionLineup
+        let nonDefault = !onLineup && (podcast.podcastSortOrder ?? .newestToOldest) != .newestToOldest
         UIView.performWithoutAnimation {
             // Button-level symbol config — system buttons override per-image configs,
             // which made the glyph render at different sizes per surface.
@@ -202,34 +198,41 @@ class EpisodeListSearchController: SimpleNotificationsViewController, UISearchBa
         }
         sortTrailingToFunnel?.isActive = false
         sortTrailingToEdge?.isActive = false
-        if tab == .episodes {
-            sortTrailingToFunnel?.isActive = true
-        } else {
+        if onLineup {
             sortTrailingToEdge?.isActive = true
+        } else {
+            sortTrailingToFunnel?.isActive = true
         }
+        sortButton.accessibilityLabel = onLineup ? L10n.lineupReorder : L10n.sortEpisodes
     }
 
     @objc private func sortToggleTapped() {
-        guard let podcast = podcastDelegate?.displayedPodcast() else { return }
-        let tab = currentSortTab
-
-        // Episodes rides the stock per-podcast sort (full option set); the other
-        // tabs get their own per-podcast order picker.
-        if tab == .episodes {
+        // Episodes rides the stock per-podcast sort; the Session lineup is re-arranged instead.
+        guard showingSessionLineup else {
             makeSortOptionsPicker()?.present(from: self)
             return
         }
+        makeLineupReorderPicker()?.present(from: self)
+    }
 
-        let picker = OptionsPicker(title: L10n.sortBy.localizedUppercase)
-        let current = TriageTabSort.order(tab, pageUuid: podcast.uuid)
-        for option in tab.options {
-            picker.addAction(action: OptionAction(label: option.title, selected: current == option) { [weak self] in
-                TriageTabSort.setOrder(option, tab: tab, pageUuid: podcast.uuid)
+    /// Fork: the lineup's reorder picker — hand-ordering first (it's the base state everything
+    /// falls back to), then the one-shot arrangements. Nothing carries a checkmark: none of it is
+    /// a mode you stay in.
+    private func makeLineupReorderPicker() -> OptionsPicker? {
+        guard let podcast = podcastDelegate?.displayedPodcast() else { return nil }
+
+        let picker = OptionsPicker(title: L10n.lineupReorder.localizedUppercase)
+        picker.addAction(action: OptionAction(label: L10n.lineupReorderEpisodes, icon: "line.3.horizontal") { [weak self] in
+            guard let delegate = self?.podcastDelegate else { return }
+            delegate.enterLineupReorderMode()
+        })
+        for option in LineupReorder.options {
+            picker.addAction(action: OptionAction(label: option.title) { [weak self] in
+                self?.podcastDelegate?.reorderSessionLineup(order: option)
                 self?.updateSortButton()
-                self?.podcastDelegate?.episodesDidChange()
             })
         }
-        picker.present(from: self)
+        return picker
     }
 
     func episodesDidReload() {
@@ -460,12 +463,12 @@ class EpisodeListSearchController: SimpleNotificationsViewController, UISearchBa
     /// Applies a preset's sort when the preset is selected — then the podcast's own sort control
     /// overrides it. The podcast page groups by its own taxonomy (season/status), which the preset's
     /// Group By (none/date/podcast/folder) doesn't map to, so only sort is applied here.
-    /// Boundary mapper: fork `TriageTabSortOrder` (preset) → native `PodcastEpisodeSortOrder`
+    /// Boundary mapper: fork `EpisodeOrder` (preset) → native `PodcastEpisodeSortOrder`
     /// (page). If you add a sort case to either enum, extend this switch too — SortGroupParityTests
     /// guards the enums but this remap is where they actually meet.
     func applyPresetSortAndGroup(_ preset: FilterPreset) {
-        guard let raw = preset.sortOrder, let order = TriageTabSortOrder(rawValue: raw) else { return }
-        let mapped: PodcastEpisodeSortOrder? = switch order {
+        guard let raw = preset.sortOrder, let order = EpisodeOrder(rawValue: raw) else { return }
+        let mapped: PodcastEpisodeSortOrder = switch order {
         case .newestToOldest: .newestToOldest
         case .oldestToNewest: .oldestToNewest
         case .shortestToLongest: .shortestToLongest
@@ -473,9 +476,8 @@ class EpisodeListSearchController: SimpleNotificationsViewController, UISearchBa
         case .titleAtoZ: .titleAtoZ
         case .titleZtoA: .titleZtoA
         case .serial: .serial
-        case .custom: nil
         }
-        if let mapped { setSortSetting(mapped) }
+        setSortSetting(mapped)
     }
 
     private func setSortSetting(_ setting: PodcastEpisodeSortOrder) {

@@ -456,6 +456,7 @@
 		9AF6468D2E5B57D800627836 /* PlaylistHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AF6468C2E5B57CF00627836 /* PlaylistHeaderView.swift */; };
 		9AF6468F2E5B58C200627836 /* PlaylistHeaderViewCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AF6468E2E5B58BF00627836 /* PlaylistHeaderViewCell.swift */; };
 		9AF646912E5B775300627836 /* PlaylistDetailViewController+EditActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AF646902E5B774900627836 /* PlaylistDetailViewController+EditActions.swift */; };
+		FF10A0022FCC010000AA0002 /* PlaylistDetailViewController+LineupReorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF10A0012FCC010000AA0001 /* PlaylistDetailViewController+LineupReorder.swift */; };
 		9AF646932E5DEB1A00627836 /* PlaylistDetailViewController+MultiSelect.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AF646922E5DEB1300627836 /* PlaylistDetailViewController+MultiSelect.swift */; };
 		9AF646952E5E081600627836 /* PlaylistDetailViewController+TableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AF646942E5E081400627836 /* PlaylistDetailViewController+TableView.swift */; };
 		9AF646972E5E0BB800627836 /* PlaylistDetailViewController+Search.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AF646962E5E0BB700627836 /* PlaylistDetailViewController+Search.swift */; };
@@ -2030,6 +2031,7 @@
 		9AF6468C2E5B57CF00627836 /* PlaylistHeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistHeaderView.swift; sourceTree = "<group>"; };
 		9AF6468E2E5B58BF00627836 /* PlaylistHeaderViewCell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistHeaderViewCell.swift; sourceTree = "<group>"; };
 		9AF646902E5B774900627836 /* PlaylistDetailViewController+EditActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PlaylistDetailViewController+EditActions.swift"; sourceTree = "<group>"; };
+		FF10A0012FCC010000AA0001 /* PlaylistDetailViewController+LineupReorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PlaylistDetailViewController+LineupReorder.swift"; sourceTree = "<group>"; };
 		9AF646922E5DEB1300627836 /* PlaylistDetailViewController+MultiSelect.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PlaylistDetailViewController+MultiSelect.swift"; sourceTree = "<group>"; };
 		9AF646942E5E081400627836 /* PlaylistDetailViewController+TableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PlaylistDetailViewController+TableView.swift"; sourceTree = "<group>"; };
 		9AF646962E5E0BB700627836 /* PlaylistDetailViewController+Search.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PlaylistDetailViewController+Search.swift"; sourceTree = "<group>"; };
@@ -3673,6 +3675,7 @@
 				9AF646942E5E081400627836 /* PlaylistDetailViewController+TableView.swift */,
 				9AF646962E5E0BB700627836 /* PlaylistDetailViewController+Search.swift */,
 				9AF646902E5B774900627836 /* PlaylistDetailViewController+EditActions.swift */,
+				FF10A0012FCC010000AA0001 /* PlaylistDetailViewController+LineupReorder.swift */,
 				9AF646812E58B52300627836 /* PlaylistDetailViewController+Observers.swift */,
 				9AF646832E58B5C200627836 /* PlaylistDetailViewController+EmptyState.swift */,
 				9AF646852E58B82C00627836 /* PlaylistDetailViewController+Swipe.swift */,
@@ -7360,6 +7363,7 @@
 				4006E31123A88AE600174DEB /* ExpandedCollectionViewController.swift in Sources */,
 				BD5E8D3D2061E0FB00C84B43 /* PodcastManager+Cleanup.swift in Sources */,
 				9AF646912E5B775300627836 /* PlaylistDetailViewController+EditActions.swift in Sources */,
+				FF10A0022FCC010000AA0002 /* PlaylistDetailViewController+LineupReorder.swift in Sources */,
 				BDEAA17D1BB140CE001097D9 /* SwitchCell.swift in Sources */,
 				FCE96E162D9230A800AC50E3 /* HowToShareActionImageView.swift in Sources */,
 				4041FE95218A828F0089D4A1 /* SiriShortcutSuggestedCell.swift in Sources */,

@@ -20,24 +20,28 @@ extension PlaylistDetailViewController {
         let multiSelectAction = multiSelectAction()
         optionsPicker.addAction(action: multiSelectAction)
 
-        // Sort. Triage pages use the fork's per-tab sort (TriageTabSort); plain playlists use the
-        // stock playlist sort. Sort is offered on every tab.
-        if viewModel.usesTriageTabs {
-            let sortTab = viewModel.selectedTriageTab.sortKey
-            let triageSort = OptionAction(label: L10n.sortBy, secondaryLabel: TriageTabSort.order(sortTab, pageUuid: viewModel.playlist.uuid).title, icon: "podcastlist_sort") {}
-            triageSort.submenu = { [weak self] in
+        // Fork: a LINEUP is re-ordered, a BROWSED list is sorted — two different verbs for two
+        // different things. A lineup (the Session tab, or a plain manual playlist) has exactly one
+        // saved order, so its menu re-arranges that order once and nothing sticks. Browsed lists
+        // (the Episodes tab, a smart playlist) keep the ordinary sticky sort.
+        if showsLineupReorder {
+            optionsPicker.addAction(action: lineupReorderAction())
+        } else if viewModel.usesTriageTabs {
+            let pageUuid = viewModel.playlist.uuid
+            let browseSort = OptionAction(label: L10n.sortBy, secondaryLabel: TriageTabSort.order(pageUuid: pageUuid).title, icon: "podcastlist_sort") {}
+            browseSort.submenu = { [weak self] in
                 guard let self else { return nil }
                 let picker = OptionsPicker(title: L10n.sortBy.localizedUppercase)
-                let current = TriageTabSort.order(sortTab, pageUuid: self.viewModel.playlist.uuid)
-                for option in sortTab.options {
+                let current = TriageTabSort.order(pageUuid: pageUuid)
+                for option in EpisodeOrder.menuOrder {
                     picker.addAction(action: OptionAction(label: option.title, selected: current == option) {
-                        TriageTabSort.setOrder(option, tab: sortTab, pageUuid: self.viewModel.playlist.uuid)
+                        TriageTabSort.setOrder(option, pageUuid: pageUuid)
                         self.viewModel.reloadEpisodeList(animated: false)
                     })
                 }
                 return picker
             }
-            optionsPicker.addAction(action: triageSort)
+            optionsPicker.addAction(action: browseSort)
         } else {
             optionsPicker.addAction(action: sortAction())
         }
@@ -47,13 +51,6 @@ extension PlaylistDetailViewController {
         // and never groups.
         if !viewModel.usesTriageTabs || viewModel.selectedTriageTab != .lineup {
             addGroupByActions(to: optionsPicker)
-        }
-
-        // "Add to Session" (where adds land in the lineup) sits directly above Download All.
-        // The old "New Episodes" (Inbox vs Auto add) option is gone — that choice now lives
-        // in each podcast's own Session settings.
-        if viewModel.usesCustomOrderOverlay || viewModel.isLensPage {
-            optionsPicker.addAction(action: insertModeAction())
         }
 
         let downloadAllAction = downloadAllOption()
@@ -127,6 +124,41 @@ extension PlaylistDetailViewController {
         }
     }
 
+    // MARK: - Fork: Reorder (lineups)
+
+    /// Whether this page's episode list is a LINEUP — one canonical, saved order — rather than a
+    /// browsed list. Session/lens pages on the Session tab, and plain manual playlists, both are.
+    var showsLineupReorder: Bool {
+        if viewModel.usesTriageTabs { return viewModel.selectedTriageTab == .lineup }
+        return viewModel.isManualPlaylist
+    }
+
+    private func lineupReorderAction() -> OptionAction {
+        let action = OptionAction(label: L10n.lineupReorder, icon: "podcastlist_sort") {}
+        action.submenu = { [weak self] in self?.makeLineupReorderPicker() }
+        return action
+    }
+
+    /// The reorder picker: hand-ordering first (it's the base state everything else falls back to),
+    /// then the one-shot arrangements. Nothing here carries a checkmark — none of it is a mode.
+    private func makeLineupReorderPicker() -> OptionsPicker {
+        let picker = OptionsPicker(title: L10n.lineupReorder.localizedUppercase)
+
+        picker.addAction(action: OptionAction(label: L10n.lineupReorderEpisodes, icon: "line.3.horizontal") { [weak self] in
+            guard let self else { return }
+            self.enterLineupReorderMode()
+        })
+
+        for option in LineupReorder.options {
+            picker.addAction(action: OptionAction(label: option.title) { [weak self] in
+                guard let self else { return }
+                self.track(.filterSortByChanged, properties: ["sort_order": option.rawValue])
+                self.viewModel.reorderLineup(option)
+            })
+        }
+        return picker
+    }
+
     // MARK: - Sort
 
     private func sortAction() -> OptionAction {
@@ -162,32 +194,6 @@ extension PlaylistDetailViewController {
             NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged, object: self.viewModel.playlist)
         }
         optionPicker.addAction(action: action)
-    }
-
-    // MARK: - Fork: custom-order overlay settings
-
-    private func insertModeAction() -> OptionAction {
-        let sessionInsertMode = currentInsertMode()
-        let action = OptionAction(label: L10n.sessionPositionHeading, secondaryLabel: sessionInsertMode.description, icon: "rectangle.stack") { }
-        action.submenu = { [weak self] in self?.makeInsertModePicker() }
-        return action
-    }
-
-    private func currentInsertMode() -> PlaylistInsertMode {
-        guard let session = viewModel.insertModeSession else { return .top }
-        return PlaylistInsertMode(rawValue: session.insertMode) ?? .top
-    }
-
-    private func makeInsertModePicker() -> OptionsPicker {
-        let currentInsertMode = currentInsertMode()
-        let optionsPicker = OptionsPicker(title: L10n.sessionPositionHeading.localizedUppercase)
-        for mode in PlaylistInsertMode.allCases {
-            let action = OptionAction(label: mode.description, selected: currentInsertMode == mode) { [weak self] in
-                self?.viewModel.updatePlaylist(insertMode: mode)
-            }
-            optionsPicker.addAction(action: action)
-        }
-        return optionsPicker
     }
 
     private func savePlaylist() {

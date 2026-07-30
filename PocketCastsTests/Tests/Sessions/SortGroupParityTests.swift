@@ -4,32 +4,34 @@ import XCTest
 @testable import podcasts
 
 /// Fork: the podcast page (native `PodcastEpisodeSortOrder` / `PodcastGrouping`, persisted and
-/// synced to Pocket Casts servers) and the fork's playlist/session surfaces (`TriageTabSortOrder`
+/// synced to Pocket Casts servers) and the fork's playlist/session surfaces (`EpisodeOrder`
 /// / `EpisodeGroupBy`) deliberately keep TWO parallel sort/group vocabularies — the podcast page
 /// can't abandon the synced schema without breaking cross-platform sync. These tests fail if the
 /// two drift, so "add a sort/group option" can't be silently done in only one of them.
 final class SortGroupParityTests: XCTestCase {
 
-    /// Every native podcast sort order must have a `TriageTabSortOrder` equivalent, and the
-    /// shared cases must carry the same raw numbering as `PodcastEpisodeSortOrder.Old` (the DB
-    /// stores that value; the fork enum reuses it, so they must not diverge).
+    /// Every native podcast sort order must have an `EpisodeOrder` equivalent, and the shared
+    /// cases must carry the same raw numbering as `PodcastEpisodeSortOrder.Old` (the DB stores
+    /// that value; the fork enum reuses it, so they must not diverge).
     func testSortVocabulariesStayAligned() {
         for order in PodcastEpisodeSortOrder.allCases {
             let old = order.old.rawValue
-            guard let mirrored = TriageTabSortOrder(rawValue: Int(old)) else {
-                XCTFail("PodcastEpisodeSortOrder.\(order) (Old raw \(old)) has no TriageTabSortOrder — add it to the fork enum")
+            guard let mirrored = EpisodeOrder(rawValue: Int(old)) else {
+                XCTFail("PodcastEpisodeSortOrder.\(order) (Old raw \(old)) has no EpisodeOrder — add it to the fork enum")
                 continue
             }
             XCTAssertEqual(mirrored.title, order.description,
                            "\(order): the fork sort label drifted from the native one")
         }
 
-        // `.custom` (drag order) is the one fork-only sort — it has no native equivalent by design.
-        XCTAssertEqual(TriageTabSortOrder.custom.rawValue, 0)
-        for sort in TriageTabSortOrder.allCases where sort != .custom {
+        // The mapping is total in both directions: a lineup has one canonical order, so there is
+        // no fork-only "custom" case sitting outside the native vocabulary any more.
+        for sort in EpisodeOrder.allCases {
             XCTAssertNotNil(PodcastEpisodeSortOrder.Old(rawValue: Int32(sort.rawValue)),
-                            "TriageTabSortOrder.\(sort) has no PodcastEpisodeSortOrder.Old counterpart")
+                            "EpisodeOrder.\(sort) has no PodcastEpisodeSortOrder.Old counterpart")
         }
+        XCTAssertEqual(Set(EpisodeOrder.allCases), Set(EpisodeOrder.menuOrder),
+                       "EpisodeOrder.menuOrder must offer every case")
     }
 
     /// Every grouping the podcast page offers (bar `unplayed`, which the fork's richer `.playing`

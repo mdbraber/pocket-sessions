@@ -4,7 +4,7 @@ import UIKit
 @testable import PocketCastsDataModel
 
 /// Fork: parity with the native podcast page's Season grouping and Serial sort, now offered on the
-/// playlist/session pages too. These cover the two new cases added to `EpisodeGroupBy` / `TriageTabSortOrder`.
+/// playlist/session pages too. These cover the two new cases added to `EpisodeGroupBy` / `EpisodeOrder`.
 final class EpisodeGroupingSortTests: XCTestCase {
 
     private func episode(_ uuid: String, season: Int64, number: Int64, published: Date? = nil) -> Episode {
@@ -48,7 +48,7 @@ final class EpisodeGroupingSortTests: XCTestCase {
 
     func testSerialSortOrdersBySeasonThenEpisodeThenNoSeasonLast() {
         let pageUuid = "test-serial-\(UUID().uuidString)"
-        TriageTabSort.setOrder(.serial, tab: .episodes, pageUuid: pageUuid)
+        TriageTabSort.setOrder(.serial, pageUuid: pageUuid)
         defer { UserDefaults.standard.removeObject(forKey: "SJTabSort-episodes-\(pageUuid)") }
 
         let items = [
@@ -58,7 +58,7 @@ final class EpisodeGroupingSortTests: XCTestCase {
             episode("s1e1", season: 1, number: 1, published: date(4)),
         ].map { ListEpisode(episode: $0, tintColor: .clear) }
 
-        let arranged = TriageTabSort.arrange(items, tab: .episodes, pageUuid: pageUuid)
+        let arranged = TriageTabSort.arrange(items, pageUuid: pageUuid)
 
         XCTAssertEqual(arranged.map { $0.episode.uuid }, ["s1e1", "s1e2", "s2e1", "none"])
     }

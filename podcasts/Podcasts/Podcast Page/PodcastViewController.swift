@@ -67,6 +67,11 @@ protocol PodcastActionsDelegate: AnyObject {
     func showEpisodes()
     func showSession()
     func isShowingSession() -> Bool
+
+    /// Fork: the Session lineup's two reorder affordances — drag grips, and a one-shot
+    /// re-arrangement of the saved order.
+    func enterLineupReorderMode()
+    func reorderSessionLineup(order: EpisodeOrder)
     func showYouMightLike()
     func showLogin(message: String?)
 
@@ -173,6 +178,11 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
             loadingImageBg.backgroundColor = .clear
         }
     }
+
+    /// Fork: "Reorder Episodes" mode on the Session tab — real grips, everything else suspended.
+    /// See `PodcastViewController+LineupReorder`.
+    @MainActor
+    var lineupReorderMode = false
 
     @MainActor
     var isMultiSelectEnabled = false {
@@ -832,9 +842,9 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
                 }
                 .map { ListEpisode(episode: $0, tintColor: tintColor) }
         }
-        // Fork: the Session tab's per-podcast sort — lineup order by default, date
-        // orders on request (display only).
-        var listEpisodes = TriageTabSort.arrange(episodes.compactMap { $0 as? ListEpisode }, tab: .session, pageUuid: podcast.uuid)
+        // Fork: the lineup renders in its one saved order — no display sort on top of it. Changing
+        // that order is an explicit re-arrangement (see `reorderSessionLineup`).
+        var listEpisodes = episodes.compactMap { $0 as? ListEpisode }
 
         // Fork: if you're listening to an episode of this podcast AS PART OF A SESSION,
         // surface it at the top of this podcast's Session tab even when the store it's
@@ -1902,6 +1912,8 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
         if isMultiSelectEnabled {
             isMultiSelectEnabled = false
         }
+        // Grips on a browsed episode list would promise a reorder with nowhere to be saved.
+        exitLineupReorderModeIfNeeded()
         currentViewMode = mode
         currentViewModeSubject.send(mode)
         switch mode {

@@ -118,7 +118,7 @@ public enum BadgeType: Int32, Codable {
 }
 
 /// The podcast page sort, persisted (DB `episodeSortOrder` stores the `Old` raw) and SYNCED to
-/// Pocket Casts servers. The fork mirrors this as `TriageTabSortOrder` for playlist/session
+/// Pocket Casts servers. The fork mirrors this as `EpisodeOrder` for playlist/session
 /// surfaces — keep the two in step (see SortGroupParityTests).
 public enum PodcastEpisodeSortOrder: Int32, Codable, CaseIterable {
     case titleAtoZ

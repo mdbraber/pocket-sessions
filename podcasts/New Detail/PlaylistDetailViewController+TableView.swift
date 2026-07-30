@@ -186,6 +186,9 @@ extension PlaylistDetailViewController: UITableViewDataSource {
             }
 
             let cell = tableView.dequeueReusableCell(withIdentifier: Self.cellIdentifier, for: indexPath) as! EpisodeCell
+            // Fork: the grip only appears in "Reorder Episodes" mode — otherwise reorder is a
+            // long-press drag and a permanent grip would just be clutter.
+            cell.showsReorderControl = lineupReorderMode
             cell.episodeImageLeadConstraint.constant = 16.0
             cell.playlist = .filter(uuid: viewModel.playlist.uuid)
             // Session lineup rows: the play button joins the session (like tapping the row).
@@ -273,7 +276,34 @@ extension PlaylistDetailViewController: UITableViewDelegate {
         return isEpisodeSection(at: indexPath.section) && viewModel.listEpisode(at: indexPath) != nil
     }
 
+    // MARK: - Fork: Reorder Episodes mode (drag grips)
+
+    func tableView(_ tableView: UITableView, canMoveRowAt indexPath: IndexPath) -> Bool {
+        lineupReorderCanMoveRow(at: indexPath)
+    }
+
+    func tableView(_ tableView: UITableView, moveRowAt sourceIndexPath: IndexPath, to destinationIndexPath: IndexPath) {
+        lineupReorderMoveRow(from: sourceIndexPath, to: destinationIndexPath)
+    }
+
+    func tableView(_ tableView: UITableView, targetIndexPathForMoveFromRowAt sourceIndexPath: IndexPath, toProposedIndexPath proposedDestinationIndexPath: IndexPath) -> IndexPath {
+        lineupReorderTarget(from: sourceIndexPath, proposed: proposedDestinationIndexPath)
+    }
+
+    /// Never the built-in delete circle: swipes are SwipeCellKit's, and in reorder mode the grip is
+    /// the whole point — a red circle would push every row in and make the list look like it's
+    /// about to lose something.
+    func tableView(_ tableView: UITableView, editingStyleForRowAt indexPath: IndexPath) -> UITableViewCell.EditingStyle {
+        .none
+    }
+
+    func tableView(_ tableView: UITableView, shouldIndentWhileEditingRowAt indexPath: IndexPath) -> Bool {
+        !lineupReorderMode
+    }
+
     func tableView(_ tableView: UITableView, willSelectRowAt indexPath: IndexPath) -> IndexPath? {
+        // Reorder mode owns the touch: a tap here would open the episode mid-drag.
+        if lineupReorderMode { return nil }
         // Fork: a Podcast/Folder group header (with a destination) is tappable to open it.
         if (viewModel.dataSource[safe: indexPath.section]?.elements[safe: indexPath.row] as? PlaylistGroupHeaderPlaceholder)?.target != nil {
             return indexPath
@@ -411,10 +441,10 @@ extension PlaylistDetailViewController: UITableViewDragDelegate, UITableViewDrop
     /// Reorder is always live while custom order is on — episode rows and the insert
     /// marker both drag; inbox rows are triaged via swipe instead.
     var canReorderInline: Bool {
-        // A date-sorted Session view is display-only — reordering it would write the
-        // wrong lineup order.
-        guard !isMultiSelectEnabled, !viewModel.isSearching,
-              TriageTabSort.order(.session, pageUuid: viewModel.playlist.uuid) == .custom else { return false }
+        // Fork: a lineup has ONE saved order, so there is no longer a sorted-view state that would
+        // make dragging write the wrong thing — reorder is live whenever a lineup is on screen.
+        // (In "Reorder Episodes" mode the grips own the drag instead, so long-press stands down.)
+        guard !isMultiSelectEnabled, !viewModel.isSearching, !lineupReorderMode else { return false }
         if viewModel.playlist.sortType == PlaylistSort.dragAndDrop.rawValue { return true }
         // Fork: lens pages reorder their fed session's lineup on the Session tab.
         return viewModel.isLensPage && viewModel.selectedTriageTab == .lineup && viewModel.lensSession != nil
@@ -529,8 +559,10 @@ extension PlaylistDetailViewController {
         // Fork: a plain manual playlist is hand-ordered — a preset filters it, but must not impose
         // the preset's sort or grouping. (Session stores are also manual, but sort/group via tabs.)
         guard !(viewModel.isManualPlaylist && viewModel.session == nil) else { return }
-        if let raw = preset.sortOrder, let order = TriageTabSortOrder(rawValue: raw) {
-            TriageTabSort.setOrder(order, tab: viewModel.selectedTriageTab.sortKey, pageUuid: viewModel.playlist.uuid)
+        // A preset seeds the BROWSED list's sort only. The lineup has one saved order and a preset
+        // must never silently rewrite it — re-arranging is an explicit act (⋯ → Reorder).
+        if viewModel.selectedTriageTab == .browse, let raw = preset.sortOrder, let order = EpisodeOrder(rawValue: raw) {
+            TriageTabSort.setOrder(order, pageUuid: viewModel.playlist.uuid)
         }
         // Group (with its limit and reverse) applies to the Episodes tab only — the Session
         // lineup never groups.

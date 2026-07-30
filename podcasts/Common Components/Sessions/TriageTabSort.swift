@@ -1,19 +1,17 @@
 import Foundation
 import PocketCastsDataModel
 
-/// Fork: a tab's sort order on the Episodes | Session strip.
+/// Fork: the shared episode-ordering vocabulary — the orders any episode list can be put in.
 ///
-/// The full episode-sort set, so every episode list sorts the same way — the podcast page's stock
-/// per-podcast sort already offers all of these (including `serial`, season-then-episode order), and
-/// the Session/playlist tabs now match it. `custom` (the hand-ordered lineup) is offered only on the
-/// Session tab.
-/// Fork: the playlist/session sort vocabulary. Cases 1-7 are byte-identical to
-/// `PodcastEpisodeSortOrder.Old` (Enums.swift) and this borrows its labels/semantics;
-/// `.custom` (0) is the fork-only drag order. If you add a sort here, add the paired
-/// case to PodcastEpisodeSortOrder too (the podcast page persists/syncs through it).
-/// SortGroupParityTests guards the alignment.
-enum TriageTabSortOrder: Int, CaseIterable {
-    case custom = 0
+/// Cases are byte-identical to `PodcastEpisodeSortOrder.Old` (Enums.swift) and borrow its
+/// labels/semantics, so a stored raw value means the same thing on the podcast page, in a Filter
+/// Preset, and here. If you add a case, add the paired one to `PodcastEpisodeSortOrder` too (the
+/// podcast page persists/syncs through it). `SortGroupParityTests` guards the alignment.
+///
+/// There is deliberately no `custom` case. A *browsed* list has no hand order to fall back to, and
+/// a *lineup* is hand-ordered by definition — see `LineupReorder`, where these are one-shot
+/// re-arrangements rather than a sort you switch on.
+enum EpisodeOrder: Int, CaseIterable {
     case newestToOldest = 1
     case oldestToNewest = 2
     case shortestToLongest = 3
@@ -22,9 +20,13 @@ enum TriageTabSortOrder: Int, CaseIterable {
     case titleZtoA = 6
     case serial = 7
 
+    /// Menu order — the same sequence the podcast page's own sort sheet uses.
+    static var menuOrder: [EpisodeOrder] {
+        [.newestToOldest, .oldestToNewest, .shortestToLongest, .longestToShortest, .titleAtoZ, .titleZtoA, .serial]
+    }
+
     var title: String {
         switch self {
-        case .custom: return PlaylistSort.dragAndDrop.description
         case .newestToOldest: return PodcastEpisodeSortOrder.newestToOldest.description
         case .oldestToNewest: return PodcastEpisodeSortOrder.oldestToNewest.description
         case .shortestToLongest: return PodcastEpisodeSortOrder.shortestToLongest.description
@@ -34,75 +36,34 @@ enum TriageTabSortOrder: Int, CaseIterable {
         case .serial: return PodcastEpisodeSortOrder.serial.description
         }
     }
-}
 
-/// Fork: per-page, per-tab sort for the Episodes | Session strip — each podcast or
-/// playlist page remembers a sort per tab. Defaults are the tab's natural order
-/// (Episodes newest first, Session the hand-ordered lineup); the control accents
-/// whenever anything else is chosen.
-///
-/// Sort is deliberately a different scope from the search term: it is a durable
-/// preference about a particular show ("this one's serial, always oldest-first"),
-/// not a transient lens.
-enum TriageTabSort {
-    enum Tab: String {
-        case session, episodes
-
-        var defaultOrder: TriageTabSortOrder {
-            self == .session ? .custom : .newestToOldest
-        }
-
-        var options: [TriageTabSortOrder] {
-            // The full set; the Session tab additionally offers its hand-ordered `custom`.
-            let sorts: [TriageTabSortOrder] = [.newestToOldest, .oldestToNewest, .shortestToLongest, .longestToShortest, .titleAtoZ, .titleZtoA, .serial]
-            return self == .session ? [.custom] + sorts : sorts
-        }
-    }
-
-    static func order(_ tab: Tab, pageUuid: String) -> TriageTabSortOrder {
-        guard let raw = UserDefaults.standard.object(forKey: key(tab, pageUuid)) as? Int,
-              let order = TriageTabSortOrder(rawValue: raw) else { return tab.defaultOrder }
-        return order
-    }
-
-    static func setOrder(_ order: TriageTabSortOrder, tab: Tab, pageUuid: String) {
-        UserDefaults.standard.set(order.rawValue, forKey: key(tab, pageUuid))
-    }
-
-    static func isNonDefault(_ tab: Tab, pageUuid: String) -> Bool {
-        order(tab, pageUuid: pageUuid) != tab.defaultOrder
-    }
-
-    /// Applies the page's chosen order to a tab's naturally-ordered list. The
-    /// default keeps the list untouched; date orders sort by publish date.
-    static func arrange(_ episodes: [ListEpisode], tab: Tab, pageUuid: String) -> [ListEpisode] {
-        let chosen = order(tab, pageUuid: pageUuid)
-        guard chosen != tab.defaultOrder else { return episodes }
-        switch chosen {
-        case .custom:
-            return episodes
+    func sorted<T>(_ items: [T], episode: (T) -> BaseEpisode) -> [T] {
+        switch self {
         case .newestToOldest:
-            return episodes.sorted { ($0.episode.publishedDate ?? .distantPast) > ($1.episode.publishedDate ?? .distantPast) }
+            return items.sorted { (episode($0).publishedDate ?? .distantPast) > (episode($1).publishedDate ?? .distantPast) }
         case .oldestToNewest:
-            return episodes.sorted { ($0.episode.publishedDate ?? .distantPast) < ($1.episode.publishedDate ?? .distantPast) }
+            return items.sorted { (episode($0).publishedDate ?? .distantPast) < (episode($1).publishedDate ?? .distantPast) }
         case .shortestToLongest:
-            return episodes.sorted { $0.episode.duration < $1.episode.duration }
+            return items.sorted { episode($0).duration < episode($1).duration }
         case .longestToShortest:
-            return episodes.sorted { $0.episode.duration > $1.episode.duration }
+            return items.sorted { episode($0).duration > episode($1).duration }
         case .titleAtoZ:
-            return episodes.sorted { sortableTitle($0.episode) < sortableTitle($1.episode) }
+            return items.sorted { Self.sortableTitle(episode($0)) < Self.sortableTitle(episode($1)) }
         case .titleZtoA:
-            return episodes.sorted { sortableTitle($0.episode) > sortableTitle($1.episode) }
+            return items.sorted { Self.sortableTitle(episode($0)) > Self.sortableTitle(episode($1)) }
         case .serial:
-            // Season then episode number ascending, tie-broken by publish date — the same
-            // `<1 → 9999` rule as the podcast page's SQL, so unnumbered episodes (and any
-            // non-`Episode`, e.g. a UserEpisode) sort to the end.
-            return episodes.sorted { serialKey($0.episode) < serialKey($1.episode) }
+            return items.sorted { Self.serialKey(episode($0)) < Self.serialKey(episode($1)) }
         }
+    }
+
+    func sorted(_ episodes: [BaseEpisode]) -> [BaseEpisode] {
+        sorted(episodes) { $0 }
     }
 
     /// The native page's serial ordering as a comparable tuple: (season, episode, publishedDate),
-    /// with season/episode < 1 pushed to 9999 so they land after every numbered episode.
+    /// with season/episode < 1 pushed to 9999 so they land after every numbered episode — the same
+    /// rule as the podcast page's SQL, so unnumbered episodes (and any non-`Episode`, e.g. a
+    /// UserEpisode) sort to the end.
     private static func serialKey(_ episode: BaseEpisode) -> (Int64, Int64, Date) {
         let season = (episode as? Episode)?.seasonNumber ?? -1
         let number = (episode as? Episode)?.episodeNumber ?? -1
@@ -117,8 +78,43 @@ enum TriageTabSort {
         }
         return title
     }
+}
 
-    private static func key(_ tab: Tab, _ pageUuid: String) -> String {
-        "SJTabSort-\(tab.rawValue)-\(pageUuid)"
+/// Fork: the per-page sort for a BROWSED episode list — a playlist page's Episodes tab. Each page
+/// remembers its own order; the default is newest first and the control accents whenever anything
+/// else is chosen.
+///
+/// Sort is deliberately a different scope from the search term: it is a durable preference about a
+/// particular show ("this one's serial, always oldest-first"), not a transient lens.
+///
+/// Only browsed lists appear here. A Session lineup has ONE canonical, saved order and never wears
+/// a display sort on top of it — re-arranging one rewrites that order (see `LineupReorder`).
+enum TriageTabSort {
+    static let defaultOrder: EpisodeOrder = .newestToOldest
+
+    static func order(pageUuid: String) -> EpisodeOrder {
+        guard let raw = UserDefaults.standard.object(forKey: key(pageUuid)) as? Int,
+              let order = EpisodeOrder(rawValue: raw) else { return defaultOrder }
+        return order
+    }
+
+    static func setOrder(_ order: EpisodeOrder, pageUuid: String) {
+        UserDefaults.standard.set(order.rawValue, forKey: key(pageUuid))
+    }
+
+    static func isNonDefault(pageUuid: String) -> Bool {
+        order(pageUuid: pageUuid) != defaultOrder
+    }
+
+    /// Applies the page's chosen order to a naturally-ordered list. The default keeps the list
+    /// untouched (it already arrives newest-first from the query).
+    static func arrange(_ episodes: [ListEpisode], pageUuid: String) -> [ListEpisode] {
+        let chosen = order(pageUuid: pageUuid)
+        guard chosen != defaultOrder else { return episodes }
+        return chosen.sorted(episodes) { $0.episode }
+    }
+
+    private static func key(_ pageUuid: String) -> String {
+        "SJTabSort-episodes-\(pageUuid)"
     }
 }

@@ -167,6 +167,9 @@ extension PodcastViewController: UITableViewDataSource, UITableViewDelegate {
 
                 let cell = tableView.dequeueReusableCell(withIdentifier: PodcastViewController.episodeCellId, for: indexPath) as! EpisodeCell
                 cell.hidesArtwork = true
+                // Fork: the grip only appears in "Reorder Episodes" mode — otherwise reorder is a
+                // long-press drag and a permanent grip would just be clutter.
+                cell.showsReorderControl = lineupReorderMode
 
                 if let podcast {
                     cell.playlist = .podcast(uuid: podcast.uuid)
@@ -316,6 +319,8 @@ extension PodcastViewController: UITableViewDataSource, UITableViewDelegate {
     // MARK: - Selection
 
     func tableView(_ tableView: UITableView, willSelectRowAt indexPath: IndexPath) -> IndexPath? {
+        // Reorder mode owns the touch: a tap here would open the episode mid-drag.
+        if lineupReorderMode { return nil }
         // Special handling for episodes only to deal with multi gesture
         guard currentViewMode == .episodes else { return indexPath }
 
@@ -548,6 +553,30 @@ extension PodcastViewController: UITableViewDataSource, UITableViewDelegate {
         return indexPath.section == PodcastViewController.allEpisodesSection && episodeAtIndexPath(indexPath) != nil
     }
 
+    // MARK: - Fork: Reorder Episodes mode (drag grips)
+
+    func tableView(_ tableView: UITableView, canMoveRowAt indexPath: IndexPath) -> Bool {
+        lineupReorderCanMoveRow(at: indexPath)
+    }
+
+    func tableView(_ tableView: UITableView, moveRowAt sourceIndexPath: IndexPath, to destinationIndexPath: IndexPath) {
+        lineupReorderMoveRow(from: sourceIndexPath, to: destinationIndexPath)
+    }
+
+    func tableView(_ tableView: UITableView, targetIndexPathForMoveFromRowAt sourceIndexPath: IndexPath, toProposedIndexPath proposedDestinationIndexPath: IndexPath) -> IndexPath {
+        lineupReorderTarget(from: sourceIndexPath, proposed: proposedDestinationIndexPath)
+    }
+
+    /// Never the built-in delete circle: swipes are SwipeCellKit's, and in reorder mode the grip is
+    /// the whole point.
+    func tableView(_ tableView: UITableView, editingStyleForRowAt indexPath: IndexPath) -> UITableViewCell.EditingStyle {
+        .none
+    }
+
+    func tableView(_ tableView: UITableView, shouldIndentWhileEditingRowAt indexPath: IndexPath) -> Bool {
+        !lineupReorderMode
+    }
+
     func episodeAtIndexPath(_ indexPath: IndexPath) -> Episode? {
         guard let listEpisode = episodeInfo[safe: indexPath.section]?.elements[safe: indexPath.row] as? ListEpisode else { return nil }
 
@@ -577,11 +606,11 @@ extension PodcastViewController: UITableViewDataSource, UITableViewDelegate {
 // MARK: - Fork: Session lineup drag-reorder (long press starts the drag)
 
 extension PodcastViewController: UITableViewDragDelegate, UITableViewDropDelegate {
-    /// Reorder is live only on the Session tab with the lineup in its custom order —
-    /// a date-sorted view is display-only.
+    /// Fork: reorder is live whenever the Session lineup is on screen — a lineup has ONE saved
+    /// order, so there is no sorted-view state left that dragging could write the wrong way.
+    /// (In "Reorder Episodes" mode the grips own the drag instead, so long-press stands down.)
     var canReorderSessionLineup: Bool {
-        guard showingSession, !isMultiSelectEnabled, let podcast,
-              TriageTabSort.order(.session, pageUuid: podcast.uuid) == .custom,
+        guard showingSession, !isMultiSelectEnabled, !lineupReorderMode, let podcast,
               SessionStore.shared.session(forPodcast: podcast.uuid) != nil else { return false }
         return true
     }

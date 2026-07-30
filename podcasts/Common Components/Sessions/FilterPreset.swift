@@ -102,7 +102,7 @@ struct FilterPreset: Codable, Equatable, Identifiable {
     var filterHours: Int32
 
     /// Applied to the list when the preset is selected, then overridable by the list's own sort
-    /// control. nil = "none" (leave the list's current sort). Raw value of `TriageTabSortOrder`.
+    /// control. nil = "none" (leave the list's current sort). Raw value of `EpisodeOrder`.
     var sortOrder: Int?
     /// Group By, applied on selection and overridable. Raw value of `EpisodeGroupBy` (0 = none).
     var groupBy: Int

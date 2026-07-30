@@ -80,6 +80,11 @@ class PlaylistDetailViewController: PCViewController, UIScrollViewDelegate {
 
     private var refreshControl: CustomRefreshControl?
 
+    /// Fork: "Reorder Episodes" mode — the table shows real reorder grips and everything that
+    /// competes for the touch is suspended. See `PlaylistDetailViewController+LineupReorder`.
+    @MainActor
+    var lineupReorderMode = false
+
     @MainActor
     var isMultiSelectEnabled = false {
         didSet {
@@ -158,6 +163,9 @@ class PlaylistDetailViewController: PCViewController, UIScrollViewDelegate {
         self.delegate = delegate
         super.init(nibName: nil, bundle: nil)
         self.viewModel = PlaylistDetailViewModel(playlist: playlist) { [weak self] newSet, animated, contentChanged in
+            // Switching to the browsed tab (or starting a search) leaves reorder mode — grips
+            // there would promise a reorder with nowhere to be saved.
+            self?.exitLineupReorderModeIfNeeded()
             self?.reload(data: newSet, animated: animated, contentChanged: contentChanged)
         } onButtonTapped: { [weak self] buttonTag in
             guard let self else { return }

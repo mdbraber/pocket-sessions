@@ -6,7 +6,9 @@ extension PlaylistDetailViewController: SwipeTableViewCellDelegate, SwipeHandler
     // MARK: - SwipeTableViewCellDelegate
 
     func tableView(_ tableView: UITableView, editActionsForRowAt indexPath: IndexPath, for orientation: SwipeActionsOrientation) -> [SwipeAction]? {
-        guard !isMultiSelectEnabled, let episode = viewModel.listEpisode(at: indexPath)?.episode else { return nil }
+        // Reorder mode suspends swipes — a horizontal drag there is an attempt to grab the grip.
+        guard !isMultiSelectEnabled, !lineupReorderMode,
+              let episode = viewModel.listEpisode(at: indexPath)?.episode else { return nil }
 
         let rowSection = viewModel.section(at: indexPath.section)
         switch orientation {
