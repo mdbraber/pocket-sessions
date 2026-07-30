@@ -22,6 +22,13 @@ class PCSearchBarController: UIViewController {
         didSet {
             cancelButton.setTitle(L10n.cancel, for: .normal)
             cancelButton.titleLabel?.adjustsFontForContentSizeCategory = true
+            // The XIB derives this button's height from the ROOT view's: a 999-priority bottom inset
+            // plus a required centreY tie to the search field. Both are satisfiable at any height, so
+            // a host that constrains the root shorter than the XIB's 58pt silently squashes the
+            // button rather than breaking a constraint — at a 36pt root it collapses to 4pt tall.
+            // The title keeps drawing full size, so "Cancel" looks perfectly normal and is almost
+            // impossible to hit. A floor on the height breaks the bottom inset instead.
+            cancelButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 30).isActive = true
         }
     }
 
