@@ -767,17 +767,70 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         }
     }
 
-    /// Fork: the lineup search — filters the tail episodes of the browsed session / Up Next by title.
-    /// `lineupSearchText`'s didSet reloads the table; capture + restore focus so typing survives.
+    /// Fork: the lineup search — filters the tail episodes of the browsed session / Up Next.
+    ///
+    /// Same rule as the session-list search: the field lives in a table cell, so `reloadData` tears
+    /// it out of the hierarchy, it resigns first responder, and the keyboard drops and returns on
+    /// every keystroke. Only tail rows change, so diff them and move just those — the row hosting
+    /// the field is never touched and focus is never lost (restoring focus afterwards is what made
+    /// it flicker rather than fixing it).
     private func applyLineupSearch(_ term: String) {
-        guard !showingSessionList else { return }
-        let field = lineupSearchController.searchTextField
-        let wasFocused = field?.isFirstResponder ?? false
-        let cursor = field?.selectedTextRange
-        lineupSearchText = term // didSet reloads the table
-        if wasFocused, field?.isFirstResponder == false {
-            field?.becomeFirstResponder()
-            if let cursor { field?.selectedTextRange = cursor }
+        guard !showingSessionList, term != lineupSearchText else { return }
+        let previous = lineupSectionRowIdentities()
+        diffingLineupSearch = true
+        lineupSearchText = term
+        diffingLineupSearch = false
+        applyLineupSectionDiff(from: previous)
+    }
+
+    /// One identity per row of the lineup's tail section, mirroring `numberOfRowsInSection`. The
+    /// pinned head and the search row live in the top block, so neither appears here — the query
+    /// only ever adds or removes tail episodes (or the single placeholder that stands in for none).
+    private func lineupSectionRowIdentities() -> [String] {
+        let tail = filteredLineupTail
+        let episodes = tail.map { "episode:\($0.uuid)" }
+        if displayedWorld == .upNext {
+            if lineupSearchActive { return tail.isEmpty ? ["placeholder"] : episodes }
+            if tail.isEmpty { return topBlockHasCard ? [] : ["placeholder"] }
+            return episodes
+        }
+        guard !showingSessionList else { return [] }
+        if browsedPlaybackSession == nil { return ["placeholder"] }
+        if tail.isEmpty, lineupSearchActive || sessionCurrentEpisode == nil { return ["placeholder"] }
+        return episodes
+    }
+
+    /// Applies the row changes between two identity lists as inserts and deletes, falling back to a
+    /// full reload whenever the change isn't a pure insert/delete — a reorder or a duplicate
+    /// identity would make the index maths wrong, and a wrong batch update crashes UIKit.
+    private func applyLineupSectionDiff(from old: [String]) {
+        let target: sections = displayedWorld == .upNext ? .upNextSection : .sessionSection
+        guard let section = tableData.firstIndex(of: target) else {
+            upNextTable.reloadData()
+            return
+        }
+
+        let new = lineupSectionRowIdentities()
+        let oldSet = Set(old), newSet = Set(new)
+        guard oldSet.count == old.count, newSet.count == new.count,
+              old.filter({ newSet.contains($0) }) == new.filter({ oldSet.contains($0) }) else {
+            upNextTable.reloadData()
+            return
+        }
+
+        let deletions = old.enumerated()
+            .filter { !newSet.contains($0.element) }
+            .map { IndexPath(row: $0.offset, section: section) }
+        let insertions = new.enumerated()
+            .filter { !oldSet.contains($0.element) }
+            .map { IndexPath(row: $0.offset, section: section) }
+        guard !deletions.isEmpty || !insertions.isEmpty else { return }
+
+        UIView.performWithoutAnimation {
+            upNextTable.performBatchUpdates {
+                upNextTable.deleteRows(at: deletions, with: .none)
+                upNextTable.insertRows(at: insertions, with: .none)
+            }
         }
     }
 
@@ -1133,20 +1186,29 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     /// title; the pinned head and the info line stay put.
     var lineupSearchText = "" {
         didSet {
-            guard oldValue != lineupSearchText else { return }
+            guard oldValue != lineupSearchText, !diffingLineupSearch else { return }
             reloadTable()
         }
     }
+
+    /// Set while `applyLineupSearch` is moving rows itself, so the `didSet` above doesn't also fire
+    /// a full reload — the reload is exactly what drops the keyboard.
+    private var diffingLineupSearch = false
 
     var lineupSearchActive: Bool {
         !lineupSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     /// The tail after the lineup title filter — what the list section renders in BOTH worlds.
+    /// Matches the PODCAST as well as the episode: a session mixes shows, so "which of these are
+    /// from Serial" is as natural a question here as "which one was called Ep 4".
     var filteredLineupTail: [BaseEpisode] {
         let query = lineupSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return lineupTail }
-        return lineupTail.filter { $0.displayableTitle().localizedCaseInsensitiveContains(query) }
+        return lineupTail.filter {
+            $0.displayableTitle().localizedCaseInsensitiveContains(query)
+                || $0.subTitle().localizedCaseInsensitiveContains(query)
+        }
     }
 
     /// Fork: untriaged (inbox) episode count of the session's custom-ordered smart playlist.
