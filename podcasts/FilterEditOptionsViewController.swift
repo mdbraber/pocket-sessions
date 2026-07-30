@@ -17,7 +17,7 @@ class FilterEditOptionsViewController: PCViewController, UITableViewDelegate, UI
     private let buttonCellId = "ButtonCell"
     private let settingsCellId = "SettingsCell"
     private let deleteCellId = "DettingsCell"
-    private enum TableRow: Int { case filterName, autodownload, autoDownloadLimit, siriShortcut, isSessionPlaylist, sessionFillMode, backfillSession, deletePlaylist }
+    private enum TableRow: Int { case filterName, autodownload, autoDownloadLimit, siriShortcut, isSessionPlaylist, sessionFillMode, sessionInsertMode, backfillSession, deletePlaylist }
     private static let tableDataAutoDownloadDisabled: [[TableRow]] = {
         return [[.filterName], [.autodownload]]
     }()
@@ -157,6 +157,11 @@ class FilterEditOptionsViewController: PCViewController, UITableViewDelegate, UI
             cell.cellSecondaryLabel.text = sessionAutoFill ? L10n.sessionFillAuto : L10n.sessionFillManual
 
             return cell
+        case .sessionInsertMode:
+            let cell = tableView.dequeueReusableCell(withIdentifier: disclosureCellId) as! DisclosureCell
+            cell.cellLabel.text = L10n.sessionPositionHeading
+            cell.cellSecondaryLabel.text = sessionInsertMode.description
+            return cell
         case .backfillSession:
             let cell = tableView.dequeueReusableCell(withIdentifier: deleteCellId, for: indexPath) as! AccountActionCell
             cell.cellLabel.text = L10n.sessionBackfillPlaylist
@@ -209,6 +214,17 @@ class FilterEditOptionsViewController: PCViewController, UITableViewDelegate, UI
             options.addAction(action: OptionAction(label: L10n.sessionFillManual, selected: !current) { [weak self] in
                 self?.setSessionAutoFill(false)
             })
+            options.present(from: self)
+        case .sessionInsertMode:
+            tableView.deselectRow(at: indexPath, animated: true)
+
+            let current = sessionInsertMode
+            let options = OptionsPicker(title: L10n.sessionPositionHeading.localizedUppercase)
+            for mode in PlaylistInsertMode.allCases {
+                options.addAction(action: OptionAction(label: mode.description, selected: current == mode) { [weak self] in
+                    self?.setSessionInsertMode(mode)
+                })
+            }
             options.present(from: self)
         case .backfillSession:
             tableView.deselectRow(at: indexPath, animated: true)
@@ -315,13 +331,17 @@ class FilterEditOptionsViewController: PCViewController, UITableViewDelegate, UI
 
         data.append([.siriShortcut])
 
-        // Fork: smart playlists only — a manual playlist has no feeder to fill or backfill from.
-        // The opt-out switch itself always shows for a smart playlist; the fill/backfill rows
-        // only make sense while it IS a session playlist.
-        if !filterToEdit.manual {
+        // Fork: the session block. Fill/backfill are smart-playlist only (a manual playlist has no
+        // feeder to fill from), and the opt-out switch likewise. "Position in Session" applies to
+        // both — it governs where an add lands in the lineup — so a manual playlist gets it alone.
+        // It moved here from the list's ⋯ sheet: it's a durable setting about the playlist, not a
+        // view option about the list on screen.
+        if filterToEdit.manual {
+            data.append([.sessionInsertMode])
+        } else {
             var sessionRows: [TableRow] = [.isSessionPlaylist]
             if !Settings.playlistOptedOutOfSession(uuid: filterToEdit.uuid) {
-                sessionRows.append(contentsOf: [.sessionFillMode, .backfillSession])
+                sessionRows.append(contentsOf: [.sessionFillMode, .sessionInsertMode, .backfillSession])
             }
             data.append(sessionRows)
         }
@@ -352,6 +372,30 @@ class FilterEditOptionsViewController: PCViewController, UITableViewDelegate, UI
     private func setSessionAutoFill(_ autoFill: Bool) {
         guard let session = SessionManager.shared.findOrCreateSession(forSmartPlaylist: filterToEdit) else { return }
         SessionStore.shared.setAutoFill(autoFill, for: session.uuid)
+        tableView.reloadData()
+    }
+
+    /// Fork: where an "Add to Session" lands in this playlist's lineup. A manual playlist IS its
+    /// own session's store; a smart playlist feeds one.
+    private var insertModeSession: Session? {
+        filterToEdit.manual
+            ? SessionStore.shared.session(forStore: filterToEdit.uuid)
+            : SessionStore.shared.session(forSmartPlaylistFeeder: filterToEdit.uuid)
+    }
+
+    private var sessionInsertMode: PlaylistInsertMode {
+        insertModeSession.flatMap { PlaylistInsertMode(rawValue: $0.insertMode) } ?? .top
+    }
+
+    private func setSessionInsertMode(_ mode: PlaylistInsertMode) {
+        // No session yet? Create it, so the choice sticks — the same lazy creation the Session tab
+        // does when you first use it.
+        guard var session = insertModeSession
+            ?? (filterToEdit.manual ? nil : SessionManager.shared.findOrCreateSession(forSmartPlaylist: filterToEdit))
+        else { return }
+        guard session.insertMode != mode.rawValue else { return }
+        session.insertMode = mode.rawValue
+        SessionStore.shared.upsert(session)
         tableView.reloadData()
     }
 
