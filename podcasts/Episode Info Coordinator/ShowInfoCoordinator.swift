@@ -49,6 +49,20 @@ actor ShowInfoCoordinator: ShowInfoCoordinating {
         podcastUuid: String,
         episodeUuid: String
     ) async throws -> ([Episode.Metadata.EpisodeChapter]?, [PodcastIndexChapter]?, [GeneratedChapter]?) {
+        // Fork: our own feeds are private (Basic Auth), so Pocket Casts' servers never fetch them
+        // and never index their <podcast:chapters> into show notes — `metadata?.chaptersUrl` below
+        // is always nil for them. The companion publishes the same Podcast Index JSON at a PUBLIC
+        // url derived from the enclosure, so ask for it directly.
+        //
+        // Deliberately BEFORE loadShowInfo: for these episodes PC has nothing to offer, and a
+        // failure fetching show info would otherwise throw past our own perfectly good source.
+        // For every other episode `videoChaptersUrl` fails its pattern match immediately, so
+        // this costs one database lookup and nothing else.
+        if let url = videoChaptersUrl(episodeUuid: episodeUuid),
+           let chapters = try? await podcastIndexChapterRetriever.loadChapters(url), !chapters.chapters.isEmpty {
+            return (nil, chapters.chapters, nil)
+        }
+
         let metadata = try await loadShowInfo(podcastUuid: podcastUuid, episodeUuid: episodeUuid)
 
         if let podcastIndexChapterUrl = metadata?.chaptersUrl,
@@ -69,6 +83,35 @@ actor ShowInfoCoordinator: ShowInfoCoordinating {
 
         return (nil, nil, nil)
     }
+
+    /// The video-chapters url for one of our own enclosures, or nil for anything else.
+    ///
+    /// Enclosures look like `…/enclosure/<videoId>.m4a|.mp4` where `<videoId>` is an 11-character
+    /// YouTube id, and chapters for that id live at `<base>/chapters/<videoId>.json`. The host is
+    /// matched loosely (any host) because the media origin and the feed origin differ — enclosures
+    /// stream from a LAN host while chapters are served publicly — so the enclosure's own host
+    /// cannot be reused. Override the base with the `SJVideoChaptersBase` default if it moves.
+    private func videoChaptersUrl(episodeUuid: String) -> String? {
+        guard let episode = dataManager.findEpisode(uuid: episodeUuid),
+              let downloadUrl = episode.downloadUrl,
+              let videoId = Self.videoChaptersVideoId(fromEnclosure: downloadUrl) else { return nil }
+        let base = UserDefaults.standard.string(forKey: "SJVideoChaptersBase") ?? "https://owntube.example.com"
+        return "\(base)/chapters/\(videoId).json"
+    }
+
+    /// Exposed for testing: the 11-character id in `…/enclosure/<id>.m4a|.mp4`, or nil.
+    static func videoChaptersVideoId(fromEnclosure urlString: String) -> String? {
+        // Strip any query/fragment before matching so `?token=…` can't defeat the extension anchor.
+        let path = urlString.split(separator: "?").first.map(String.init)?.split(separator: "#").first.map(String.init) ?? urlString
+        guard let match = try? Self.enclosurePattern.firstMatch(in: path, range: NSRange(path.startIndex..., in: path)),
+              let range = Range(match.range(withName: "id"), in: path) else { return nil }
+        return String(path[range])
+    }
+
+    private static let enclosurePattern = try! NSRegularExpression(
+        pattern: "/enclosure/(?<id>[A-Za-z0-9_-]{11})\\.(m4a|mp4)$",
+        options: [.caseInsensitive]
+    )
 
     private func buildGeneratedTranscript(podcastUuid: String, episodeUuid: String) -> Episode.Metadata.Transcript {
         let format = TranscriptFormat.vtt

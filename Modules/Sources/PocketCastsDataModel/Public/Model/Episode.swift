@@ -171,6 +171,16 @@ public class Episode: NSObject, BaseEpisode {
 
     // MARK: - Helpers
 
+    /// Whether it is worth asking for this episode's chapters.
+    ///
+    /// This gates `ChapterManager.parseChapters`, which loads BOTH the chapters embedded in the
+    /// media file AND the remote ones (Podcast Index / Podlove / generated). Remote chapters do not
+    /// depend on the container at all, so a container this list omits loses every kind of chapter,
+    /// not just the embedded ones.
+    ///
+    /// Fork: video containers are included. They were absent because stock Pocket Casts has no
+    /// video player worth putting a chapter list in; this fork does, mp4/m4v carry chapter tracks
+    /// just as m4a does, and the remote sources apply regardless of what the media is.
     public func mayContainChapters() -> Bool {
         guard let fileType else { return false }
 
@@ -178,7 +188,11 @@ public class Episode: NSObject, BaseEpisode {
             fileType.caseInsensitiveCompare("audio/x-m4b") == .orderedSame ||
             fileType.caseInsensitiveCompare("audio/mp4") == .orderedSame ||
             fileType.caseInsensitiveCompare("audio/mp3") == .orderedSame ||
-            fileType.caseInsensitiveCompare("audio/mpeg") == .orderedSame)
+            fileType.caseInsensitiveCompare("audio/mpeg") == .orderedSame ||
+            fileType.caseInsensitiveCompare("video/mp4") == .orderedSame ||
+            fileType.caseInsensitiveCompare("video/x-m4v") == .orderedSame ||
+            fileType.caseInsensitiveCompare("video/quicktime") == .orderedSame ||
+            fileType.caseInsensitiveCompare(Episode.hlsEnclosureType) == .orderedSame)
     }
 
     public func parentPodcast(dataManager: DataManager = .sharedManager) -> Podcast? {
