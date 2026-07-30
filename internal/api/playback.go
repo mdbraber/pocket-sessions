@@ -153,6 +153,8 @@ func (s *Server) handlePlaybackReport(w http.ResponseWriter, r *http.Request, us
 		PlayedUpTo:    next.PlayedUpTo,
 		PlayingStatus: next.PlayingStatus,
 		Duration:      next.Duration,
+		// Not part of the report; keep the flag the watcher knows about.
+		Archived: prev.Archived,
 	}
 	if err := s.store.SaveEpisodeProgress(userID, []store.EpisodeProgress{saved}); err != nil {
 		s.logger.Warn("playback report: baseline save", "err", err)

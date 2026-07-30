@@ -172,6 +172,11 @@ CREATE INDEX IF NOT EXISTS idx_presets_cursor  ON presets(user_id, cursor);
 	if _, err := s.db.Exec(`ALTER TABLE meta ADD COLUMN nudge_device TEXT NOT NULL DEFAULT ''`); err != nil && !isDuplicateColumn(err) {
 		return err
 	}
+	// Additive migration: the app's archived flag rides along in the progress
+	// baseline so the watcher can fire on the transition (see watch/progress.go).
+	if _, err := s.db.Exec(`ALTER TABLE episode_progress ADD COLUMN archived INTEGER NOT NULL DEFAULT 0`); err != nil && !isDuplicateColumn(err) {
+		return err
+	}
 	// PC's lastModified cursor for progress polling (see store/progress.go).
 	if _, err := s.db.Exec(`ALTER TABLE meta ADD COLUMN progress_cursor INTEGER NOT NULL DEFAULT 0`); err != nil && !isDuplicateColumn(err) {
 		return err

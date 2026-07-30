@@ -124,6 +124,11 @@ func (w *ProgressWatcher) PollUser(ctx context.Context, userID int64) error {
 			PlayedUpTo:    orPrevious(incoming.PlayedUpTo, previous.PlayedUpTo),
 			PlayingStatus: orPrevious(incoming.PlayingStatus, previous.PlayingStatus),
 			Duration:      orPrevious(incoming.Duration, previous.Duration),
+			// -1 = the record didn't carry the flag; keep what we knew.
+			Archived: previous.Archived,
+		}
+		if incoming.Archived >= 0 {
+			merged.Archived = incoming.Archived
 		}
 		toSave = append(toSave, merged)
 		baseline[merged.EpisodeUUID] = merged
@@ -204,6 +209,10 @@ func classify(known bool, previous, current store.EpisodeProgress, minDelta int6
 	if !known {
 		// First sight: only worth reporting if it arrives already finished or
 		// meaningfully played — a brand-new unplayed episode is not an event.
+		// An archived first sight is history, not an action worth replaying.
+		if current.Archived == 1 {
+			return ""
+		}
 		switch {
 		case current.PlayingStatus == pc.StatusCompleted:
 			return hooks.EventCompleted
@@ -211,6 +220,11 @@ func classify(known bool, previous, current store.EpisodeProgress, minDelta int6
 			return hooks.EventProgress
 		}
 		return ""
+	}
+	// Archiving is a deliberate act — report it even when the same sync also
+	// carries a status change. Un-archiving alone is not an event.
+	if current.Archived == 1 && previous.Archived != 1 {
+		return hooks.EventArchived
 	}
 	if current.PlayingStatus == pc.StatusCompleted && previous.PlayingStatus != pc.StatusCompleted {
 		return hooks.EventCompleted

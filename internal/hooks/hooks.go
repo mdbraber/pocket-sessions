@@ -27,6 +27,7 @@ const (
 	EventProgress  = "progress"  // playedUpTo moved materially
 	EventCompleted = "completed" // playingStatus became "played"
 	EventReopened  = "reopened"  // a completed episode went back to unplayed/in-progress
+	EventArchived  = "archived"  // the app archived the episode (sync is_deleted)
 )
 
 type Event struct {

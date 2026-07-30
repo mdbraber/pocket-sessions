@@ -105,6 +105,23 @@ trpc() { # trpc <get|post> <procedure> <json-input>
   printf '%s' "$_body"
 }
 
+# Archiving in the app removes the video from the collection this feed was
+# published from (queue / saved / playlist) — the server maps the podcast
+# title back to the feed. No history write: archiving is cleanup, not playback.
+if [ "${PCS_EVENT:-}" = "archived" ]; then
+  [ -n "${PCS_PODCAST_TITLE:-}" ] || { echo "owntube: archived event without podcast title" >&2; exit 0; }
+  title=$(printf '%s' "$PCS_PODCAST_TITLE" | sed 's/\\/\\\\/g; s/"/\\"/g')
+  rc=0
+  out=$(trpc post "remote.archiveFromFeed" "{\"videoId\":\"$video_id\",\"feedTitle\":\"$title\"}") || rc=$?
+  if [ "$rc" != 0 ]; then
+    echo "owntube: archiveFromFeed failed for $video_id" >&2
+    exit 1
+  fi
+  removed=$(printf '%s' "$out" | sed -nE 's/.*"removed"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p')
+  echo "owntube: archived $video_id — removed from ${removed:-nothing (not in a removable feed)}"
+  exit 0
+fi
+
 # upsertEvent needs the channel id; video.detail resolves it (and is cached
 # upstream, so this stays cheap).
 rc=0

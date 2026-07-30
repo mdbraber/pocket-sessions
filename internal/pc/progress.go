@@ -35,6 +35,9 @@ type EpisodeProgress struct {
 	PlayedUpTo    int64
 	PlayingStatus int64
 	Duration      int64
+	// The app's "archived" flag (SyncUserEpisode.is_deleted, field 3).
+	// -1 = the record didn't carry it (keep what we knew), 0/1 otherwise.
+	Archived int64
 }
 
 type ProgressSync struct {
@@ -101,6 +104,12 @@ func parseProgressResponse(data []byte) (ProgressSync, error) {
 			// A status of 0 means "PC didn't send one" — callers keep what they had.
 			PlayingStatus: unwrapScalar(fields.bytes[7]),
 			PlayedUpTo:    unwrapScalar(fields.bytes[9]),
+			Archived:      -1,
+		}
+		// BoolValue false arrives as an empty wrapper, so absent-vs-false needs
+		// a presence check rather than unwrapScalar's zero.
+		if wrapper, ok := fields.bytes[3]; ok {
+			progress.Archived = unwrapScalar(wrapper)
 		}
 		if progress.EpisodeUUID == "" {
 			continue

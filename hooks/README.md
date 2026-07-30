@@ -24,6 +24,7 @@ replayed as fresh events.
 | `progress`  | `playedUpTo` moved by at least `PCS_PROGRESS_MIN_DELTA` seconds (default 30) |
 | `completed` | the episode became "played" |
 | `reopened`  | a played episode went back to unplayed / in progress |
+| `archived`  | the app archived the episode (sync `is_deleted`); outranks a simultaneous status change |
 
 ## The hook contract
 
@@ -77,6 +78,12 @@ It resolves the video's `channelId` via `video.detail`, then calls
 `history.upsertEvent` with `positionSeconds` = `playedUpTo` and `completed` =
 (status is played). OwnTube keeps one history row per video and treats
 `completed` as sticky, so repeated events are safe.
+
+An `archived` event instead calls `remote.archiveFromFeed`, which removes the
+video from the collection the feed was published from — queue, saved, or the
+playlist — resolved by the podcast's title against OwnTube's published-feeds
+ledger. Channel/tag/subscription feeds mirror uploads, so there is nothing to
+remove and the call reports that.
 
 **The token expires after 30 days** (OwnTube's `DEVICE_TOKEN_MAX_AGE`), so this
 needs re-pairing monthly: `auth.startDevicePairing` → approve at

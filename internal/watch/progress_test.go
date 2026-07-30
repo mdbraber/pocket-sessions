@@ -40,6 +40,21 @@ func TestClassify(t *testing.T) {
 		{"new but barely started", false, store.EpisodeProgress{}, progress(5, pc.StatusInProgress), ""},
 		{"new and part-played", false, store.EpisodeProgress{}, progress(300, pc.StatusInProgress), hooks.EventProgress},
 		{"new and already finished", false, store.EpisodeProgress{}, progress(1900, pc.StatusCompleted), hooks.EventCompleted},
+
+		// Archiving is deliberate cleanup and outranks whatever else the same
+		// sync carried; un-archiving and archived first sights are not events.
+		{"archived", true, progress(400, pc.StatusInProgress),
+			store.EpisodeProgress{PlayedUpTo: 400, PlayingStatus: pc.StatusInProgress, Archived: 1}, hooks.EventArchived},
+		{"archived while finishing", true, progress(400, pc.StatusInProgress),
+			store.EpisodeProgress{PlayedUpTo: 1900, PlayingStatus: pc.StatusCompleted, Archived: 1}, hooks.EventArchived},
+		{"still archived", true,
+			store.EpisodeProgress{PlayedUpTo: 400, PlayingStatus: pc.StatusInProgress, Archived: 1},
+			store.EpisodeProgress{PlayedUpTo: 400, PlayingStatus: pc.StatusInProgress, Archived: 1}, ""},
+		{"unarchived", true,
+			store.EpisodeProgress{PlayedUpTo: 400, PlayingStatus: pc.StatusInProgress, Archived: 1},
+			store.EpisodeProgress{PlayedUpTo: 400, PlayingStatus: pc.StatusInProgress, Archived: 0}, ""},
+		{"new and already archived", false, store.EpisodeProgress{},
+			store.EpisodeProgress{PlayedUpTo: 1900, PlayingStatus: pc.StatusCompleted, Archived: 1}, ""},
 	}
 
 	for _, tc := range cases {
