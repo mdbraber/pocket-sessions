@@ -37,26 +37,83 @@ if [ -z "$video_id" ]; then
   exit 0
 fi
 
-trpc() { # trpc <procedure> <json-input>
-  # No address family forced: the tunnel carries both, and the home resolver
-  # answers AAAA first. If v6 ever breaks, note that a WireGuard peer needs a
-  # pass rule per family on the firewall — a v4-only rule silently drops v6
-  # while the client looks perfectly configured.
-  curl -sS -X POST \
-    -H "Content-Type: application/json" \
-    -H "Authorization: Bearer $OWNTUBE_TOKEN" \
-    --max-time 20 \
-    -d "{\"json\":$2}" \
-    "$OWNTUBE_URL/api/trpc/$1"
+# A device token is an opaque encrypted JWT. Catching an obviously wrong value
+# here beats every call failing with "Authentication required".
+case "$OWNTUBE_TOKEN" in
+  '{'*|'<'*)
+    echo "owntube: OWNTUBE_TOKEN is not a token — looks like a response body" >&2
+    exit 1
+    ;;
+esac
+
+# tRPC distinguishes queries from mutations by HTTP method: a query takes
+# GET ?input=<json>, a mutation takes POST with the body. Both are wrapped in
+# {"json": …} because the router uses the superjson transformer.
+#
+# -L matters: an http:// URL redirects (308) to https and curl would otherwise
+# hand back an empty body. No address family is forced — the tunnel carries
+# both, and the home resolver answers AAAA first.
+#
+# Errors need checking three ways: curl exits 0 on an HTTP error, tRPC also
+# reports some failures inside a 200 envelope, and a missing video has to stay
+# distinguishable from a broken setup. Returns 2 for "OwnTube doesn't have it",
+# 1 for anything else, and prints the response body on success.
+trpc() { # trpc <get|post> <procedure> <json-input>
+  _method=$1
+  _proc=$2
+  _input=$3
+
+  if [ "$_method" = get ]; then
+    _raw=$(curl -sS -L --max-time 25 -G -w '\n%{http_code}' \
+      -H "Authorization: Bearer $OWNTUBE_TOKEN" \
+      --data-urlencode "input={\"json\":$_input}" \
+      "$OWNTUBE_URL/api/trpc/$_proc") || return 1
+  else
+    _raw=$(curl -sS -L --max-time 25 -X POST -w '\n%{http_code}' \
+      -H "Content-Type: application/json" \
+      -H "Authorization: Bearer $OWNTUBE_TOKEN" \
+      -d "{\"json\":$_input}" \
+      "$OWNTUBE_URL/api/trpc/$_proc") || return 1
+  fi
+
+  _code=$(printf '%s' "$_raw" | tail -n1)
+  _body=$(printf '%s' "$_raw" | sed '$d')
+
+  case "$_body" in
+    *'"error"'*)
+      case "$_body" in *NOT_FOUND*) return 2 ;; esac
+      _msg=$(printf '%s' "$_body" | sed -nE 's/.*"message"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p' | head -1)
+      echo "owntube: $_proc failed (HTTP $_code): ${_msg:-unknown error}" >&2
+      return 1
+      ;;
+  esac
+
+  case "$_code" in
+    404) return 2 ;;
+    2??) ;;
+    *)
+      echo "owntube: $_proc failed (HTTP $_code)" >&2
+      return 1
+      ;;
+  esac
+
+  printf '%s' "$_body"
 }
 
 # upsertEvent needs the channel id; video.detail resolves it (and is cached
 # upstream, so this stays cheap).
-detail=$(trpc "video.detail" "{\"videoId\":\"$video_id\"}" || true)
-channel_id=$(printf '%s' "$detail" | sed -nE 's/.*"channelId":"([^"]+)".*/\1/p' | head -1)
-if [ -z "$channel_id" ]; then
-  echo "could not resolve channelId for $video_id" >&2
+rc=0
+detail=$(trpc get "video.detail" "{\"videoId\":\"$video_id\"}") || rc=$?
+if [ "$rc" = 2 ]; then
+  echo "owntube: $video_id is not in OwnTube — ignoring" >&2
   exit 0
+fi
+[ "$rc" = 0 ] || exit 1
+
+channel_id=$(printf '%s' "$detail" | sed -nE 's/.*"channelId"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' | head -1)
+if [ -z "$channel_id" ]; then
+  echo "owntube: no channelId in video.detail for $video_id" >&2
+  exit 1
 fi
 
 # PC's model maps straight onto OwnTube's: playedUpTo is the resume point,
@@ -76,7 +133,7 @@ input=$(cat <<EOF
 EOF
 )
 
-if trpc "history.upsertEvent" "$input" >/dev/null; then
+if trpc post "history.upsertEvent" "$input" >/dev/null; then
   echo "owntube: $PCS_EVENT $video_id at ${PCS_PLAYED_UP_TO:-0}s (completed=$completed)"
 else
   echo "owntube: upsertEvent failed for $video_id" >&2

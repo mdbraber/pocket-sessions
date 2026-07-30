@@ -73,6 +73,24 @@ It resolves the video's `channelId` via `video.detail`, then calls
 (status is played). OwnTube keeps one history row per video and treats
 `completed` as sticky, so repeated events are safe.
 
+**The token expires after 30 days** (OwnTube's `DEVICE_TOKEN_MAX_AGE`), so this
+needs re-pairing monthly: `auth.startDevicePairing` → approve at
+`/tv/pair?code=<userCode>` → `auth.pollDevicePairing` returns the token. The
+pairing session is in-memory and lives 10 minutes, so approve promptly; polling
+after it lapses returns `{"status":"expired"}` and no token.
+
+Two failure modes are worth knowing, because both once looked like success:
+
+- **`curl` exits 0 on an HTTP error**, and tRPC also reports some failures
+  inside a `200` envelope. The hook therefore checks the status code *and* the
+  body, and prints the server's own message.
+- **`video.detail` is a public procedure** while `history.upsertEvent` is
+  protected. A bad token still resolves the `channelId`, so a broken token
+  fails only at the write — silently, before this was checked.
+
+A video OwnTube doesn't have (`NOT_FOUND`) is not an error: the hook says so and
+exits 0. Anything else exits non-zero, which PCS logs.
+
 ### Reaching a LAN-only OwnTube
 
 The VPS can't route to `*.home.example.com` on its own, so PCS can run inside
