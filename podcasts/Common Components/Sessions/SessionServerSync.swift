@@ -99,15 +99,22 @@ final class SessionServerSync {
     }
 
     @objc private func playbackStateChanged() {
-        // Snapshot a beat later: the notifications fire before audio actually rolls,
-        // and only a device that is PLAYING may claim the pointer — an idle launch
-        // or a remote adoption must never let stale local state win last-writer-wins
-        // (that's how a freshly launched device once yanked the live leader).
+        // Snapshot a beat later: the notifications fire before audio actually rolls.
+        //
+        // Publishing used to require this device to be PLAYING, which meant switching session
+        // while paused never reached anywhere else — the other devices kept whatever pointer they
+        // last saw, forever. What actually has to be guarded against is a device claiming the
+        // pointer from STALE state (a fresh launch, or a pointer it just adopted); a deliberate
+        // change of session is not that. So publishing now follows the session CHANGING, and the
+        // fingerprint check below still suppresses anything that isn't genuinely new.
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-            guard let self, Settings.sessionSyncPlayback(), PlaybackManager.shared.playing() else { return }
+            guard let self, Settings.sessionSyncPlayback() else { return }
             let session = Settings.playbackSession()
             let paused = Settings.playbackSessionPaused()
-            let episodeUuid = (session != nil && !paused) ? PlaybackManager.shared.currentEpisode()?.uuid : nil
+            // The leader episode is only meaningful while this device is actually sounding —
+            // otherwise publish the session alone and let the follower pick its own head.
+            let episodeUuid = (session != nil && !paused && PlaybackManager.shared.playing())
+                ? PlaybackManager.shared.currentEpisode()?.uuid : nil
             queue.async { self.publishPlaybackPointer(session: session, episodeUuid: episodeUuid) }
         }
     }
@@ -140,6 +147,18 @@ final class SessionServerSync {
             UserDefaults.standard.set(fingerprint, forKey: self.playbackFingerprintKey)
             FileLog.shared.addMessage("SessionServerSync: published playback pointer \(fingerprint)")
         }
+    }
+
+    /// Publishes this device's CURRENT pointer. `force` clears the suppression fingerprint first,
+    /// so an explicit Upload re-states the pointer even when it hasn't changed since last time.
+    private func publishCurrentPointer(force: Bool) {
+        guard Settings.sessionSyncPlayback() else { return }
+        if force { UserDefaults.standard.removeObject(forKey: playbackFingerprintKey) }
+        let session = Settings.playbackSession()
+        let paused = Settings.playbackSessionPaused()
+        let episodeUuid = (session != nil && !paused && PlaybackManager.shared.playing())
+            ? PlaybackManager.shared.currentEpisode()?.uuid : nil
+        publishPlaybackPointer(session: session, episodeUuid: episodeUuid)
     }
 
     /// Adopts a remote playback pointer: an idle device switches its active session
@@ -227,8 +246,28 @@ final class SessionServerSync {
         queue.async { [weak self] in self?.fetch() }
     }
 
+    private var lastKnownAccountKey: String { "SJSessionLastKnownAccount-\(baseURL.host ?? "server")" }
+
     @objc private func appDidBecomeActive() {
+        pullIfAccountChanged()
         queue.async { [weak self] in self?.fetch() }
+    }
+
+    /// Fork: notice the signed-in account changing, whichever way it changed.
+    ///
+    /// The `.userSignedIn` notification is posted by some sign-in paths and not others, and none
+    /// of them fire when an account changes while the app is closed. Comparing the account we last
+    /// saw against the one signed in now catches every case, including a first launch after a
+    /// sign-out/sign-in elsewhere.
+    private func pullIfAccountChanged() {
+        let current = ServerSettings.syncingEmail() ?? ""
+        let previous = UserDefaults.standard.string(forKey: lastKnownAccountKey)
+        guard previous != current else { return }
+        UserDefaults.standard.set(current, forKey: lastKnownAccountKey)
+        // Nothing was known before (a fresh install): an ordinary fetch is enough.
+        guard let previous, !previous.isEmpty, !current.isEmpty else { return }
+        FileLog.shared.addMessage("SessionServerSync: account changed (\(previous) -> \(current)) — replacing local data from the server")
+        pullReplacingLocal()
     }
 
     /// Fork: signing in pulls, without waiting to be asked.
@@ -238,20 +277,12 @@ final class SessionServerSync {
     /// the account matches the one the server is linked to, an ordinary merge is enough. When it
     /// doesn't, local data isn't ours to merge and the server replaces it wholesale.
     @objc private func userSignedIn() {
-        pcLinkStatus { [weak self] linked, linkedEmail in
-            guard let self else { return }
-            let signedIn = ServerSettings.syncingEmail()
-            let differentAccount = linked
-                && (linkedEmail?.isEmpty == false)
-                && signedIn != nil
-                && linkedEmail != signedIn
-            if differentAccount {
-                FileLog.shared.addMessage("SessionServerSync: signed in as a different account — replacing local data from the server")
-                self.pullReplacingLocal()
-            } else {
-                self.queue.async { [weak self] in self?.fetch() }
-            }
-        }
+        // Signing in as someone else means everything local belongs to the previous account, so
+        // the server replaces it; signing back in as the same account just catches up. The
+        // account comparison lives in `pullIfAccountChanged`, which also covers the sign-in paths
+        // that never post this notification.
+        pullIfAccountChanged()
+        queue.async { [weak self] in self?.fetch() }
     }
 
     /// Set when a sync was nudge-triggered: that sync only PULLED remote changes,
@@ -459,6 +490,9 @@ final class SessionServerSync {
                 let inbox = InboxStore.shared.snapshot
                 for (uuid, date) in inbox.offeredThrough { self.pendingOffered[uuid] = Self.ms(date) }
                 self.ledgerDirty = true
+                // "This device wins" has to include which session is current, or Upload moves the
+                // sessions but leaves every other device pointing at whatever it had before.
+                self.publishCurrentPointer(force: true)
                 self.flush(completion: completion)
             }
         }
@@ -494,6 +528,11 @@ final class SessionServerSync {
                     FilterPresetStore.shared.delete(uuid: preset.uuid)
                 }
 
+                // "Server wins" includes which session is current. Clearing the applied-at
+                // watermark makes the pointer land even when this device has already seen that
+                // timestamp — an explicit Download is a request for the server's state, not a
+                // catch-up.
+                UserDefaults.standard.removeObject(forKey: self.playbackAppliedAtKey)
                 self.apply(dict)
                 DispatchQueue.main.async { completion?(true) }
             }
