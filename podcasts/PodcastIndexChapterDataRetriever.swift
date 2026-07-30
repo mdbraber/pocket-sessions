@@ -34,7 +34,11 @@ public actor PodcastIndexChapterDataRetriever {
 
         let request = URLRequest(url: url, cachePolicy: .reloadRevalidatingCacheData)
 
-        if let cachedResponse = podcastIndexChaptersCache.cachedResponse(for: request) {
+        // Only a success body is worth replaying. Nothing here used to check the status code, so a
+        // 401/404/503 body was cached like any other and then decoded on every later attempt —
+        // throwing each time. One bad moment (a server hiccup, or a request made before a VPN came
+        // up) could therefore poison an episode's chapters for the life of the install.
+        if let cachedResponse = podcastIndexChaptersCache.cachedResponse(for: request), Self.isSuccess(cachedResponse.response) {
             return try chapters(from: cachedResponse.data)
         }
 
@@ -45,6 +49,11 @@ public actor PodcastIndexChapterDataRetriever {
         let task = Task<PodcastIndexEvelope, Error> { [weak self] in
             guard let self else { throw TaskError.nilSelf }
             let (data, response) = try await URLSession.shared.data(for: request)
+            guard Self.isSuccess(response) else {
+                let code = (response as? HTTPURLResponse)?.statusCode ?? -1
+                FileLog.shared.addMessage("PodcastIndexChapters: \(urlString) returned HTTP \(code)")
+                throw Errors.badResponse(code)
+            }
             let responseToCache = CachedURLResponse(response: response, data: data)
             podcastIndexChaptersCache.storeCachedResponse(responseToCache, for: request)
 
@@ -62,7 +71,14 @@ public actor PodcastIndexChapterDataRetriever {
         return try decoder.decode(PodcastIndexEvelope.self, from: data)
     }
 
+    /// An HTTP response worth decoding and caching. Non-HTTP responses (file urls) count as success.
+    private static func isSuccess(_ response: URLResponse) -> Bool {
+        guard let http = response as? HTTPURLResponse else { return true }
+        return (200 ..< 300).contains(http.statusCode)
+    }
+
     enum Errors: Error {
         case malformedURL
+        case badResponse(Int)
     }
 }

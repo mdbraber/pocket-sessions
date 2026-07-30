@@ -58,9 +58,19 @@ actor ShowInfoCoordinator: ShowInfoCoordinating {
         // failure fetching show info would otherwise throw past our own perfectly good source.
         // For every other episode `videoChaptersUrl` fails its pattern match immediately, so
         // this costs one database lookup and nothing else.
-        if let url = videoChaptersUrl(episodeUuid: episodeUuid),
-           let chapters = try? await podcastIndexChapterRetriever.loadChapters(url), !chapters.chapters.isEmpty {
-            return (nil, chapters.chapters, nil)
+        if let url = videoChaptersUrl(episodeUuid: episodeUuid) {
+            do {
+                let chapters = try await podcastIndexChapterRetriever.loadChapters(url)
+                if !chapters.chapters.isEmpty {
+                    FileLog.shared.addMessage("VideoChapters: \(chapters.chapters.count) chapters from \(url)")
+                    return (nil, chapters.chapters, nil)
+                }
+                FileLog.shared.addMessage("VideoChapters: \(url) returned no chapters")
+            } catch {
+                // Not fatal — fall through to the ordinary sources below. Logged because this is
+                // the only signal that our own source was tried and did not work.
+                FileLog.shared.addMessage("VideoChapters: \(url) failed: \(error)")
+            }
         }
 
         let metadata = try await loadShowInfo(podcastUuid: podcastUuid, episodeUuid: episodeUuid)
