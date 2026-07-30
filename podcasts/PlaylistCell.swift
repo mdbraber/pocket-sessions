@@ -65,7 +65,9 @@ class PlaylistCell: ThemeableCell {
         isSelected: Binding<Bool> = .constant(false),
         canBeDisabled: Bool = false,
         analyticsSource: String? = nil,
-        additionalEpisodesCount: Int = 0
+        additionalEpisodesCount: Int = 0,
+        overrideCount: Int? = nil,
+        overrideSubtitle: String? = nil
     ) {
         switch cellType {
         case .count, .plain:
@@ -79,6 +81,8 @@ class PlaylistCell: ThemeableCell {
             displayType: cellType
         )
         viewModel.additionalEpisodesCount = additionalEpisodesCount
+        viewModel.overrideCount = overrideCount
+        viewModel.overrideSubtitle = overrideSubtitle
 
         contentConfiguration = UIHostingConfiguration {
             PlaylistCellView(

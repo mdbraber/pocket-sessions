@@ -258,6 +258,14 @@ class EpisodeListSearchController: SimpleNotificationsViewController, UISearchBa
 
         let optionPicker = OptionsPicker(title: nil)
 
+        // Fork: the Playlists tab lists LISTS, so every episode-shaped option below (sort, group,
+        // download, archive) would be a lie there. It gets its own short menu instead.
+        if delegate.isShowingPodcastPlaylists() {
+            optionPicker.addActions(delegate.podcastPlaylistsMenuOptions())
+            optionPicker.present(from: self)
+            return
+        }
+
         if delegate.shouldDisplayPodcastFeedReloadButton() {
             let reloadPodcastFeedAction = OptionAction(label: L10n.podcastFeedReloadButton, icon: "stats_skipping") { [weak self] in
                 guard let self else { return }

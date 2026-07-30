@@ -20,6 +20,7 @@ struct PlaylistCellView: View {
     }
 
     private var subtitle: String? {
+        if let overrideSubtitle = viewModel.overrideSubtitle { return overrideSubtitle }
         switch viewModel.displayType {
         case .check:
             let displayCount = isSelected ? viewModel.episodesCount + viewModel.additionalEpisodesCount : viewModel.episodesCount

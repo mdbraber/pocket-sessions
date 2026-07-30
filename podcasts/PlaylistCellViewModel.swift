@@ -18,6 +18,15 @@ class PlaylistCellViewModel: ObservableObject {
     @Published var images: [PlaylistArtworkView.ImageItem] = []
     var additionalEpisodesCount: Int = 0
 
+    /// Fork: a caller-supplied count that replaces the playlist's own total. The podcast page's
+    /// Playlists tab shows how many of THIS PODCAST's episodes a list holds — the list's whole size
+    /// would say nothing about the podcast whose page you're on.
+    var overrideCount: Int?
+
+    /// Fork: replaces the derived subtitle, so a row can say what KIND of list it is
+    /// ("Smart Playlist Session") rather than the generic "Smart Playlist".
+    var overrideSubtitle: String?
+
     var isBelowEpisodeLimit: Bool {
 #if DEBUG
         episodesCount < Settings.debugPlaylistsLimit
@@ -99,6 +108,13 @@ class PlaylistCellViewModel: ObservableObject {
 
     func loadData() {
         images.removeAll()
+
+        // An injected count is authoritative — don't spend a query deriving one we'd discard.
+        if let overrideCount {
+            episodesCount = overrideCount
+            loadImages()
+            return
+        }
 
         switch displayType {
         case .count, .check:

@@ -12,6 +12,7 @@ struct PodcastDetailsTabView: View {
     enum Tab {
         case episodes
         case session
+        case playlists
         case bookmarks
         case youMightLike
 
@@ -28,6 +29,13 @@ struct PodcastDetailsTabView: View {
     }
 
     @State private var sessionCount: Int = 0
+    @State private var playlistCount: Int = 0
+
+    /// Fork: the Playlists tab counts the LISTS this podcast appears in, not episodes — "this
+    /// podcast is in 3 of your playlists".
+    private var playlistsTabTitle: String {
+        playlistCount > 0 ? "\(L10n.podcastPlaylistsTab) · \(playlistCount.localized())" : L10n.podcastPlaylistsTab
+    }
 
     private var sessionTabTitle: String {
         sessionCount > 0 ? "\(L10n.playbackSessionTabSession) · \(sessionCount.localized())" : L10n.playbackSessionTabSession
@@ -46,6 +54,21 @@ struct PodcastDetailsTabView: View {
         let session = SessionStore.shared.session(forPodcast: podcast.uuid)
         sessionTabAvailable = session != nil || podcast.isSubscribed()
         sessionCount = session.map { SessionFeederEngine.storeMemberUuids(for: $0).count } ?? 0
+        refreshPlaylistCount(podcastUuid: podcast.uuid)
+    }
+
+    /// Counting reads every playlist's episodes (a smart playlist's membership is a query, not a
+    /// table), so it runs off the main thread and publishes back.
+    private func refreshPlaylistCount(podcastUuid: String) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let count = PodcastPlaylistRows.current(forPodcast: podcastUuid).count
+            DispatchQueue.main.async { playlistCount = count }
+        }
+    }
+
+    private func openPlaylists() {
+        selectedTab = .playlists
+        delegate?.showPodcastPlaylists()
     }
 
     private func openSession() {
@@ -65,6 +88,8 @@ struct PodcastDetailsTabView: View {
             // Fork: the Session tab rides the episodes view mode, distinguished by the list-mode flag.
             if viewMode == .episodes, delegate?.isShowingSession() == true {
                 selectedTab = .session
+            } else if viewMode == .episodes, delegate?.isShowingPodcastPlaylists() == true {
+                selectedTab = .playlists
             } else {
                 selectedTab = Tab(from: viewMode)
             }
@@ -111,6 +136,15 @@ struct PodcastDetailsTabView: View {
                             .applyButtonEffect(isPressed: config.isPressed)
                     }
             }
+
+            Text(playlistsTabTitle)
+                .buttonize {
+                    openPlaylists()
+                } customize: { config in
+                    config.label
+                        .applyStyle(theme: theme, highlighted: selectedTab == .playlists)
+                        .applyButtonEffect(isPressed: config.isPressed)
+                }
 
             Text(L10n.bookmarks)
                 .buttonize {

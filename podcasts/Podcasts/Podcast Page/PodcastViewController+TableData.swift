@@ -51,6 +51,8 @@ extension PodcastViewController: UITableViewDataSource, UITableViewDelegate {
         episodesTable.register(UINib(nibName: "HeadingCell", bundle: nil), forCellReuseIdentifier: PodcastViewController.groupHeadingCellId)
         episodesTable.register(UINib(nibName: "NoSearchResultsCell", bundle: nil), forCellReuseIdentifier: PodcastViewController.noSearchResultsCell)
         episodesTable.register(EmptyStateCell.self, forCellReuseIdentifier: EmptyStateCell.reuseIdentifier)
+        // Fork: the Playlists tab renders the Playlists screen's own row.
+        episodesTable.register(PlaylistCell.self, forCellReuseIdentifier: PlaylistCell.reuseIdentifier)
         episodesTable.register(LoadingCell.self, forCellReuseIdentifier: LoadingCell.reuseIdentifier)
         episodesTable.register(BookmarksHostingCell.self, forCellReuseIdentifier: BookmarksHostingCell.reuseIdentifier)
     }
@@ -199,6 +201,11 @@ extension PodcastViewController: UITableViewDataSource, UITableViewDelegate {
                     Image(systemName: "info.circle")
                 })
                 return cell
+            } else if let playlistItem = itemAtRow as? PodcastPlaylistListItem {
+                let isLast = indexPath.row == (episodeInfo[safe: indexPath.section]?.elements.count ?? 0) - 1
+                return podcastPlaylistCell(for: playlistItem, isLastRow: isLast, at: indexPath)
+            } else if itemAtRow is PodcastPlaylistsEmptyItem {
+                return podcastPlaylistsEmptyCell(at: indexPath)
             } else if let archivedPlaceholder = itemAtRow as? AllArchivedPlaceholder {
                 let cell = tableView.dequeueReusableCell(withIdentifier: EmptyStateCell.reuseIdentifier, for: indexPath) as! EmptyStateCell
                 cell.configure(title: L10n.episodeFilterNoEpisodesTitle, message: archivedPlaceholder.message, icon: {
@@ -328,6 +335,9 @@ extension PodcastViewController: UITableViewDataSource, UITableViewDelegate {
 
         guard episodesTable.isEditing, !multiSelectGestureInProgress else { return indexPath }
 
+        if episodeInfo[safe: indexPath.section]?.elements[safe: indexPath.row] is PodcastPlaylistListItem {
+            return indexPath
+        }
         if let selectedEpisode = episodeInfo[indexPath.section].elements[safe: indexPath.row] as? ListEpisode {
             if selectedEpisodes.contains(selectedEpisode) {
                 tableView.deselectIndexPath(indexPath)
@@ -339,6 +349,12 @@ extension PodcastViewController: UITableViewDataSource, UITableViewDelegate {
     }
 
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        // Fork: a Playlists-tab row opens that playlist, exactly as on the Playlists screen.
+        if let playlistItem = episodeInfo[safe: indexPath.section]?.elements[safe: indexPath.row] as? PodcastPlaylistListItem {
+            tableView.deselectRow(at: indexPath, animated: true)
+            openPodcastPlaylist(playlistItem)
+            return
+        }
         switch currentViewMode {
         case .episodes:
             // Fork: tapping a grouped header toggles collapse/expand.

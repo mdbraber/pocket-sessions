@@ -7177,6 +7177,45 @@
 /* Fork: session chooser ⋯ menu — noun label for the empty-Up-Next visibility toggle (secondary label is Hide/Show). */
 "session_empty_up_next" = "Empty Up Next";
 
+/* Fork: podcast page — the tab listing the playlists this podcast's episodes appear in. */
+"podcast_playlists_tab" = "Playlists";
+
+/* Fork: podcast Playlists tab — search field placeholder. */
+"podcast_playlists_search" = "Search Playlists";
+
+/* Fork: podcast Playlists tab — shown when none of the user's playlists hold an episode of this podcast. */
+"podcast_playlists_empty_title" = "Not in any playlists";
+
+/* Fork: podcast Playlists tab — explains the empty state. */
+"podcast_playlists_empty_message" = "Episodes from this podcast aren't in any of your playlists yet.";
+
+/* Fork: podcast Playlists tab — row subtitle for a hand-made playlist. */
+"podcast_playlists_kind_manual" = "Manual Playlist";
+
+/* Fork: podcast Playlists tab — row subtitle for a rule-based playlist. */
+"podcast_playlists_kind_smart" = "Smart Playlist";
+
+/* Fork: podcast Playlists tab — row subtitle for the session a smart playlist feeds. */
+"podcast_playlists_kind_smart_session" = "Smart Playlist Session";
+
+/* Fork: podcast Playlists tab — row subtitle for another podcast's own session. */
+"podcast_playlists_kind_podcast_session" = "Podcast Session";
+
+/* Fork: podcast Playlists tab — row subtitle for a folder's session. */
+"podcast_playlists_kind_folder_session" = "Folder Session";
+
+/* Fork: podcast Playlists tab ⋯ — heading for the filter choosing which half of a smart playlist + its session to list. */
+"podcast_playlists_show" = "Show Smart Lists";
+
+/* Fork: podcast Playlists tab ⋯ — show both a smart playlist and the session it feeds. */
+"podcast_playlists_show_both" = "Both";
+
+/* Fork: podcast Playlists tab ⋯ — show only the playlists, not the sessions they feed. */
+"podcast_playlists_show_playlists" = "Playlists";
+
+/* Fork: podcast Playlists tab ⋯ — show only the sessions, not the playlists feeding them. */
+"podcast_playlists_show_sessions" = "Sessions";
+
 /* Fork: session chooser ⋯ menu — noun label for the smart-playlist-podcast visibility toggle (secondary label is Hide/Show). */
 "session_podcasts_in_smart_playlists" = "Podcasts in Smart Playlists";
 

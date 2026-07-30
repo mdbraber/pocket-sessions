@@ -68,6 +68,11 @@ protocol PodcastActionsDelegate: AnyObject {
     func showSession()
     func isShowingSession() -> Bool
 
+    /// Fork: the Playlists tab — which of the user's lists hold this podcast's episodes.
+    func showPodcastPlaylists()
+    func isShowingPodcastPlaylists() -> Bool
+    func podcastPlaylistsMenuOptions() -> [OptionAction]
+
     /// Fork: the Session lineup's two reorder affordances — drag grips, and a one-shot
     /// re-arrangement of the saved order.
     func enterLineupReorderMode()
@@ -96,10 +101,16 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
     enum EpisodesListMode {
         case episodes
         case session
+        /// Fork: the playlists this podcast's episodes appear in — lists, not episodes.
+        case playlists
     }
 
     var episodesListMode: EpisodesListMode = .episodes
     var showingSession: Bool { episodesListMode == .session }
+    var showingPodcastPlaylists: Bool { episodesListMode == .playlists }
+
+    /// Fork: the Playlists tab's rows, rebuilt off the main thread on every load.
+    var podcastPlaylistRows: [PodcastPlaylistRow] = []
     /// Fork: the podcast session's store members, cached per reload — drives the
     /// little green in-this-session indicator on Episodes rows.
     var cachedSessionMemberUuids: Set<String> = []
@@ -725,6 +736,8 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
         case .session:
             loadSessionEpisodes(podcast: podcast, animated: animated)
             return
+        case .playlists:
+            loadPodcastPlaylists(podcast: podcast, animated: animated)
             return
         case .episodes:
             break
@@ -1648,6 +1661,18 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
 
     func isShowingSession() -> Bool {
         showingSession
+    }
+
+    /// Fork: the Playlists tab renders lists rather than episodes, but rides the same episodes
+    /// surface (and so the same search field and ⋯) as the other tabs.
+    func showPodcastPlaylists() {
+        episodesListMode = .playlists
+        episodesTable.tableFooterView = nil
+        switchViewMode(to: .episodes)
+    }
+
+    func isShowingPodcastPlaylists() -> Bool {
+        showingPodcastPlaylists
     }
 
     func multiSelectPreferredSession() -> Session? {
