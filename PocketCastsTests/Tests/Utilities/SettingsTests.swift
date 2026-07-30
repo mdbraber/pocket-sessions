@@ -23,7 +23,9 @@ final class SettingsTests: XCTestCase {
             .starEpisode,
             .chromecast,
             .archive,
-            .videoToggle
+            .videoToggle,
+            // Fork: the player's "Go to Session" action.
+            .goToSession
         ]
         return actions
     }()

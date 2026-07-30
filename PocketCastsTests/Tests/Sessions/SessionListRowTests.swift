@@ -37,6 +37,13 @@ final class SessionListRowTests: DBTestCase {
                     Settings.sessionListShowPodcastsKey,
                     Settings.sessionListShowPlaylistsKey,
                     Settings.sessionListShowFoldersKey,
+                    // The chooser's ⋯ toggles. `hideEmptySessions` is a SECOND hide-empty setting,
+                    // read by `SessionListRows.current` directly rather than through
+                    // `SessionListFilters` — leaving it set (as using the app does) filtered empty
+                    // sessions out of every test, including the ones passing `.unfiltered`.
+                    Settings.hideEmptySessionsKey,
+                    Settings.hideEmptyUpNextKey,
+                    Settings.hidePodcastSessionsInSmartPlaylistKey,
                     // Per-playlist "not a session playlist" opt-outs also hide rows.
                     Settings.playlistsOptedOutOfSessionKey] {
             UserDefaults.standard.removeObject(forKey: key)
@@ -84,11 +91,15 @@ final class SessionListRowTests: DBTestCase {
         return episode
     }
 
+    /// Each session needs its OWN feeder identity. `createSession` mints one canonical uuid per
+    /// identity-bearing feeder, so two sessions fed by the SAME podcast are literally the same
+    /// session — every test asking for several sessions off one podcast silently got one back.
+    /// The episodes still come from whatever podcast the caller passed; only the feeder is distinct.
     @discardableResult
     private func makeSession(name: String, podcast: Podcast, episodes: [Episode]) -> Session {
         SessionManager.shared.createSession(
             name: name,
-            feeder: .podcast(uuid: podcast.uuid),
+            feeder: .podcast(uuid: makePodcast().uuid),
             seedEpisodeUuids: episodes.map(\.uuid)
         )
     }
@@ -287,13 +298,51 @@ final class SessionListRowTests: DBTestCase {
         activate(older)
         XCTAssertEqual(SessionListRows.current(sort: .recentlyPlayed).map(\.name), ["Recent", "Older", "Never two", "Never one"])
 
-        // Paused likewise leaves the order alone; a part-played episode would raise it via
-        // the progress tier, not by being the active session.
+        // Paused likewise leaves the order alone.
         activate(older, paused: true)
         XCTAssertEqual(SessionListRows.current(sort: .recentlyPlayed).map(\.name), ["Recent", "Older", "Never two", "Never one"])
 
         XCTAssertNotNil(neverOne.storePlaylistUuid)
         XCTAssertNotNil(neverTwo.storePlaylistUuid)
+    }
+
+    /// "Last Played" means the SESSION was played — `Session.lastUsed`, stamped when audio starts
+    /// for it. It must NOT rank on the next episode's progress: one episode can belong to many
+    /// sessions, so doing that floated every session merely CONTAINING a part-played episode above
+    /// the session you were actually listening to.
+    func testRecencyRanksOnSessionHistoryNotEpisodeProgress() throws {
+        let podcast = makePodcast()
+
+        // Genuinely played, but a while ago, and its next episode is untouched.
+        let played = makeSession(name: "Played", podcast: podcast, episodes: [makeEpisode(title: "A", podcast: podcast)])
+        var playedUsed = played
+        playedUsed.lastUsed = Date(timeIntervalSince1970: 1_000_000)
+        SessionStore.shared.upsert(playedUsed)
+
+        // Never played as a session — it just happens to contain a part-played episode.
+        makeSession(name: "Contains progress", podcast: podcast, episodes: [
+            makeEpisode(title: "B", podcast: podcast, playedUpTo: 600)
+        ])
+
+        // Never played and nothing started.
+        makeSession(name: "Untouched", podcast: podcast, episodes: [makeEpisode(title: "C", podcast: podcast)])
+
+        XCTAssertEqual(SessionListRows.current(sort: .recentlyPlayed).map(\.name),
+                       ["Played", "Contains progress", "Untouched"])
+    }
+
+    /// With no timestamp on either side, a part-played episode is still the best hint that a
+    /// session was touched — the stamp can be missing entirely when progress arrived by sync.
+    func testProgressBreaksTiesOnlyWhenNeitherSessionHasBeenPlayed() throws {
+        let podcast = makePodcast()
+
+        makeSession(name: "Untouched", podcast: podcast, episodes: [makeEpisode(title: "A", podcast: podcast)])
+        makeSession(name: "Contains progress", podcast: podcast, episodes: [
+            makeEpisode(title: "B", podcast: podcast, playedUpTo: 600)
+        ])
+
+        XCTAssertEqual(SessionListRows.current(sort: .recentlyPlayed).map(\.name),
+                       ["Contains progress", "Untouched"])
     }
 
     /// "Hide Unplayed Sessions" drops sessions never started, but never the active one.
@@ -317,15 +366,15 @@ final class SessionListRowTests: DBTestCase {
         XCTAssertEqual(Set(SessionListRows.current(sort: .recentlyPlayed, filters: .unfiltered).map(\.name)), ["Started", "Untouched"])
     }
 
-    /// Progress IS recency: a part-played session outranks one with a newer timestamp but
-    /// nothing started, because being mid-episode is the stronger signal (and can arrive by
-    /// sync with no local timestamp at all).
-    func testStartedSessionsOutrankUntouchedOnesInRecencySort() throws {
+    /// A newer play timestamp wins over a part-played episode. "Last Played" means the SESSION was
+    /// played — an episode can belong to many sessions, so ranking on its progress floated every
+    /// session merely containing it above the one actually being listened to.
+    func testASessionPlayedMoreRecentlyOutranksOneHoldingAPartPlayedEpisode() throws {
         let podcast = makePodcast()
         let started = makeSession(name: "Started", podcast: podcast, episodes: [makeEpisode(title: "A", podcast: podcast, duration: 600)])
         let untouched = makeSession(name: "Untouched", podcast: podcast, episodes: [makeEpisode(title: "B", podcast: podcast, duration: 600)])
 
-        // The untouched session carries the NEWER timestamp — progress must still win.
+        // The untouched session carries the NEWER timestamp — it played more recently, so it wins.
         var startedUsed = started
         startedUsed.lastUsed = Date(timeIntervalSince1970: 1_000_000)
         SessionStore.shared.upsert(startedUsed)
@@ -337,8 +386,8 @@ final class SessionListRowTests: DBTestCase {
         episode.playedUpTo = 120
         DataManager.sharedManager.save(episode: episode)
 
-        let names = SessionListRows.current().map(\.name)
-        XCTAssertEqual(names, ["Started", "Untouched"])
+        let names = SessionListRows.current(sort: .recentlyPlayed).map(\.name)
+        XCTAssertEqual(names, ["Untouched", "Started"])
     }
 
     // MARK: - Artwork

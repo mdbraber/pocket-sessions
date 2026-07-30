@@ -81,7 +81,8 @@ final class SessionStoreDecodeTests: XCTestCase {
         XCTAssertNil(loaded.storePlaylistUuid)
         XCTAssertEqual(loaded.autoAdd, false)
         XCTAssertEqual(loaded.autoFill, true, "a document written before autoFill existed must decode as Automatic")
-        XCTAssertEqual(loaded.insertMode, PlaylistInsertMode.afterLastInserted.rawValue)
+        XCTAssertEqual(loaded.insertMode, PlaylistInsertMode.top.rawValue,
+                       "a document written before insertMode existed decodes as the model default, Top")
         XCTAssertEqual(loaded.lastInsertedUuid, "")
         XCTAssertEqual(loaded.pinnedEpisodeUuids, [], "a document written before pins existed must decode as unpinned")
         XCTAssertEqual(loaded.feeder, .podcast(uuid: "p1"))

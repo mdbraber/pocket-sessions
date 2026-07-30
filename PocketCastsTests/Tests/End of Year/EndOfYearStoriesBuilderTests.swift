@@ -224,13 +224,21 @@ class EndOfYearStoriesBuilderTests: XCTestCase {
         XCTAssertNotNil(model.data.episodesStartedAndCompleted)
     }
 
+    /// Nothing synced for this year yet, so the build must fetch it.
+    ///
+    /// These two tests are the only ones here that used to leave `hasActiveSubscription` to the
+    /// real account, and they set the SAME synced flag while asserting opposite outcomes — so one
+    /// of them always failed, decided by the tester's subscription and by whatever the previous
+    /// test left in `hasSyncedEpisodesForPlaybackAsPlusUser`. Both now pin every input, the way
+    /// their neighbours do.
     func testSyncWhenNeeded() async {
         var syncCalled = false
         let endOfYearManager = EndOfYearManagerMock()
         let dataManager = DataManagerMock(endOfYearManager: endOfYearManager)
         let model = EndOfYear2023StoriesModel()
-        let builder = EndOfYearStoriesBuilder(dataManager: dataManager, model: model, sync: { _ in syncCalled = true; return true })
-        Settings.setHasSyncedEpisodesForPlayback(true, year: 2023)
+        let builder = EndOfYearStoriesBuilder(dataManager: dataManager, model: model, sync: { _ in syncCalled = true; return true }, hasActiveSubscription: { false })
+        Settings.setHasSyncedEpisodesForPlayback(false, year: 2023)
+        Settings.setHasSyncedEpisodesForPlaybackAsPlusUser(false, year: 2023)
 
         endOfYearManager.isFullListeningHistoryToReturn = false
         _ = await builder.build()
@@ -238,13 +246,15 @@ class EndOfYearStoriesBuilderTests: XCTestCase {
         XCTAssertTrue(syncCalled)
     }
 
+    /// Already synced this year as the same (non-Plus) user: nothing to re-fetch.
     func testDontSyncWhenAlreadySynced() async {
         var syncCalled = false
         let endOfYearManager = EndOfYearManagerMock()
         let dataManager = DataManagerMock(endOfYearManager: endOfYearManager)
         let model = EndOfYear2023StoriesModel()
-        let builder = EndOfYearStoriesBuilder(dataManager: dataManager, model: model, sync: { _ in syncCalled = true; return true })
+        let builder = EndOfYearStoriesBuilder(dataManager: dataManager, model: model, sync: { _ in syncCalled = true; return true }, hasActiveSubscription: { false })
         Settings.setHasSyncedEpisodesForPlayback(true, year: 2023)
+        Settings.setHasSyncedEpisodesForPlaybackAsPlusUser(false, year: 2023)
 
         endOfYearManager.isFullListeningHistoryToReturn = false
         _ = await builder.build()
