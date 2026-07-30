@@ -94,11 +94,13 @@ Three things to get right in that config:
   `0.0.0.0/0` would route *everything* through home.
 - **DNS.** If `owntube.home.example.com` only resolves on a home resolver, set
   `DNS = <home-dns-ip>` in the `[Interface]` section; `wg-quick` applies it.
-- **IPv4 only, deliberately.** The hook forces `curl -4`. A home resolver
-  typically answers AAAA first, so anything unaware tries IPv6 — and a peer
-  whose server-side `AllowedIPs` lists only the v4 address blackholes v6
-  silently (the client looks perfect: address assigned, route present, zero
-  replies). Forcing v4 sidesteps that whether or not v6 works.
+- **A pass rule per address family.** The hook forces no address family — the
+  tunnel carries both, and a home resolver usually answers AAAA first. Note
+  that firewall rules are per-family: on OPNsense a v4-only "pass in" rule on
+  the VPN interface drops v6 into the default deny, which looks like a routing
+  bug rather than a firewall one (client shows the address assigned, the route
+  present, `ip -6 route get` correct — and zero replies). Each family needs its
+  own rule with the client's tunnel address as source.
 - **Keepalive.** `PersistentKeepalive = 25` on the peer, since the VPS sits
   behind the peer's NAT and would otherwise go quiet.
 
