@@ -145,6 +145,59 @@ class VideoViewController: SimpleNotificationsViewController, AVPictureInPicture
         return label
     }()
 
+    // MARK: - Chapters
+
+    /// Fork: chapter title + "N of M" + previous/next, sitting above the scrubber inside
+    /// `controlsOverlay` so it fades with the rest of the controls.
+    ///
+    /// The transport's skip buttons are left alone: chapters are an additional way to move, not a
+    /// replacement, which is also how the Now Playing player treats them.
+    private lazy var chapterBar: UIStackView = {
+        let titleStack = UIStackView(arrangedSubviews: [chapterTitleLabel, chapterCounterLabel])
+        titleStack.axis = .vertical
+        titleStack.alignment = .center
+        titleStack.spacing = 2
+
+        let bar = UIStackView(arrangedSubviews: [chapterPrevButton, titleStack, chapterNextButton])
+        bar.axis = .horizontal
+        bar.alignment = .center
+        bar.spacing = 16
+        bar.translatesAutoresizingMaskIntoConstraints = false
+        bar.isHidden = true
+        return bar
+    }()
+
+    private lazy var chapterTitleLabel: UILabel = {
+        let label = UILabel()
+        label.font = UIFont.systemFont(ofSize: 14, weight: .medium)
+        label.textColor = ThemeColor.contrast01(for: .extraDark)
+        label.textAlignment = .center
+        label.lineBreakMode = .byTruncatingTail
+        return label
+    }()
+
+    private lazy var chapterCounterLabel: UILabel = {
+        let label = UILabel()
+        label.font = UIFont.systemFont(ofSize: 12, weight: .regular)
+        label.textColor = ThemeColor.contrast02(for: .extraDark)
+        label.textAlignment = .center
+        return label
+    }()
+
+    private lazy var chapterPrevButton = makeChapterButton(imageName: "chapter-skipbackwards", action: #selector(chapterPrevTapped))
+    private lazy var chapterNextButton = makeChapterButton(imageName: "chapter-skipforward", action: #selector(chapterNextTapped))
+
+    private func makeChapterButton(imageName: String, action: Selector) -> UIButton {
+        let button = UIButton(type: .system)
+        button.setImage(UIImage(named: imageName)?.withRenderingMode(.alwaysTemplate), for: .normal)
+        button.tintColor = ThemeColor.contrast01(for: .extraDark)
+        button.addTarget(self, action: action, for: .touchUpInside)
+        button.setContentHuggingPriority(.required, for: .horizontal)
+        button.widthAnchor.constraint(equalToConstant: 44).isActive = true
+        button.heightAnchor.constraint(equalToConstant: 44).isActive = true
+        return button
+    }
+
     deinit {
         teardownPictureInPicturePlayback()
     }
@@ -165,6 +218,74 @@ class VideoViewController: SimpleNotificationsViewController, AVPictureInPicture
         skipForwardBtn.skipAmount = skipFwdAmount
 
         setupCastInfoView()
+        setupChapterBar()
+    }
+
+    private func setupChapterBar() {
+        controlsOverlay.addSubview(chapterBar)
+        NSLayoutConstraint.activate([
+            chapterBar.centerXAnchor.constraint(equalTo: timeSlider.centerXAnchor),
+            chapterBar.bottomAnchor.constraint(equalTo: timeSlider.topAnchor, constant: -8),
+            chapterBar.leadingAnchor.constraint(greaterThanOrEqualTo: controlsOverlay.leadingAnchor, constant: 24),
+            chapterBar.trailingAnchor.constraint(lessThanOrEqualTo: controlsOverlay.trailingAnchor, constant: -24)
+        ])
+    }
+
+    /// Mirrors the Now Playing player: the bar only exists when the episode actually has chapters,
+    /// and the arrows are disabled at the ends rather than wrapping.
+    private func updateChapterBar() {
+        let chapterCount = PlaybackManager.shared.chapterCount()
+        guard chapterCount > 0, let visible = PlaybackManager.shared.currentChapters().visibleChapter else {
+            chapterBar.isHidden = true
+            return
+        }
+        chapterBar.isHidden = false
+        let title = PlaybackManager.shared.currentChapters().title
+        chapterTitleLabel.text = title.isEmpty ? PlaybackManager.shared.currentEpisode()?.displayableTitle() : title
+        chapterCounterLabel.text = L10n.playerChapterCount((visible.index + 1).localized(), chapterCount.localized())
+        chapterPrevButton.isEnabled = !visible.isFirst
+        chapterNextButton.isEnabled = !visible.isLast
+        chapterPrevButton.alpha = visible.isFirst ? 0.4 : 1
+        chapterNextButton.alpha = visible.isLast ? 0.4 : 1
+    }
+
+    @objc private func chapterPrevTapped() {
+        if PlaybackManager.shared.playing() { startHideControlsTimer() }
+        PlaybackManager.shared.trackChapterEvent(.playerPreviousChapterTapped)
+
+        #if !APPCLIP
+        // Generated chapters carry reference-timeline starts that dynamic ads have shifted, so
+        // resolve the real position by fingerprinting first — the same route the Now Playing
+        // player and the chapters list take. Seeking to the raw start would land in the wrong place.
+        if GeneratedChapterSeeker.isEnabled, let previous = PlaybackManager.shared.previousPlayableChapter() {
+            PlaybackManager.shared.trackChapterSkippedIfNeeded(to: previous)
+            GeneratedChapterSeeker.seek(to: previous, startPlayback: false)
+            return
+        }
+        #endif
+
+        PlaybackManager.shared.skipToPreviousChapter()
+    }
+
+    @objc private func chapterNextTapped() {
+        if PlaybackManager.shared.playing() { startHideControlsTimer() }
+        PlaybackManager.shared.trackChapterEvent(.playerNextChapterTapped)
+
+        #if !APPCLIP
+        if GeneratedChapterSeeker.isEnabled {
+            guard let next = PlaybackManager.shared.nextPlayableChapter() else {
+                // No next chapter — respect the producer's end of the last one, as
+                // `skipToNextChapter` does. Not a chapter start, so nothing to resolve.
+                PlaybackManager.shared.skipToEndOfLastChapter()
+                return
+            }
+            PlaybackManager.shared.trackChapterSkippedIfNeeded(to: next)
+            GeneratedChapterSeeker.seek(to: next, startPlayback: false)
+            return
+        }
+        #endif
+
+        PlaybackManager.shared.skipToNextChapter()
     }
 
     /// Adds the casting chip ABOVE `controlsOverlay`, so hiding the controls leaves it in place.
@@ -330,6 +451,9 @@ class VideoViewController: SimpleNotificationsViewController, AVPictureInPicture
         addCustomObserver(Constants.Notifications.playbackEnded, selector: #selector(playbackFinished))
         addCustomObserver(Constants.Notifications.playbackTrackChanged, selector: #selector(trackChanged))
         addCustomObserver(Constants.Notifications.googleCastStatusChanged, selector: #selector(update))
+        // Chapters arrive asynchronously (file parse + remote fetch) and change as playback moves.
+        addCustomObserver(Constants.Notifications.podcastChaptersDidUpdate, selector: #selector(update))
+        addCustomObserver(Constants.Notifications.podcastChapterChanged, selector: #selector(update))
     }
 
     private func removeUiNotificationObservers() {
@@ -370,6 +494,7 @@ class VideoViewController: SimpleNotificationsViewController, AVPictureInPicture
         progressUpdated()
         updateFillScreenBtn()
         updateCastInfoView()
+        updateChapterBar()
     }
 
     private func updateFillScreenBtn() {
