@@ -7330,6 +7330,12 @@
 /* Switch on the Synchronization screen: follow the session playing on other devices */
 "session_sync_follow_playback" = "Follow Now Playing";
 
+/* Fork: Settings → Synchronization — routes Pocket Casts API traffic through the user's own sessions server. */
+"session_sync_relay_api" = "Route Pocket Casts sync via session server";
+
+/* Fork: explains the relay toggle, shown when it cannot be turned on yet. */
+"session_sync_relay_api_unavailable" = "Needs a server URL and a linked account";
+
 /* Fork: Synchronization screen — footer under the server section. */
 "session_sync_server_footer" = "The server can run anywhere the phone can reach — a Mac on your network for testing, or your own VPS. Changes take effect the next time the app launches.";
 

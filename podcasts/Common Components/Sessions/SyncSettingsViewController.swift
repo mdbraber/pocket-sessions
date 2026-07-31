@@ -9,13 +9,13 @@ import UIKit
 class SyncSettingsViewController: PCViewController, UITableViewDataSource, UITableViewDelegate {
     private static let cellId = "SyncSettingsCell"
 
-    private enum TableRow { case modeServer, modeICloud, modeLocal, serverURL, account, followPlayback, syncNow, pushWins, pullWins }
+    private enum TableRow { case modeServer, modeICloud, modeLocal, serverURL, account, followPlayback, relayAPI, syncNow, pushWins, pullWins }
 
     /// The server-detail and manual-sync sections only show while the server mode is selected.
     private var sections: [[TableRow]] {
         var sections: [[TableRow]] = [[.modeServer, .modeICloud, .modeLocal]]
         if Settings.sessionSyncMode() == .server {
-            sections.append([.serverURL, .account, .followPlayback])
+            sections.append([.serverURL, .account, .followPlayback, .relayAPI])
             sections.append([.syncNow, .pushWins, .pullWins])
         }
         return sections
@@ -123,6 +123,19 @@ class SyncSettingsViewController: PCViewController, UITableViewDataSource, UITab
             toggle.isOn = Settings.sessionSyncPlayback()
             toggle.addTarget(self, action: #selector(followPlaybackToggled(_:)), for: .valueChanged)
             cell.accessoryView = toggle
+        case .relayAPI:
+            cell.textLabel?.text = L10n.sessionSyncRelayApi
+            cell.accessoryType = .none
+            cell.selectionStyle = .none
+            // Without a server and a token there is nothing to relay through and no way to
+            // authenticate, so say why rather than offering a switch that cannot do anything.
+            let available = Settings.sessionServerRelayAvailable()
+            cell.detailTextLabel?.text = available ? nil : L10n.sessionSyncRelayApiUnavailable
+            let toggle = UISwitch()
+            toggle.isOn = available && Settings.sessionServerRelayAPI()
+            toggle.isEnabled = available
+            toggle.addTarget(self, action: #selector(relayAPIToggled(_:)), for: .valueChanged)
+            cell.accessoryView = toggle
         case .syncNow:
             cell.textLabel?.text = L10n.sessionSyncNow
             cell.detailTextLabel?.text = nil
@@ -155,8 +168,8 @@ class SyncSettingsViewController: PCViewController, UITableViewDataSource, UITab
             promptForServerURL()
         case .account:
             showAccountOptions()
-        case .followPlayback:
-            break // the switch handles it
+        case .followPlayback, .relayAPI:
+            break // the switches handle themselves
         case .syncNow:
             withActiveSync { $0.syncNow { ok in Toast.show(ok ? L10n.sessionSyncNowDone : L10n.sessionSyncFailed) } }
         case .pushWins:
@@ -245,6 +258,12 @@ class SyncSettingsViewController: PCViewController, UITableViewDataSource, UITab
 
     @objc private func followPlaybackToggled(_ toggle: UISwitch) {
         Settings.setSessionSyncPlayback(toggle.isOn)
+    }
+
+    /// Routing goes through `PCAPIRelaySettings` rather than `Settings` directly, so the transport's
+    /// config is updated in the same step — the next request picks it up, with no restart.
+    @objc private func relayAPIToggled(_ toggle: UISwitch) {
+        PCAPIRelaySettings.setEnabled(toggle.isOn)
     }
 
     /// The Account row's sheet: link (or re-link), and unlink when there is a link to drop.
