@@ -1,0 +1,38 @@
+{
+  "name": "Mesh: PCS hook replay (outage recovery)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": { "interval": [{ "field": "hours", "hoursInterval": 6 }] }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0],
+      "id": "c1000000-0000-4000-8000-000000000001",
+      "name": "Every 6 hours"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://pcs.example.com/api/v1/hooks/replay",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [240, 0],
+      "id": "c1000000-0000-4000-8000-000000000002",
+      "name": "Replay feed episodes",
+      "credentials": {
+        "httpHeaderAuth": { "id": "pcs-operator-token", "name": "PCS operator token" }
+      }
+    }
+  ],
+  "connections": {
+    "Every 6 hours": {
+      "main": [[{ "node": "Replay feed episodes", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": { "executionOrder": "v1" }
+}

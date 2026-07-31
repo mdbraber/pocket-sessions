@@ -1,0 +1,214 @@
+{
+  "name": "Mesh: PCS playback \u2192 OwnTube",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pcs-playback",
+        "authentication": "headerAuth",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "b1000000-0000-4000-8000-000000000001",
+      "name": "PCS event",
+      "webhookId": "b1000000-0000-4000-8000-000000000001",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "mesh-webhook-token",
+          "name": "Mesh webhook token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// One webhook call carries one event.\nconst b = $input.first().json.body ?? $input.first().json;\nconst url = b.episodeUrl || '';\n// Only episodes served by our media origin \u2014 every other podcast the account\n// plays flows through PCS hooks too, and none of it belongs to OwnTube.\nif (!url.includes('owntube-media')) return [];\nconst m = url.match(/\\/enclosure\\/([A-Za-z0-9_-]{11})\\./)\n  || url.match(/([A-Za-z0-9_-]{11})(?:\\.[A-Za-z0-9]+)?$/);\nif (!m) return [];\nreturn [{ json: {\n  event: b.event,\n  videoId: m[1],\n  playedUpTo: b.playedUpTo ?? 0,\n  duration: b.duration ?? 0,\n  episodeTitle: b.episodeTitle || '',\n  podcastTitle: b.podcastTitle || '',\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ],
+      "id": "b1000000-0000-4000-8000-000000000002",
+      "name": "Ours only"
+    },
+    {
+      "parameters": {
+        "url": "https://owntube.home.example.com/api/trpc/video.detail",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "input",
+              "value": "={{ JSON.stringify({ json: { videoId: $json.videoId } }) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        0
+      ],
+      "id": "b1000000-0000-4000-8000-000000000003",
+      "name": "Resolve channel"
+    },
+    {
+      "parameters": {
+        "jsCode": "const src = $('Ours only').first().json;\n// video.detail is a public tRPC query; its superjson envelope nests the\n// payload, so read the channel id out of the raw response.\nconst cm = JSON.stringify($input.first().json).match(/\"channelId\"\\s*:\\s*\"([^\"]+)\"/);\n// OwnTube does not have this video \u2014 nothing to write, and not an error.\nif (!cm) return [];\nreturn [{ json: {\n  ...src,\n  channelId: cm[1],\n  completed: src.event === 'archived' || src.event === 'completed',\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        0
+      ],
+      "id": "b1000000-0000-4000-8000-000000000004",
+      "name": "Prepare write"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://owntube.home.example.com/api/trpc/history.upsertEvent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ json: { videoId: $json.videoId, channelId: $json.channelId, durationWatched: $json.playedUpTo, positionSeconds: $json.playedUpTo, completed: $json.completed, videoDurationSeconds: $json.duration, videoTitle: $json.episodeTitle || undefined } }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        0
+      ],
+      "id": "b1000000-0000-4000-8000-000000000005",
+      "name": "Write watch state",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "owntube-device-token",
+          "name": "OwnTube device token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const src = $('Prepare write').first().json;\n// Archiving in Pocket Casts also removes the video from the collection its\n// feed was published from; every other event stops here.\nreturn src.event === 'archived' ? [{ json: src }] : [];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        0
+      ],
+      "id": "b1000000-0000-4000-8000-000000000006",
+      "name": "Archived only"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://owntube.home.example.com/api/trpc/remote.archiveFromFeed",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ json: { videoId: $json.videoId, feedTitle: ($json.podcastTitle || '').replace(/\\s*\\(Video\\)$/, '') } }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        0
+      ],
+      "id": "b1000000-0000-4000-8000-000000000007",
+      "name": "Remove from collection",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "owntube-device-token",
+          "name": "OwnTube device token"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "PCS event": {
+      "main": [
+        [
+          {
+            "node": "Ours only",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ours only": {
+      "main": [
+        [
+          {
+            "node": "Resolve channel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve channel": {
+      "main": [
+        [
+          {
+            "node": "Prepare write",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare write": {
+      "main": [
+        [
+          {
+            "node": "Write watch state",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write watch state": {
+      "main": [
+        [
+          {
+            "node": "Archived only",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Archived only": {
+      "main": [
+        [
+          {
+            "node": "Remove from collection",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

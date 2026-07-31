@@ -1,0 +1,49 @@
+{
+  "name": "Mesh: OwnTube playback → PCS",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "owntube-playback",
+        "authentication": "headerAuth",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "id": "a1000000-0000-4000-8000-000000000001",
+      "name": "OwnTube event",
+      "webhookId": "a1000000-0000-4000-8000-000000000001",
+      "credentials": {
+        "httpHeaderAuth": { "id": "mesh-webhook-token", "name": "Mesh webhook token" }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://pcs.example.com/api/v1/playback",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ enclosureContains: $json.body.videoId, positionSeconds: $json.body.positionSeconds, completed: $json.body.completed, durationSeconds: $json.body.durationSeconds }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [240, 0],
+      "id": "a1000000-0000-4000-8000-000000000002",
+      "name": "Report to PCS",
+      "credentials": {
+        "httpHeaderAuth": { "id": "pcs-operator-token", "name": "PCS operator token" }
+      }
+    }
+  ],
+  "connections": {
+    "OwnTube event": {
+      "main": [[{ "node": "Report to PCS", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": { "executionOrder": "v1" }
+}
