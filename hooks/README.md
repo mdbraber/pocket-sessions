@@ -56,7 +56,9 @@ hooks or the watcher.
 | `PCS_HOOKS_DIR` | *(unset — hooks off)* | Directory of executables |
 | `PCS_PROGRESS_POLL` | `15m` | Backstop cadence (`off` disables the watcher) |
 | `PCS_PROGRESS_MIN_DELTA` | `30` | Seconds of movement before a `progress` event |
-| `PCS_HOOK_TIMEOUT` | `30s` | Per-hook time limit |
+| `PCS_HOOK_TIMEOUT` | `30s` | Per-hook time limit (also the webhook POST timeout) |
+| `PCS_WEBHOOK_URLS` | *(unset)* | Comma-separated webhook sinks: every event is POSTed as JSON (the stdin payload) — the Todoist shape; receivers such as n8n flows subscribe by URL. Replays re-deliver, so receivers must be idempotent |
+| `PCS_WEBHOOK_TOKEN` | *(unset)* | Sent as `X-Webhook-Token` so receivers can verify the sender |
 
 ## owntube.sh
 

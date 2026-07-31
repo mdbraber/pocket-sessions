@@ -36,6 +36,8 @@ type Config struct {
 	FeedMatch        string        // PCS_FEED_MATCH — substring identifying first-party feed enclosures
 	HooksDir         string        // PCS_HOOKS_DIR — executables run per playback event
 	HookTimeout      time.Duration // PCS_HOOK_TIMEOUT, default 30s
+	WebhookURLs      []string      // PCS_WEBHOOK_URLS — comma-separated event sinks (e.g. n8n)
+	WebhookToken     string        // PCS_WEBHOOK_TOKEN — sent as X-Webhook-Token
 	LogLevel         slog.Level
 }
 
@@ -58,6 +60,8 @@ func FromEnv() Config {
 		FeedMatch:        strings.TrimSpace(os.Getenv("PCS_FEED_MATCH")),
 		HooksDir:         os.Getenv("PCS_HOOKS_DIR"),
 		HookTimeout:      parsePoll(envOr("PCS_HOOK_TIMEOUT", "30s")),
+		WebhookURLs:      splitList(os.Getenv("PCS_WEBHOOK_URLS")),
+		WebhookToken:     strings.TrimSpace(os.Getenv("PCS_WEBHOOK_TOKEN")),
 		LogLevel:         slog.LevelInfo,
 	}
 	if os.Getenv("PCS_DEBUG") != "" {

@@ -33,6 +33,9 @@ services:
       - PCS_PROGRESS_MIN_DELTA=${PCS_PROGRESS_MIN_DELTA:-30}
       - PCS_HOOKS_DIR=${PCS_HOOKS_DIR:-/data/hooks}
       - PCS_HOOK_TIMEOUT=${PCS_HOOK_TIMEOUT:-30s}
+      # Webhook sinks: event JSON POSTed to each URL (e.g. n8n flows).
+      - PCS_WEBHOOK_URLS=${PCS_WEBHOOK_URLS:-}
+      - PCS_WEBHOOK_TOKEN=${PCS_WEBHOOK_TOKEN:-}
       # Consumed by hooks/owntube.sh, not by the server itself.
       - OWNTUBE_URL=${OWNTUBE_URL:-}
       - OWNTUBE_MEDIA_HOST=${OWNTUBE_MEDIA_HOST:-}

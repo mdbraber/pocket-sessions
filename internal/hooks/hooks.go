@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -48,18 +49,26 @@ type Runner struct {
 	dir     string
 	timeout time.Duration
 	logger  *slog.Logger
+	// Webhook sinks: the same event JSON scripts get on stdin, POSTed to each
+	// URL — the Todoist shape: receivers (an n8n flow, anything) subscribe by
+	// URL and the server knows nothing about them. Replay sweeps re-fire
+	// through the same path, so receivers get at-least-once delivery and must
+	// be idempotent — the standing hook contract.
+	webhookURLs  []string
+	webhookToken string
 }
 
-// New returns nil when no hooks directory is configured — callers treat a nil
-// runner as "no hooks", so the feature costs nothing when unused.
-func New(dir string, timeout time.Duration, logger *slog.Logger) *Runner {
-	if dir == "" {
+// New returns nil when neither a hooks directory nor webhook sinks are
+// configured — callers treat a nil runner as "no hooks", so the feature
+// costs nothing when unused.
+func New(dir string, timeout time.Duration, logger *slog.Logger, webhookURLs []string, webhookToken string) *Runner {
+	if dir == "" && len(webhookURLs) == 0 {
 		return nil
 	}
 	if timeout <= 0 {
 		timeout = 30 * time.Second
 	}
-	return &Runner{dir: dir, timeout: timeout, logger: logger}
+	return &Runner{dir: dir, timeout: timeout, logger: logger, webhookURLs: webhookURLs, webhookToken: webhookToken}
 }
 
 // Fire runs every executable in the hooks directory for this event. Hooks are
@@ -69,16 +78,21 @@ func (r *Runner) Fire(ctx context.Context, event Event) {
 	if r == nil {
 		return
 	}
+	payload, err := json.Marshal(event)
+	if err != nil {
+		return
+	}
+	r.postWebhooks(ctx, event, payload)
+
+	if r.dir == "" {
+		return
+	}
 	scripts, err := r.scripts()
 	if err != nil {
 		r.logger.Warn("hooks: reading directory", "dir", r.dir, "err", err)
 		return
 	}
 	if len(scripts) == 0 {
-		return
-	}
-	payload, err := json.Marshal(event)
-	if err != nil {
 		return
 	}
 	env := append(os.Environ(),
@@ -123,6 +137,36 @@ func (r *Runner) run(ctx context.Context, script string, payload []byte, env []s
 		r.logger.Info("hook ran", "hook", name, "event", event.Event, "output", output)
 	} else {
 		r.logger.Debug("hook ran", "hook", name, "event", event.Event)
+	}
+}
+
+// postWebhooks delivers the event to every configured sink, independently:
+// one slow or failing receiver never blocks another, or the caller.
+func (r *Runner) postWebhooks(ctx context.Context, event Event, payload []byte) {
+	for _, url := range r.webhookURLs {
+		postCtx, cancel := context.WithTimeout(ctx, r.timeout)
+		req, err := http.NewRequestWithContext(postCtx, http.MethodPost, url, bytes.NewReader(payload))
+		if err != nil {
+			cancel()
+			continue
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if r.webhookToken != "" {
+			req.Header.Set("X-Webhook-Token", r.webhookToken)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			r.logger.Warn("webhook failed", "url", url, "event", event.Event, "err", err)
+			cancel()
+			continue
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode >= 300 {
+			r.logger.Warn("webhook rejected", "url", url, "event", event.Event, "status", resp.StatusCode)
+		} else {
+			r.logger.Debug("webhook delivered", "url", url, "event", event.Event, "status", resp.StatusCode)
+		}
+		cancel()
 	}
 }
 
