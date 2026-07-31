@@ -34,9 +34,11 @@ type Server struct {
 	// Seeds and reports on the Pocket Casts replica (see internal/replica).
 	seeder *replica.Seeder
 
-	// Debounce for relay-triggered watcher polls (see relay.go).
-	relayPollMu   sync.Mutex
-	relayPollLast map[int64]time.Time
+	// Leading/trailing debounce for relay-triggered watcher polls (relay.go).
+	relayPollMu      sync.Mutex
+	relayPollLast    map[int64]time.Time
+	relayTriggerLast map[int64]time.Time
+	relayPollPending map[int64]bool
 
 	// Enclosure-lookup miss cache + index-rebuild rate limit (see playback.go).
 	encMiss       *negativeCache

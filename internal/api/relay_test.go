@@ -146,8 +146,18 @@ func TestRelayTriggersDebouncedPoll(t *testing.T) {
 	for poller.count() == 0 && time.Now().Before(deadline) {
 		time.Sleep(20 * time.Millisecond)
 	}
-	// Three rapid syncs, one debounced poll.
+	// The leading edge fires once, immediately.
 	if got := poller.count(); got != 1 {
-		t.Errorf("polls = %d, want 1", got)
+		t.Fatalf("leading polls = %d, want 1", got)
+	}
+	// After the session goes quiet, the trailing sweep fires exactly once —
+	// three rapid syncs total two polls, and the trailing one is what sees
+	// the batches the leading poll raced.
+	deadline = time.Now().Add(9 * time.Second)
+	for poller.count() < 2 && time.Now().Before(deadline) {
+		time.Sleep(100 * time.Millisecond)
+	}
+	if got := poller.count(); got != 2 {
+		t.Errorf("total polls = %d, want 2 (leading + trailing)", got)
 	}
 }

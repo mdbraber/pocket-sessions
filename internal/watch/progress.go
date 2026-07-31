@@ -20,6 +20,9 @@ import (
 // account operation rather than listening, and no hooks run (see PollUser).
 const maxEventsPerPoll = 25
 
+// How far behind the cursor each poll re-fetches (client-stamp tolerance).
+const cursorOverlapMS = 10 * 60 * 1000
+
 // ProgressWatcher polls one user's episode progress and fires hooks.
 type ProgressWatcher struct {
 	store  *store.Store
@@ -84,7 +87,18 @@ func (w *ProgressWatcher) PollUser(ctx context.Context, userID int64) error {
 		return err
 	}
 
-	sync, err := pc.FetchProgress(ctx, link.AccessToken, "pcs-server", cursor)
+	// Fetch with an overlap window: sync records carry CLIENT-side modified
+	// stamps, so an action taken minutes before the app synced can sit behind
+	// an up-to-date cursor and be skipped forever (seen live 2026-07-31, the
+	// relay's frequent polls made cursors too fresh). Re-fetching the last 10
+	// minutes is free of double-fires — the baseline diff classifies known
+	// state to no event.
+	fetchFrom := cursor
+	if fetchFrom > cursorOverlapMS {
+		fetchFrom -= cursorOverlapMS
+	}
+
+	sync, err := pc.FetchProgress(ctx, link.AccessToken, "pcs-server", fetchFrom)
 	if err != nil && link.RefreshToken != "" {
 		exchange, exErr := pc.ExchangeRefreshToken(ctx, link.RefreshToken, link.Scope)
 		if exErr != nil {
@@ -95,7 +109,7 @@ func (w *ProgressWatcher) PollUser(ctx context.Context, userID int64) error {
 			link.RefreshToken = exchange.RefreshToken
 		}
 		_ = w.store.SetPCLink(userID, link)
-		sync, err = pc.FetchProgress(ctx, link.AccessToken, "pcs-server", cursor)
+		sync, err = pc.FetchProgress(ctx, link.AccessToken, "pcs-server", fetchFrom)
 	}
 	if err != nil {
 		return err

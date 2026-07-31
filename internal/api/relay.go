@@ -133,12 +133,19 @@ func (s *Server) observeRelay(userID int64, path string, reqBody, respBody []byt
 	case "/user/sync/update":
 		// The request carries the app's OUTGOING records — actions are visible
 		// here the moment the app syncs, before any poll.
-		if reqSync, err := pc.ParseSyncRequestRecords(reqBody); err == nil {
+		reqSync, reqErr := pc.ParseSyncRequestRecords(reqBody)
+		if reqErr == nil {
 			s.feedReplica(userID, "relay-req", reqSync)
 		}
-		if respSync, err := pc.ParseProgressResponseExported(respBody); err == nil {
+		respSync, respErr := pc.ParseProgressResponseExported(respBody)
+		if respErr == nil {
 			s.feedReplica(userID, "relay-resp", respSync)
 		}
+		// Diagnosis breadcrumb: live app bodies were observed parsing to zero
+		// records while synthetic ones parse fine — keep the outcome visible.
+		s.logger.Info("relay observe sync",
+			"reqEpisodes", len(reqSync.Episodes), "reqOthers", len(reqSync.Others), "reqErr", reqErr != nil,
+			"respEpisodes", len(respSync.Episodes), "respOthers", len(respSync.Others), "respErr", respErr != nil)
 		// A sync through the relay is the perfect hook trigger: the app just
 		// wrote its changes (or fetched other devices'), so poll PC now and
 		// let hooks fire in seconds — the 15m tick becomes pure backstop.
@@ -175,26 +182,62 @@ func (s *Server) observeRelay(userID int64, path string, reqBody, respBody []byt
 	}
 }
 
-// triggerRelayPoll runs the watcher for this user, debounced: one sync
-// session can hit /user/sync/update several times in a burst, and one poll
-// covers them all.
+// triggerRelayPoll runs the watcher for this user with a leading AND a
+// trailing edge: poll immediately on the first sync of a session (fast hooks
+// for single-action syncs), then once more after the session goes quiet — a
+// sync session is several requests over seconds, and polling only at its
+// START races the batches that carry the actual changes (seen live
+// 2026-07-31: a mark-played in a later batch was skipped for good).
 func (s *Server) triggerRelayPoll(userID int64) {
 	if s.progress == nil {
 		return
 	}
+	const quiet = 6 * time.Second
+
 	s.relayPollMu.Lock()
-	last := s.relayPollLast[userID]
-	now := time.Now()
-	if now.Sub(last) < 5*time.Second {
-		s.relayPollMu.Unlock()
-		return
-	}
 	if s.relayPollLast == nil {
 		s.relayPollLast = map[int64]time.Time{}
 	}
-	s.relayPollLast[userID] = now
+	if s.relayTriggerLast == nil {
+		s.relayTriggerLast = map[int64]time.Time{}
+	}
+	if s.relayPollPending == nil {
+		s.relayPollPending = map[int64]bool{}
+	}
+	now := time.Now()
+	s.relayTriggerLast[userID] = now
+	leading := now.Sub(s.relayPollLast[userID]) >= quiet
+	if leading {
+		s.relayPollLast[userID] = now
+	}
+	scheduleTrailing := !s.relayPollPending[userID]
+	if scheduleTrailing {
+		s.relayPollPending[userID] = true
+	}
 	s.relayPollMu.Unlock()
 
+	if leading {
+		s.runRelayPoll(userID)
+	}
+	if scheduleTrailing {
+		go func() {
+			for {
+				time.Sleep(quiet)
+				s.relayPollMu.Lock()
+				quietFor := time.Since(s.relayTriggerLast[userID])
+				if quietFor >= quiet {
+					s.relayPollPending[userID] = false
+					s.relayPollMu.Unlock()
+					break
+				}
+				s.relayPollMu.Unlock()
+			}
+			s.runRelayPoll(userID)
+		}()
+	}
+}
+
+func (s *Server) runRelayPoll(userID int64) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	if err := s.progress.PollUser(ctx, userID); err != nil {
