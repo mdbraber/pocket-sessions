@@ -7331,7 +7331,10 @@
 "session_sync_follow_playback" = "Follow Now Playing";
 
 /* Fork: Settings → Synchronization — routes Pocket Casts API traffic through the user's own sessions server. */
-"session_sync_relay_api" = "Route Pocket Casts sync via session server";
+"session_sync_relay_api" = "Proxy Pocket Casts API requests";
+
+/* Fork: explains what proxying the API through the session server is for. */
+"session_sync_relay_api_footer" = "Sends Pocket Casts sync traffic through your session server on its way to Pocket Casts. The server sees the same data your app does, so it can keep its own copy and fire hooks or triggers when something changes. Nothing else moves: podcast artwork, show notes and downloads still go straight to Pocket Casts. When off, the app talks to the Pocket Casts API directly.";
 
 /* Fork: explains the relay toggle, shown when it cannot be turned on yet. */
 "session_sync_relay_api_unavailable" = "Needs a server URL and a linked account";

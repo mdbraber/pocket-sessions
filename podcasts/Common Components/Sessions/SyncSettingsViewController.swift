@@ -15,7 +15,10 @@ class SyncSettingsViewController: PCViewController, UITableViewDataSource, UITab
     private var sections: [[TableRow]] {
         var sections: [[TableRow]] = [[.modeServer, .modeICloud, .modeLocal]]
         if Settings.sessionSyncMode() == .server {
-            sections.append([.serverURL, .account, .followPlayback, .relayAPI])
+            sections.append([.serverURL, .account, .followPlayback])
+            // Its own section: proxying is a different concern from where the server is and who it
+            // is linked to, and it needs a footer of its own to explain what it is for.
+            sections.append([.relayAPI])
             sections.append([.syncNow, .pushWins, .pullWins])
         }
         return sections
@@ -79,6 +82,7 @@ class SyncSettingsViewController: PCViewController, UITableViewDataSource, UITab
         switch sections[section].first {
         case .modeServer: return L10n.sessionSyncFooter
         case .serverURL: return L10n.sessionSyncServerFooter
+        case .relayAPI: return L10n.sessionSyncRelayApiFooter
         case .syncNow: return L10n.sessionSyncActionsFooter
         default: return nil
         }
