@@ -15,6 +15,7 @@ class EpisodeManager: NSObject {
         PlaybackManager.shared.removeIfPlayingOrQueued(episode: episode, fireNotification: true)
 
         DataManager.sharedManager.saveEpisode(playingStatus: .completed, episode: episode, updateSyncFlag: SyncManager.isUserLoggedIn())
+        RefreshManager.shared.syncLocalChangesSoon()
 
         #if !APPCLIP
         if shouldArchiveOnCompletion(episode: episode) {
@@ -98,6 +99,8 @@ class EpisodeManager: NSObject {
         if let currentEpisode = currentEpisodeToMarkAsPlayed {
             markAsPlayed(episode: currentEpisode, fireNotification: true, userInitiated: false)
         }
+        // Not when updateSyncFlag is false — that path is applying someone else's change.
+        if updateSyncFlag { RefreshManager.shared.syncLocalChangesSoon() }
         NotificationCenter.postOnMainThread(notification: Constants.Notifications.manyEpisodesChanged)
 
         analyticsHelper.bulkMarkAsPlayed(count: episodesMinusCurrent.count)
@@ -140,6 +143,7 @@ class EpisodeManager: NSObject {
         if let episode = episode as? Episode {
             DataManager.sharedManager.saveEpisode(archived: false, episode: episode, updateSyncFlag: updateSyncFlag)
         }
+        if updateSyncFlag { RefreshManager.shared.syncLocalChangesSoon() }
 
         if fireNotification {
             NotificationCenter.postOnMainThread(notification: Constants.Notifications.episodePlayStatusChanged, object: episode.uuid)
@@ -152,6 +156,7 @@ class EpisodeManager: NSObject {
 
     class func bulkMarkAsUnPlayed(_ baseEpisodes: [BaseEpisode]) {
         DataManager.sharedManager.bulkMarkAsUnPlayed(baseEpisodes: baseEpisodes, updateSyncFlag: SyncManager.isUserLoggedIn())
+        RefreshManager.shared.syncLocalChangesSoon()
         NotificationCenter.postOnMainThread(notification: Constants.Notifications.manyEpisodesChanged)
 
         analyticsHelper.bulkMarkAsUnplayed(count: baseEpisodes.count)
@@ -168,6 +173,7 @@ class EpisodeManager: NSObject {
         }
 
         DataManager.sharedManager.saveEpisode(archived: true, episode: episode, updateSyncFlag: SyncManager.isUserLoggedIn())
+        RefreshManager.shared.syncLocalChangesSoon()
 
         if let latestEpisode = DataManager.sharedManager.findEpisode(uuid: episode.uuid) {
             deleteDownloadedFiles(episode: latestEpisode, userInitated: false)
@@ -200,6 +206,9 @@ class EpisodeManager: NSObject {
             deleteFilesForEpisode(episode)
         }
         DataManager.sharedManager.bulkArchive(episodes: episodes, markAsNotDownloaded: true, markAsPlayed: false, updateSyncFlag: updateSyncFlag)
+        // Not when updateSyncFlag is false — that path is applying someone else's change, and
+        // nudging would push it straight back out.
+        if updateSyncFlag { RefreshManager.shared.syncLocalChangesSoon() }
 
         if removeFromPlayer {
             let uuids = episodes.map(\.uuid)
@@ -212,6 +221,7 @@ class EpisodeManager: NSObject {
 
     class func unarchiveEpisode(episode: Episode, fireNotification: Bool, userInitiated: Bool = true) {
         DataManager.sharedManager.saveEpisode(archived: false, episode: episode, updateSyncFlag: SyncManager.isUserLoggedIn())
+        RefreshManager.shared.syncLocalChangesSoon()
 
         // if this podcast has an episode limit, flag this episode as being manually excluded from that limit
         if let parentPodcast = episode.parentPodcast() {
@@ -231,6 +241,7 @@ class EpisodeManager: NSObject {
 
     class func bulkUnarchive(episodes: [Episode], trackEvent: Bool = true) {
         DataManager.sharedManager.bulkUnarchive(episodes: episodes, updateSyncFlag: SyncManager.isUserLoggedIn())
+        RefreshManager.shared.syncLocalChangesSoon()
 
         NotificationCenter.postOnMainThread(notification: Constants.Notifications.manyEpisodesChanged)
 

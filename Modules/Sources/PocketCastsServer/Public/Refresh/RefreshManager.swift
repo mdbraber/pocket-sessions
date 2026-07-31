@@ -23,6 +23,47 @@ public class RefreshManager {
         private static let minTimeBetweenRefreshes = 15.seconds
     #endif
 
+    /// Fork: sends pending local episode changes soon, without a full refresh.
+    ///
+    /// Position and star each have a single-episode endpoint, so they leave the device the moment
+    /// they happen. Archive and played have none — `Api_UpdateEpisodeRequest` carries only uuid,
+    /// podcast, position, status, duration and stats — so they travel solely as records in the
+    /// batched `/user/sync/update`. Without a nudge that batch waits for whatever comes first:
+    /// foregrounding after five minutes away, a background refresh iOS schedules no sooner than
+    /// every 30 minutes and often skips, or a push. Archiving could stay invisible to other devices
+    /// for a long time.
+    ///
+    /// Deliberately NOT `refreshPodcasts`. That re-fetches every podcast and drags Up Next, history,
+    /// settings and subscription tasks along with it — far more than sending one flag, and it can
+    /// start auto-downloads as a side effect. This queues the sync alone: the same operation the
+    /// change was already going to travel in, just sooner.
+    ///
+    /// Debounced, because the batch is still a network round trip and archiving a screenful one tap
+    /// at a time (or any bulk action) would otherwise fire one per episode. Calls inside the window
+    /// collapse into a single sync, so callers can nudge freely.
+    public func syncLocalChangesSoon() {
+        guard SyncManager.isUserLoggedIn() else { return }
+
+        localChangeSyncQueue.async { [weak self] in
+            guard let self else { return }
+            self.pendingLocalChangeSync?.cancel()
+            let work = DispatchWorkItem { [weak self] in
+                guard let self, SyncManager.isUserLoggedIn() else { return }
+                // maxConcurrentOperationCount is 1, so this serialises behind any refresh already
+                // running rather than racing it.
+                self.refreshQueue.addOperation(SyncTask())
+            }
+            self.pendingLocalChangeSync = work
+            self.localChangeSyncQueue.asyncAfter(deadline: .now() + RefreshManager.localChangeSyncDebounce, execute: work)
+        }
+    }
+
+    /// Long enough to absorb a burst of taps, short enough to feel immediate elsewhere. Matches the
+    /// spirit of `PlaybackQueue`'s own Up Next debounce.
+    private static let localChangeSyncDebounce: TimeInterval = 3
+    private let localChangeSyncQueue = DispatchQueue(label: "au.com.shiftyjelly.podcasts.localChangeSync")
+    private var pendingLocalChangeSync: DispatchWorkItem?
+
     public func syncUpNext() {
         if !SyncManager.isUserLoggedIn() { return }
 
