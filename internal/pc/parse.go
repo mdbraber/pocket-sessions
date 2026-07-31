@@ -95,3 +95,23 @@ func ParseSyncEpisodesResponse(data []byte, podcastUUID string) ([]EpisodeProgre
 func BuildProgressPushForTest(deviceID string, ep EpisodeProgress, nowMS, cursor uint64) []byte {
 	return buildProgressPush(deviceID, ep, nowMS, cursor)
 }
+
+// ParseUpdateEpisodeRequest decodes the single-episode position sync the app
+// sends to /sync/update_episode: UpdateEpisodeRequest{1:uuid, 2:podcast,
+// 3:position(Int32Value), 4:status, 5:duration} — position is wrapped, the
+// rest are plain varints.
+func ParseUpdateEpisodeRequest(data []byte) (EpisodeProgress, error) {
+	fields, err := parseAllFields(data)
+	if err != nil {
+		return EpisodeProgress{}, err
+	}
+	return EpisodeProgress{
+		EpisodeUUID:   string(fields.bytes[1]),
+		PodcastUUID:   string(fields.bytes[2]),
+		PlayedUpTo:    unwrapScalar(fields.bytes[3]),
+		PlayingStatus: int64(fields.varints[4]),
+		Duration:      int64(fields.varints[5]),
+		Archived:      -1,
+		Starred:       -1,
+	}, nil
+}

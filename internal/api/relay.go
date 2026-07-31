@@ -156,6 +156,22 @@ func (s *Server) observeRelay(userID int64, path string, reqBody, respBody []byt
 				s.logger.Warn("relay: episodes", "err", err)
 			}
 		}
+	case "/sync/update_episode":
+		// The app's immediate position sync for the playing episode — the
+		// hottest signal there is.
+		if episode, err := pc.ParseUpdateEpisodeRequest(reqBody); err == nil && episode.EpisodeUUID != "" {
+			if err := s.store.UpsertReplicaEpisodes(userID, "relay-req", []pc.EpisodeProgress{episode}); err != nil {
+				s.logger.Warn("relay: update_episode", "err", err)
+			}
+		}
+		s.triggerRelayPoll(userID)
+	default:
+		// Any other /sync/* endpoint (star, archive variants, …) still means
+		// "episode state just changed" — poll so hooks fire, even without a
+		// dedicated parser.
+		if strings.HasPrefix(path, "/sync/") {
+			s.triggerRelayPoll(userID)
+		}
 	}
 }
 
