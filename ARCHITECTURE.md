@@ -195,6 +195,14 @@ contract (see `hooks/README.md`). `owntube.sh` maps events onto OwnTube
 tRPC mutations; it self-selects by enclosure host so it is safe alongside
 other hooks.
 
+Both runners also emit **webhook sinks**: every event is POSTed as JSON
+(the same payload scripts get on stdin) to each URL in `PCS_WEBHOOK_URLS` /
+`OWNTUBE_WEBHOOK_URLS`, with an optional `X-Webhook-Token` for sender
+verification. This is the Todoist shape — a receiver (an n8n flow, anything)
+subscribes by URL and the servers know nothing about it. Replay sweeps
+re-fire through the same path, so receivers get at-least-once delivery and
+must be idempotent, exactly like scripts.
+
 OwnTube side (mirror design, `owntube/hooks/README.md`): history writes
 fire `watched`/`progress` events through every executable in
 `OWNTUBE_HOOKS_DIR` (`OT_*` env + JSON on stdin), and the feeds pusher
