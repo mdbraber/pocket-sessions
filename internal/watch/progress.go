@@ -28,13 +28,17 @@ type ProgressWatcher struct {
 	// Minimum playedUpTo movement (seconds) that counts as progress worth
 	// reporting — without it a single listen would emit an event per sync.
 	minDelta int64
+	// Substring identifying first-party feed enclosures (PCS_FEED_MATCH) —
+	// scopes burst exemption and replay to our own feeds rather than every
+	// subscribed podcast the enclosure index knows.
+	feedMatch string
 }
 
-func NewProgressWatcher(st *store.Store, runner *hooks.Runner, logger *slog.Logger, minDelta int64) *ProgressWatcher {
+func NewProgressWatcher(st *store.Store, runner *hooks.Runner, logger *slog.Logger, minDelta int64, feedMatch string) *ProgressWatcher {
 	if minDelta <= 0 {
 		minDelta = 30
 	}
-	return &ProgressWatcher{store: st, hooks: runner, logger: logger, minDelta: minDelta}
+	return &ProgressWatcher{store: st, hooks: runner, logger: logger, minDelta: minDelta, feedMatch: feedMatch}
 }
 
 // Run polls until ctx ends. The nudge path calls PollUser directly, so this is
@@ -180,7 +184,7 @@ func (w *ProgressWatcher) PollUser(ctx context.Context, userID int64) error {
 	// gap, so they always deliver. A catch-up after downtime keeps its
 	// meaningful events; the mass-archive noise stays quiet.
 	if len(events) > maxEventsPerPoll {
-		indexed, err := w.store.EnclosureEpisodes(userID)
+		indexed, err := w.store.EnclosureEpisodes(userID, w.feedMatch)
 		if err != nil {
 			w.logger.Warn("progress: enclosure index for burst filter", "err", err)
 			indexed = map[string]string{}
@@ -294,11 +298,11 @@ func abs(v int64) int64 {
 // sticky completion on the receiving side makes over-delivery harmless).
 // Archived beats completed beats progress, mirroring classify's ranking.
 func (w *ProgressWatcher) ReplayIndexed(ctx context.Context, userID int64) (int, error) {
-	states, err := w.store.ReplicaIndexedEpisodes(userID)
+	states, err := w.store.ReplicaIndexedEpisodes(userID, w.feedMatch)
 	if err != nil {
 		return 0, err
 	}
-	urls, err := w.store.EnclosureEpisodes(userID)
+	urls, err := w.store.EnclosureEpisodes(userID, w.feedMatch)
 	if err != nil {
 		return 0, err
 	}

@@ -61,8 +61,10 @@ ORDER BY updated_at DESC LIMIT 1`, userID, fragment)
 // EnclosureEpisodes returns the enclosure index as a uuid → URL map — the
 // set of first-party feed episodes (used to exempt them from bulk-burst hook
 // suppression and to drive replay).
-func (s *Store) EnclosureEpisodes(userID int64) (map[string]string, error) {
-	rows, err := s.db.Query(`SELECT episode_uuid, url FROM episode_enclosures WHERE user_id = ?`, userID)
+func (s *Store) EnclosureEpisodes(userID int64, match string) (map[string]string, error) {
+	rows, err := s.db.Query(`
+SELECT episode_uuid, url FROM episode_enclosures
+WHERE user_id = ? AND (? = '' OR instr(url, ?) > 0)`, userID, match, match)
 	if err != nil {
 		return nil, err
 	}
@@ -90,12 +92,12 @@ type ReplicaEpisodeState struct {
 
 // ReplicaIndexedEpisodes returns replica state for every episode that appears
 // in the enclosure index — the feed episodes a replay would re-deliver.
-func (s *Store) ReplicaIndexedEpisodes(userID int64) ([]ReplicaEpisodeState, error) {
+func (s *Store) ReplicaIndexedEpisodes(userID int64, match string) ([]ReplicaEpisodeState, error) {
 	rows, err := s.db.Query(`
 SELECT r.uuid, r.podcast_uuid, r.played_up_to, r.playing_status, r.duration, r.archived
 FROM pc_replica r
 JOIN episode_enclosures e ON e.user_id = r.user_id AND e.episode_uuid = r.uuid
-WHERE r.user_id = ? AND r.kind = 'episode'`, userID)
+WHERE r.user_id = ? AND r.kind = 'episode' AND (? = '' OR instr(e.url, ?) > 0)`, userID, match, match)
 	if err != nil {
 		return nil, err
 	}

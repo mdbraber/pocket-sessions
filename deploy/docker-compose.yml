@@ -36,6 +36,7 @@ services:
       # Consumed by hooks/owntube.sh, not by the server itself.
       - OWNTUBE_URL=${OWNTUBE_URL:-}
       - OWNTUBE_MEDIA_HOST=${OWNTUBE_MEDIA_HOST:-}
+      - PCS_FEED_MATCH=${PCS_FEED_MATCH:-}
       - OWNTUBE_TOKEN=${OWNTUBE_TOKEN:-}
     volumes:
       - ./data:/data

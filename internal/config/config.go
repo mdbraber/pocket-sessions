@@ -33,6 +33,7 @@ type Config struct {
 	// Playback-progress watcher + local hook scripts.
 	ProgressPoll     time.Duration // PCS_PROGRESS_POLL, default 15m; "off" disables
 	ProgressMinDelta int64         // PCS_PROGRESS_MIN_DELTA seconds, default 30
+	FeedMatch        string        // PCS_FEED_MATCH — substring identifying first-party feed enclosures
 	HooksDir         string        // PCS_HOOKS_DIR — executables run per playback event
 	HookTimeout      time.Duration // PCS_HOOK_TIMEOUT, default 30s
 	LogLevel         slog.Level
@@ -54,6 +55,7 @@ func FromEnv() Config {
 		NotifyMode:       envOr("PCS_NOTIFY", "synced"),
 		ProgressPoll:     parsePoll(envOr("PCS_PROGRESS_POLL", "15m")),
 		ProgressMinDelta: parseInt(os.Getenv("PCS_PROGRESS_MIN_DELTA"), 30),
+		FeedMatch:        strings.TrimSpace(os.Getenv("PCS_FEED_MATCH")),
 		HooksDir:         os.Getenv("PCS_HOOKS_DIR"),
 		HookTimeout:      parsePoll(envOr("PCS_HOOK_TIMEOUT", "30s")),
 		LogLevel:         slog.LevelInfo,

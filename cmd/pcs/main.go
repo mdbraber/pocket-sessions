@@ -106,7 +106,7 @@ func serve() {
 	// hook scripts (see internal/hooks). Also driven by the nudge, so a
 	// finished episode reaches a hook in seconds rather than at the next tick.
 	hookRunner := hooks.New(cfg.HooksDir, cfg.HookTimeout, logger)
-	progressWatcher := watch.NewProgressWatcher(st, hookRunner, logger, cfg.ProgressMinDelta)
+	progressWatcher := watch.NewProgressWatcher(st, hookRunner, logger, cfg.ProgressMinDelta, cfg.FeedMatch)
 
 	srv := &http.Server{
 		Addr:              cfg.Listen,
