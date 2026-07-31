@@ -7330,6 +7330,9 @@
 /* Switch on the Synchronization screen: follow the session playing on other devices */
 "session_sync_follow_playback" = "Follow Now Playing";
 
+/* Fork: explains what Follow Now Playing does to a device that is not playing. */
+"session_sync_follow_playback_footer" = "Keeps your devices pointed at the same session. When you start playing on one, the others switch to that session and load the same episode into the mini player, paused — they never start playing on their own, and a device that is already playing is left alone.";
+
 /* Fork: Settings → Synchronization — routes Pocket Casts API traffic through the user's own sessions server. */
 "session_sync_relay_api" = "Proxy Pocket Casts API requests";
 
