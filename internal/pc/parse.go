@@ -1,5 +1,12 @@
 package pc
 
+import (
+	"fmt"
+	"time"
+)
+
+func timeNowMS() int64 { return time.Now().UnixMilli() }
+
 // Exported parsers for the relay's observation path — the same decoders the
 // fetch functions use, applied to copies of relayed traffic.
 
@@ -114,4 +121,14 @@ func ParseUpdateEpisodeRequest(data []byte) (EpisodeProgress, error) {
 		Archived:      -1,
 		Starred:       -1,
 	}, nil
+}
+
+// BuildReadOnlySyncBody builds the record-free SyncUpdateRequest shape the
+// watcher polls with (probe/testing helper).
+func BuildReadOnlySyncBody(deviceID, cursorMS string) []byte {
+	var cursor uint64
+	fmt.Sscanf(cursorMS, "%d", &cursor)
+	body := appendVarintField(nil, 1, uint64(timeNowMS()))
+	body = appendVarintField(body, 2, cursor)
+	return appendStringField(body, 4, deviceID)
 }
