@@ -57,6 +57,11 @@ services:
     labels:
       caddy: ${PCS_DOMAIN}
       caddy.reverse_proxy: "{{upstreams 8080}}"
+      # Compress toward clients when the upstream didn't (PC compresses
+      # selectively; relayed responses that arrive plain would otherwise ship
+      # uncompressed to the phone). Caddy skips bodies that already carry a
+      # Content-Encoding, so gzip passthrough is untouched.
+      caddy.encode: zstd gzip
 
 networks:
   caddy:
