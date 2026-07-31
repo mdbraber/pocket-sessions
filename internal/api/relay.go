@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"net/http"
 	"strings"
@@ -132,6 +133,10 @@ func (s *Server) observeRelay(userID int64, path string, reqBody, respBody []byt
 		if respSync, err := pc.ParseProgressResponseExported(respBody); err == nil {
 			s.feedReplica(userID, "relay-resp", respSync)
 		}
+		// A sync through the relay is the perfect hook trigger: the app just
+		// wrote its changes (or fetched other devices'), so poll PC now and
+		// let hooks fire in seconds — the 15m tick becomes pure backstop.
+		s.triggerRelayPoll(userID)
 	case "/history/sync":
 		if history, err := pc.ParseHistoryResponse(respBody); err == nil {
 			if err := s.store.UpsertHistoryLedger(userID, history.Entries); err != nil {
@@ -145,6 +150,33 @@ func (s *Server) observeRelay(userID int64, path string, reqBody, respBody []byt
 				s.logger.Warn("relay: episodes", "err", err)
 			}
 		}
+	}
+}
+
+// triggerRelayPoll runs the watcher for this user, debounced: one sync
+// session can hit /user/sync/update several times in a burst, and one poll
+// covers them all.
+func (s *Server) triggerRelayPoll(userID int64) {
+	if s.progress == nil {
+		return
+	}
+	s.relayPollMu.Lock()
+	last := s.relayPollLast[userID]
+	now := time.Now()
+	if now.Sub(last) < 5*time.Second {
+		s.relayPollMu.Unlock()
+		return
+	}
+	if s.relayPollLast == nil {
+		s.relayPollLast = map[int64]time.Time{}
+	}
+	s.relayPollLast[userID] = now
+	s.relayPollMu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	if err := s.progress.PollUser(ctx, userID); err != nil {
+		s.logger.Warn("relay-triggered poll", "user", userID, "err", err)
 	}
 }
 

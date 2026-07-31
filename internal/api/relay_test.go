@@ -2,11 +2,13 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -90,5 +92,58 @@ func TestRelayGateForwardObserve(t *testing.T) {
 			t.Fatalf("replica not fed from relay request: %+v", status)
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+type pollRecorder struct {
+	mu    sync.Mutex
+	calls int
+}
+
+func (p *pollRecorder) PollUser(ctx context.Context, userID int64) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.calls++
+	return nil
+}
+
+func (p *pollRecorder) count() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.calls
+}
+
+// A relayed sync must trigger exactly one watcher poll per debounce window —
+// that's what makes hooks push-driven when the app routes through the relay.
+func TestRelayTriggersDebouncedPoll(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer upstream.Close()
+	oldUpstream := relayUpstream
+	relayUpstream = upstream.URL
+	defer func() { relayUpstream = oldUpstream }()
+
+	s, _ := relayTestServer(t)
+	poller := &pollRecorder{}
+	s.progress = poller
+
+	for range 3 {
+		req := httptest.NewRequest(http.MethodPost, "/pcapi/user/sync/update", bytes.NewReader(nil))
+		req.Header.Set("X-PCS-Proxy-Token", "tok-relay")
+		rec := httptest.NewRecorder()
+		s.handleRelay(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("relay status %d", rec.Code)
+		}
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for poller.count() == 0 && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	// Three rapid syncs, one debounced poll.
+	if got := poller.count(); got != 1 {
+		t.Errorf("polls = %d, want 1", got)
 	}
 }

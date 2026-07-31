@@ -197,6 +197,11 @@ fork's own traffic becomes the event stream, with the poll demoted to a
 backstop for foreign devices. It also subsumes the §1 nudge-on-action work
 (no longer needed for the fork) and the §3 scoping fix (lookups are local).
 
+*Status 2026-07-31: A and B are built — replica seeded (28,956 episodes,
+3,107 played, 25,362 archived recovered), relay live at /pcapi with
+parse-copy observation, and a relayed sync now triggers a debounced watcher
+poll, so hooks are push-driven for relay traffic.*
+
 Order that de-risks it: (1) Design A alone first — replica + raw-bytes
 store, fed by today's polls; every consumer (scoping, guard, query API)
 starts benefiting with zero new failure modes. (2) Then the relay, behind a

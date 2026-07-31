@@ -34,6 +34,10 @@ type Server struct {
 	// Seeds and reports on the Pocket Casts replica (see internal/replica).
 	seeder *replica.Seeder
 
+	// Debounce for relay-triggered watcher polls (see relay.go).
+	relayPollMu   sync.Mutex
+	relayPollLast map[int64]time.Time
+
 	// Device-code links awaiting approval, keyed by linkId. In-memory on purpose:
 	// codes live 30 minutes and a lost pending link just means re-tapping Link.
 	pendingMu    sync.Mutex

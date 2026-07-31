@@ -11,8 +11,9 @@ The watcher polls Pocket Casts as another sync device (`/user/sync/update`),
 which returns per-episode `playedUpTo`, `playingStatus` and `duration`. Changes
 are diffed against the stored baseline, so a hook fires on *change*, not on
 every poll. Events are also polled right after a **nudge** — the app tells PCS
-"I just synced with PC" — so finishing an episode reaches a hook in seconds
-rather than at the next tick.
+"I just synced with PC" — and after any sync relayed through **/pcapi** (the
+app routing its PC traffic via PCS), so an action reaches a hook in seconds;
+the 15-minute tick is purely a backstop for devices that do neither.
 
 The first poll only seeds the baseline; a lifetime of listening is never
 replayed as fresh events.
