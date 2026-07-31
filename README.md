@@ -18,9 +18,12 @@ which never stores the password but only yields an expiring access token. The
 normal path is neither: the app's Settings → Synchronization → Link Pocket
 Casts drives the same device flow end-to-end, approval included.
 
-The app never routes Pocket Casts traffic through this server — it is a
-side-service, and the app keeps working with stock PC when no server is
-configured.
+By default the app does not route Pocket Casts traffic through this server —
+it is a side-service, and the app keeps working with stock PC when no server
+is configured. The fork's opt-in *route via session server* toggle changes
+that: PC API traffic then flows through the `/pcapi` relay (transparent
+byte passthrough with observation; direct-PC fallback on relay failure) —
+see `ARCHITECTURE.md` §4.
 
 ## Local development
 
