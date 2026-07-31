@@ -43,6 +43,9 @@ func (s *Server) handleRelay(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if userID == 0 {
+		// Loud on purpose: a misconfigured client shows up here, and silence
+		// here plus silence at Caddy means traffic never arrived at all.
+		s.logger.Warn("relay: unauthorized", "path", r.URL.Path, "hasToken", token != "")
 		http.Error(w, "relay unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -99,6 +102,9 @@ func (s *Server) handleRelay(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(resp.StatusCode)
 	_, _ = w.Write(respBody)
+
+	s.logger.Info("relay", "path", path, "status", resp.StatusCode,
+		"reqBytes", len(reqBody), "respBytes", len(respBody))
 
 	// Observation happens after the response is on the wire, off the hot path.
 	if resp.StatusCode == http.StatusOK {
