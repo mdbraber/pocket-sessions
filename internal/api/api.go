@@ -52,6 +52,9 @@ type pendingLink struct {
 // progressPoller is the playback-progress watcher, as the API needs it.
 type progressPoller interface {
 	PollUser(ctx context.Context, userID int64) error
+	// ReplayIndexed re-delivers current state for first-party feed episodes —
+	// outage recovery for hook events (see watch.ReplayIndexed).
+	ReplayIndexed(ctx context.Context, userID int64) (int, error)
 }
 
 func New(st *store.Store, pusher push.Pusher, logger *slog.Logger, allowedEmails []string, progress progressPoller) http.Handler {
@@ -80,6 +83,7 @@ func New(st *store.Store, pusher push.Pusher, logger *slog.Logger, allowedEmails
 	mux.Handle("GET /api/v1/history", s.authed(s.handleHistory))
 	mux.Handle("POST /api/v1/playback", s.authed(s.handlePlaybackReport))
 	mux.Handle("POST /api/v1/replica/seed", s.authed(s.handleReplicaSeed))
+	mux.Handle("POST /api/v1/hooks/replay", s.authed(s.handleHooksReplay))
 	mux.Handle("GET /api/v1/replica/status", s.authed(s.handleReplicaStatus))
 	mux.Handle("GET /api/v1/replica/history", s.authed(s.handleReplicaHistory))
 	// The PC API relay — gated by X-PCS-Proxy-Token inside the handler (the

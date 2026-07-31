@@ -64,3 +64,20 @@ func (s *Server) handleReplicaHistory(w http.ResponseWriter, r *http.Request, us
 	}
 	writeJSON(w, map[string]any{"entries": entries, "count": len(entries)})
 }
+
+// POST /api/v1/hooks/replay — re-deliver every feed episode's current state
+// through the hooks, exactly once each. The recovery tool after downtime:
+// hooks are idempotent, so over-delivery is harmless and under-delivery
+// (the thing an outage causes) is what this repairs.
+func (s *Server) handleHooksReplay(w http.ResponseWriter, r *http.Request, userID int64) {
+	if s.progress == nil {
+		http.Error(w, "watcher unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	fired, err := s.progress.ReplayIndexed(r.Context(), userID)
+	if err != nil {
+		http.Error(w, "replay failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]any{"replayed": fired})
+}

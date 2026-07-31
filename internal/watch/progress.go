@@ -174,11 +174,29 @@ func (w *ProgressWatcher) PollUser(ctx context.Context, userID int64) error {
 	// thousand of a much larger account), so a bulk operation that touches old
 	// episodes — a mass archive, a re-sync — can present hundreds of long-since
 	// finished episodes as first sightings. Real listening never looks like
-	// that, so a burst this size is dropped rather than replayed to hooks.
+	// that, so a burst this size is mostly dropped rather than replayed —
+	// EXCEPT for first-party feed episodes (the enclosure index): their hooks
+	// are idempotent and losing their events is exactly the outage-recovery
+	// gap, so they always deliver. A catch-up after downtime keeps its
+	// meaningful events; the mass-archive noise stays quiet.
 	if len(events) > maxEventsPerPoll {
-		w.logger.Warn("progress: suppressing bulk change burst (not replayed to hooks)",
-			"user", userID, "events", len(events), "limit", maxEventsPerPoll)
-		return nil
+		indexed, err := w.store.EnclosureEpisodes(userID)
+		if err != nil {
+			w.logger.Warn("progress: enclosure index for burst filter", "err", err)
+			indexed = map[string]string{}
+		}
+		var kept []hooks.Event
+		for _, event := range events {
+			if _, ok := indexed[event.EpisodeUUID]; ok {
+				kept = append(kept, event)
+			}
+		}
+		w.logger.Warn("progress: bulk burst — delivering only feed-episode events",
+			"user", userID, "events", len(events), "kept", len(kept), "limit", maxEventsPerPoll)
+		events = kept
+		if len(events) == 0 {
+			return nil
+		}
 	}
 
 	w.logger.Info("progress changes", "user", userID, "events", len(events))
@@ -267,4 +285,54 @@ func abs(v int64) int64 {
 		return -v
 	}
 	return v
+}
+
+// ReplayIndexed re-delivers the CURRENT replica state of every first-party
+// feed episode as one synthetic hook event each — the recovery tool for
+// events lost to downtime (the reverse of suppression: nothing here depends
+// on a transition, so it is safe to run any time; hooks are idempotent, and
+// sticky completion on the receiving side makes over-delivery harmless).
+// Archived beats completed beats progress, mirroring classify's ranking.
+func (w *ProgressWatcher) ReplayIndexed(ctx context.Context, userID int64) (int, error) {
+	states, err := w.store.ReplicaIndexedEpisodes(userID)
+	if err != nil {
+		return 0, err
+	}
+	urls, err := w.store.EnclosureEpisodes(userID)
+	if err != nil {
+		return 0, err
+	}
+	now := time.Now().Unix()
+	fired := 0
+	for _, st := range states {
+		var kind string
+		switch {
+		case st.Archived == 1:
+			kind = hooks.EventArchived
+		case st.PlayingStatus == pc.StatusCompleted:
+			kind = hooks.EventCompleted
+		case st.PlayedUpTo > 0:
+			kind = hooks.EventProgress
+		default:
+			continue
+		}
+		event := hooks.Event{
+			Event:         kind,
+			UserID:        userID,
+			EpisodeUUID:   st.EpisodeUUID,
+			PodcastUUID:   st.PodcastUUID,
+			PlayedUpTo:    st.PlayedUpTo,
+			Duration:      st.Duration,
+			PlayingStatus: st.PlayingStatus,
+			At:            now,
+		}
+		w.enrich(ctx, &event)
+		if event.EpisodeURL == "" {
+			event.EpisodeURL = urls[st.EpisodeUUID]
+		}
+		w.hooks.Fire(ctx, event)
+		fired++
+	}
+	w.logger.Info("replay: indexed episodes re-delivered", "user", userID, "events", fired)
+	return fired, nil
 }

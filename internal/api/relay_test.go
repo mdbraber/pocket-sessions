@@ -107,6 +107,10 @@ func (p *pollRecorder) PollUser(ctx context.Context, userID int64) error {
 	return nil
 }
 
+func (p *pollRecorder) ReplayIndexed(ctx context.Context, userID int64) (int, error) {
+	return 0, nil
+}
+
 func (p *pollRecorder) count() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
