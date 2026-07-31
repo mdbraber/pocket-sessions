@@ -76,17 +76,25 @@ func (s *Server) handlePlaybackReport(w http.ResponseWriter, r *http.Request, us
 		return
 	}
 
+	// A remembered miss answers instantly — re-reported non-feed videos must
+	// not trigger a catalog sweep every cycle.
+	if s.encMiss.hit(in.EnclosureContains) {
+		writeJSON(w, playbackResult{Applied: false, Reason: "unknown-episode"})
+		return
+	}
 	episode, found, err := s.store.FindEpisodeByEnclosure(userID, in.EnclosureContains)
 	if err != nil {
 		http.Error(w, "store failed", http.StatusInternalServerError)
 		return
 	}
-	if !found {
+	if !found && s.encRefreshLim.allow(userID) {
 		// Cold or stale index — rebuild from the subscribed podcasts' catalogs
-		// (public CDN JSON) and retry once.
+		// (public CDN JSON, at most once per cooldown) and retry once. A
+		// rebuild may turn old misses into hits, so the miss cache resets.
 		if err := s.refreshEnclosureIndex(r.Context(), userID, &link); err != nil {
 			s.logger.Warn("playback report: enclosure index", "err", err)
 		}
+		s.encMiss.clear()
 		episode, found, err = s.store.FindEpisodeByEnclosure(userID, in.EnclosureContains)
 		if err != nil {
 			http.Error(w, "store failed", http.StatusInternalServerError)
@@ -94,6 +102,7 @@ func (s *Server) handlePlaybackReport(w http.ResponseWriter, r *http.Request, us
 		}
 	}
 	if !found {
+		s.encMiss.add(in.EnclosureContains)
 		writeJSON(w, playbackResult{Applied: false, Reason: "unknown-episode"})
 		return
 	}

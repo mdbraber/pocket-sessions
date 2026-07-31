@@ -38,6 +38,10 @@ type Server struct {
 	relayPollMu   sync.Mutex
 	relayPollLast map[int64]time.Time
 
+	// Enclosure-lookup miss cache + index-rebuild rate limit (see playback.go).
+	encMiss       *negativeCache
+	encRefreshLim *refreshLimiter
+
 	// Device-code links awaiting approval, keyed by linkId. In-memory on purpose:
 	// codes live 30 minutes and a lost pending link just means re-tapping Link.
 	pendingMu    sync.Mutex
@@ -58,7 +62,7 @@ type progressPoller interface {
 }
 
 func New(st *store.Store, pusher push.Pusher, logger *slog.Logger, allowedEmails []string, progress progressPoller) http.Handler {
-	s := &Server{store: st, pusher: pusher, logger: logger, allowedEmails: allowedEmails, progress: progress, pendingLinks: map[string]pendingLink{}, seeder: replica.NewSeeder(st, logger)}
+	s := &Server{store: st, pusher: pusher, logger: logger, allowedEmails: allowedEmails, progress: progress, pendingLinks: map[string]pendingLink{}, seeder: replica.NewSeeder(st, logger), encMiss: newNegativeCache(6 * time.Hour), encRefreshLim: newRefreshLimiter(10 * time.Minute)}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {

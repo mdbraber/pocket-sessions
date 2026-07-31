@@ -2,6 +2,7 @@ package api
 
 import (
 	"testing"
+	"time"
 
 	"github.com/mdbraber/pocket-sessions-server/internal/pc"
 	"github.com/mdbraber/pocket-sessions-server/internal/store"
@@ -44,5 +45,38 @@ func TestApplyPlayback(t *testing.T) {
 				t.Errorf("applyPlayback = (%v, %q), want (%v, %q)", got, reason, tc.want, tc.reason)
 			}
 		})
+	}
+}
+
+// A remembered miss must answer without a sweep; a rebuild clears it; the
+// limiter allows one rebuild per cooldown.
+func TestNegativeCacheAndRefreshLimiter(t *testing.T) {
+	c := newNegativeCache(50 * time.Millisecond)
+	if c.hit("vid1") {
+		t.Error("fresh cache should miss")
+	}
+	c.add("vid1")
+	if !c.hit("vid1") {
+		t.Error("added fragment should hit")
+	}
+	c.clear()
+	if c.hit("vid1") {
+		t.Error("cleared cache should miss")
+	}
+	c.add("vid2")
+	time.Sleep(60 * time.Millisecond)
+	if c.hit("vid2") {
+		t.Error("expired entry should miss")
+	}
+
+	l := newRefreshLimiter(time.Hour)
+	if !l.allow(1) {
+		t.Error("first rebuild should be allowed")
+	}
+	if l.allow(1) {
+		t.Error("second rebuild within cooldown should be denied")
+	}
+	if !l.allow(2) {
+		t.Error("another user's rebuild should be independent")
 	}
 }
