@@ -41,6 +41,11 @@ Imported workflows arrive **inactive**; activate them (UI toggle, or
 `n8n update:workflow --id=<id> --active=true`) before pointing the emitters
 at them.
 
+PCS is called at `http://pocket-sessions:8080` (the shared `caddy` Docker
+network), not its public URL: n8n now routes by default through its tunnel
+tier, so reaching vps's own public hostname would hairpin. The internal
+path also keeps the operator token off the public internet.
+
 ## Why the flows are shaped this way
 
 Branching is done with small Code nodes that return `[]` to stop a path,
