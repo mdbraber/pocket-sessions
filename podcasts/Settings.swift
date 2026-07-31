@@ -428,6 +428,24 @@ class Settings: NSObject {
         UserDefaults.standard.set(token, forKey: sessionServerTokenKey)
     }
 
+    /// Fork: whether Pocket Casts API traffic is routed through the PCS relay
+    /// (`<sessionServer>/pcapi/*`) so the server can keep a replica of the sync data. Off by
+    /// default, and inert unless both a server URL and a device token exist — see
+    /// `PCAPIRelaySettings.apply()`, which is what actually hands the config to the transport.
+    private static let sessionServerRelayAPIKey = "SJSessionServerRelayAPI"
+    class func sessionServerRelayAPI() -> Bool {
+        UserDefaults.standard.bool(forKey: sessionServerRelayAPIKey)
+    }
+    class func setSessionServerRelayAPI(_ enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: sessionServerRelayAPIKey)
+    }
+
+    /// Whether the relay can be turned on at all: without a server and a token there is nothing to
+    /// relay through, and no token to authenticate with.
+    class func sessionServerRelayAvailable() -> Bool {
+        sessionServerURL() != nil && sessionServerToken() != nil
+    }
+
     /// Whether the active playback session follows across devices via the PCS server:
     /// the leader publishes its session pointer + current episode, and idle devices
     /// adopt it AND load the episode into the mini player (paused). Off by default.

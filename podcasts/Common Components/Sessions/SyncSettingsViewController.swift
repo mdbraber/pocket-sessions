@@ -208,6 +208,8 @@ class SyncSettingsViewController: PCViewController, UITableViewDataSource, UITab
         alert.addAction(UIAlertAction(title: L10n.fileUploadSave, style: .default) { [weak self, weak alert] _ in
             let raw = alert?.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             Settings.setSessionServerURL(raw.isEmpty ? nil : raw)
+            // Changing (or clearing) the server changes where the relay points, if it is on.
+            PCAPIRelaySettings.apply()
             self?.settingsTable.reloadData()
             // Entering the server is the only manual step: enrollment (PC link +
             // this device's own PCS token) runs automatically from here.

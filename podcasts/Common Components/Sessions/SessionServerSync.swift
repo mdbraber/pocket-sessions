@@ -695,6 +695,8 @@ final class SessionServerSync {
             DispatchQueue.main.async {
                 if let token = dict["apiToken"] as? String, !token.isEmpty {
                     Settings.setSessionServerToken(token)
+                    // The relay authenticates with this token, so it only becomes usable now.
+                    PCAPIRelaySettings.apply()
                 }
                 completion(dict["linked"] as? Bool == true ? (dict["email"] as? String ?? "") : nil)
             }

@@ -34,6 +34,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     // MARK: - App Lifecycle
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        // Fork: register the API relay before anything can make a request. With the toggle off (the
+        // default) it declines every request and the loading system behaves exactly as before.
+        PCAPIRelaySettings.install()
         configureFirebase()
         TraceManager.shared.setup(handler: traceHandler)
 
