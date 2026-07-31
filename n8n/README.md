@@ -51,10 +51,12 @@ PCS rebuild its catalog index inside the request, which can outlast a
 default timeout. The state such a call would have carried is re-offered by
 the next replay sweep anyway.
 
-PCS is called at `http://pocket-sessions:8080` (the shared `caddy` Docker
-network), not its public URL: n8n now routes by default through its tunnel
-tier, so reaching vps's own public hostname would hairpin. The internal
-path also keeps the operator token off the public internet.
+Flows call services by their **public names**. That works from a
+tier-routed container only because of `docker-tier-hairpin.service` on
+vps: Docker network isolation drops DNAT-ed (published-port) packets as
+they cross from a tier bridge to another docker bridge, so without it a
+tier container cannot reach its own host's public hostname. The unit
+accepts exactly those flows (`ctstate DNAT`) and nothing else.
 
 ## Why the flows are shaped this way
 

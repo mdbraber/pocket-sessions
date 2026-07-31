@@ -193,7 +193,9 @@ baseline so the watcher sees PC's echo as a no-op, and nudges devices.
 PCS side: scripts in `PCS_HOOKS_DIR`, one run per event, `PCS_*` env
 contract (see `hooks/README.md`). `owntube.sh` maps events onto OwnTube
 tRPC mutations; it self-selects by enclosure host so it is safe alongside
-other hooks.
+other hooks. **Since 2026-07-31 the bridge runs on n8n flows instead** (see
+`n8n/README.md`): both `owntube.sh` and OwnTube's `pcs.sh` are on disk but
+non-executable, kept as the fallback path.
 
 Both runners also emit **webhook sinks**: every event is POSTed as JSON
 (the same payload scripts get on stdin) to each URL in `PCS_WEBHOOK_URLS` /
@@ -316,6 +318,14 @@ suppressed), `playback write-through` (reverse direction), `relay:
 unauthorized` (a client without the proxy token).
 
 ## 10. Known edges
+
+- Containers whose default route is a tunnel tier cannot reach this host's
+  own public names without `docker-tier-hairpin.service` on vps: Docker
+  network isolation drops DNAT-ed (published-port) packets crossing from a
+  tier bridge to another docker bridge. The unit accepts exactly those
+  flows (`ctstate DNAT`) — nothing the public internet cannot already
+  reach. Symptom without it: timeouts to your own domain from tier
+  containers, while the host and non-tier containers work fine.
 
 - PC's cursor-0 sync **excludes archived episodes** and `/history/sync`
   caps at 100 — the replica exists precisely because of this; never assume
