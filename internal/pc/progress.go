@@ -38,11 +38,35 @@ type EpisodeProgress struct {
 	// The app's "archived" flag (SyncUserEpisode.is_deleted, field 3).
 	// -1 = the record didn't carry it (keep what we knew), 0/1 otherwise.
 	Archived int64
+	// Starred (field 11), same -1/0/1 presence convention.
+	Starred int64
+	// The SyncUserEpisode message exactly as PC sent it — the replica stores
+	// this so nothing is lost to parsing gaps (unknown fields included).
+	Raw []byte
+}
+
+// RawRecord is a non-episode sync record (Record oneof fields other than 2),
+// kept raw for the replica. UUID is a best-effort read of the message's
+// field 1 (uuid across all sync record types).
+type RawRecord struct {
+	Kind string // podcast | playlist | device | folder | bookmark
+	UUID string
+	Raw  []byte
 }
 
 type ProgressSync struct {
 	LastModified int64
 	Episodes     []EpisodeProgress
+	Others       []RawRecord
+}
+
+// Record oneof field numbers (from the app's api.pb.swift Api_Record).
+var recordKinds = map[int]string{
+	1: "podcast",
+	3: "playlist",
+	4: "device",
+	5: "folder",
+	6: "bookmark",
 }
 
 // FetchProgress returns episode changes since `lastModified` (0 = everything).
@@ -91,32 +115,54 @@ func parseProgressResponse(data []byte) (ProgressSync, error) {
 		}
 		episodeBytes, ok := record.bytes[2] // Record.episode
 		if !ok {
+			// A non-episode record — keep it raw for the replica.
+			for field, kind := range recordKinds {
+				if body, present := record.bytes[field]; present {
+					uuid := ""
+					if f, err := parseAllFields(body); err == nil {
+						uuid = string(f.bytes[1])
+					}
+					out.Others = append(out.Others, RawRecord{Kind: kind, UUID: uuid, Raw: body})
+					break
+				}
+			}
 			continue
 		}
-		fields, err := parseAllFields(episodeBytes)
-		if err != nil {
-			continue
-		}
-		progress := EpisodeProgress{
-			EpisodeUUID: string(fields.bytes[1]),
-			PodcastUUID: string(fields.bytes[2]),
-			Duration:    unwrapScalar(fields.bytes[5]),
-			// A status of 0 means "PC didn't send one" — callers keep what they had.
-			PlayingStatus: unwrapScalar(fields.bytes[7]),
-			PlayedUpTo:    unwrapScalar(fields.bytes[9]),
-			Archived:      -1,
-		}
-		// BoolValue false arrives as an empty wrapper, so absent-vs-false needs
-		// a presence check rather than unwrapScalar's zero.
-		if wrapper, ok := fields.bytes[3]; ok {
-			progress.Archived = unwrapScalar(wrapper)
-		}
-		if progress.EpisodeUUID == "" {
+		progress, err := ParseSyncEpisode(episodeBytes)
+		if err != nil || progress.EpisodeUUID == "" {
 			continue
 		}
 		out.Episodes = append(out.Episodes, progress)
 	}
 	return out, nil
+}
+
+// ParseSyncEpisode decodes one SyncUserEpisode message, keeping the raw bytes.
+func ParseSyncEpisode(episodeBytes []byte) (EpisodeProgress, error) {
+	fields, err := parseAllFields(episodeBytes)
+	if err != nil {
+		return EpisodeProgress{}, err
+	}
+	progress := EpisodeProgress{
+		EpisodeUUID: string(fields.bytes[1]),
+		PodcastUUID: string(fields.bytes[2]),
+		Duration:    unwrapScalar(fields.bytes[5]),
+		// A status of 0 means "PC didn't send one" — callers keep what they had.
+		PlayingStatus: unwrapScalar(fields.bytes[7]),
+		PlayedUpTo:    unwrapScalar(fields.bytes[9]),
+		Archived:      -1,
+		Starred:       -1,
+		Raw:           episodeBytes,
+	}
+	// BoolValue false arrives as an empty wrapper, so absent-vs-false needs
+	// a presence check rather than unwrapScalar's zero.
+	if wrapper, ok := fields.bytes[3]; ok {
+		progress.Archived = unwrapScalar(wrapper)
+	}
+	if wrapper, ok := fields.bytes[11]; ok {
+		progress.Starred = unwrapScalar(wrapper)
+	}
+	return progress, nil
 }
 
 // unwrapScalar reads a protobuf scalar wrapper (Int32Value/Int64Value/…),

@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"testing"
+
+	"github.com/mdbraber/pocket-sessions-server/internal/pc"
 )
 
 func testStore(t *testing.T) *Store {
@@ -116,5 +118,62 @@ func TestFindEpisodeByEnclosure(t *testing.T) {
 	_, found, err = s.FindEpisodeByEnclosure(1, "nosuchvideo")
 	if err != nil || found {
 		t.Fatalf("miss should be (false, nil), got found=%v err=%v", found, err)
+	}
+}
+
+func TestReplicaMergeAndLedger(t *testing.T) {
+	s := testStore(t)
+
+	// Full record first, then a sparse update — merged columns, concatenated raw.
+	full := pc.EpisodeProgress{
+		EpisodeUUID: "e1", PodcastUUID: "p1",
+		PlayedUpTo: 100, PlayingStatus: 2, Duration: 900,
+		Archived: 0, Starred: -1, Raw: []byte{0x01, 0x02},
+	}
+	if err := s.UpsertReplicaEpisodes(1, "seed-sync", []pc.EpisodeProgress{full}); err != nil {
+		t.Fatal(err)
+	}
+	sparse := pc.EpisodeProgress{
+		EpisodeUUID: "e1", PlayingStatus: 3,
+		Archived: 1, Starred: -1, Raw: []byte{0x03},
+	}
+	if err := s.UpsertReplicaEpisodes(1, "relay-req", []pc.EpisodeProgress{sparse}); err != nil {
+		t.Fatal(err)
+	}
+	var podcast string
+	var played, status, archived int64
+	var raw []byte
+	err := s.db.QueryRow(`SELECT podcast_uuid, played_up_to, playing_status, archived, raw
+FROM pc_replica WHERE user_id=1 AND kind='episode' AND uuid='e1'`).
+		Scan(&podcast, &played, &status, &archived, &raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if podcast != "p1" || played != 100 || status != 3 || archived != 1 {
+		t.Errorf("merged = %s/%d/%d/%d", podcast, played, status, archived)
+	}
+	if string(raw) != "\x01\x02\x03" {
+		t.Errorf("raw not concatenated: %v", raw)
+	}
+
+	// The ledger accumulates and never regresses modified_at.
+	entries := []pc.HistoryEntry{{EpisodeUUID: "e1", PodcastUUID: "p1", Title: "T", ModifiedAt: 200}}
+	if err := s.UpsertHistoryLedger(1, entries); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpsertHistoryLedger(1, []pc.HistoryEntry{{EpisodeUUID: "e1", ModifiedAt: 50}}); err != nil {
+		t.Fatal(err)
+	}
+	ledger, err := s.HistoryLedger(1, 10)
+	if err != nil || len(ledger) != 1 {
+		t.Fatalf("ledger = %v err=%v", ledger, err)
+	}
+	if ledger[0].ModifiedAt != 200 || ledger[0].Title != "T" {
+		t.Errorf("ledger entry regressed: %+v", ledger[0])
+	}
+
+	status2, err := s.ReplicaStatus(1)
+	if err != nil || status2.Episodes != 1 || status2.Played != 1 || status2.Archived != 1 || status2.LedgerEntries != 1 {
+		t.Errorf("status = %+v err=%v", status2, err)
 	}
 }

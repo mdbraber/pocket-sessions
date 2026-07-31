@@ -59,6 +59,10 @@ func FetchHistory(ctx context.Context, accessToken string) (History, error) {
 		return History{}, err
 	}
 
+	return parseHistoryResponse(data)
+}
+
+func parseHistoryResponse(data []byte) (History, error) {
 	out := History{}
 	top, err := parseAllFields(data)
 	if err != nil {

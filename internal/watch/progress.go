@@ -153,6 +153,13 @@ func (w *ProgressWatcher) PollUser(ctx context.Context, userID int64) error {
 	if err := w.store.SaveEpisodeProgress(userID, toSave); err != nil {
 		return err
 	}
+	// The replica rides along on every poll — same records, richer store.
+	if err := w.store.UpsertReplicaEpisodes(userID, "poll", sync.Episodes); err != nil {
+		w.logger.Warn("replica: poll episodes", "err", err)
+	}
+	if err := w.store.UpsertReplicaRecords(userID, "poll", sync.Others); err != nil {
+		w.logger.Warn("replica: poll records", "err", err)
+	}
 	if err := w.store.SetProgressCursor(userID, sync.LastModified); err != nil {
 		return err
 	}

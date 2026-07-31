@@ -152,6 +152,32 @@ CREATE TABLE IF NOT EXISTS episode_enclosures (
     updated_at   TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (user_id, episode_uuid)
 );
+CREATE TABLE IF NOT EXISTS pc_replica (
+    user_id        INTEGER NOT NULL, -- full PC account replica (see store/replica.go):
+    kind           TEXT NOT NULL,    -- episode|podcast|playlist|folder|bookmark|device
+    uuid           TEXT NOT NULL,
+    podcast_uuid   TEXT NOT NULL DEFAULT '',
+    played_up_to   INTEGER NOT NULL DEFAULT 0,
+    playing_status INTEGER NOT NULL DEFAULT 0,
+    duration       INTEGER NOT NULL DEFAULT 0,
+    archived       INTEGER NOT NULL DEFAULT 0,
+    starred        INTEGER NOT NULL DEFAULT 0,
+    raw            BLOB NOT NULL DEFAULT x'', -- record bytes as PC sent them (proto-merge on update)
+    source         TEXT NOT NULL DEFAULT '',  -- seed-sync|seed-podcast|poll|relay-req|relay-resp
+    updated_at     TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (user_id, kind, uuid)
+);
+CREATE INDEX IF NOT EXISTS pc_replica_podcast_idx ON pc_replica(user_id, podcast_uuid);
+CREATE TABLE IF NOT EXISTS pc_history_ledger (
+    user_id      INTEGER NOT NULL, -- accumulated listening history; PC serves only the
+    episode_uuid TEXT NOT NULL,    -- newest 100, this table never forgets an entry
+    podcast_uuid TEXT NOT NULL DEFAULT '',
+    title        TEXT NOT NULL DEFAULT '',
+    url          TEXT NOT NULL DEFAULT '',
+    modified_at  INTEGER NOT NULL DEFAULT 0,
+    first_seen   TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (user_id, episode_uuid)
+);
 CREATE INDEX IF NOT EXISTS idx_sessions_cursor ON sessions(user_id, cursor);
 CREATE INDEX IF NOT EXISTS idx_presets_cursor  ON presets(user_id, cursor);
 `)

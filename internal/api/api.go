@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/mdbraber/pocket-sessions-server/internal/push"
+	"github.com/mdbraber/pocket-sessions-server/internal/replica"
 	"github.com/mdbraber/pocket-sessions-server/internal/store"
 )
 
@@ -29,6 +30,9 @@ type Server struct {
 
 	// Polled on nudge so a just-finished episode reaches its hooks in seconds.
 	progress progressPoller
+
+	// Seeds and reports on the Pocket Casts replica (see internal/replica).
+	seeder *replica.Seeder
 
 	// Device-code links awaiting approval, keyed by linkId. In-memory on purpose:
 	// codes live 30 minutes and a lost pending link just means re-tapping Link.
@@ -47,7 +51,7 @@ type progressPoller interface {
 }
 
 func New(st *store.Store, pusher push.Pusher, logger *slog.Logger, allowedEmails []string, progress progressPoller) http.Handler {
-	s := &Server{store: st, pusher: pusher, logger: logger, allowedEmails: allowedEmails, progress: progress, pendingLinks: map[string]pendingLink{}}
+	s := &Server{store: st, pusher: pusher, logger: logger, allowedEmails: allowedEmails, progress: progress, pendingLinks: map[string]pendingLink{}, seeder: replica.NewSeeder(st, logger)}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -71,6 +75,12 @@ func New(st *store.Store, pusher push.Pusher, logger *slog.Logger, allowedEmails
 	mux.Handle("POST /api/v1/up-next", s.authed(s.handleUpNextChange))
 	mux.Handle("GET /api/v1/history", s.authed(s.handleHistory))
 	mux.Handle("POST /api/v1/playback", s.authed(s.handlePlaybackReport))
+	mux.Handle("POST /api/v1/replica/seed", s.authed(s.handleReplicaSeed))
+	mux.Handle("GET /api/v1/replica/status", s.authed(s.handleReplicaStatus))
+	mux.Handle("GET /api/v1/replica/history", s.authed(s.handleReplicaHistory))
+	// The PC API relay — gated by X-PCS-Proxy-Token inside the handler (the
+	// Authorization header belongs to Pocket Casts and passes through).
+	mux.HandleFunc("/pcapi/", s.handleRelay)
 	mux.Handle("GET /api/v1/podcasts", s.authed(s.handlePodcasts))
 
 	return s.logged(mux)
