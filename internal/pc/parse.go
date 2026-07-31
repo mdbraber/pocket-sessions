@@ -55,8 +55,13 @@ func ParseUUIDRequest(data []byte) string {
 	return string(top.bytes[3])
 }
 
-// ParseSyncEpisodesResponse decodes a SyncEpisodesResponse (field 1 repeated
-// SyncUserEpisode), filling the podcast uuid the records omit.
+// ParseSyncEpisodesResponse decodes a SyncEpisodesResponse: field 1 repeated
+// EpisodeSyncResponse — a FLAT message, not the wrapper-heavy SyncUserEpisode:
+// {1:uuid, 2:playing_status, 3:played_up_to, 4:is_deleted, 5:starred,
+// 6:duration, 7:bookmarks, 8:deselected_chapters}, plain varints throughout
+// (proto3: absent = zero). Raw stays empty on purpose — the replica's raw
+// column holds SyncUserEpisode bytes and merging a different schema into it
+// would corrupt re-parsing; the columns carry this state instead.
 func ParseSyncEpisodesResponse(data []byte, podcastUUID string) ([]EpisodeProgress, error) {
 	top, err := parseAllFields(data)
 	if err != nil {
@@ -64,14 +69,23 @@ func ParseSyncEpisodesResponse(data []byte, podcastUUID string) ([]EpisodeProgre
 	}
 	var out []EpisodeProgress
 	for _, raw := range top.repeated[1] {
-		episode, err := ParseSyncEpisode(raw)
-		if err != nil || episode.EpisodeUUID == "" {
+		fields, err := parseAllFields(raw)
+		if err != nil {
 			continue
 		}
-		if episode.PodcastUUID == "" {
-			episode.PodcastUUID = podcastUUID
+		uuid := string(fields.bytes[1])
+		if uuid == "" {
+			continue
 		}
-		out = append(out, episode)
+		out = append(out, EpisodeProgress{
+			EpisodeUUID:   uuid,
+			PodcastUUID:   podcastUUID,
+			PlayingStatus: int64(fields.varints[2]),
+			PlayedUpTo:    int64(fields.varints[3]),
+			Archived:      int64(fields.varints[4]),
+			Starred:       int64(fields.varints[5]),
+			Duration:      int64(fields.varints[6]),
+		})
 	}
 	return out, nil
 }

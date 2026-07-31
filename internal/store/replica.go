@@ -59,10 +59,17 @@ FROM pc_replica WHERE user_id = ? AND kind = 'episode' AND uuid = ?`,
 		archived = presence(e.Archived, archived)
 		starred = presence(e.Starred, starred)
 
-		if known && len(raw)+len(e.Raw) <= rawMergeCap {
+		switch {
+		case len(e.Raw) == 0:
+			// Column-only update (e.g. the flat per-podcast sweep) — keep
+			// whatever SyncUserEpisode bytes we already hold.
+		case known && len(raw)+len(e.Raw) <= rawMergeCap:
 			raw = append(raw, e.Raw...)
-		} else {
+		default:
 			raw = e.Raw
+		}
+		if raw == nil {
+			raw = []byte{}
 		}
 
 		podcastUUID := e.PodcastUUID
