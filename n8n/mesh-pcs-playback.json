@@ -52,7 +52,9 @@
             }
           ]
         },
-        "options": {}
+        "options": {
+          "timeout": 30000
+        }
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -61,7 +63,10 @@
         0
       ],
       "id": "b1000000-0000-4000-8000-000000000003",
-      "name": "Resolve channel"
+      "name": "Resolve channel",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
     },
     {
       "parameters": {
@@ -85,7 +90,9 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ json: { videoId: $json.videoId, channelId: $json.channelId, durationWatched: $json.playedUpTo, positionSeconds: $json.playedUpTo, completed: $json.completed, videoDurationSeconds: $json.duration, videoTitle: $json.episodeTitle || undefined } }) }}",
-        "options": {}
+        "options": {
+          "timeout": 30000
+        }
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -100,7 +107,10 @@
           "id": "owntube-device-token",
           "name": "OwnTube device token"
         }
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
     },
     {
       "parameters": {
@@ -124,7 +134,9 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ json: { videoId: $json.videoId, feedTitle: ($json.podcastTitle || '').replace(/\\s*\\(Video\\)$/, '') } }) }}",
-        "options": {}
+        "options": {
+          "timeout": 30000
+        }
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -139,7 +151,10 @@
           "id": "owntube-device-token",
           "name": "OwnTube device token"
         }
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
     }
   ],
   "connections": {

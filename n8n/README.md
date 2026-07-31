@@ -37,9 +37,19 @@ docker cp mesh-pcs-playback.json n8n:/tmp/
 docker exec n8n n8n import:workflow --input=/tmp/mesh-pcs-playback.json
 ```
 
-Imported workflows arrive **inactive**; activate them (UI toggle, or
-`n8n update:workflow --id=<id> --active=true`) before pointing the emitters
-at them.
+Imported workflows arrive **inactive** — and re-importing an existing
+workflow resets that flag, silently un-registering its webhook (a 404 on
+the next delivery). After every import: activate and restart.
+
+```sh
+docker exec n8n n8n update:workflow --id=meshPcsPlayback01 --active=true
+docker compose restart n8n
+```
+
+HTTP nodes carry a 30s timeout and one retry: a cold enclosure lookup makes
+PCS rebuild its catalog index inside the request, which can outlast a
+default timeout. The state such a call would have carried is re-offered by
+the next replay sweep anyway.
 
 PCS is called at `http://pocket-sessions:8080` (the shared `caddy` Docker
 network), not its public URL: n8n now routes by default through its tunnel
