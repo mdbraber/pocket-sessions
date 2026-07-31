@@ -103,7 +103,7 @@ Every arrow is guarded so that echoes terminate; see §5.
 | action in the fork | app syncs через `/pcapi` relay → observation + triggered poll | seconds |
 | action on another PC device | 15-min watcher tick (backstop) | ≤15 min |
 | PCS → OwnTube | hook scripts (`owntube.sh`) per event | instant after detection |
-| watch/archive in OwnTube | webhook → `POST /api/v1/playback` → sync-record write to PC | seconds |
+| watch/archive in OwnTube | OwnTube hook (`pcs.sh`) → `POST /api/v1/playback` → sync-record write to PC | seconds |
 | library edits → feeds | pusher cycle + PC crawler | tens of minutes |
 
 **Event kinds** (watcher classification): `progress` (≥30s movement),
@@ -188,12 +188,20 @@ durationSeconds}`. PCS resolves the episode via the enclosure index
 sync record to PC (per-field modified stamps, like the app), advances the
 baseline so the watcher sees PC's echo as a no-op, and nudges devices.
 
-### Hooks
+### Hooks — symmetric on both sides
 
-Scripts in `PCS_HOOKS_DIR`, one run per event, env-var contract (see
-`hooks/README.md`). `owntube.sh` maps events onto OwnTube tRPC mutations;
-it self-selects by enclosure host (`OWNTUBE_URL` or `OWNTUBE_MEDIA_HOST`)
-so it is safe alongside other hooks. All hook effects are idempotent.
+PCS side: scripts in `PCS_HOOKS_DIR`, one run per event, `PCS_*` env
+contract (see `hooks/README.md`). `owntube.sh` maps events onto OwnTube
+tRPC mutations; it self-selects by enclosure host so it is safe alongside
+other hooks.
+
+OwnTube side (mirror design, `owntube/hooks/README.md`): history writes
+fire `watched`/`progress` events through every executable in
+`OWNTUBE_HOOKS_DIR` (`OT_*` env + JSON on stdin), and the feeds pusher
+re-fires the last 48h with `OT_SOURCE=replay` each cycle — the reverse
+direction's outage recovery. `pcs.sh` is the only PCS-aware piece: it
+POSTs to `/api/v1/playback`. Neither server knows its receivers; all hook
+effects are idempotent by contract.
 
 ## 5. Loop termination (why this can't oscillate)
 
@@ -216,9 +224,10 @@ recovery, state converges automatically:
 
 - the watcher's cursor fetch catches the window's PC changes; feed-episode
   events survive even a bulk burst;
-- the feeds pusher **re-offers the last 48h of watch history** every cycle
-  — the ahead-only guard makes steady state free ("N re-offered, 0
-  applied") and heals a dead window within one cycle;
+- the feeds pusher **re-fires the last 48h of watch history through the
+  OwnTube hooks** every cycle (`OT_SOURCE=replay`) — receivers dedupe (the
+  ahead-only guard makes steady state free) and a dead window heals within
+  one cycle;
 - `POST /api/v1/hooks/replay` re-delivers every feed episode's *current*
   replica state as one synthetic event each (archived > completed >
   progress) — the manual big hammer, safe any time.
@@ -247,9 +256,10 @@ burst exemption + replay; here: `owntube-media`), `OWNTUBE_URL`,
 `OWNTUBE_MEDIA_HOST`, `OWNTUBE_TOKEN` (hook credentials; the device token
 expires every 30 days — re-pair via `auth.startDevicePairing`).
 
-**OwnTube (homeserver compose)** — `PCS_PLAYBACK_URL`
-(`https://pcs.example.com/api/v1/playback`) + `PCS_PLAYBACK_TOKEN` on both
-the app service (live webhook) and the feeds-pusher service (re-report);
+**OwnTube (homeserver compose)** — `OWNTUBE_HOOKS_DIR`
+(`/app/apps/web/data/hooks`, bind-mounted) on both the app service (live
+events) and the feeds-pusher service (replay sweep); `PCS_PLAYBACK_URL` +
+`PCS_PLAYBACK_TOKEN` consumed by `hooks/pcs.sh`, not the server;
 `OWNTUBE_PUBLISH_TARGET`/`SECRET` for the pusher and the settings UI.
 
 **Feeds server (vps `/var/docker/owntube-companion/.env`)** —
