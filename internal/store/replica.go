@@ -222,3 +222,10 @@ UNION SELECT DISTINCT podcast_uuid FROM pc_history_ledger WHERE user_id = ? AND 
 	}
 	return out, rows.Err()
 }
+
+// ReplicaEpisode returns one replica episode row (test/inspection helper).
+func (s *Store) ReplicaEpisode(userID int64, uuid string) (bool, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM pc_replica WHERE user_id = ? AND kind = 'episode' AND uuid = ?`, userID, uuid).Scan(&n)
+	return n > 0, err
+}

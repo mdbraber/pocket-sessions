@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"io"
 	"log/slog"
@@ -159,5 +160,64 @@ func TestRelayTriggersDebouncedPoll(t *testing.T) {
 	}
 	if got := poller.count(); got != 2 {
 		t.Errorf("total polls = %d, want 2 (leading + trailing)", got)
+	}
+}
+
+// The passthrough must stay compressed for the client while observation
+// parses plain: an upstream gzip response reaches the app byte-identical
+// (with its Content-Encoding header) AND lands in the replica decoded.
+func TestRelayCompressedPassthroughPlainObservation(t *testing.T) {
+	// A minimal SyncUpdateResponse: {1: lastModified, 2: Record{2: SyncUserEpisode{1: uuid}}}
+	episode := []byte{0x0a, 0x05, 'e', 'p', '-', 'g', 'z'} // field1 uuid "ep-gz"
+	record := append([]byte{0x12, byte(len(episode))}, episode...)
+	plain := append([]byte{0x08, 0x2a}, append([]byte{0x12, byte(len(record))}, record...)...)
+
+	var gz bytes.Buffer
+	zw := gzip.NewWriter(&gz)
+	if _, err := zw.Write(plain); err != nil {
+		t.Fatal(err)
+	}
+	zw.Close()
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Accept-Encoding") != "gzip" {
+			t.Errorf("upstream negotiation not constrained to gzip: %q", r.Header.Get("Accept-Encoding"))
+		}
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Set("Content-Type", "application/octet-stream")
+		_, _ = w.Write(gz.Bytes())
+	}))
+	defer upstream.Close()
+	oldUpstream := relayUpstream
+	relayUpstream = upstream.URL
+	defer func() { relayUpstream = oldUpstream }()
+
+	s, st := relayTestServer(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/pcapi/user/sync/update", bytes.NewReader(nil))
+	req.Header.Set("X-PCS-Proxy-Token", "tok-relay")
+	req.Header.Set("Accept-Encoding", "gzip, deflate, br")
+	rec := httptest.NewRecorder()
+	s.handleRelay(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d", rec.Code)
+	}
+	if rec.Header().Get("Content-Encoding") != "gzip" {
+		t.Error("Content-Encoding not forwarded to client")
+	}
+	if !bytes.Equal(rec.Body.Bytes(), gz.Bytes()) {
+		t.Error("compressed body not byte-identical through the relay")
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if found, _ := st.ReplicaEpisode(1, "ep-gz"); found {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("gzip response was not observed into the replica")
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }

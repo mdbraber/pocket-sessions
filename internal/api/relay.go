@@ -74,13 +74,17 @@ func (s *Server) handleRelay(w http.ResponseWriter, r *http.Request) {
 	}
 	upReq.Header = r.Header.Clone()
 	upReq.Header.Del("X-PCS-Proxy-Token")
-	// Forwarding the app's Accept-Encoding makes Go's transport hand back the
-	// COMPRESSED body (it only auto-decompresses when it added the header
-	// itself) — which is exactly how the observer ended up parsing gzip bytes
-	// to zero records while the app decompressed the same bytes happily.
-	// Dropping it lets the transport negotiate and transparently decompress;
-	// the app receives plain bytes, which every client accepts.
-	upReq.Header.Del("Accept-Encoding")
+	// Compression contract: forwarding the client's Accept-Encoding verbatim
+	// once made the observer parse gzip bytes to zero records (Go only
+	// auto-decompresses when IT added the header). Stripping it fixed
+	// observation but shipped ~8× the bytes to the phone. The robust middle:
+	// constrain negotiation to gzip — the passthrough stays compressed and
+	// byte-identical for the client, and the observer decompresses its own
+	// copy (guided by Content-Encoding below). Constraining matters because a
+	// client may offer brotli, which we cannot decode for observation.
+	if upReq.Header.Get("Accept-Encoding") != "" {
+		upReq.Header.Set("Accept-Encoding", "gzip")
+	}
 	for _, h := range hopHeaders {
 		upReq.Header.Del(h)
 	}
@@ -116,7 +120,7 @@ func (s *Server) handleRelay(w http.ResponseWriter, r *http.Request) {
 
 	// Observation happens after the response is on the wire, off the hot path.
 	if resp.StatusCode == http.StatusOK {
-		go s.observeRelay(userID, path, reqBody, respBody)
+		go s.observeRelay(userID, path, reqBody, respBody, resp.Header.Get("Content-Encoding"))
 	}
 }
 
@@ -129,10 +133,13 @@ func isHopHeader(name string) bool {
 	return false
 }
 
-// maybeGunzip transparently unpacks a gzip body (magic 1f 8b) so observation
-// never parses compressed bytes, wherever they slipped through.
-func maybeGunzip(body []byte) []byte {
-	if len(body) < 2 || body[0] != 0x1f || body[1] != 0x8b {
+// maybeGunzip unpacks a gzip body for observation — trusted first by the
+// declared Content-Encoding, with the magic bytes (1f 8b) as fallback for
+// bodies compressed without a header in reach (e.g. request side).
+func maybeGunzip(body []byte, declaredEncoding string) []byte {
+	gzipDeclared := strings.Contains(strings.ToLower(declaredEncoding), "gzip")
+	gzipMagic := len(body) >= 2 && body[0] == 0x1f && body[1] == 0x8b
+	if !gzipDeclared && !gzipMagic {
 		return body
 	}
 	zr, err := gzip.NewReader(bytes.NewReader(body))
@@ -149,14 +156,14 @@ func maybeGunzip(body []byte) []byte {
 
 // observeRelay parses a copy of the exchange into the replica. Best effort:
 // every failure is logged and swallowed.
-func (s *Server) observeRelay(userID int64, path string, reqBody, respBody []byte) {
+func (s *Server) observeRelay(userID int64, path string, reqBody, respBody []byte, respEncoding string) {
 	defer func() {
 		if r := recover(); r != nil {
 			s.logger.Warn("relay observe panic", "path", path, "recover", r)
 		}
 	}()
-	reqBody = maybeGunzip(reqBody)
-	respBody = maybeGunzip(respBody)
+	reqBody = maybeGunzip(reqBody, "")
+	respBody = maybeGunzip(respBody, respEncoding)
 	switch path {
 	case "/user/sync/update":
 		// The request carries the app's OUTGOING records — actions are visible
