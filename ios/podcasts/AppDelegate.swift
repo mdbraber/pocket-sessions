@@ -369,6 +369,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // finds anything on the first run after unsubscribing.
         DispatchQueue.global(qos: .utility).async {
             SessionManager.shared.pruneEmptyUnsubscribedPodcastSessions()
+            SessionManager.shared.deleteOrphanedStoreCopies()
         }
         DispatchQueue.main.async {
             ForkSettingsSync.shared.start()

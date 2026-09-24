@@ -470,6 +470,39 @@ class SessionManager {
         }
     }
 
+    /// Fork: one-shot sweep of orphaned session store copies — manual playlists that share a
+    /// session store's name but belong to no session, which surfaced in the Playlists tab as
+    /// plain manual playlists (hundreds of them, from a bulk sync on 2026-08-05). A copy only
+    /// goes when it holds nothing the real store lacks; the reserved Inbox and any playlist
+    /// whose name matches no session are never touched. Deleted through the normal path so the
+    /// tombstones sync onward. Versioned so it runs once per install.
+    func deleteOrphanedStoreCopies() {
+        let migrationKey = "SJSessionOrphanedStoreCopiesCleanup"
+        let version = 1
+        guard UserDefaults.standard.integer(forKey: migrationKey) < version else { return }
+
+        let storeUuids = Set(SessionStore.shared.sessions.compactMap(\.storePlaylistUuid))
+        let manualPlaylists = DataManager.shared.allManualPlaylists(includeDeleted: false)
+        var storesByName = [String: EpisodeFilter]()
+        for playlist in manualPlaylists where storeUuids.contains(playlist.uuid) {
+            storesByName[playlist.playlistName] = playlist
+        }
+
+        var removed = 0
+        for playlist in manualPlaylists where !storeUuids.contains(playlist.uuid) && playlist.uuid != DataManager.inboxPlaylistUuid {
+            guard let store = storesByName[playlist.playlistName] else { continue }
+            let storeMembers = Set(DataManager.shared.positionedEpisodeUuids(for: store))
+            guard DataManager.shared.positionedEpisodeUuids(for: playlist).allSatisfy(storeMembers.contains) else { continue }
+            PlaylistManager.delete(playlist: playlist, fireEvent: false)
+            removed += 1
+        }
+        UserDefaults.standard.set(version, forKey: migrationKey)
+        if removed > 0 {
+            FileLog.shared.addMessage("SessionManager: deleted \(removed) orphaned session store copies")
+            NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged)
+        }
+    }
+
     /// Converts a lens (pure smart playlist) into a Session: the lens flips into the
     /// store — keeping its name, uuid and spot — seeded with the current query order,
     /// while a fresh hidden feeder playlist carries the rules onward.
