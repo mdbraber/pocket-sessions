@@ -1,0 +1,73 @@
+# Deployed next to a `src/` checkout of this repo (see `make deploy`): the compose
+# file sits one level up, `./data` beside it holds the SQLite database. Assumes a
+# host running caddy-docker-proxy with an external `caddy` network.
+#
+# Host-side `.env` (next to this file, not in git):
+#   PCS_DOMAIN=sessions.example.com
+#   PCS_AUTH_TOKEN=<openssl rand -hex 24>       # operator credential (curl/scripts)
+#   PCS_ALLOWED_EMAILS=you@example.com          # PC accounts allowed to enroll (optional)
+#   PCS_APNS_KEY_ID=ABC123DEFG                  # with the .p8 dropped in ./data (optional)
+services:
+  pocket-sessions:
+    container_name: pocket-sessions
+    build: ./src
+    restart: always
+    environment:
+      - PCS_LISTEN=:8080
+      - PCS_DB=/data/pcsessions.db
+      - PCS_AUTH_TOKEN=${PCS_AUTH_TOKEN}
+      - PCS_ALLOWED_EMAILS=${PCS_ALLOWED_EMAILS:-}
+      # APNs: put AuthKey_<KEYID>.p8 in ./data and set PCS_APNS_KEY_ID in .env;
+      # team id and topic default in code (ABCDE12345 / com.example.podcasts).
+      # Environment-restricted keys: PCS_APNS_KEY_ID = production (or both),
+      # PCS_APNS_KEY_ID_SANDBOX = sandbox-only key (dev-signed builds).
+      - PCS_APNS_KEY=${PCS_APNS_KEY_ID:+/data/AuthKey_${PCS_APNS_KEY_ID}.p8}
+      - PCS_APNS_KEY_ID=${PCS_APNS_KEY_ID:-}
+      - PCS_APNS_KEY_SANDBOX=${PCS_APNS_KEY_ID_SANDBOX:+/data/AuthKey_${PCS_APNS_KEY_ID_SANDBOX}.p8}
+      - PCS_APNS_KEY_ID_SANDBOX=${PCS_APNS_KEY_ID_SANDBOX:-}
+      # Episode watcher cadence and visible-alert policy (synced|all|off).
+      - PCS_EPISODE_POLL=${PCS_EPISODE_POLL:-10m}
+      - PCS_NOTIFY=${PCS_NOTIFY:-synced}
+      # Playback-progress watcher + local hook scripts (see hooks/README.md).
+      - PCS_PROGRESS_POLL=${PCS_PROGRESS_POLL:-15m}
+      - PCS_PROGRESS_MIN_DELTA=${PCS_PROGRESS_MIN_DELTA:-30}
+      - PCS_HOOKS_DIR=${PCS_HOOKS_DIR:-/data/hooks}
+      - PCS_HOOK_TIMEOUT=${PCS_HOOK_TIMEOUT:-30s}
+      # Webhook sinks: event JSON POSTed to each URL (e.g. n8n flows).
+      - PCS_WEBHOOK_URLS=${PCS_WEBHOOK_URLS:-}
+      - PCS_WEBHOOK_TOKEN=${PCS_WEBHOOK_TOKEN:-}
+      # Consumed by hooks/owntube.sh, not by the server itself.
+      - OWNTUBE_URL=${OWNTUBE_URL:-}
+      - OWNTUBE_MEDIA_HOST=${OWNTUBE_MEDIA_HOST:-}
+      - PCS_FEED_MATCH=${PCS_FEED_MATCH:-}
+      - OWNTUBE_TOKEN=${OWNTUBE_TOKEN:-}
+    volumes:
+      - ./data:/data
+    # seg15-media: host-level site-to-site tier network (replaces the old
+    # per-stack WireGuard sidecar; see docker-compose.wireguard.yml, retired).
+    # gw_priority makes it the default route so home-bound and public egress
+    # carry the media-tier source identity; Caddy still reaches :8080 over the
+    # caddy network. dns: is the segment gateway (split DNS: home zone via
+    # the tunnel). cap_drop NET_RAW: container can't forge tier sources.
+    networks:
+      caddy:
+      seg15-media:
+        gw_priority: 100
+    dns:
+      - 2001:db8:1015::1
+    cap_drop:
+      - NET_RAW
+    labels:
+      caddy: ${PCS_DOMAIN}
+      caddy.reverse_proxy: "{{upstreams 8080}}"
+      # Compress toward clients when the upstream didn't (PC compresses
+      # selectively; relayed responses that arrive plain would otherwise ship
+      # uncompressed to the phone). Caddy skips bodies that already carry a
+      # Content-Encoding, so gzip passthrough is untouched.
+      caddy.encode: zstd gzip
+
+networks:
+  caddy:
+    external: true
+  seg15-media:
+    external: true

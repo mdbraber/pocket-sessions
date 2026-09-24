@@ -1,0 +1,137 @@
+package store
+
+// SeenEpisodes returns the watcher's ledger for a user: which episode uuids it
+// already knows, and which podcasts have been seeded at all (a podcast with no
+// rows is new to the watcher — its current episodes seed silently, no alerts).
+func (s *Store) SeenEpisodes(userID int64) (episodes map[string]bool, podcasts map[string]bool, err error) {
+	rows, err := s.db.Query(`SELECT episode_uuid, podcast_uuid FROM seen_episodes WHERE user_id = ?`, userID)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	episodes, podcasts = map[string]bool{}, map[string]bool{}
+	for rows.Next() {
+		var episodeUUID, podcastUUID string
+		if err := rows.Scan(&episodeUUID, &podcastUUID); err != nil {
+			return nil, nil, err
+		}
+		episodes[episodeUUID] = true
+		podcasts[podcastUUID] = true
+	}
+	return episodes, podcasts, rows.Err()
+}
+
+func (s *Store) MarkEpisodesSeen(userID int64, podcastUUID string, episodeUUIDs []string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, uuid := range episodeUUIDs {
+		if _, err := tx.Exec(`INSERT OR IGNORE INTO seen_episodes(user_id, episode_uuid, podcast_uuid) VALUES (?, ?, ?)`,
+			userID, uuid, podcastUUID); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// SetNotifyPodcasts replaces one device's reported notification toggles — the
+// payload is that device's authoritative full set.
+func (s *Store) SetNotifyPodcasts(userID int64, deviceID string, podcastUUIDs []string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`DELETE FROM notify_podcasts WHERE user_id = ? AND device_id = ?`, userID, deviceID); err != nil {
+		return err
+	}
+	for _, uuid := range podcastUUIDs {
+		if _, err := tx.Exec(`INSERT OR IGNORE INTO notify_podcasts(user_id, device_id, podcast_uuid) VALUES (?, ?, ?)`,
+			userID, deviceID, uuid); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// NotifyPodcastUUIDs is the union of every device's toggles — if any device
+// wants alerts for a podcast, the user gets them (on all devices; APNs has no
+// per-device opt-out worth modeling here).
+func (s *Store) NotifyPodcastUUIDs(userID int64) (map[string]bool, error) {
+	rows, err := s.db.Query(`SELECT DISTINCT podcast_uuid FROM notify_podcasts WHERE user_id = ?`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]bool{}
+	for rows.Next() {
+		var uuid string
+		if err := rows.Scan(&uuid); err != nil {
+			return nil, err
+		}
+		out[uuid] = true
+	}
+	return out, rows.Err()
+}
+
+// SetNotifyEnabled records a device's "New Episodes" switch. The app's own
+// toggle used to be purely local, so turning it off changed nothing here and the
+// watcher kept alerting on every podcast the account had ever enabled.
+func (s *Store) SetNotifyEnabled(userID int64, deviceID string, enabled bool) error {
+	_, err := s.db.Exec(`INSERT INTO notify_settings(user_id, device_id, enabled) VALUES (?, ?, ?)
+		ON CONFLICT(user_id, device_id) DO UPDATE SET enabled = excluded.enabled`,
+		userID, deviceID, enabled)
+	return err
+}
+
+// NotifyEnabledDevices filters a device list down to those that still want visible
+// new-episode alerts.
+//
+// The switch is PER DEVICE: turning New Episodes off on your phone silences the phone
+// and says nothing about your iPad. A device that has never reported (an older build)
+// has no row and keeps its previous behaviour — alerts on.
+func (s *Store) NotifyEnabledDevices(userID int64, devices []Device) ([]Device, error) {
+	rows, err := s.db.Query(`SELECT device_id FROM notify_settings WHERE user_id = ? AND enabled = 0`, userID)
+	if err != nil {
+		return devices, err // fail open: a store hiccup must not silently stop alerts
+	}
+	defer rows.Close()
+	disabled := map[string]bool{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return devices, err
+		}
+		disabled[id] = true
+	}
+	if err := rows.Err(); err != nil {
+		return devices, err
+	}
+	out := make([]Device, 0, len(devices))
+	for _, d := range devices {
+		if !disabled[d.DeviceID] {
+			out = append(out, d)
+		}
+	}
+	return out, nil
+}
+
+// LinkedUserIDs lists users with a PC link — the set the episode watcher serves.
+func (s *Store) LinkedUserIDs() ([]int64, error) {
+	rows, err := s.db.Query(`SELECT user_id FROM pc_links`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
