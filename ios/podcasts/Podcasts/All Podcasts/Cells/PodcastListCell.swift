@@ -1,0 +1,116 @@
+import PocketCastsDataModel
+import UIKit
+
+class PodcastListCell: ThemeableCollectionCell {
+    @IBOutlet var podcastImage: PodcastImageView!
+    @IBOutlet var podcastTitle: ThemeableLabel! {
+        didSet {
+            podcastTitle.font = UIFont.font(ofSize: 16, weight: .medium, scalingWith: .callout)
+            podcastTitle.adjustsFontForContentSizeCategory = true
+        }
+    }
+
+    @IBOutlet var podcastInfo: ThemeableLabel! {
+        didSet {
+            podcastInfo.style = .primaryText02
+            podcastInfo.font = UIFont.font(ofSize: 14, weight: .regular, scalingWith: .footnote)
+            podcastInfo.adjustsFontForContentSizeCategory = true
+        }
+    }
+
+    @IBOutlet var unplayedBadge: UnplayedBadge!
+    @IBOutlet var unplayedHeight: NSLayoutConstraint!
+    @IBOutlet var contentStackView: UIStackView!
+
+    private var supporterHeart: PodcastHeartView?
+
+    private var badgeType: BadgeType = .off
+
+    required init?(coder aDecoder: NSCoder) {
+        super.init(coder: aDecoder)
+        isAccessibilityElement = true
+
+        registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) { (view: PodcastListCell, _) in
+            view.updateSize()
+        }
+    }
+
+    override func awakeFromNib() {
+        super.awakeFromNib()
+
+        // The row's slack lives in this invisible flex view, so the badge pins hard
+        // against the trailing cluster instead of Auto Layout breaking an arbitrary
+        // constraint to resolve the over-constrained stack.
+        if let badgeIndex = contentStackView.arrangedSubviews.firstIndex(of: unplayedBadge) {
+            let flex = UIView()
+            flex.setContentHuggingPriority(UILayoutPriority(1), for: .horizontal)
+            flex.setContentCompressionResistancePriority(UILayoutPriority(1), for: .horizontal)
+            contentStackView.insertArrangedSubview(flex, at: badgeIndex)
+        }
+    }
+
+    func populateFrom(_ podcast: Podcast, badgeType: BadgeType) {
+        self.badgeType = badgeType
+        podcastImage.setPodcast(uuid: podcast.uuid, size: .list)
+        podcastTitle.text = podcast.title
+        podcastInfo.text = podcast.author
+
+        accessibilityLabel = [podcast.title, badgeType.accessibilityDescription(count: podcast.cachedUnreadCount)].compactMap { $0 }.joined(separator: ", ")
+
+        if badgeType.showsCount {
+            unplayedHeight.constant = 22
+
+            unplayedBadge.showsNumber = true
+            unplayedBadge.unplayedCount = podcast.cachedUnreadCount > 99 ? 99 : podcast.cachedUnreadCount
+            unplayedBadge.isHidden = podcast.cachedUnreadCount == 0
+        } else if badgeType.showsDot {
+            unplayedHeight.constant = 10
+
+            unplayedBadge.showsNumber = false
+            unplayedBadge.isHidden = podcast.cachedUnreadCount == 0
+        } else {
+            unplayedBadge.isHidden = true
+        }
+
+        unplayedBadge.updateColors()
+
+        if podcast.isPaid {
+            let heart = supporterHeart ?? makeSupporterHeart()
+            heart.isHidden = false
+            heart.setPodcastColor(podcast: podcast)
+            heart.isShadowHidden = true
+        } else {
+            supporterHeart?.isHidden = true
+        }
+
+        updateSize()
+    }
+
+    private func makeSupporterHeart() -> PodcastHeartView {
+        let heart = PodcastHeartView(frame: CGRect(x: 0, y: 0, width: 28, height: 28))
+        heart.translatesAutoresizingMaskIntoConstraints = false
+        let unplayedIndex = contentStackView.arrangedSubviews.firstIndex(of: unplayedBadge) ?? contentStackView.arrangedSubviews.count
+        contentStackView.insertArrangedSubview(heart, at: unplayedIndex)
+        NSLayoutConstraint.activate([
+            heart.widthAnchor.constraint(equalToConstant: 28),
+            heart.widthAnchor.constraint(equalTo: heart.heightAnchor),
+        ])
+        supporterHeart = heart
+        return heart
+    }
+
+    private func updateSize() {
+        let metric = UIFontMetrics(forTextStyle: .largeTitle)
+        let imageSize = max(56, metric.scaledValue(for: 56))
+        podcastImage.updateSizeConstraints(to: imageSize)
+
+        let badgeMetric = UIFontMetrics(forTextStyle: .largeTitle)
+        if badgeType.showsCount {
+            unplayedHeight.constant = max(22, badgeMetric.scaledValue(for: 22))
+        } else if badgeType.showsDot {
+            unplayedHeight.constant = max(10, badgeMetric.scaledValue(for: 10))
+        }
+
+        podcastTitle.updateNumberOfLines(regular: 1, accessibility: 3)
+    }
+}

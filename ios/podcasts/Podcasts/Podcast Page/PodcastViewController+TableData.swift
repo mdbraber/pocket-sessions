@@ -1,0 +1,701 @@
+import PocketCastsDataModel
+import PocketCastsUtils
+import UIKit
+import PocketCastsServer
+import SwiftUI
+
+extension PodcastViewController: UITableViewDataSource, UITableViewDelegate {
+    private static let episodeCellId = "EpisodeCell"
+    // Fork: the now-playing episode in the Session tab borrows the exact Up Next now-playing card.
+    private static let sessionNowPlayingCardId = "SessionNowPlayingCard"
+    private static let headerCellId = "HeaderCell"
+    private static let limitCellId = "LimitCell"
+    private static let noSearchResultsCell = "NoSearchResults"
+    private static let groupHeadingCellId = "GroupHeading"
+    private static let emptyStateCellId = "EmptyStateCell"
+    private static let loadingCellId = "LoadingCell"
+
+    private enum YouMightLikeSection {
+        case header
+        case loading
+        case podroll
+        case podcasts
+        case empty
+    }
+
+    private func youMightLikeSectionType(for section: Int) -> YouMightLikeSection {
+        if section == PodcastViewController.headerSection {
+            return .header
+        }
+
+        if isLoadingRecommendations.value {
+            return .loading
+        }
+
+        if section == 1, (recommendations?.podroll?.count ?? 0) > 0 {
+            return .podroll
+        }
+
+        if section == 1, (recommendations?.podroll?.count ?? 0) == 0, (recommendations?.podcasts?.count ?? 0) == 0 {
+            return .empty
+        }
+
+        return .podcasts
+    }
+
+    func registerCells() {
+        episodesTable.register(PodcastTableViewCell.self, forCellReuseIdentifier: PodcastTableViewCell.reuseIdentifier)
+        episodesTable.register(UINib(nibName: "EpisodeCell", bundle: nil), forCellReuseIdentifier: PodcastViewController.episodeCellId)
+        episodesTable.register(UINib(nibName: "UpNextNowPlayingCell", bundle: nil), forCellReuseIdentifier: PodcastViewController.sessionNowPlayingCardId)
+        episodesTable.register(UINib(nibName: "EpisodeLimitCell", bundle: nil), forCellReuseIdentifier: PodcastViewController.limitCellId)
+        episodesTable.register(UINib(nibName: "HeadingCell", bundle: nil), forCellReuseIdentifier: PodcastViewController.groupHeadingCellId)
+        episodesTable.register(UINib(nibName: "NoSearchResultsCell", bundle: nil), forCellReuseIdentifier: PodcastViewController.noSearchResultsCell)
+        episodesTable.register(EmptyStateCell.self, forCellReuseIdentifier: EmptyStateCell.reuseIdentifier)
+        // Fork: the Playlists tab renders the Playlists screen's own row.
+        episodesTable.register(PlaylistCell.self, forCellReuseIdentifier: PlaylistCell.reuseIdentifier)
+        episodesTable.register(LoadingCell.self, forCellReuseIdentifier: LoadingCell.reuseIdentifier)
+        episodesTable.register(BookmarksHostingCell.self, forCellReuseIdentifier: BookmarksHostingCell.reuseIdentifier)
+    }
+
+    func registerLongPress() {
+        let longPressRecognizer = UILongPressGestureRecognizer(target: self, action: #selector(tableLongPressed(_:)))
+        episodesTable.addGestureRecognizer(longPressRecognizer)
+    }
+
+    @objc private func tableLongPressed(_ sender: UILongPressGestureRecognizer) {
+        if sender.state == .began && currentViewMode != .youMightLike {
+            let touchPoint = sender.location(in: episodesTable)
+            guard let indexPath = episodesTable.indexPathForRow(at: touchPoint), episodeAtIndexPath(indexPath) != nil else { return }
+
+            if isMultiSelectEnabled {
+                longPressSelectOptions(
+                    for: indexPath,
+                    in: episodesTable,
+                    firstSection: PodcastViewController.allEpisodesSection,
+                    statusBarStyle: preferredStatusBarStyle,
+                    excludingCellTypes: [HeadingCell.self]
+                )
+            } else if showingSession, canReorderSessionLineup {
+                // Fork: on a custom-ordered lineup, drag-reorder owns the long press.
+                return
+            } else if showingSession, let podcast, let episode = episodeAtIndexPath(indexPath),
+                      let session = SessionStore.shared.session(forPodcast: podcast.uuid) {
+                // Fork: Session rows behave like Up Next — long-press is the inverse
+                // of the tap setting.
+                if !Settings.playUpNextOnTap() {
+                    SessionManager.shared.play(episode: episode, in: session)
+                } else {
+                    let episodeController = EpisodeDetailViewController(episode: episode, podcast: podcast, source: .podcastScreen, playlist: .podcast(uuid: podcast.uuid))
+                    episodeController.modalPresentationStyle = .formSheet
+                    present(episodeController, animated: true, completion: nil)
+                }
+            } else {
+                longPressMultiSelectIndexPath = indexPath
+                isMultiSelectEnabled = true
+            }
+        }
+    }
+
+    // MARK: - Table Data
+
+    func numberOfSections(in tableView: UITableView) -> Int {
+        if loadingPodcastInfo { return 0 }
+
+        switch currentViewMode {
+        case .episodes:
+            return 2
+        case .bookmarks:
+            return 2 // Header + Bookmarks
+        case .youMightLike:
+            if isLoadingRecommendations.value || !hasSimilarShows.value {
+                return 2 // Header + Loading
+            }
+
+            var sectionCount = 1 // Always show header section
+            if (recommendations?.podroll?.count ?? 0) > 0 {
+                sectionCount += 1 // Add podroll section if it has content
+            }
+            if (recommendations?.podcasts?.count ?? 0) > 0 {
+                sectionCount += 1 // Add podcasts section if it has content
+            }
+            return sectionCount
+        }
+    }
+
+    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+        if loadingPodcastInfo { return 0 }
+
+        switch currentViewMode {
+        case .episodes:
+            return episodeInfo[safe: section]?.elements.count ?? 0
+        case .bookmarks:
+            return section == PodcastViewController.headerSection ? 1 : 1 // Header + Bookmarks list
+        case .youMightLike:
+            switch youMightLikeSectionType(for: section) {
+            case .header, .loading, .empty:
+                return 1
+            case .podroll:
+                return recommendations?.podroll?.count ?? 0
+            case .podcasts:
+                return recommendations?.podcasts?.count ?? 0
+            }
+        }
+    }
+
+    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        switch currentViewMode {
+        case .episodes:
+            if indexPath.section == PodcastViewController.headerSection {
+                let cell = podcastHeaderCell
+                return cell
+            }
+
+            guard let itemAtRow = episodeInfo[safe: indexPath.section]?.elements[safe: indexPath.row] as? ListItem else {
+                FileLog.shared.addMessage("EpisodeInfo missing ListItem in section \(indexPath.section), row \(indexPath.row)")
+                return UITableViewCell()
+            }
+            if let listEpisode = itemAtRow as? ListEpisode {
+                // Fork: in the Session tab, the now-playing episode (playing OR paused) renders as
+                // the exact Up Next now-playing card; every other row folds back into the normal
+                // session-row layout below. Multi-select uses the plain cell (the card has no tick).
+                if showingSession, !isMultiSelectEnabled,
+                   PlaybackManager.shared.isNowPlayingEpisode(episodeUuid: listEpisode.episode.uuid) {
+                    let card = tableView.dequeueReusableCell(withIdentifier: PodcastViewController.sessionNowPlayingCardId, for: indexPath) as! UpNextNowPlayingCell
+                    card.themeOverride = nil
+                    card.populateFrom(episode: listEpisode.episode)
+                    card.setSessionInfoLine(listEpisode.episode.displayableInfo(includeSize: false))
+                    return card
+                }
+
+                let cell = tableView.dequeueReusableCell(withIdentifier: PodcastViewController.episodeCellId, for: indexPath) as! EpisodeCell
+                cell.hidesArtwork = true
+                // Fork: the grip only appears in "Reorder Episodes" mode — otherwise reorder is a
+                // long-press drag and a permanent grip would just be clutter.
+                cell.showsReorderControl = lineupReorderMode
+
+                if let podcast {
+                    cell.playlist = .podcast(uuid: podcast.uuid)
+                }
+                // On the podcast's Session tab, the play button joins the session (like tapping the row).
+                cell.playInSession = (showingSession ? podcast.flatMap { SessionStore.shared.session(forPodcast: $0.uuid) } : nil)
+
+                cell.delegate = self
+                cell.populateFrom(episode: listEpisode.episode, tintColor: podcast?.iconTintColor(), podcastUuid: podcast?.uuid, listUuid: listUuid)
+                // The green in-this-session mini icon — Episodes and Inbox lists only
+                // (Session rows are all members by definition, so the badge is redundant there).
+                cell.setSessionIndicator(showingSession ? .none : SessionIndicatorState.resolve(listEpisode.episode.uuid, thisSession: cachedSessionMemberUuids))
+                // The unread dot: this episode is still in the Inbox.
+                cell.setUnseenIndicator(visible: cachedUnseenUuids.contains(listEpisode.episode.uuid))
+                cell.shouldShowSelect = isMultiSelectEnabled
+                if isMultiSelectEnabled {
+                    cell.showTick = selectedEpisodesContains(uuid: listEpisode.episode.uuid)
+                }
+                return cell
+            } else if let limitPlaceholder = itemAtRow as? EpisodeLimitPlaceholder {
+                let cell = tableView.dequeueReusableCell(withIdentifier: PodcastViewController.limitCellId, for: indexPath) as! EpisodeLimitCell
+                cell.limitMessage.text = limitPlaceholder.message
+                return cell
+            } else if itemAtRow is NoSearchResultsPlaceholder {
+                let cell = tableView.dequeueReusableCell(withIdentifier: EmptyStateCell.reuseIdentifier, for: indexPath) as! EmptyStateCell
+                cell.configure(title: L10n.discoverNoEpisodesFound, message: L10n.discoverNoPodcastsFoundMsg, icon: {
+                    Image(systemName: "info.circle")
+                })
+                return cell
+            } else if let playlistItem = itemAtRow as? PodcastPlaylistListItem {
+                // The separator belongs BETWEEN rows of a group, so the last row of each group
+                // drops it — the next group's heading is the divider from there on.
+                let elements = episodeInfo[safe: indexPath.section]?.elements
+                let next = elements?[safe: indexPath.row + 1]
+                let isLast = next == nil || next is PodcastPlaylistsGroupHeaderItem
+                return podcastPlaylistCell(for: playlistItem, isLastRow: isLast, at: indexPath)
+            } else if let groupHeader = itemAtRow as? PodcastPlaylistsGroupHeaderItem {
+                let cell = tableView.dequeueReusableCell(withIdentifier: PodcastViewController.groupHeadingCellId, for: indexPath) as! HeadingCell
+                // Same heading UI as an episode group: leading chevron, tap the row to fold it away.
+                cell.configure(title: groupHeader.title, collapsible: true, collapsed: groupHeader.collapsed)
+                // No actions menu though — the episode-group one acts on episodes, and there is
+                // nothing to do in bulk to a heading that just names a kind of list.
+                cell.button.isHidden = true
+                cell.action = nil
+                return cell
+            } else if let emptyItem = itemAtRow as? PodcastPlaylistsEmptyItem {
+                return podcastPlaylistsEmptyCell(for: emptyItem, at: indexPath)
+            } else if let archivedPlaceholder = itemAtRow as? AllArchivedPlaceholder {
+                let cell = tableView.dequeueReusableCell(withIdentifier: EmptyStateCell.reuseIdentifier, for: indexPath) as! EmptyStateCell
+                cell.configure(title: L10n.episodeFilterNoEpisodesTitle, message: archivedPlaceholder.message, icon: {
+                    Image(systemName: "info.circle")
+                }, actions: [
+                    .init(title: L10n.podcastShowArchived, action: { [weak self] in
+                        guard let self else { return }
+                        self.searchController?.showHideArchiveTapped(self)
+                    })
+                ])
+                return cell
+            } else if let heading = itemAtRow as? ListHeader {
+                let cell = tableView.dequeueReusableCell(withIdentifier: PodcastViewController.groupHeadingCellId, for: indexPath) as! HeadingCell
+                // Fork: grouped headers collapse/expand — a leading chevron reflects
+                // state; tapping the row toggles it (the ⋯ button still opens the menu).
+                let collapsible = !heading.isSectionHeader && (podcast?.podcastGrouping() ?? .none) != .none
+                let collapsed = podcast.map { Settings.collapsedEpisodeGroups(podcastUuid: $0.uuid).contains(heading.headerTitle) } ?? false
+                cell.configure(title: heading.headerTitle, collapsible: collapsible, collapsed: collapsed)
+                // Fork: every grouped header carries the actions menu, not just seasons.
+                cell.button.isHidden = false
+                cell.button.isEnabled = !isMultiSelectEnabled
+                let headerIndexPath = indexPath
+                let season = podcast?.episodeGrouping == PodcastGrouping.season.rawValue ? heading.sectionNumber : nil
+                cell.action = { [weak self] in
+                    self?.showOptionsFor(groupStartingAt: headerIndexPath, season: season)
+                }
+                return cell
+            } else {
+                let cell = tableView.dequeueReusableCell(withIdentifier: PodcastViewController.limitCellId, for: indexPath) as! EpisodeLimitCell
+                return cell
+            }
+
+        case .bookmarks:
+            if indexPath.section == PodcastViewController.headerSection {
+                let cell = podcastHeaderCell
+                return cell
+            } else {
+                guard let bookmarkViewModel else {
+                    return UITableViewCell()
+                }
+                let cell = tableView.dequeueReusableCell(withIdentifier: BookmarksHostingCell.reuseIdentifier, for: indexPath) as! BookmarksHostingCell
+                cell.configure(with: bookmarkViewModel) { [weak self] state in
+                    self?.updateBookmarksActionBar(state: state, viewModel: bookmarkViewModel)
+                }
+                return cell
+            }
+
+        case .youMightLike:
+            switch youMightLikeSectionType(for: indexPath.section) {
+            case .header:
+                let cell = podcastHeaderCell
+                return cell
+            case .loading:
+                let cell = tableView.dequeueReusableCell(withIdentifier: LoadingCell.reuseIdentifier, for: indexPath) as! LoadingCell
+                return cell
+            case .empty:
+                let cell = tableView.dequeueReusableCell(withIdentifier: EmptyStateCell.reuseIdentifier, for: indexPath) as! EmptyStateCell
+                cell.configure(title: L10n.failedRecommendations, icon: {
+                    Image(systemName: "exclamationmark.circle")
+                }, actions: [
+                    .init(title: L10n.tryAgain, action: {
+                        Task { [weak self] in
+                            guard !Task.isCancelled else { return }
+                            await self?.loadRecommendations()
+                        }
+                    })
+                ])
+                return cell
+            case .podroll:
+                guard let podcast = recommendations?.podroll?[indexPath.row] else {
+                    assertionFailure("[PodcastViewController] You Might Like Tab - Missing podroll podcast")
+                    return UITableViewCell()
+                }
+                let cell = tableView.dequeueReusableCell(withIdentifier: PodcastTableViewCell.reuseIdentifier, for: indexPath) as! PodcastTableViewCell
+                cell.configure(with: podcast, datetime: nil) { viewModel in
+                    let properties = ["podcast_uuid": viewModel.uuid]
+                    Analytics.track(.podcastScreenPodrollPodcastSubscribed, properties: properties)
+                }
+                return cell
+            case .podcasts:
+                guard let podcast = recommendations?.podcasts?[indexPath.row] else {
+                    assertionFailure("[PodcastViewController] You Might Like Tab - Missing podcast")
+                    return UITableViewCell()
+                }
+                let cell = tableView.dequeueReusableCell(withIdentifier: PodcastTableViewCell.reuseIdentifier, for: indexPath) as! PodcastTableViewCell
+                cell.configure(with: podcast, datetime: recommendations?.datetime, onSubscribe: { viewModel in
+                    var properties = ["podcast_uuid": viewModel.uuid]
+                    properties["list_datetime"] = viewModel.datetime
+                    Analytics.track(.podcastScreenYouMightLikeSubscribed, properties: properties)
+                })
+                cell.separatorInset = UIEdgeInsets(top: 0, left: 0, bottom: 0, right: .greatestFiniteMagnitude)
+                return cell
+            }
+        }
+    }
+
+    func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
+        cellHeights[indexPath] = cell.frame.size.height
+    }
+
+    func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
+        if indexPath.section == PodcastViewController.headerSection {
+            return podcastHeaderCell.rowHeight
+        }
+
+        if currentViewMode == .bookmarks && indexPath.section != PodcastViewController.headerSection {
+            // For bookmarks, we need to calculate the height dynamically
+            return UITableView.automaticDimension
+        }
+
+        return UITableView.automaticDimension
+    }
+
+    func tableView(_ tableView: UITableView, estimatedHeightForRowAt indexPath: IndexPath) -> CGFloat {
+        return cellHeights[indexPath] ?? 80
+    }
+
+    // MARK: - Selection
+
+    func tableView(_ tableView: UITableView, willSelectRowAt indexPath: IndexPath) -> IndexPath? {
+        // Reorder mode owns the touch: a tap here would open the episode mid-drag.
+        if lineupReorderMode { return nil }
+        // A Playlists-tab row is selectable on its own terms — it is not an episode, so the
+        // episode guards below (which demand `episodeAtIndexPath`) would reject it and swallow
+        // the tap. Check it BEFORE them.
+        let playlistsItem = episodeInfo[safe: indexPath.section]?.elements[safe: indexPath.row]
+        if playlistsItem is PodcastPlaylistListItem || playlistsItem is PodcastPlaylistsGroupHeaderItem {
+            return indexPath
+        }
+
+        // Special handling for episodes only to deal with multi gesture
+        guard currentViewMode == .episodes else { return indexPath }
+
+        guard indexPath.section == PodcastViewController.allEpisodesSection, episodeAtIndexPath(indexPath) != nil else { return nil }
+
+        guard episodesTable.isEditing, !multiSelectGestureInProgress else { return indexPath }
+        if let selectedEpisode = episodeInfo[indexPath.section].elements[safe: indexPath.row] as? ListEpisode {
+            if selectedEpisodes.contains(selectedEpisode) {
+                tableView.deselectIndexPath(indexPath)
+                return nil
+            }
+            return indexPath
+        }
+        return nil
+    }
+
+    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        // Fork: a Playlists-tab row opens that playlist, exactly as on the Playlists screen.
+        if let playlistItem = episodeInfo[safe: indexPath.section]?.elements[safe: indexPath.row] as? PodcastPlaylistListItem {
+            tableView.deselectRow(at: indexPath, animated: true)
+            openPodcastPlaylist(playlistItem)
+            return
+        }
+        // …and tapping its group heading folds that group away, as on the Episodes tab.
+        if let groupHeader = episodeInfo[safe: indexPath.section]?.elements[safe: indexPath.row] as? PodcastPlaylistsGroupHeaderItem {
+            tableView.deselectRow(at: indexPath, animated: true)
+            togglePodcastPlaylistGroup(groupHeader)
+            return
+        }
+        switch currentViewMode {
+        case .episodes:
+            // Fork: tapping a grouped header toggles collapse/expand.
+            if indexPath.section == PodcastViewController.allEpisodesSection,
+               let header = episodeInfo[safe: indexPath.section]?.elements[safe: indexPath.row] as? ListHeader,
+               !header.isSectionHeader, let podcast, podcast.podcastGrouping() != .none {
+                tableView.deselectRow(at: indexPath, animated: true)
+                Settings.toggleEpisodeGroupCollapsed(podcastUuid: podcast.uuid, groupTitle: header.headerTitle)
+                loadLocalEpisodes(podcast: podcast, animated: true)
+                return
+            }
+            if isMultiSelectEnabled, indexPath.section == PodcastViewController.allEpisodesSection {
+                if let listEpisode = episodeInfo[indexPath.section].elements[indexPath.row] as? ListEpisode {
+                    if !multiSelectGestureInProgress {
+                        // If the episode is already selected move to the end of the array
+                        selectedEpisodesRemove(uuid: listEpisode.episode.uuid)
+                    }
+
+                    if !multiSelectGestureInProgress || multiSelectGestureInProgress, !selectedEpisodesContains(uuid: listEpisode.episode.uuid) {
+                        selectedEpisodes.append(listEpisode)
+                        // the cell below is optional because cellForRow only returns a cell if it's visible, and we don't need to tick cells that don't exist
+                        if let cell = episodesTable.cellForRow(at: indexPath) as? EpisodeCell? {
+                            cell?.showTick = true
+                        }
+                    }
+                }
+            } else {
+                tableView.deselectRow(at: indexPath, animated: true)
+
+                if indexPath.section == PodcastViewController.allEpisodesSection {
+                    guard let podcast, let episode = episodeAtIndexPath(indexPath) else { return }
+
+                    if searchController?.searchBarActive() == true {
+                        hideSearchKeyboard()
+                    }
+
+                    // Fork: tapping the row that's already sounding opens the Now Playing
+                    // player, matching the Up Next now-playing row.
+                    if PlaybackManager.shared.isNowPlayingEpisode(episodeUuid: episode.uuid) {
+                        if let miniPlayer = UIApplication.shared.appDelegate()?.miniPlayer(), miniPlayer.playerOpenState == .closed {
+                            miniPlayer.openFullScreenPlayer()
+                        }
+                        return
+                    }
+
+                    // Fork: Session rows behave like Up Next — the tap setting decides
+                    // between playing the episode in this session and showing its card.
+                    if showingSession, Settings.playUpNextOnTap(),
+                       let session = SessionStore.shared.session(forPodcast: podcast.uuid) {
+                        SessionManager.shared.play(episode: episode, in: session)
+                        return
+                    }
+
+                    let episodeController = EpisodeDetailViewController(episode: episode, podcast: podcast, source: .podcastScreen, playlist: .podcast(uuid: podcast.uuid))
+                    episodeController.modalPresentationStyle = .formSheet
+                    present(episodeController, animated: true, completion: nil)
+                }
+            }
+
+        case .bookmarks:
+            if let headerCell = tableView.cellForRow(at: indexPath) as? PodcastHeaderCell,
+               !isMultiSelectEnabled,
+               indexPath.section == PodcastViewController.headerSection {
+                withAnimation(.interpolatingSpring(stiffness: 100, damping: 15)) {
+                    headerCell.viewModel.toggleExpanded()
+                }
+            }
+        case .youMightLike:
+            switch youMightLikeSectionType(for: indexPath.section) {
+            case .header:
+                break
+            case .loading, .empty:
+                break // Do nothing for these state cells
+            case .podroll:
+                guard let selectedPodcast = recommendations?.podroll?[indexPath.row] else { return }
+                var properties: [String: Any] = [:]
+                if let uuid = selectedPodcast.uuid {
+                    properties["podcast_uuid"] = uuid
+                }
+                Analytics.track(.podcastScreenPodrollPodcastTapped, properties: properties)
+                let info = PodcastInfo(selectedPodcast)
+                let podcastController = PodcastViewController(podcastInfo: info, existingImage: nil)
+                navigationController?.pushViewController(podcastController, animated: true)
+            case .podcasts:
+                guard let selectedPodcast = recommendations?.podcasts?[indexPath.row] else { return }
+                var properties: [String: Any] = [:]
+                if let datetime = recommendations?.datetime {
+                    properties["list_datetime"] = datetime
+                }
+                if let uuid = selectedPodcast.uuid {
+                    properties["podcast_uuid"] = uuid
+                }
+                Analytics.track(.podcastScreenYouMightLikeTapped, properties: properties)
+                let info = PodcastInfo(selectedPodcast)
+                let podcastController = PodcastViewController(podcastInfo: info, existingImage: nil)
+                navigationController?.pushViewController(podcastController, animated: true)
+            }
+        }
+    }
+
+    func tableView(_ tableView: UITableView, didDeselectRowAt indexPath: IndexPath) {
+        guard isMultiSelectEnabled else { return }
+        if let listEpisode = episodeInfo[indexPath.section].elements[indexPath.row] as? ListEpisode, let index = selectedEpisodes.firstIndex(of: listEpisode) {
+            selectedEpisodes.remove(at: index)
+            if let cell = tableView.cellForRow(at: indexPath) as? EpisodeCell {
+                cell.showTick = false
+            }
+        }
+    }
+
+    // MARK: - Table Config
+
+    func tableView(_ tableView: UITableView, estimatedHeightForHeaderInSection section: Int) -> CGFloat {
+        return headerHeightValue(for: currentViewMode, section: section, estimated: true)
+    }
+
+    func tableView(_ tableView: UITableView, viewForHeaderInSection section: Int) -> UIView? {
+        guard currentViewMode == .youMightLike else {
+            // Episodes show a UIKit search header; Bookmarks embeds search inside its cell.
+            return currentViewMode == .episodes ? searchController?.view : nil
+        }
+
+        switch youMightLikeSectionType(for: section) {
+        case .podroll:
+            let image = UIImage(systemName: "mic")?.withConfiguration(UIImage.SymbolConfiguration(weight: .bold))
+            let headerView = YouMightLikeSectionHeaderView(image: image, title: L10n.podcastPodrollHeader)
+            headerView.onTapped = { [weak self] in
+                guard let self else { return }
+                BottomSheetSwiftUIWrapper.present(
+                    PodrollInformationModalView(onDismiss: { [weak self] in
+                        self?.presentedViewController?.dismiss(animated: true, completion: nil)
+                    }).environmentObject(Theme.sharedTheme),
+                    autoSize: true,
+                    in: self
+                )
+                Analytics.track(.podcastScreenPodrollInformationModelShown)
+            }
+            return headerView
+        case .podcasts:
+            if youMightLikeSectionType(for: section - 1) == .podroll {
+                let title: String
+                if let podcastTitle = podcast?.title {
+                    title = L10n.podcastSimilarHeader(podcastTitle)
+                } else {
+                    title = L10n.podcastSimilarGenericHeader
+                }
+                let headerView = YouMightLikeSectionHeaderView(image: UIImage(named: "stacked_squares"), title: title)
+                return headerView
+            }
+            return nil
+        default:
+            return nil
+        }
+    }
+
+    func tableView(_ tableView: UITableView, heightForFooterInSection section: Int) -> CGFloat {
+        if currentViewMode == .youMightLike {
+            switch youMightLikeSectionType(for: section) {
+            case .header:
+                switch youMightLikeSectionType(for: section + 1) {
+                case .podroll:
+                    return 10 // Only the podroll needs extra spacing for the header
+                default:
+                    return CGFloat.leastNonzeroMagnitude
+                }
+            case .podroll:
+                return 15
+            default:
+                return CGFloat.leastNonzeroMagnitude
+            }
+        }
+        return CGFloat.leastNonzeroMagnitude
+    }
+
+    func tableView(_ tableView: UITableView, heightForHeaderInSection section: Int) -> CGFloat {
+        return headerHeightValue(for: currentViewMode, section: section, estimated: false)
+    }
+
+    private func headerHeightValue(for mode: ViewMode, section: Int, estimated: Bool) -> CGFloat {
+        switch mode {
+        case .bookmarks:
+            // Remove default header spacing above Bookmarks list so the search field aligns under tabs
+            return .leastNonzeroMagnitude
+        case .youMightLike:
+            switch youMightLikeSectionType(for: section) {
+            case .podroll:
+                return 34
+            case .podcasts:
+                switch youMightLikeSectionType(for: section - 1) {
+                case .header:
+                    return 16 // Padding between header
+                case .podroll:
+                    return 34
+                default:
+                    return .leastNonzeroMagnitude
+                }
+            default:
+                return .leastNonzeroMagnitude
+            }
+        case .episodes:
+            if PodcastViewController.allEpisodesSection == section {
+                return estimated ? 100 : UITableView.automaticDimension
+            }
+            return .leastNonzeroMagnitude
+        }
+    }
+
+    // MARK: - Swipe Actions
+
+    func tableView(_ tableView: UITableView, canEditRowAt indexPath: IndexPath) -> Bool {
+        guard currentViewMode != .youMightLike else { return false }
+        return indexPath.section == PodcastViewController.allEpisodesSection && episodeAtIndexPath(indexPath) != nil
+    }
+
+    // MARK: - Fork: Reorder Episodes mode (drag grips)
+
+    func tableView(_ tableView: UITableView, canMoveRowAt indexPath: IndexPath) -> Bool {
+        lineupReorderCanMoveRow(at: indexPath)
+    }
+
+    func tableView(_ tableView: UITableView, moveRowAt sourceIndexPath: IndexPath, to destinationIndexPath: IndexPath) {
+        lineupReorderMoveRow(from: sourceIndexPath, to: destinationIndexPath)
+    }
+
+    func tableView(_ tableView: UITableView, targetIndexPathForMoveFromRowAt sourceIndexPath: IndexPath, toProposedIndexPath proposedDestinationIndexPath: IndexPath) -> IndexPath {
+        lineupReorderTarget(from: sourceIndexPath, proposed: proposedDestinationIndexPath)
+    }
+
+    /// Never the built-in delete circle: swipes are SwipeCellKit's, and in reorder mode the grip is
+    /// the whole point.
+    func tableView(_ tableView: UITableView, editingStyleForRowAt indexPath: IndexPath) -> UITableViewCell.EditingStyle {
+        .none
+    }
+
+    func tableView(_ tableView: UITableView, shouldIndentWhileEditingRowAt indexPath: IndexPath) -> Bool {
+        !lineupReorderMode
+    }
+
+    func episodeAtIndexPath(_ indexPath: IndexPath) -> Episode? {
+        guard let listEpisode = episodeInfo[safe: indexPath.section]?.elements[safe: indexPath.row] as? ListEpisode else { return nil }
+
+        return listEpisode.episode
+    }
+
+    // MARK: - multi select support
+
+    func tableView(_ tableView: UITableView, shouldBeginMultipleSelectionInteractionAt indexPath: IndexPath) -> Bool {
+        guard currentViewMode != .youMightLike,
+              indexPath.section == PodcastViewController.allEpisodesSection,
+              episodeAtIndexPath(indexPath) != nil else { return false }
+
+        return Settings.multiSelectGestureEnabled()
+    }
+
+    func tableView(_ tableView: UITableView, didBeginMultipleSelectionInteractionAt indexPath: IndexPath) {
+        isMultiSelectEnabled = true
+        multiSelectGestureInProgress = true
+    }
+
+    func tableViewDidEndMultipleSelectionInteraction(_ tableView: UITableView) {
+        multiSelectGestureInProgress = false
+    }
+}
+
+// MARK: - Fork: Session lineup drag-reorder (long press starts the drag)
+
+extension PodcastViewController: UITableViewDragDelegate, UITableViewDropDelegate {
+    /// Fork: reorder is live whenever the Session lineup is on screen — a lineup has ONE saved
+    /// order, so there is no sorted-view state left that dragging could write the wrong way.
+    /// (In "Reorder Episodes" mode the grips own the drag instead, so long-press stands down.)
+    var canReorderSessionLineup: Bool {
+        guard showingSession, !isMultiSelectEnabled, !lineupReorderMode, let podcast,
+              SessionStore.shared.session(forPodcast: podcast.uuid) != nil else { return false }
+        return true
+    }
+
+    func registerSessionReorder() {
+        episodesTable.dragInteractionEnabled = true
+        episodesTable.dragDelegate = self
+        episodesTable.dropDelegate = self
+    }
+
+    func tableView(_ tableView: UITableView, itemsForBeginning session: UIDragSession, at indexPath: IndexPath) -> [UIDragItem] {
+        guard canReorderSessionLineup, episodeAtIndexPath(indexPath) != nil else { return [] }
+        return [UIDragItem(itemProvider: NSItemProvider())]
+    }
+
+    func tableView(_ tableView: UITableView, dropSessionDidUpdate session: UIDropSession, withDestinationIndexPath destinationIndexPath: IndexPath?) -> UITableViewDropProposal {
+        guard session.localDragSession != nil, canReorderSessionLineup,
+              let destination = destinationIndexPath,
+              episodeInfo[safe: destination.section]?.model == "episodes" else {
+            return UITableViewDropProposal(operation: .cancel)
+        }
+        return UITableViewDropProposal(operation: .move, intent: .insertAtDestinationIndexPath)
+    }
+
+    func tableView(_ tableView: UITableView, performDropWith coordinator: UITableViewDropCoordinator) {
+        guard canReorderSessionLineup, let podcast,
+              let session = SessionStore.shared.session(forPodcast: podcast.uuid),
+              let item = coordinator.items.first,
+              let source = item.sourceIndexPath,
+              var destination = coordinator.destinationIndexPath,
+              destination.section == source.section,
+              var elements = episodeInfo[safe: source.section]?.elements,
+              let moved = elements[safe: source.row] as? ListEpisode else { return }
+
+        destination.row = min(destination.row, max(elements.count - 1, 0))
+        guard source != destination else { return }
+
+        elements.remove(at: source.row)
+        elements.insert(moved, at: destination.row)
+        episodeInfo[source.section].elements = elements
+        tableView.performBatchUpdates {
+            tableView.moveRow(at: source, to: destination)
+        }
+        coordinator.drop(item.dragItem, toRowAt: destination)
+
+        let order = elements.compactMap { ($0 as? ListEpisode)?.episode.uuid }
+        SessionManager.shared.setLineupOrder(episodeUuids: order, session: session)
+    }
+}

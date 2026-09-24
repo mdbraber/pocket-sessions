@@ -1,0 +1,180 @@
+import XCTest
+import PocketCastsDataModel
+import PocketCastsServer
+@testable import podcasts
+
+final class PodcastManagerTests: DBTestCase {
+    func testTaskCancellationForUnusednDeletion() async throws {
+        let (podcastManager, task) = try await setUpQueuedDownload()
+
+        // Create a predicate + expectation to check when task state is completed
+        let predicate = NSPredicate(block: { _, _ -> Bool in
+            return task.state == .completed
+        })
+        let publishExpectation = XCTNSPredicateExpectation(predicate: predicate, object: task)
+
+        // This should delete the podcast given the mock data
+        await podcastManager.deletePodcastIfUnused(podcast)
+
+        // Verify the podcast has been removed from the data manager
+        XCTAssertNil(dataManager.findPodcast(uuid: podcast.uuid))
+
+        // Wait for the task to fulfill the completion expectation: that it is completed
+        await fulfillment(of: [publishExpectation])
+
+        // Check that the download task has been cancelled as a result of deleting the podcast
+        let error = task.error as? NSError
+        XCTAssertEqual(error?.domain, NSURLErrorDomain, "Task should be cancelled")
+        XCTAssertEqual(error?.code, NSURLErrorCancelled, "Task should be cancelled")
+    }
+
+    func testCleanupKeepsDownloadsInPlaylist() async throws {
+        let realSyncingEmail = ServerSettings.syncingEmail()
+        ServerSettings.setSyncingEmail(email: "test@example.com")
+        // Restoring to nil would sign the REAL app out — these tests run inside it.
+        defer { ServerSettings.setSyncingEmail(email: realSyncingEmail) }
+
+        let (_, episode) = makeDownloadedPodcastAndEpisode()
+        let playlist = EpisodeFilter()
+        playlist.uuid = UUID().uuidString
+        playlist.playlistName = "Keep Downloads"
+        playlist.manual = true
+        dataManager.save(playlist: playlist)
+        dataManager.add(episodes: [episode], to: playlist)
+
+        let podcastManager = PodcastManager(dataManager: dataManager, downloadManager: downloadManager)
+        await podcastManager.checkForUnusedPodcasts()
+
+        let refreshedEpisode = try XCTUnwrap(dataManager.findEpisode(uuid: episode.uuid))
+        XCTAssertEqual(refreshedEpisode.episodeStatus, DownloadStatus.downloaded.rawValue)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: DownloadManager.shared.pathForEpisode(refreshedEpisode)))
+    }
+
+    func testCleanupKeepsDownloadsNotInPlaylist() async throws {
+        let realSyncingEmail = ServerSettings.syncingEmail()
+        ServerSettings.setSyncingEmail(email: "test@example.com")
+        // Restoring to nil would sign the REAL app out — these tests run inside it.
+        defer { ServerSettings.setSyncingEmail(email: realSyncingEmail) }
+
+        let (_, episode) = makeDownloadedPodcastAndEpisode()
+
+        let podcastManager = PodcastManager(dataManager: dataManager, downloadManager: downloadManager)
+        await podcastManager.checkForUnusedPodcasts()
+
+        let refreshedEpisode = try XCTUnwrap(dataManager.findEpisode(uuid: episode.uuid))
+        XCTAssertEqual(refreshedEpisode.episodeStatus, DownloadStatus.downloaded.rawValue)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: DownloadManager.shared.pathForEpisode(refreshedEpisode)))
+    }
+
+    func testUnsubscribeRemovesDownloadsInPlaylist() throws {
+        let realSyncingEmail = ServerSettings.syncingEmail()
+        ServerSettings.setSyncingEmail(email: "test@example.com")
+        // Restoring to nil would sign the REAL app out — these tests run inside it.
+        defer { ServerSettings.setSyncingEmail(email: realSyncingEmail) }
+
+        let (podcast, episode) = makeDownloadedPodcastAndEpisode()
+        let playlist = EpisodeFilter()
+        playlist.uuid = UUID().uuidString
+        playlist.playlistName = "Keep Downloads"
+        playlist.manual = true
+        dataManager.save(playlist: playlist)
+        dataManager.add(episodes: [episode], to: playlist)
+
+        let podcastManager = PodcastManager(dataManager: dataManager, downloadManager: downloadManager)
+        podcastManager.unsubscribe(podcast: podcast)
+
+        let refreshedEpisode = try XCTUnwrap(dataManager.findEpisode(uuid: episode.uuid))
+        XCTAssertEqual(refreshedEpisode.episodeStatus, DownloadStatus.notDownloaded.rawValue)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: DownloadManager.shared.pathForEpisode(refreshedEpisode)))
+    }
+
+    func testUnsubscribeRemovesDownloadsNotInPlaylist() throws {
+        let realSyncingEmail = ServerSettings.syncingEmail()
+        ServerSettings.setSyncingEmail(email: "test@example.com")
+        // Restoring to nil would sign the REAL app out — these tests run inside it.
+        defer { ServerSettings.setSyncingEmail(email: realSyncingEmail) }
+
+        let (podcast, episode) = makeDownloadedPodcastAndEpisode()
+        let podcastManager = PodcastManager(dataManager: dataManager, downloadManager: downloadManager)
+
+        podcastManager.unsubscribe(podcast: podcast)
+
+        let refreshedEpisode = try XCTUnwrap(dataManager.findEpisode(uuid: episode.uuid))
+        XCTAssertEqual(refreshedEpisode.episodeStatus, DownloadStatus.notDownloaded.rawValue)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: DownloadManager.shared.pathForEpisode(refreshedEpisode)))
+    }
+
+    func testDeleteOrphanedEpisodesIfNeededRepointsInteractedOrphanAndDropsStaleLiveRow() throws {
+        let podcast = Podcast()
+        podcast.uuid = UUID().uuidString
+        podcast.subscribed = 1
+        podcast.addedDate = Date()
+        dataManager.save(podcast: podcast)
+
+        let episodeUuid = UUID().uuidString
+
+        // The "live" row: visible to podcast_id-scoped queries, but pristine.
+        let live = Episode()
+        live.uuid = episodeUuid
+        live.podcastUuid = podcast.uuid
+        live.podcast_id = podcast.id
+        live.addedDate = Date()
+        live.playingStatus = PlayingStatus.notPlayed.rawValue
+        dataManager.save(episode: live)
+
+        // The orphan: same uuid, phantom podcast_id, holds the real user state.
+        let orphan = Episode()
+        orphan.uuid = episodeUuid
+        orphan.podcastUuid = podcast.uuid
+        orphan.podcast_id = 999_999_999
+        orphan.addedDate = Date()
+        orphan.playingStatus = PlayingStatus.inProgress.rawValue
+        orphan.playedUpTo = 123.4
+        orphan.archived = true
+        orphan.lastPlaybackInteractionDate = Date()
+        dataManager.save(episode: orphan)
+
+        let podcastManager = PodcastManager(dataManager: dataManager, downloadManager: downloadManager)
+        podcastManager.deleteOrphanedEpisodesIfNeeded()
+
+        let remaining = dataManager.findEpisodesWhere(customWhere: "uuid = ?", arguments: [episodeUuid])
+        XCTAssertEqual(remaining.map(\.id), [orphan.id], "The row with real interaction should survive, repointed at the real podcast")
+
+        let survivor = try XCTUnwrap(remaining.first)
+        XCTAssertEqual(survivor.podcast_id, podcast.id)
+        XCTAssertEqual(survivor.playingStatus, PlayingStatus.inProgress.rawValue)
+        XCTAssertEqual(survivor.playedUpTo, 123.4)
+        XCTAssertTrue(survivor.archived)
+        XCTAssertNotNil(dataManager.findPodcast(uuid: podcast.uuid, includeUnsubscribed: true))
+    }
+
+    private func makeDownloadedPodcastAndEpisode() -> (Podcast, Episode) {
+        let podcast = Podcast()
+        podcast.uuid = UUID().uuidString
+        podcast.subscribed = 0
+        podcast.addedDate = Date().addingTimeInterval(-2.weeks)
+        podcast.syncStatus = SyncStatus.synced.rawValue
+        dataManager.save(podcast: podcast)
+
+        let episode = Episode()
+        episode.uuid = UUID().uuidString
+        episode.podcastUuid = podcast.uuid
+        episode.podcast_id = podcast.id
+        episode.addedDate = podcast.addedDate
+        episode.downloadUrl = "http://example.com/audio"
+        episode.playingStatus = PlayingStatus.notPlayed.rawValue
+        episode.episodeStatus = DownloadStatus.downloaded.rawValue
+        dataManager.save(episode: episode)
+
+        createDownloadedFile(for: episode)
+
+        return (podcast, episode)
+    }
+
+    private func createDownloadedFile(for episode: Episode) {
+        let path = DownloadManager.shared.pathForEpisode(episode)
+        let directory = (path as NSString).deletingLastPathComponent
+        try? FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
+        FileManager.default.createFile(atPath: path, contents: Data())
+    }
+}

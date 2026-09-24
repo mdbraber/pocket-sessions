@@ -1,0 +1,444 @@
+import Foundation
+import AVFoundation
+import UIKit
+import PocketCastsDataModel
+import PocketCastsServer
+import PocketCastsUtils
+
+#if !os(watchOS)
+/// MediaExporterItemConfiguration global configuration.
+enum MediaExporterItemConfiguration {
+    /// How much data is allowed to be read in memory at a time.
+    public static var readDataLimit: Int = 20.MB
+
+    /// Flag for deciding whether an error should be thrown when URLResponse's expectedContentLength is not equal with the downloaded media file bytes count. Defaults to `false`.
+    public static var shouldVerifyDownloadedFileSize: Bool = false
+
+    /// If set greater than 0, the set value will be compared with the downloaded media size. If the size of the downloaded media is lower, an error will be thrown. Useful when `expectedContentLength` is unavailable.
+    /// Default value is `DownloadManager.badEpisodeSize` (10KB).
+    public static var minimumExpectedFileSize: Int = DownloadManager.badEpisodeSize
+}
+
+fileprivate extension Int {
+    var KB: Int { return self * 1024 }
+    var MB: Int { return self * 1024 * 1024 }
+}
+
+/// Responsible for downloading media data and providing the requested data parts.
+class MediaExporterResourceLoaderDelegate: NSObject, AVAssetResourceLoaderDelegate, URLSessionDelegate, URLSessionDataDelegate, URLSessionTaskDelegate {
+    private let lock = NSLock()
+
+    private let readDataLimit = MediaExporterItemConfiguration.readDataLimit
+
+    private var fileHandle: MediaFileHandle
+
+    private var session: URLSession?
+    var response: URLResponse?
+    private var pendingRequests = Set<AVAssetResourceLoadingRequest>()
+    private var isDownloadComplete = false
+    var deleteFileOnRelease = false
+    var hasRetriedWithoutUserAgent = false
+
+    private let saveFilePath: String
+    private let callback: FileExporterProgressReport?
+
+    // Episode context for cellular tracking
+    private let episodeUuid: String?
+    private let podcastUuid: String?
+
+    private lazy var callbackQueue: DispatchQueue = {
+        let queue: DispatchQueue
+        if FeatureFlag.useBackgroundQueueForStreamingCallback.enabled {
+            queue = DispatchQueue(label: "com.pocketcasts.MediaExporterResourceLoaderDelegate.callback", qos: .default, attributes: [])
+        } else {
+            queue = DispatchQueue.main
+        }
+        return queue
+    }()
+
+    enum FileExportStatus {
+        case downloading
+        case completed
+        case failed(Error)
+    }
+
+    typealias FileExporterProgressReport = (_ status: FileExportStatus, _ contentType: String?, _ downloaded: Int64, _ total: Int64) -> ()
+
+    // MARK: Init
+    init(saveFilePath: String, episodeUuid: String? = nil, podcastUuid: String? = nil, callback: FileExporterProgressReport?) {
+        self.saveFilePath = saveFilePath
+        self.episodeUuid = episodeUuid
+        self.podcastUuid = podcastUuid
+        self.callback = callback
+        self.fileHandle = MediaFileHandle(filePath: saveFilePath)
+        super.init()
+
+        NotificationCenter.default.addObserver(self, selector: #selector(handleAppWillTerminate), name: UIApplication.willTerminateNotification, object: nil)
+    }
+
+    deinit {
+        FileLog.shared.addMessage("MediaExporterResourceLoaderDelegate: Releasing loader for \(saveFilePath)")
+        session?.invalidateAndCancel()
+        session = nil
+        if deleteFileOnRelease {
+            fileHandle.deleteFile()
+        }
+    }
+
+    static let schemePrefix = "custom-"
+
+    static func makeCustomURL(_ original: URL) -> URL? {
+        return URL(string: "\(Self.schemePrefix)\(original.absoluteString)")
+    }
+
+    static func resolveOriginalURL(from url: URL) -> URL? {
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return nil
+        }
+        components.scheme = components.scheme?.replacingOccurrences(of: Self.schemePrefix, with: "")
+        return components.url
+    }
+
+    func debugLogRequestInfo(_ loadingRequest: AVAssetResourceLoadingRequest, state: String) {
+        #if DEBUG
+        if let dataRequest = loadingRequest.dataRequest {
+            FileLog.shared.addMessage("MediaExporterResourceLoaderDelegate: \(state) Request \(dataRequest.currentOffset) - \(dataRequest.requestedOffset + Int64(dataRequest.requestedLength))")
+        }
+        #endif
+    }
+    // MARK: AVAssetResourceLoaderDelegate
+
+    func resourceLoader(_ resourceLoader: AVAssetResourceLoader, shouldWaitForLoadingOfRequestedResource loadingRequest: AVAssetResourceLoadingRequest) -> Bool {
+        guard let url = loadingRequest.request.url,
+              let originalURL = Self.resolveOriginalURL(from: url)
+        else {
+            return false
+        }
+
+        if session == nil {
+            // If we're playing from an url, we need to download the file.
+            // We start loading the file on first request only.
+            startDataRequest(with: originalURL)
+        }
+        debugLogRequestInfo(loadingRequest, state: "Add")
+        lock.lock()
+        pendingRequests.insert(loadingRequest)
+        lock.unlock()
+        processPendingRequests()
+        return true
+    }
+
+    func resourceLoader(_ resourceLoader: AVAssetResourceLoader, didCancel loadingRequest: AVAssetResourceLoadingRequest) {
+        debugLogRequestInfo(loadingRequest, state: "Cancel")
+        lock.lock()
+        pendingRequests.remove(loadingRequest)
+        lock.unlock()
+    }
+
+    // MARK: URLSessionDelegate
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        writeDataToFile(data)
+        processPendingRequests()
+        let contentType = response?.mimeType
+        callbackQueue.async { [weak self] in
+            guard let self else { return }
+            self.callback?(.downloading, contentType, Int64(self.fileHandle.safeFileSize), dataTask.countOfBytesExpectedToReceive)
+        }
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse, completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+        self.response = response
+        processPendingRequests()
+        completionHandler(.allow)
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        if let error {
+            downloadFailed(with: error)
+            return
+        }
+
+        let error = verifyResponse()
+
+        guard error == nil else {
+            if shouldRetryWithoutUserAgent() {
+                retryWithoutUserAgent(originalURL: task.originalRequest?.url)
+                return
+            }
+
+            downloadFailed(with: error!)
+            return
+        }
+
+        downloadComplete()
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
+        guard FeatureFlag.trackNetworkDataUsage.enabled else { return }
+
+        let bytesReceived = task.countOfBytesReceived
+        let connectionType = NetworkDataUsageManager.connectionType(from: metrics)
+
+        guard bytesReceived > 0 else { return }
+
+        DataManager.sharedManager.networkDataUsageManager.add(
+            episodeUuid: episodeUuid,
+            podcastUuid: podcastUuid,
+            bytesStreamed: bytesReceived,
+            operationType: .stream,
+            connectionType: connectionType,
+            sessionType: .foreground
+        )
+    }
+
+    // MARK: Internal methods
+
+    func startDataRequest(with url: URL) {
+        startDataRequest(with: url, retryWithoutUserAgent: false)
+    }
+
+    @objc func startDataRequest(with url: URL, retryWithoutUserAgent: Bool) {
+        FileLog.shared.addMessage("MediaExporterResourceLoaderDelegate: Start data request for \(url)")
+        guard session == nil else { return }
+
+        let configuration = URLSessionConfiguration.default
+        configuration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        if FeatureFlag.streamingCustomSessionConfiguration.enabled {
+            configuration.networkServiceType = .avStreaming
+            configuration.allowsCellularAccess = true
+            configuration.timeoutIntervalForRequest = 60 // seconds
+            configuration.timeoutIntervalForResource = 3600 * 2 // seconds
+#if !APPCLIP
+            configuration.waitsForConnectivity = false
+            configuration.multipathServiceType = .handover // allows switching between celular/wifi
+#endif
+        }
+
+        var urlRequest = URLRequest(url: url)
+        if !retryWithoutUserAgent {
+            urlRequest.setValue(ServerConstants.Values.appUserAgent, forHTTPHeaderField: ServerConstants.HttpHeaders.userAgent)
+        }
+
+        if retryWithoutUserAgent {
+            hasRetriedWithoutUserAgent = true
+            FileLog.shared.addMessage("MediaExporterResourceLoaderDelegate: Starting request without User-Agent header")
+        }
+
+        session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
+        if let task = session?.dataTask(with: urlRequest) {
+            task.priority = URLSessionTask.highPriority
+            task.resume()
+        }
+    }
+
+    func invalidateAndCancelSession(shouldResetData: Bool = true, error: Error? = nil) {
+        session?.invalidateAndCancel()
+        session = nil
+
+        if shouldResetData {
+            pendingRequests.forEach { request in
+                request.finishLoading(with: error)
+            }
+            pendingRequests.removeAll()
+        }
+
+        // We need to only remove the file if it hasn't been fully downloaded
+        guard isDownloadComplete == false else { return }
+
+        fileHandle.deleteFile()
+    }
+
+    // MARK: Private methods
+
+    private func processPendingRequests() {
+        lock.lock()
+        defer { lock.unlock() }
+        var requestsFulfilled: Set<AVAssetResourceLoadingRequest> = []
+        do {
+            guard response != nil else {
+                return
+            }
+            for loadingRequest in pendingRequests {
+                fillInContentInformationRequest(loadingRequest.contentInformationRequest)
+                if let dataRequest = loadingRequest.dataRequest {
+                    if try haveEnoughDataToFulfillRequest(dataRequest) {
+                        debugLogRequestInfo(loadingRequest, state: "Finish")
+                        loadingRequest.finishLoading()
+                        requestsFulfilled.insert(loadingRequest)
+                    } else {
+                        debugLogRequestInfo(loadingRequest, state: "Partial")
+                    }
+                } else if loadingRequest.dataRequest == nil {
+                    loadingRequest.finishLoading()
+                    requestsFulfilled.insert(loadingRequest)
+                }
+            }
+            removeFulfilledRequests(requestsFulfilled)
+        } catch {
+            removeFulfilledRequests(requestsFulfilled)
+            downloadFailed(with: error, notify: true)
+        }
+    }
+
+    private func removeFulfilledRequests(_ requestsFulfilled: Set<AVAssetResourceLoadingRequest>) {
+        var updatedPendingRequests = pendingRequests
+        updatedPendingRequests.subtract(requestsFulfilled)
+        pendingRequests = updatedPendingRequests
+    }
+
+    private func fillInContentInformationRequest(_ contentInformationRequest: AVAssetResourceLoadingContentInformationRequest?) {
+        // Do we have response from the server?
+        guard let response,
+              let contentInformationRequest
+        else {
+            return
+        }
+        contentInformationRequest.contentType = response.mimeType
+        contentInformationRequest.contentLength = response.expectedContentLength
+        contentInformationRequest.isByteRangeAccessSupported = true
+
+        FileLog.shared.addMessage("MediaExporterResourceLoaderDelegate: Content Information Request filled: \(contentInformationRequest.contentLength)")
+    }
+
+    private func haveEnoughDataToFulfillRequest(_ dataRequest: AVAssetResourceLoadingDataRequest) throws -> Bool {
+        let requestedOffset = Int(dataRequest.requestedOffset)
+        let requestedLength = dataRequest.requestedLength
+        var currentOffset = Int(dataRequest.currentOffset)
+        let bytesCached = try fileHandle.fileSize()
+
+        try validateCurrentOffset(currentOffset, bytesCached: bytesCached)
+
+        // Is there enough data cached to fulfill the request?
+        guard bytesCached > currentOffset else {
+            return false
+        }
+
+        while currentOffset < min(requestedOffset + requestedLength, bytesCached) {
+            // Data length to be loaded into memory with maximum size of readDataLimit.
+            let bytesToRespond = min(bytesCached - currentOffset, requestedLength - (currentOffset - requestedOffset), readDataLimit)
+            // Read data from disk and pass it to the dataRequest
+            guard let data = try fileHandle.readData(withOffset: currentOffset, forLength: bytesToRespond) else {
+                throw MediaFileHandleError.readAfterEndOfFile
+            }
+            dataRequest.respond(with: data)
+            let newOffset = Int(dataRequest.currentOffset)
+            guard bytesToRespond != 0, newOffset != currentOffset else {
+                break
+            }
+            currentOffset = newOffset
+        }
+
+        return currentOffset >= requestedLength + requestedOffset
+    }
+
+    private func validateCurrentOffset(_ currentOffset: Int, bytesCached: Int) throws {
+        if isDownloadComplete, currentOffset >= bytesCached {
+            FileLog.shared.addMessage("MediaExporterResourceLoaderDelegate: try to read a position after the end of a file")
+            throw MediaFileHandleError.readAfterEndOfFile
+        }
+    }
+
+    private func writeDataToFile(_ data: Data) {
+        lock.lock()
+        defer { lock.unlock() }
+
+        do {
+            try fileHandle.append(data: data)
+        } catch {
+            FileLog.shared.addMessage("MediaExporterResourceLoaderDelegate: failed to write data to file: \(error)")
+            downloadFailed(with: error, notify: true)
+        }
+    }
+
+    func releaseIfDownloadComplete() {
+        if isDownloadComplete {
+            invalidateAndCancelSession(shouldResetData: false)
+        }
+    }
+
+    private func downloadComplete() {
+        FileLog.shared.addMessage("MediaExporterResourceLoaderDelegate: Download completed. File Size:\(fileHandle.safeFileSize) ExpectedSize:\(response?.expectedContentLength ?? 0)")
+        isDownloadComplete = true
+        processPendingRequests()
+        let contentType = self.response?.mimeType
+        let fileSize = self.fileHandle.safeFileSize
+        callbackQueue.async { [weak self] in
+            self?.callback?(.completed, contentType, Int64(fileSize), Int64(fileSize))
+        }
+    }
+
+    func verifyResponse() -> NSError? {
+        guard let response = response as? HTTPURLResponse else { return nil }
+
+        let shouldVerifyDownloadedFileSize = MediaExporterItemConfiguration.shouldVerifyDownloadedFileSize
+        let minimumExpectedFileSize = MediaExporterItemConfiguration.minimumExpectedFileSize
+        var error: NSError?
+        let fileSize = fileHandle.safeFileSize
+        if response.statusCode >= 400 {
+            error = errorFromStatusCode(response.statusCode)
+        } else if shouldVerifyDownloadedFileSize && response.expectedContentLength != -1 && response.expectedContentLength != fileSize {
+            error = NSError(domain: NSURLErrorDomain, code: NSURLErrorResourceUnavailable, userInfo: [NSLocalizedDescriptionKey: "Failed downloading asset. Reason: wrong file size, expected: \(response.expectedContentLength), actual: \(fileSize)."])
+        } else if minimumExpectedFileSize > 0 && minimumExpectedFileSize > fileSize {
+            error = NSError(domain: NSURLErrorDomain, code: NSURLErrorZeroByteResource, userInfo: [NSLocalizedDescriptionKey: "Failed downloading asset. Reason: file size \(fileSize) is smaller than minimumExpectedFileSize"])
+        }
+
+        return error
+    }
+
+    func errorFromStatusCode(_ statusCode: Int) -> NSError {
+        switch statusCode {
+        case 401, 403:
+            return NSError(domain: NSURLErrorDomain, code: NSURLErrorUserAuthenticationRequired, userInfo: [NSLocalizedDescriptionKey: "Failed stream/downloading asset. Reason: response status code \(statusCode)."])
+        case 404, 410:
+            return NSError(domain: NSURLErrorDomain, code: NSURLErrorFileDoesNotExist, userInfo: [NSLocalizedDescriptionKey: "Failed stream/downloading asset. Reason: response status code \(statusCode)."])
+        case 400, 405, 408, 409, 429, 500..<1000:
+            return NSError(domain: NSURLErrorDomain, code: NSURLErrorBadServerResponse, userInfo: [NSLocalizedDescriptionKey: "Failed stream/downloading asset. Reason: response status code \(statusCode)."])
+        default:
+            return NSError(domain: NSURLErrorDomain, code: NSURLErrorResourceUnavailable, userInfo: [NSLocalizedDescriptionKey: "Failed stream/downloading asset. Reason: response status code \(statusCode)."])
+        }
+    }
+
+    func shouldRetryWithoutUserAgent() -> Bool {
+        guard let response = response as? HTTPURLResponse else { return false }
+        // Only retry if we haven't already retried without User-Agent and the response status code is >= 400
+        return !hasRetriedWithoutUserAgent && (response.statusCode >= 400)
+    }
+
+    private func retryWithoutUserAgent(originalURL: URL?) {
+        guard let originalURL else {
+            FileLog.shared.addMessage("MediaExporterResourceLoaderDelegate: Cannot retry without User-Agent - no original URL")
+            return
+        }
+
+        FileLog.shared.addMessage("MediaExporterResourceLoaderDelegate: Retrying without User-Agent header for URL: \(originalURL)")
+
+        fileHandle.close()
+
+        invalidateAndCancelSession(shouldResetData: false)
+
+        response = nil
+
+        fileHandle = MediaFileHandle(filePath: saveFilePath)
+
+        startDataRequest(with: originalURL, retryWithoutUserAgent: true)
+    }
+
+    private func downloadFailed(with error: Error, notify: Bool = false) {
+        FileLog.shared.addMessage("MediaExporterResourceLoaderDelegate: Download failed with error: \(error)")
+        if notify {
+            NotificationCenter.default.post(name: AVPlayerItem.failedToPlayToEndTimeNotification, object: nil, userInfo: [AVPlayerItemFailedToPlayToEndTimeErrorKey: error])
+        }
+        invalidateAndCancelSession(error: error)
+        let contentType = self.response?.mimeType
+        callbackQueue.async { [weak self] in
+            guard let self else { return }
+            self.callback?(.failed(error), contentType, 0, 0)
+        }
+    }
+
+    @objc private func handleAppWillTerminate() {
+        invalidateAndCancelSession(shouldResetData: false)
+    }
+}
+#endif

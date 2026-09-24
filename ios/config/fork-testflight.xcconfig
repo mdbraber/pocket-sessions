@@ -1,0 +1,13 @@
+// Fork: the ONE signing setting for `make testflight` that needs SDK-scoping.
+//
+// The GRDB macro plugin and the SwiftLint/SwiftGen build tools are macOS
+// command-line tools. If they inherit the iOS app's entitlements (app-group /
+// iCloud) via the global CODE_SIGN_ENTITLEMENTS override, the signed macro plugin
+// emits junk on its stdio pipe and the compiler fails the archive with
+// "external macro ... produced malformed response".
+//
+// Plain command-line KEY=value overrides can't be scoped per-SDK, so disabling
+// signing for macOS hosts (which are build-time only and never shipped) lives here
+// and is applied via `xcodebuild -xcconfig`. Everything else stays as command-line
+// overrides in the Makefile so paths resolve absolutely across SPM package targets.
+CODE_SIGNING_ALLOWED[sdk=macosx*] = NO

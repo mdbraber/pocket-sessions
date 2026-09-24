@@ -1,0 +1,107 @@
+import PocketCastsDataModel
+import PocketCastsServer
+import PocketCastsUtils
+import UIKit
+import UserNotifications
+
+class BadgeSettingsViewController: PCViewController, UITableViewDelegate, UITableViewDataSource {
+    private let optionsSection = 0
+    private let filtersSection = 1
+
+    private let cellId = "ButtonCell"
+
+    var playlists: [EpisodeFilter]!
+    @IBOutlet var optionsTable: UITableView! {
+        didSet {
+            optionsTable.register(UINib(nibName: "ButtonCell", bundle: nil), forCellReuseIdentifier: cellId)
+            optionsTable.rowHeight = UITableView.automaticDimension
+            optionsTable.estimatedRowHeight = UITableView.automaticDimension
+            optionsTable.sectionHeaderHeight = UITableView.automaticDimension
+            optionsTable.estimatedSectionHeaderHeight = Constants.Values.tableSectionHeaderHeight
+        }
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+
+        playlists = DataManager.sharedManager.allSmartPlaylists(includeDeleted: false)
+
+        insetAdjuster.setupInsetAdjustmentsForMiniPlayer(scrollView: optionsTable)
+
+        title = L10n.appBadge
+    }
+
+    func numberOfSections(in tableView: UITableView) -> Int {
+        2
+    }
+
+    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+        if section == optionsSection { return 4 }
+
+        return playlists.count
+    }
+
+    func tableView(_ tableView: UITableView, viewForHeaderInSection section: Int) -> UIView? {
+        let headerFrame = CGRect(x: 0, y: 0, width: 0, height: Constants.Values.tableSectionHeaderHeight)
+
+        if section == optionsSection { return nil }
+
+        return SettingsTableHeader(
+            frame: headerFrame,
+            title: L10n.settingsBadgeSmartPlaylistHeader
+        )
+    }
+
+    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        let cell = tableView.dequeueReusableCell(withIdentifier: cellId, for: indexPath) as! ButtonCell
+
+        if indexPath.section == optionsSection {
+            if indexPath.row == 0 {
+                cell.buttonTitle.text = L10n.off
+            } else if indexPath.row == 1 {
+                cell.buttonTitle.text = L10n.settingsBadgeTotalUnplayed
+            } else if indexPath.row == 2 {
+                cell.buttonTitle.text = L10n.settingsBadgeNewSinceOpened
+            } else if indexPath.row == 3 {
+                // Fork: the global Inbox count (row index doubles as the AppBadge
+                // rawValue, and inboxCount is 3).
+                cell.buttonTitle.text = L10n.podcastsBadgeInboxCount
+            }
+
+            let badgeSetting = Int(Settings.appBadge?.rawValue ?? AppBadge.off.rawValue)
+            cell.accessoryType = (badgeSetting == indexPath.row) ? .checkmark : .none
+        } else if indexPath.section == filtersSection, let filter = playlists[safe: indexPath.row] {
+            cell.buttonTitle.text = filter.playlistName
+
+            let selectedFilterId = Settings.appBadgeFilterUuid
+            cell.accessoryType = filter.uuid == selectedFilterId ? .checkmark : .none
+        }
+
+        return cell
+    }
+
+    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        // Fork: the badge works without New Episodes notifications, but iOS still
+        // needs badge authorization — ask for just that.
+        if indexPath.section != optionsSection || indexPath.row != Int(AppBadge.off.rawValue) {
+            UNUserNotificationCenter.current().requestAuthorization(options: [.badge]) { _, _ in }
+        }
+
+        if indexPath.section == optionsSection {
+            Settings.appBadge = AppBadge(rawValue: Int32(indexPath.row))
+            Settings.appBadgeFilterUuid = nil
+
+            if let badge = AppBadge(rawValue: Int32(indexPath.row)) {
+                Settings.trackValueChanged(.settingsNotificationsAppBadgeChanged, value: badge)
+            }
+        } else if indexPath.section == filtersSection {
+            Settings.appBadge = AppBadge.filterCount
+            if let filter = playlists[safe: indexPath.row] {
+                Settings.appBadgeFilterUuid = filter.uuid
+            }
+            Settings.trackValueChanged(.settingsNotificationsAppBadgeChanged, value: AppBadge.filterCount)
+        }
+
+        optionsTable.reloadData()
+    }
+}

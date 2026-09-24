@@ -1,0 +1,103 @@
+import Foundation
+import PocketCastsDataModel
+import PocketCastsUtils
+
+/// Fork: linked adds — a user-initiated add to one world can mirror into the other.
+/// One hop, never cascading: mirrors call the primitives directly and only explicit
+/// user verbs call these entry points (never auto-add pipelines, playback
+/// bookkeeping, or reseeds). Positions reuse the existing settings — the session's
+/// insert mode on one side, the podcast's Up Next position on the other. Removals
+/// are never mirrored.
+enum SessionLinking {
+    /// After a user-initiated Up Next add: mirror the episodes into their podcasts'
+    /// sessions (created on demand), at each session's insert position.
+    static func mirrorQueueAdd(episodes: [BaseEpisode]) {
+        let grouped = Dictionary(grouping: episodes.compactMap { $0 as? Episode }, by: \.podcastUuid)
+        for (podcastUuid, podcastEpisodes) in grouped {
+            guard Settings.resolvedMirrorUpNextToSession(podcastUuid: podcastUuid),
+                  let podcast = DataManager.sharedManager.findPodcast(uuid: podcastUuid, includeUnsubscribed: true),
+                  // Unsubscribed podcasts never get a session sprung by the mirror —
+                  // their queue adds stay queue-only (an existing session still receives).
+                  let session = SessionManager.shared.findOrCreateSession(forPodcast: podcast) else { continue }
+            let members = Set(SessionFeederEngine.storeMemberUuids(for: session))
+            let toAdd = podcastEpisodes.map(\.uuid).filter { !members.contains($0) }
+            guard !toAdd.isEmpty else { continue }
+            SessionManager.shared.addToLineup(episodeUuids: toAdd, session: session)
+        }
+    }
+
+    /// A user-initiated Remove from Up Next: the queue removal always happens straight
+    /// away and the session keeps the episode; when it also sits in a session lineup, a
+    /// toast offers removing it from the session too. `completion` runs after the removal.
+    static func removeFromUpNextAskingSession(episode: BaseEpisode, completion: (() -> Void)? = nil) {
+        // ONE query for which playlists hold this episode, then map to sessions — the old
+        // `sessions.filter { storeMemberUuids(for:) … }` ran a DB query PER session on every remove
+        // swipe, which is what made the swipe feel slow.
+        let holdingPlaylists = Set(DataManager.sharedManager.manualPlaylistUUIDs(for: episode.uuid))
+        let containing = SessionStore.shared.sessions.filter { $0.storePlaylistUuid.map(holdingPlaylists.contains) ?? false }
+
+        PlaybackManager.shared.removeIfPlayingOrQueued(episode: episode, fireNotification: true, userInitiated: true)
+        completion?()
+
+        guard !containing.isEmpty else { return }
+        let name = containing.first.flatMap { SessionManager.shared.store(for: $0)?.playlistName } ?? L10n.playbackSessionTabSession
+        DispatchQueue.main.async {
+            Toast.show(L10n.sessionQueueRemoveToast(name), actions: [
+                Toast.Action(title: L10n.sessionQueueRemoveAlso, action: {
+                    for session in containing {
+                        SessionManager.shared.removeFromLineup(episodeUuids: [episode.uuid], session: session)
+                    }
+                })
+            ])
+        }
+    }
+
+    /// Bulk Remove from Up Next: the queue removal always happens straight away and the
+    /// sessions keep their episodes; if any of the selection also sits in a session
+    /// lineup, a toast offers removing those from their sessions too. `completion` runs
+    /// after the removal.
+    static func removeFromUpNextAskingSession(episodeUuids: [String], completion: (() -> Void)? = nil) {
+        // sessionUuid -> the selected episodes it holds. One query per selected episode (mapping it
+        // to its playlists), not one per session — the latter was O(sessions) DB hits per swipe.
+        var membership = [String: [String]]()
+        let storeToSession = Dictionary(
+            SessionStore.shared.sessions.compactMap { s in s.storePlaylistUuid.map { ($0, s.uuid) } },
+            uniquingKeysWith: { first, _ in first }
+        )
+        for episodeUuid in episodeUuids {
+            for playlistUuid in DataManager.sharedManager.manualPlaylistUUIDs(for: episodeUuid) {
+                guard let sessionUuid = storeToSession[playlistUuid] else { continue }
+                membership[sessionUuid, default: []].append(episodeUuid)
+            }
+        }
+
+        PlaybackManager.shared.bulkRemoveQueued(uuids: episodeUuids)
+        completion?()
+
+        guard !membership.isEmpty else { return }
+        DispatchQueue.main.async {
+            Toast.show(L10n.sessionQueueRemoveToastBulk, actions: [
+                Toast.Action(title: L10n.sessionQueueRemoveAlso, action: {
+                    for (sessionUuid, held) in membership {
+                        guard let session = SessionStore.shared.session(uuid: sessionUuid) else { continue }
+                        SessionManager.shared.removeFromLineup(episodeUuids: held, session: session)
+                    }
+                })
+            ])
+        }
+    }
+
+    /// After a user-initiated session add: mirror the episodes into Up Next at the
+    /// podcast's queue position (bottom unless the podcast prefers top).
+    static func mirrorSessionAdd(episodeUuids: [String]) {
+        for uuid in episodeUuids {
+            guard let episode = DataManager.sharedManager.findEpisode(uuid: uuid),
+                  Settings.resolvedMirrorSessionToUpNext(podcastUuid: episode.podcastUuid),
+                  !PlaybackManager.shared.inUpNext(episode: episode),
+                  !PlaybackManager.shared.isNowPlayingEpisode(episodeUuid: uuid) else { continue }
+            let toTop = DataManager.sharedManager.findPodcast(uuid: episode.podcastUuid, includeUnsubscribed: true)?
+                .autoAddToUpNextSetting() == .addFirst
+            PlaybackManager.shared.addToUpNext(episode: episode, ignoringQueueLimit: true, toTop: toTop, userInitiated: false)
+        }
+    }
+}

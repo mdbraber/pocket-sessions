@@ -1,0 +1,36 @@
+import SwiftUI
+import PocketCastsDataModel
+
+#if canImport(UIKit)
+import UIKit
+#endif
+
+class NewPlaylistCellViewModel: ObservableObject {
+    enum DisplayType {
+        case count
+        case toggle
+        case check
+        case addNew
+        case plain
+        case upNext // Fork: the Switch Session sheet's "Up Next" row
+    }
+
+    @Published var episodesCount: Int = 0
+    @Published var images: [PlaylistArtworkView.ImageItem] = []
+    @Published var playlistName: String = ""
+    @Published var isSmartPlaylist: Bool = false
+    /// Fork: names the row a Session Playlist, optionally with its feeder.
+    @Published var sessionSubtitle: String?
+    @Published var displayType: DisplayType = .count
+    /// Fork: the overview's badge — replaces the plain count when a type is chosen.
+    @Published var badgeType: BadgeType = .off
+    @Published var badgeCount: Int = 0
+
+    var isBelowEpisodeLimit: Bool {
+#if DEBUG
+        episodesCount < Settings.debugPlaylistsLimit
+#else
+        episodesCount < Constants.Limits.maxFilterItems
+#endif
+    }
+}

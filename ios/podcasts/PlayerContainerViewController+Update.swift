@@ -1,0 +1,126 @@
+import Foundation
+import PocketCastsDataModel
+import PocketCastsUtils
+import UIKit
+
+extension PlayerContainerViewController {
+    func updateColors() {
+        view.backgroundColor = PlayerColorHelper.playerBackgroundColor01()
+    }
+
+    @objc func update() {
+        guard PlaybackManager.shared.currentEpisode() != nil else {
+            closeNowPlaying()
+
+            return
+        }
+
+        updateColors()
+        updateAvailableTabs()
+    }
+
+    private func updateAvailableTabs() {
+        #if !APPCLIP
+        guard let playingEpisode = PlaybackManager.shared.currentEpisode() else { return }
+
+        // Update the colors when the episode changes
+        tabsView.themeDidChange()
+
+        let shouldShowNotes = (playingEpisode is Episode)
+        // Fork: only surface Sessions when the playing episode is in at least one lineup.
+        let shouldShowSessions = (playingEpisode is Episode) && !SessionManager.shared.sessionsHolding(episodeUuids: [playingEpisode.uuid]).isEmpty
+        let shouldShowChapters = PlaybackManager.shared.chapterCount() > 0
+        let shouldShowBookmarks = true
+
+        // check to see if the visible views are already configured correctly
+        if shouldShowNotes == showingNotes,
+            shouldShowSessions == showingSessions,
+            shouldShowChapters == showingChapters,
+            shouldShowBookmarks == showingBookmarks {
+            return
+        }
+
+        mainScrollView.setContentOffset(CGPoint.zero, animated: false)
+        tabsView.currentTab = 0
+        showNotesItem.removeFromParent()
+        showNotesItem.view.removeFromSuperview()
+        showingNotes = false
+
+        sessionsItem.removeFromParent()
+        sessionsItem.view.removeFromSuperview()
+        showingSessions = false
+
+        chaptersItem.removeFromParent()
+        chaptersItem.view.removeFromSuperview()
+        showingChapters = false
+
+        bookmarksItem.removeFromParent()
+        bookmarksItem.view.removeFromSuperview()
+        showingBookmarks = false
+
+        tabsView.tabs = [.nowPlaying]
+
+        var previousTab: PlayerItemViewController = nowPlayingItem
+
+        if shouldShowNotes {
+            showingNotes = true
+            tabsView.tabs += [.showNotes]
+
+            addTab(showNotesItem, previousTab: &previousTab)
+        }
+
+        if shouldShowChapters {
+            showingChapters = true
+            tabsView.tabs += [.chapters]
+
+            addTab(chaptersItem, previousTab: &previousTab)
+        }
+
+        // Fork: Sessions sits after Chapters, before Bookmarks.
+        if shouldShowSessions {
+            showingSessions = true
+            tabsView.tabs += [.sessions]
+
+            addTab(sessionsItem, previousTab: &previousTab)
+        }
+
+        if shouldShowBookmarks {
+            showingBookmarks = true
+            tabsView.tabs += [.bookmarks]
+
+            addTab(bookmarksItem, previousTab: &previousTab)
+        }
+        #endif
+    }
+
+    private func addTab(_ tab: PlayerItemViewController, previousTab: inout PlayerItemViewController) {
+        guard addTab(tab, after: previousTab) else { return }
+
+        previousTab = tab
+    }
+
+    @discardableResult
+    func addTab(_ tab: PlayerItemViewController, after afterTab: PlayerItemViewController? = nil) -> Bool {
+        guard let tabView = tab.view else { return false }
+
+        tab.willBeAddedToPlayer()
+        mainScrollView.addSubview(tabView)
+        addChild(tab)
+
+        let previousAnchor = afterTab?.view.map { $0.trailingAnchor } ?? mainScrollView.leadingAnchor
+
+        finalScrollViewConstraint?.isActive = false
+        let finalConstraint = tab.view.trailingAnchor.constraint(equalTo: mainScrollView.trailingAnchor)
+        NSLayoutConstraint.activate([
+            tabView.leadingAnchor.constraint(equalTo: previousAnchor),
+            tabView.topAnchor.constraint(equalTo: mainScrollView.topAnchor),
+            tabView.bottomAnchor.constraint(equalTo: mainScrollView.bottomAnchor),
+            tabView.widthAnchor.constraint(equalTo: mainScrollView.widthAnchor),
+            tabView.heightAnchor.constraint(equalTo: mainScrollView.heightAnchor),
+            finalConstraint
+        ])
+
+        finalScrollViewConstraint = finalConstraint
+        return true
+    }
+}

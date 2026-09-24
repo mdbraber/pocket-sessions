@@ -1,0 +1,169 @@
+import SwiftUI
+import PocketCastsDataModel
+
+struct NewPlaylistCellView: View {
+    @EnvironmentObject var theme: Theme
+    @ObservedObject var viewModel: NewPlaylistCellViewModel
+
+    @State private var refreshToken = UUID()
+
+    @ScaledMetric(relativeTo: .largeTitle) private var imageSize: CGFloat = 56
+
+    private var title: String {
+        switch viewModel.displayType {
+        case .addNew:
+            return L10n.playlistsDefaultNewPlaylist
+        default:
+            return viewModel.playlistName
+        }
+    }
+
+    private var subtitle: String? {
+        switch viewModel.displayType {
+        case .check:
+            return L10n.playlistEpisodesCount(viewModel.episodesCount)
+        case .toggle, .count, .plain:
+            if let sessionSubtitle = viewModel.sessionSubtitle {
+                return sessionSubtitle
+            }
+            if viewModel.isSmartPlaylist {
+                return L10n.smartPlaylist
+            }
+            // Fork: a normal (hand-built) playlist reads "Manual playlist", paralleling Smart/Session.
+            return L10n.manualPlaylist
+        default:
+            return nil
+        }
+    }
+
+    init(
+        viewModel: NewPlaylistCellViewModel
+    ) {
+        self.viewModel = viewModel
+    }
+
+    var body: some View {
+        HStack(spacing: 12.0) {
+            if viewModel.displayType == .addNew {
+                ZStack {
+                    Rectangle()
+                        .foregroundColor(theme.primaryUi05)
+                    Image("add-playlist")
+                        .renderingMode(.template)
+                        .foregroundColor(theme.primaryInteractive01)
+                }
+                .cornerRadius(4)
+                .clipped()
+                .frame(width: imageSize, height: imageSize)
+            } else if viewModel.displayType == .upNext {
+                // Fork: the up-next glyph on the same tile the playlist artwork uses
+                ZStack {
+                    Rectangle()
+                        .foregroundColor(theme.primaryUi05)
+                    Image("upnext")
+                        .resizable()
+                        .renderingMode(.template)
+                        .foregroundColor(theme.primaryInteractive01)
+                        .frame(width: imageSize * 0.6, height: imageSize * 0.6)
+                }
+                .cornerRadius(4)
+                .clipped()
+                .frame(width: imageSize, height: imageSize)
+                .accessibilityHidden(true)
+            } else {
+                PlaylistArtworkView(items: viewModel.images)
+                    .frame(width: imageSize, height: imageSize)
+                    .accessibilityHidden(true)
+            }
+            VStack(alignment: .leading, spacing: 2.0) {
+                HStack(spacing: 4.0) {
+                    Text(title)
+                        .foregroundStyle(theme.primaryText01)
+                        .font(size: 15.0, style: .subheadline, weight: .medium)
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                    // Fork: smart playlists get a white sparkle after the TITLE.
+                    if viewModel.isSmartPlaylist {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 12.0, weight: .semibold))
+                            .foregroundStyle(theme.primaryText01)
+                    }
+                }
+                if let subtitle {
+                    subtitleView(text: subtitle)
+                        .lineLimit(2)
+                }
+            }
+            Spacer()
+            accesoryView()
+        }
+        .accessibilityElement(children: .combine)
+        .background(.clear)
+    }
+
+    private func subtitleView(text: String) -> some View {
+        Text(text)
+            .foregroundStyle(theme.primaryText02)
+            .font(size: 14.0, style: .footnote, weight: .regular)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    @ViewBuilder private func accesoryView() -> some View {
+        switch viewModel.displayType {
+        case .count:
+            // Fork: the badge IS the trailing number — a dot for the presence
+            // types, the count otherwise, and nothing at all with badges off.
+            if viewModel.badgeType != .off, viewModel.badgeCount > 0 {
+                if viewModel.badgeType.showsDot {
+                    Circle()
+                        .fill(theme.primaryInteractive01)
+                        .frame(width: 10, height: 10)
+                } else {
+                    subtitleView(text: "\(min(viewModel.badgeCount, 99))")
+                        .lineLimit(1)
+                }
+            } else {
+                EmptyView()
+            }
+        case .upNext:
+            HStack(spacing: 5.0) {
+                subtitleView(text: "\(viewModel.episodesCount)")
+                    .lineLimit(1)
+                    .accessibilityLabel("\(viewModel.episodesCount) \(L10n.episodes)")
+            }
+        default:
+            EmptyView()
+        }
+    }
+}
+
+#Preview {
+    struct PreviewWrapper: View {
+        typealias DisplayType = NewPlaylistCellViewModel
+
+        @EnvironmentObject var theme: Theme
+
+        var body: some View {
+            List {
+                NewPlaylistCellView(
+                    viewModel: viewModel(modify: { vm in
+                        vm.playlistName = "Test"
+                        vm.isSmartPlaylist = true
+                        vm.episodesCount = 123
+                    })
+                )
+                .frame(width: 350, height: 81)
+                .background(.white)
+                .listRowSeparator(.hidden)
+            }
+        }
+
+        private func viewModel(modify: (NewPlaylistCellViewModel) -> Void) -> NewPlaylistCellViewModel {
+            let vm = NewPlaylistCellViewModel()
+            modify(vm)
+            return vm
+        }
+    }
+    return PreviewWrapper()
+        .environmentObject(Theme.sharedTheme)
+}
