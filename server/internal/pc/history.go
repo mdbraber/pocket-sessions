@@ -15,7 +15,15 @@ type HistoryEntry struct {
 	Title       string `json:"title"`
 	URL         string `json:"url,omitempty"`
 	ModifiedAt  int64  `json:"modifiedAt"`
+	// HistoryChange.action: 1 add, 2 delete, 3 clear all (the app's
+	// HistoryAction); 0 when absent.
+	Action int64 `json:"action,omitempty"`
 }
+
+const (
+	HistoryActionDelete   = 2
+	HistoryActionClearAll = 3
+)
 
 type History struct {
 	ServerModified int64          `json:"serverModified"`
@@ -27,7 +35,8 @@ type History struct {
 //
 // Wire: HistorySyncRequest{1:deviceTime, 2:serverModified, 3:repeated change,
 // 4:version}; HistoryResponse{1:serverModified, 2:lastCleared,
-// 3:repeated HistoryChange{2:podcast, 3:episode, 4:modifiedAt, 5:title, 6:url}}.
+// 3:repeated HistoryChange{1:action, 2:podcast, 3:episode, 4:modifiedAt,
+// 5:title, 6:url}}.
 func FetchHistory(ctx context.Context, accessToken string) (History, error) {
 	body := appendVarintField(nil, 1, uint64(time.Now().UnixMilli()))
 	body = appendStringField(body, 4, "2")
@@ -82,6 +91,7 @@ func parseHistoryResponse(data []byte) (History, error) {
 			ModifiedAt:  int64(f.varints[4]),
 			Title:       string(f.bytes[5]),
 			URL:         string(f.bytes[6]),
+			Action:      int64(f.varints[1]),
 		})
 	}
 	return out, nil

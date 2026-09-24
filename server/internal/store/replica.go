@@ -53,7 +53,11 @@ FROM pc_replica WHERE user_id = ? AND kind = 'episode' AND uuid = ?`,
 			}
 			return incoming
 		}
-		playedUpTo = merged(e.PlayedUpTo, playedUpTo)
+		if e.HasPlayedUpTo {
+			playedUpTo = e.PlayedUpTo
+		} else {
+			playedUpTo = merged(e.PlayedUpTo, playedUpTo)
+		}
 		status = merged(e.PlayingStatus, status)
 		duration = merged(e.Duration, duration)
 		archived = presence(e.Archived, archived)
@@ -116,8 +120,10 @@ ON CONFLICT(user_id, kind, uuid) DO UPDATE SET
 	return tx.Commit()
 }
 
-// UpsertHistoryLedger accumulates listening-history entries; nothing is ever
-// deleted, so the ledger outgrows PC's 100-entry window over time.
+// UpsertHistoryLedger accumulates listening-history entries, so the ledger
+// outgrows PC's 100-entry window over time. Entries only leave it when the
+// user removes that one entry (action delete); "clear all" is ignored, since
+// keeping history PC no longer serves is the ledger's purpose.
 func (s *Store) UpsertHistoryLedger(userID int64, entries []pc.HistoryEntry) error {
 	if len(entries) == 0 {
 		return nil
@@ -128,7 +134,14 @@ func (s *Store) UpsertHistoryLedger(userID int64, entries []pc.HistoryEntry) err
 	}
 	defer tx.Rollback()
 	for _, h := range entries {
-		if h.EpisodeUUID == "" {
+		if h.EpisodeUUID == "" || h.Action == pc.HistoryActionClearAll {
+			continue
+		}
+		if h.Action == pc.HistoryActionDelete {
+			if _, err := tx.Exec(`DELETE FROM pc_history_ledger WHERE user_id = ? AND episode_uuid = ?`,
+				userID, h.EpisodeUUID); err != nil {
+				return err
+			}
 			continue
 		}
 		if _, err := tx.Exec(`

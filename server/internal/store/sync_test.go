@@ -102,22 +102,76 @@ func TestDeltaCursor(t *testing.T) {
 	}
 }
 
-func TestFindEpisodeByEnclosure(t *testing.T) {
+func TestFindEpisodesByEnclosure(t *testing.T) {
 	s := testStore(t)
-	err := s.SaveEpisodeEnclosures(1, []EpisodeEnclosure{
-		{EpisodeUUID: "e1", PodcastUUID: "p1", URL: "https://media.example/enclosure/qyPCVqFUyDo.m4a"},
-		{EpisodeUUID: "e2", PodcastUUID: "p1", URL: "https://media.example/enclosure/Tn4iP3H3TXI.mp4"},
+	// One video published as an audio and a video episode in different feeds.
+	err := s.SaveEpisodeEnclosures(1, map[string][]EpisodeEnclosure{
+		"p1": {
+			{EpisodeUUID: "e1", URL: "https://media.example/enclosure/qyPCVqFUyDo.m4a"},
+			{EpisodeUUID: "e2", URL: "https://media.example/enclosure/Tn4iP3H3TXI.m4a"},
+		},
+		"p2": {
+			{EpisodeUUID: "e3", URL: "https://media.example/enclosure/Tn4iP3H3TXI.mp4"},
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	hit, found, err := s.FindEpisodeByEnclosure(1, "Tn4iP3H3TXI")
-	if err != nil || !found || hit.EpisodeUUID != "e2" {
-		t.Fatalf("find = %+v found=%v err=%v", hit, found, err)
+	hits, err := s.FindEpisodesByEnclosure(1, "Tn4iP3H3TXI")
+	if err != nil || len(hits) != 2 || hits[0].EpisodeUUID != "e2" || hits[1].EpisodeUUID != "e3" {
+		t.Fatalf("find = %+v err=%v, want e2 and e3", hits, err)
 	}
-	_, found, err = s.FindEpisodeByEnclosure(1, "nosuchvideo")
-	if err != nil || found {
-		t.Fatalf("miss should be (false, nil), got found=%v err=%v", found, err)
+	if hits[1].PodcastUUID != "p2" {
+		t.Errorf("podcast = %q, want p2", hits[1].PodcastUUID)
+	}
+	hits, err = s.FindEpisodesByEnclosure(1, "nosuchvideo")
+	if err != nil || len(hits) != 0 {
+		t.Fatalf("miss should be empty, got %+v err=%v", hits, err)
+	}
+
+	// Refreshing p1 replaces its rows: an episode the feed dropped stops
+	// resolving, while p2 (not refreshed this round) keeps its rows.
+	if err := s.SaveEpisodeEnclosures(1, map[string][]EpisodeEnclosure{
+		"p1": {{EpisodeUUID: "e1", URL: "https://media.example/enclosure/qyPCVqFUyDo.m4a"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	hits, _ = s.FindEpisodesByEnclosure(1, "Tn4iP3H3TXI")
+	if len(hits) != 1 || hits[0].EpisodeUUID != "e3" {
+		t.Fatalf("after refresh = %+v, want only e3", hits)
+	}
+}
+
+// A poll commits baseline, queued events and cursor together, and the cursor
+// never moves backwards (a slower overlapping writer can't rewind it).
+func TestCommitProgressPollAndOutbox(t *testing.T) {
+	s := testStore(t)
+	events := []OutboxEvent{{EpisodeUUID: "e1", Payload: []byte(`{"event":"completed"}`)}}
+	if err := s.CommitProgressPoll(1, []EpisodeProgress{{EpisodeUUID: "e1", PlayingStatus: 3, Reopened: 0}}, events, 500); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetProgressCursor(1, 400); err != nil {
+		t.Fatal(err)
+	}
+	if cursor, _ := s.ProgressCursor(1); cursor != 500 {
+		t.Errorf("cursor = %d, want 500 (never backwards)", cursor)
+	}
+	pending, err := s.PendingHookEvents(10)
+	if err != nil || len(pending) != 1 || pending[0].EpisodeUUID != "e1" || pending[0].UserID != 1 {
+		t.Fatalf("pending = %+v err=%v", pending, err)
+	}
+	if err := s.DeleteHookEvent(pending[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	if pending, _ = s.PendingHookEvents(10); len(pending) != 0 {
+		t.Fatalf("delivered event still queued: %+v", pending)
+	}
+	// A user without a meta row still gets a cursor.
+	if err := s.SetProgressCursor(2, 42); err != nil {
+		t.Fatal(err)
+	}
+	if cursor, err := s.ProgressCursor(2); err != nil || cursor != 42 {
+		t.Errorf("user 2 cursor = %d err=%v, want 42", cursor, err)
 	}
 }
 
@@ -175,5 +229,26 @@ FROM pc_replica WHERE user_id=1 AND kind='episode' AND uuid='e1'`).
 	status2, err := s.ReplicaStatus(1)
 	if err != nil || status2.Episodes != 1 || status2.Played != 1 || status2.Archived != 1 || status2.LedgerEntries != 1 {
 		t.Errorf("status = %+v err=%v", status2, err)
+	}
+}
+
+// Removing one entry in the app removes it from the ledger; "clear all" does
+// not wipe the ledger (outliving PC's window is its purpose).
+func TestHistoryLedgerRemovals(t *testing.T) {
+	s := testStore(t)
+	if err := s.UpsertHistoryLedger(1, []pc.HistoryEntry{
+		{EpisodeUUID: "e1", ModifiedAt: 1}, {EpisodeUUID: "e2", ModifiedAt: 2},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpsertHistoryLedger(1, []pc.HistoryEntry{
+		{EpisodeUUID: "e1", Action: pc.HistoryActionDelete},
+		{EpisodeUUID: "e2", Action: pc.HistoryActionClearAll},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ledger, err := s.HistoryLedger(1, 10)
+	if err != nil || len(ledger) != 1 || ledger[0].EpisodeUUID != "e2" {
+		t.Fatalf("ledger = %+v err=%v, want only e2", ledger, err)
 	}
 }

@@ -30,9 +30,12 @@ const (
 )
 
 type EpisodeProgress struct {
-	EpisodeUUID   string
-	PodcastUUID   string
-	PlayedUpTo    int64
+	EpisodeUUID string
+	PodcastUUID string
+	PlayedUpTo  int64
+	// HasPlayedUpTo tells an explicit position of 0 (the app's "mark unplayed"
+	// sends one) apart from a record that didn't carry a position at all.
+	HasPlayedUpTo bool
 	PlayingStatus int64
 	Duration      int64
 	// The app's "archived" flag (SyncUserEpisode.is_deleted, field 3).
@@ -162,6 +165,8 @@ func ParseSyncEpisode(episodeBytes []byte) (EpisodeProgress, error) {
 	if wrapper, ok := fields.bytes[11]; ok {
 		progress.Starred = unwrapScalar(wrapper)
 	}
+	// Int32Value 0 is an empty wrapper too.
+	_, progress.HasPlayedUpTo = fields.bytes[9]
 	return progress, nil
 }
 

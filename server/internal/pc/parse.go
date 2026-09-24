@@ -89,6 +89,8 @@ func ParseSyncEpisodesResponse(data []byte, podcastUUID string) ([]EpisodeProgre
 			PodcastUUID:   podcastUUID,
 			PlayingStatus: int64(fields.varints[2]),
 			PlayedUpTo:    int64(fields.varints[3]),
+			// The flat response is a full snapshot: 0 really is 0.
+			HasPlayedUpTo: true,
 			Archived:      int64(fields.varints[4]),
 			Starred:       int64(fields.varints[5]),
 			Duration:      int64(fields.varints[6]),
@@ -112,10 +114,12 @@ func ParseUpdateEpisodeRequest(data []byte) (EpisodeProgress, error) {
 	if err != nil {
 		return EpisodeProgress{}, err
 	}
+	_, hasPosition := fields.bytes[3]
 	return EpisodeProgress{
 		EpisodeUUID:   string(fields.bytes[1]),
 		PodcastUUID:   string(fields.bytes[2]),
 		PlayedUpTo:    unwrapScalar(fields.bytes[3]),
+		HasPlayedUpTo: hasPosition,
 		PlayingStatus: int64(fields.varints[4]),
 		Duration:      int64(fields.varints[5]),
 		Archived:      -1,

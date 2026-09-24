@@ -61,6 +61,8 @@ type progressPoller interface {
 	// ReplayIndexed re-delivers current state for first-party feed episodes —
 	// outage recovery for hook events (see watch.ReplayIndexed).
 	ReplayIndexed(ctx context.Context, userID int64) (int, error)
+	// WithUserLock serialises fn with the user's polls (see playback.go).
+	WithUserLock(userID int64, fn func() error) error
 }
 
 func New(st *store.Store, pusher push.Pusher, logger *slog.Logger, allowedEmails []string, progress progressPoller) http.Handler {

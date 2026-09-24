@@ -2,7 +2,9 @@ package watch
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/mdbraber/pocket-sessions-server/internal/hooks"
@@ -35,13 +37,41 @@ type ProgressWatcher struct {
 	// scopes burst exemption and replay to our own feeds rather than every
 	// subscribed podcast the enclosure index knows.
 	feedMatch string
+
+	// One lock per user serialises everything that reads the baseline, talks
+	// to PC and writes the baseline back: the ticker, nudge- and
+	// relay-triggered polls, and playback write-through (WithUserLock).
+	// Without it two overlapping polls both fire the same transition, and the
+	// slower one can save an older baseline over a newer one.
+	locksMu sync.Mutex
+	locks   map[int64]*sync.Mutex
+
+	// Wakes the delivery dispatcher when a poll queued events (outbox.go).
+	kick chan struct{}
 }
 
 func NewProgressWatcher(st *store.Store, runner *hooks.Runner, logger *slog.Logger, minDelta int64, feedMatch string) *ProgressWatcher {
 	if minDelta <= 0 {
 		minDelta = 30
 	}
-	return &ProgressWatcher{store: st, hooks: runner, logger: logger, minDelta: minDelta, feedMatch: feedMatch}
+	return &ProgressWatcher{
+		store: st, hooks: runner, logger: logger, minDelta: minDelta, feedMatch: feedMatch,
+		locks: map[int64]*sync.Mutex{}, kick: make(chan struct{}, 1),
+	}
+}
+
+// WithUserLock runs fn while holding the user's poll lock (see locks).
+func (w *ProgressWatcher) WithUserLock(userID int64, fn func() error) error {
+	w.locksMu.Lock()
+	lock, ok := w.locks[userID]
+	if !ok {
+		lock = &sync.Mutex{}
+		w.locks[userID] = lock
+	}
+	w.locksMu.Unlock()
+	lock.Lock()
+	defer lock.Unlock()
+	return fn()
 }
 
 // Run polls until ctx ends. The nudge path calls PollUser directly, so this is
@@ -73,11 +103,15 @@ func (w *ProgressWatcher) PollAll(ctx context.Context) {
 	}
 }
 
-// PollUser fetches changes since the stored cursor, fires hooks for material
-// changes, and advances the cursor. The very first poll (cursor 0) returns the
-// whole account, so it only seeds the baseline — replaying a lifetime of
-// listening as "just completed" would be worse than useless.
+// PollUser fetches changes since the stored cursor, queues hook events for
+// material changes, and advances the cursor. The very first poll (cursor 0)
+// returns the whole account, so it only seeds the baseline — replaying a
+// lifetime of listening as "just completed" would be worse than useless.
 func (w *ProgressWatcher) PollUser(ctx context.Context, userID int64) error {
+	return w.WithUserLock(userID, func() error { return w.pollUser(ctx, userID) })
+}
+
+func (w *ProgressWatcher) pollUser(ctx context.Context, userID int64) error {
 	link, linked, err := w.store.PCLink(userID)
 	if err != nil || !linked {
 		return err
@@ -115,6 +149,9 @@ func (w *ProgressWatcher) PollUser(ctx context.Context, userID int64) error {
 		return err
 	}
 	if len(sync.Episodes) == 0 {
+		if err := w.store.UpsertReplicaRecords(userID, "poll", sync.Others); err != nil {
+			w.logger.Warn("replica: poll records", "err", err)
+		}
 		if sync.LastModified > cursor {
 			return w.store.SetProgressCursor(userID, sync.LastModified)
 		}
@@ -144,17 +181,29 @@ func (w *ProgressWatcher) PollUser(ctx context.Context, userID int64) error {
 			Duration:      orPrevious(incoming.Duration, previous.Duration),
 			// -1 = the record didn't carry the flag; keep what we knew.
 			Archived: previous.Archived,
+			Reopened: previous.Reopened,
+		}
+		// An explicit 0 ("mark unplayed") is a real position, not an omission.
+		if incoming.HasPlayedUpTo {
+			merged.PlayedUpTo = incoming.PlayedUpTo
 		}
 		if incoming.Archived >= 0 {
 			merged.Archived = incoming.Archived
 		}
+		kind := ""
+		if !seeding {
+			kind = classify(known, previous, merged, w.minDelta)
+		}
+		switch {
+		case merged.PlayingStatus == pc.StatusCompleted:
+			merged.Reopened = 0
+		case kind == hooks.EventReopened:
+			merged.Reopened = 1
+		}
 		toSave = append(toSave, merged)
 		baseline[merged.EpisodeUUID] = merged
-		if seeding {
-			continue
-		}
 
-		if kind := classify(known, previous, merged, w.minDelta); kind != "" {
+		if kind != "" {
 			events = append(events, hooks.Event{
 				Event:         kind,
 				UserID:        userID,
@@ -168,40 +217,26 @@ func (w *ProgressWatcher) PollUser(ctx context.Context, userID int64) error {
 		}
 	}
 
-	if err := w.store.SaveEpisodeProgress(userID, toSave); err != nil {
-		return err
-	}
-	// The replica rides along on every poll — same records, richer store.
-	if err := w.store.UpsertReplicaEpisodes(userID, "poll", sync.Episodes); err != nil {
-		w.logger.Warn("replica: poll episodes", "err", err)
-	}
-	if err := w.store.UpsertReplicaRecords(userID, "poll", sync.Others); err != nil {
-		w.logger.Warn("replica: poll records", "err", err)
-	}
-	if err := w.store.SetProgressCursor(userID, sync.LastModified); err != nil {
-		return err
-	}
-	if seeding {
-		w.logger.Info("progress watcher seeded", "user", userID, "episodes", len(toSave))
-		return nil
-	}
-	if len(events) == 0 {
-		return nil
-	}
 	// The seed only covers the episodes PC returns for a fresh sync (a few
 	// thousand of a much larger account), so a bulk operation that touches old
 	// episodes — a mass archive, a re-sync — can present hundreds of long-since
 	// finished episodes as first sightings. Real listening never looks like
 	// that, so a burst this size is mostly dropped rather than replayed —
-	// EXCEPT for first-party feed episodes (the enclosure index): their hooks
-	// are idempotent and losing their events is exactly the outage-recovery
-	// gap, so they always deliver. A catch-up after downtime keeps its
-	// meaningful events; the mass-archive noise stays quiet.
+	// EXCEPT for first-party feed episodes (PCS_FEED_MATCH, looked up in the
+	// enclosure index): their hooks are idempotent and losing their events is
+	// exactly the outage-recovery gap, so they always deliver. A catch-up
+	// after downtime keeps its meaningful events; the mass-archive noise stays
+	// quiet. Without PCS_FEED_MATCH nothing is exempt — "every subscribed
+	// podcast" would make the cap meaningless.
 	if len(events) > maxEventsPerPoll {
-		indexed, err := w.store.EnclosureEpisodes(userID, w.feedMatch)
-		if err != nil {
-			w.logger.Warn("progress: enclosure index for burst filter", "err", err)
-			indexed = map[string]string{}
+		indexed := map[string]string{}
+		if w.feedMatch != "" {
+			var err error
+			indexed, err = w.store.EnclosureEpisodes(userID, w.feedMatch)
+			if err != nil {
+				w.logger.Warn("progress: enclosure index for burst filter", "err", err)
+				indexed = map[string]string{}
+			}
 		}
 		var kept []hooks.Event
 		for _, event := range events {
@@ -212,39 +247,91 @@ func (w *ProgressWatcher) PollUser(ctx context.Context, userID int64) error {
 		w.logger.Warn("progress: bulk burst — delivering only feed-episode events",
 			"user", userID, "events", len(events), "kept", len(kept), "limit", maxEventsPerPoll)
 		events = kept
-		if len(events) == 0 {
-			return nil
-		}
 	}
 
-	w.logger.Info("progress changes", "user", userID, "events", len(events))
-	for _, event := range events {
-		w.enrich(ctx, &event)
-		w.hooks.Fire(ctx, event)
+	// Baseline, queued events and cursor commit together; delivery happens
+	// in the dispatcher (outbox.go), off this poll's deadline and with retries.
+	queued := w.outboxEvents(events)
+	if err := w.store.CommitProgressPoll(userID, toSave, queued, sync.LastModified); err != nil {
+		return err
+	}
+	// The replica rides along on every poll — same records, richer store.
+	if err := w.store.UpsertReplicaEpisodes(userID, "poll", sync.Episodes); err != nil {
+		w.logger.Warn("replica: poll episodes", "err", err)
+	}
+	if err := w.store.UpsertReplicaRecords(userID, "poll", sync.Others); err != nil {
+		w.logger.Warn("replica: poll records", "err", err)
+	}
+	if seeding {
+		w.logger.Info("progress watcher seeded", "user", userID, "episodes", len(toSave))
+		return nil
+	}
+	if len(queued) > 0 {
+		w.logger.Info("progress changes", "user", userID, "events", len(queued))
+		w.Kick()
 	}
 	return nil
 }
 
+// outboxEvents serialises events for the delivery queue. Nothing is queued
+// when no hooks or webhooks are configured — the queue would only grow.
+func (w *ProgressWatcher) outboxEvents(events []hooks.Event) []store.OutboxEvent {
+	if w.hooks == nil {
+		return nil
+	}
+	out := make([]store.OutboxEvent, 0, len(events))
+	for _, event := range events {
+		payload, err := json.Marshal(event)
+		if err != nil {
+			continue
+		}
+		out = append(out, store.OutboxEvent{UserID: event.UserID, EpisodeUUID: event.EpisodeUUID, Payload: payload})
+	}
+	return out
+}
+
 // enrich adds the episode's title and enclosure URL from the public catalog —
 // PC's sync records carry neither, and the URL is what lets a hook tell its
-// own content apart from everything else.
-func (w *ProgressWatcher) enrich(ctx context.Context, event *hooks.Event) {
-	if event.PodcastUUID == "" {
-		return
-	}
-	catalog, err := pc.FetchCatalog(ctx, event.PodcastUUID)
-	if err != nil {
-		w.logger.Debug("progress enrich: catalog", "podcast", event.PodcastUUID, "err", err)
-		return
-	}
-	event.PodcastTitle = catalog.Title
-	for _, episode := range catalog.Episodes {
-		if episode.UUID == event.EpisodeUUID {
-			event.EpisodeTitle = episode.Title
-			event.EpisodeURL = episode.URL
-			return
+// own content apart from everything else. Catalogs are cached per dispatch
+// round (a replay sweep would otherwise download one feed hundreds of
+// times); the enclosure index is the fallback for the URL. The error is only
+// returned when the URL is still unknown and the catalog could not be read,
+// which is worth a retry.
+func (w *ProgressWatcher) enrich(ctx context.Context, event *hooks.Event, catalogs map[string]pc.CatalogPodcast) error {
+	var fetchErr error
+	if event.PodcastUUID != "" {
+		catalog, ok := catalogs[event.PodcastUUID]
+		if !ok {
+			var err error
+			catalog, err = pc.FetchCatalog(ctx, event.PodcastUUID)
+			if err != nil {
+				w.logger.Debug("progress enrich: catalog", "podcast", event.PodcastUUID, "err", err)
+				fetchErr = err
+			} else {
+				catalogs[event.PodcastUUID] = catalog
+				ok = true
+			}
+		}
+		if ok {
+			event.PodcastTitle = catalog.Title
+			for _, episode := range catalog.Episodes {
+				if episode.UUID == event.EpisodeUUID {
+					event.EpisodeTitle = episode.Title
+					event.EpisodeURL = episode.URL
+					break
+				}
+			}
 		}
 	}
+	if event.EpisodeURL == "" {
+		if url, err := w.store.EnclosureURL(event.UserID, event.EpisodeUUID); err == nil {
+			event.EpisodeURL = url
+		}
+	}
+	if event.EpisodeURL == "" && fetchErr != nil {
+		return fetchErr
+	}
+	return nil
 }
 
 // classify decides what (if anything) changed enough to report.
@@ -305,23 +392,24 @@ func abs(v int64) int64 {
 	return v
 }
 
-// ReplayIndexed re-delivers the CURRENT replica state of every first-party
-// feed episode as one synthetic hook event each — the recovery tool for
-// events lost to downtime (the reverse of suppression: nothing here depends
-// on a transition, so it is safe to run any time; hooks are idempotent, and
+// ReplayIndexed queues the CURRENT replica state of every first-party feed
+// episode as one synthetic hook event each — the recovery tool for events
+// lost to downtime (the reverse of suppression: nothing here depends on a
+// transition, so it is safe to run any time; hooks are idempotent, and
 // sticky completion on the receiving side makes over-delivery harmless).
 // Archived beats completed beats progress, mirroring classify's ranking.
+// Delivery runs through the queue, so this returns as soon as the events are
+// queued and a slow sweep can't be cut short by the caller disconnecting.
 func (w *ProgressWatcher) ReplayIndexed(ctx context.Context, userID int64) (int, error) {
+	if w.hooks == nil {
+		return 0, nil
+	}
 	states, err := w.store.ReplicaIndexedEpisodes(userID, w.feedMatch)
 	if err != nil {
 		return 0, err
 	}
-	urls, err := w.store.EnclosureEpisodes(userID, w.feedMatch)
-	if err != nil {
-		return 0, err
-	}
 	now := time.Now().Unix()
-	fired := 0
+	var events []hooks.Event
 	for _, st := range states {
 		var kind string
 		switch {
@@ -334,7 +422,7 @@ func (w *ProgressWatcher) ReplayIndexed(ctx context.Context, userID int64) (int,
 		default:
 			continue
 		}
-		event := hooks.Event{
+		events = append(events, hooks.Event{
 			Event:         kind,
 			UserID:        userID,
 			EpisodeUUID:   st.EpisodeUUID,
@@ -343,14 +431,12 @@ func (w *ProgressWatcher) ReplayIndexed(ctx context.Context, userID int64) (int,
 			Duration:      st.Duration,
 			PlayingStatus: st.PlayingStatus,
 			At:            now,
-		}
-		w.enrich(ctx, &event)
-		if event.EpisodeURL == "" {
-			event.EpisodeURL = urls[st.EpisodeUUID]
-		}
-		w.hooks.Fire(ctx, event)
-		fired++
+		})
 	}
-	w.logger.Info("replay: indexed episodes re-delivered", "user", userID, "events", fired)
-	return fired, nil
+	if err := w.store.EnqueueHookEvents(userID, w.outboxEvents(events)); err != nil {
+		return 0, err
+	}
+	w.Kick()
+	w.logger.Info("replay: indexed episodes queued", "user", userID, "events", len(events))
+	return len(events), nil
 }

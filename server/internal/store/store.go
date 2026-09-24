@@ -178,6 +178,16 @@ CREATE TABLE IF NOT EXISTS pc_history_ledger (
     first_seen   TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (user_id, episode_uuid)
 );
+CREATE TABLE IF NOT EXISTS hook_outbox (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT, -- hook events awaiting delivery;
+    user_id         INTEGER NOT NULL,                  -- written in the same transaction as
+    episode_uuid    TEXT NOT NULL,                     -- the baseline they were diffed from,
+    payload         TEXT NOT NULL,                     -- deleted once delivered (see outbox.go)
+    attempts        INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at INTEGER NOT NULL DEFAULT 0,        -- unix seconds
+    last_error      TEXT NOT NULL DEFAULT '',
+    created_at      INTEGER NOT NULL
+);
 CREATE INDEX IF NOT EXISTS idx_sessions_cursor ON sessions(user_id, cursor);
 CREATE INDEX IF NOT EXISTS idx_presets_cursor  ON presets(user_id, cursor);
 `)
@@ -201,6 +211,12 @@ CREATE INDEX IF NOT EXISTS idx_presets_cursor  ON presets(user_id, cursor);
 	// Additive migration: the app's archived flag rides along in the progress
 	// baseline so the watcher can fire on the transition (see watch/progress.go).
 	if _, err := s.db.Exec(`ALTER TABLE episode_progress ADD COLUMN archived INTEGER NOT NULL DEFAULT 0`); err != nil && !isDuplicateColumn(err) {
+		return err
+	}
+	// Set when PC moves a completed episode back to unplayed/in-progress, so
+	// an external player's sticky "watched" flag can't re-complete it (see
+	// api/playback.go).
+	if _, err := s.db.Exec(`ALTER TABLE episode_progress ADD COLUMN reopened INTEGER NOT NULL DEFAULT 0`); err != nil && !isDuplicateColumn(err) {
 		return err
 	}
 	// PC's lastModified cursor for progress polling (see store/progress.go).

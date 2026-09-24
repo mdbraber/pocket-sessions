@@ -59,7 +59,7 @@ func FromEnv() Config {
 		ProgressMinDelta: parseInt(os.Getenv("PCS_PROGRESS_MIN_DELTA"), 30),
 		FeedMatch:        strings.TrimSpace(os.Getenv("PCS_FEED_MATCH")),
 		HooksDir:         os.Getenv("PCS_HOOKS_DIR"),
-		HookTimeout:      parsePoll(envOr("PCS_HOOK_TIMEOUT", "30s")),
+		HookTimeout:      parseTimeout(envOr("PCS_HOOK_TIMEOUT", "30s"), 30*time.Second),
 		WebhookURLs:      splitList(os.Getenv("PCS_WEBHOOK_URLS")),
 		WebhookToken:     strings.TrimSpace(os.Getenv("PCS_WEBHOOK_TOKEN")),
 		LogLevel:         slog.LevelInfo,
@@ -89,6 +89,20 @@ func parsePoll(v string) time.Duration {
 	}
 	if d < time.Minute {
 		return time.Minute
+	}
+	return d
+}
+
+// parseTimeout is for per-call timeouts, where seconds are the natural unit —
+// unlike parsePoll there is no one-minute floor. Garbage or non-positive
+// values fall back to the default.
+func parseTimeout(v string, fallback time.Duration) time.Duration {
+	d, err := time.ParseDuration(v)
+	if err != nil || d <= 0 {
+		return fallback
+	}
+	if d < time.Second {
+		return time.Second
 	}
 	return d
 }

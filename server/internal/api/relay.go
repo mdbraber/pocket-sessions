@@ -85,15 +85,34 @@ func (s *Server) handleRelay(w http.ResponseWriter, r *http.Request) {
 	if upReq.Header.Get("Accept-Encoding") != "" {
 		upReq.Header.Set("Accept-Encoding", "gzip")
 	}
+	// Headers named in Connection are hop-by-hop too.
+	for _, field := range upReq.Header.Values("Connection") {
+		for _, name := range strings.Split(field, ",") {
+			if name = strings.TrimSpace(name); name != "" {
+				upReq.Header.Del(name)
+			}
+		}
+	}
 	for _, h := range hopHeaders {
+		upReq.Header.Del(h)
+	}
+	// Pocket Casts' API authenticates by bearer token; cookies and the
+	// client's address (added by Caddy) have no business upstream.
+	for _, h := range []string{"Cookie", "X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto", "X-Real-Ip", "Forwarded"} {
 		upReq.Header.Del(h)
 	}
 	upReq.Host = ""
 
-	client := &http.Client{Timeout: 90 * time.Second}
+	// Redirects pass through to the client as they are: following them here
+	// would turn a redirected POST into a body-less GET.
+	client := &http.Client{
+		Timeout:       90 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
 	resp, err := client.Do(upReq)
 	if err != nil {
-		http.Error(w, "upstream unreachable: "+err.Error(), http.StatusBadGateway)
+		s.logger.Warn("relay: upstream unreachable", "path", path, "err", err)
+		http.Error(w, "upstream unreachable", http.StatusBadGateway)
 		return
 	}
 	defer resp.Body.Close()

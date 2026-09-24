@@ -98,6 +98,11 @@ func cycleUser(ctx context.Context, st *store.Store, pusher push.Pusher, logger 
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	var results []feedResult
+	// The catalogs fetched here also refresh the enclosure index — the map
+	// from media URL to episode that playback reports, the bulk-burst
+	// exemption and replay all depend on. Building it only on a lookup miss
+	// left new feed episodes out of it until something happened to miss.
+	enclosures := map[string][]store.EpisodeEnclosure{}
 	for _, podcast := range list.Podcasts {
 		wg.Add(1)
 		go func(podcast pc.Podcast) {
@@ -109,6 +114,13 @@ func cycleUser(ctx context.Context, st *store.Store, pusher push.Pusher, logger 
 				logger.Warn("watcher: catalog", "uuid", podcast.UUID, "err", err)
 				return
 			}
+			entries := make([]store.EpisodeEnclosure, 0, len(catalog.Episodes))
+			for _, ep := range catalog.Episodes {
+				entries = append(entries, store.EpisodeEnclosure{EpisodeUUID: ep.UUID, PodcastUUID: podcast.UUID, URL: ep.URL})
+			}
+			mu.Lock()
+			enclosures[podcast.UUID] = entries
+			mu.Unlock()
 			res := feedResult{podcast: podcast, seeded: !seededPodcasts[podcast.UUID], title: catalog.Title}
 			for _, ep := range catalog.Episodes {
 				if !seenEpisodes[ep.UUID] {
@@ -123,6 +135,9 @@ func cycleUser(ctx context.Context, st *store.Store, pusher push.Pusher, logger 
 		}(podcast)
 	}
 	wg.Wait()
+	if err := st.SaveEpisodeEnclosures(userID, enclosures); err != nil {
+		logger.Warn("watcher: enclosure index", "err", err)
+	}
 
 	var alerts []push.EpisodeAlert
 	// Every fresh episode, alert-worthy or not: recovery repairs the app's DATA, so it is not

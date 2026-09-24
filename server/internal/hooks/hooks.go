@@ -12,14 +12,18 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
+	neturl "net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -51,7 +55,8 @@ type Runner struct {
 	logger  *slog.Logger
 	// Webhook sinks: the same event JSON scripts get on stdin, POSTed to each
 	// URL — the Todoist shape: receivers (an n8n flow, anything) subscribe by
-	// URL and the server knows nothing about them. Replay sweeps re-fire
+	// URL and the server knows nothing about them. Failed deliveries are
+	// retried from the watcher's delivery queue and replay sweeps re-fire
 	// through the same path, so receivers get at-least-once delivery and must
 	// be idempotent — the standing hook contract.
 	webhookURLs  []string
@@ -71,31 +76,34 @@ func New(dir string, timeout time.Duration, logger *slog.Logger, webhookURLs []s
 	return &Runner{dir: dir, timeout: timeout, logger: logger, webhookURLs: webhookURLs, webhookToken: webhookToken}
 }
 
-// Fire runs every executable in the hooks directory for this event. Hooks are
-// independent: one failing (or timing out) never blocks the others, and never
-// fails the caller — playback events are informational, not transactional.
-func (r *Runner) Fire(ctx context.Context, event Event) {
+// Fire delivers the event to every webhook sink and runs every executable in
+// the hooks directory. Sinks and hooks are independent: one failing (or timing
+// out) never blocks the others. The returned error joins every failure, so the
+// caller (the delivery queue in internal/watch) can retry the event — hooks
+// and receivers are idempotent by contract, so re-delivering to the ones that
+// already succeeded is harmless.
+func (r *Runner) Fire(ctx context.Context, event Event) error {
 	if r == nil {
-		return
+		return nil
 	}
 	payload, err := json.Marshal(event)
 	if err != nil {
-		return
+		return err
 	}
-	r.postWebhooks(ctx, event, payload)
+	errs := r.postWebhooks(ctx, event, payload)
 
 	if r.dir == "" {
-		return
+		return errors.Join(errs...)
 	}
 	scripts, err := r.scripts()
 	if err != nil {
 		r.logger.Warn("hooks: reading directory", "dir", r.dir, "err", err)
-		return
+		return errors.Join(append(errs, err)...)
 	}
 	if len(scripts) == 0 {
-		return
+		return errors.Join(errs...)
 	}
-	env := append(os.Environ(),
+	env := append(hookEnviron(),
 		"PCS_EVENT="+event.Event,
 		"PCS_USER_ID="+strconv.FormatInt(event.UserID, 10),
 		"PCS_EPISODE_UUID="+event.EpisodeUUID,
@@ -110,17 +118,40 @@ func (r *Runner) Fire(ctx context.Context, event Event) {
 	)
 
 	for _, script := range scripts {
-		r.run(ctx, script, payload, env, event)
+		if err := r.run(ctx, script, payload, env, event); err != nil {
+			errs = append(errs, err)
+		}
 	}
+	return errors.Join(errs...)
 }
 
-func (r *Runner) run(ctx context.Context, script string, payload []byte, env []string, event Event) {
+// hookEnviron is the server's environment minus its own PCS_* configuration —
+// that holds the operator token, the webhook token and the APNs key paths,
+// none of which a hook needs. A hook's own credentials (OWNTUBE_TOKEN, …) pass
+// through; the event itself is added back as PCS_* variables.
+func hookEnviron() []string {
+	var env []string
+	for _, kv := range os.Environ() {
+		if strings.HasPrefix(kv, "PCS_") {
+			continue
+		}
+		env = append(env, kv)
+	}
+	return env
+}
+
+// How long a timed-out hook's children may keep its output pipes open before
+// PCS stops waiting for them (exec kills only the script itself).
+const hookWaitDelay = 2 * time.Second
+
+func (r *Runner) run(ctx context.Context, script string, payload []byte, env []string, event Event) error {
 	runCtx, cancel := context.WithTimeout(ctx, r.timeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(runCtx, script)
 	cmd.Env = env
 	cmd.Stdin = bytes.NewReader(payload)
+	cmd.WaitDelay = hookWaitDelay
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &out
@@ -131,43 +162,68 @@ func (r *Runner) run(ctx context.Context, script string, payload []byte, env []s
 	if err != nil {
 		r.logger.Warn("hook failed", "hook", name, "event", event.Event,
 			"episode", event.EpisodeUUID, "err", err, "output", output)
-		return
+		return fmt.Errorf("hook %s: %w", name, err)
 	}
 	if output != "" {
 		r.logger.Info("hook ran", "hook", name, "event", event.Event, "output", output)
 	} else {
 		r.logger.Debug("hook ran", "hook", name, "event", event.Event)
 	}
+	return nil
+}
+
+// webhookClient never follows redirects: a 301/302 would turn the POST into a
+// body-less GET (and carry X-Webhook-Token to wherever it points), and a 2xx
+// from that would look like a delivery. A redirect is reported as a failure.
+var webhookClient = &http.Client{
+	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 }
 
 // postWebhooks delivers the event to every configured sink, independently:
-// one slow or failing receiver never blocks another, or the caller.
-func (r *Runner) postWebhooks(ctx context.Context, event Event, payload []byte) {
+// one slow or failing receiver never blocks another.
+func (r *Runner) postWebhooks(ctx context.Context, event Event, payload []byte) []error {
+	var errs []error
 	for _, url := range r.webhookURLs {
-		postCtx, cancel := context.WithTimeout(ctx, r.timeout)
-		req, err := http.NewRequestWithContext(postCtx, http.MethodPost, url, bytes.NewReader(payload))
-		if err != nil {
-			cancel()
+		if err := r.postWebhook(ctx, url, payload); err != nil {
+			// Log the host only: for n8n the URL path is the capability.
+			r.logger.Warn("webhook failed", "host", webhookHost(url), "event", event.Event, "err", err)
+			errs = append(errs, fmt.Errorf("webhook %s: %w", webhookHost(url), err))
 			continue
 		}
-		req.Header.Set("Content-Type", "application/json")
-		if r.webhookToken != "" {
-			req.Header.Set("X-Webhook-Token", r.webhookToken)
-		}
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			r.logger.Warn("webhook failed", "url", url, "event", event.Event, "err", err)
-			cancel()
-			continue
-		}
-		_ = resp.Body.Close()
-		if resp.StatusCode >= 300 {
-			r.logger.Warn("webhook rejected", "url", url, "event", event.Event, "status", resp.StatusCode)
-		} else {
-			r.logger.Debug("webhook delivered", "url", url, "event", event.Event, "status", resp.StatusCode)
-		}
-		cancel()
+		r.logger.Debug("webhook delivered", "host", webhookHost(url), "event", event.Event)
 	}
+	return errs
+}
+
+func (r *Runner) postWebhook(ctx context.Context, url string, payload []byte) error {
+	postCtx, cancel := context.WithTimeout(ctx, r.timeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(postCtx, http.MethodPost, url, bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if r.webhookToken != "" {
+		req.Header.Set("X-Webhook-Token", r.webhookToken)
+	}
+	resp, err := webhookClient.Do(req)
+	if err != nil {
+		return err
+	}
+	// Drain so the connection is reused.
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
+	_ = resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	return nil
+}
+
+func webhookHost(raw string) string {
+	if u, err := neturl.Parse(raw); err == nil && u.Host != "" {
+		return u.Host
+	}
+	return "(unparseable url)"
 }
 
 // scripts lists executable regular files, in lexical order so operators can

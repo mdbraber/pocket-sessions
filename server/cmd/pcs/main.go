@@ -102,9 +102,10 @@ func serve() {
 		}
 	}
 
-	// Playback-progress watcher: diffs PC's episode progress and runs local
-	// hook scripts (see internal/hooks). Also driven by the nudge, so a
-	// finished episode reaches a hook in seconds rather than at the next tick.
+	// Playback-progress watcher: diffs PC's episode progress and queues hook
+	// events, which the dispatcher delivers to scripts and webhooks (see
+	// internal/hooks). Also driven by the nudge and the relay, so a finished
+	// episode reaches a hook in seconds rather than at the next tick.
 	hookRunner := hooks.New(cfg.HooksDir, cfg.HookTimeout, logger, cfg.WebhookURLs, cfg.WebhookToken)
 	progressWatcher := watch.NewProgressWatcher(st, hookRunner, logger, cfg.ProgressMinDelta, cfg.FeedMatch)
 
@@ -131,6 +132,10 @@ func serve() {
 	} else {
 		logger.Info("progress watcher disabled (PCS_PROGRESS_POLL)")
 	}
+	// Delivers the hook events polls and replays queue, with retries
+	// (watch/outbox.go). Nudge- and relay-triggered polls queue events even
+	// when the timed poll is off.
+	go progressWatcher.RunDispatcher(watchCtx)
 
 	go func() {
 		logger.Info("listening", "addr", cfg.Listen, "db", cfg.DBPath)
