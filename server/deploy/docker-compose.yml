@@ -7,6 +7,9 @@
 #   PCS_AUTH_TOKEN=<openssl rand -hex 24>       # operator credential (curl/scripts)
 #   PCS_ALLOWED_EMAILS=you@example.com          # PC accounts allowed to enroll (optional)
 #   PCS_APNS_KEY_ID=ABC123DEFG                  # with the .p8 dropped in ./data (optional)
+#   PCS_APNS_TEAM_ID=ABCDE12345                 # Apple developer team id (with a key)
+#   PCS_APNS_TOPIC=com.example.podcasts         # the app's bundle id (with a key)
+#   PCS_DNS=2001:db8::1                         # resolver on the tier network (split DNS)
 services:
   pocket-sessions:
     container_name: pocket-sessions
@@ -18,13 +21,15 @@ services:
       - PCS_AUTH_TOKEN=${PCS_AUTH_TOKEN}
       - PCS_ALLOWED_EMAILS=${PCS_ALLOWED_EMAILS:-}
       # APNs: put AuthKey_<KEYID>.p8 in ./data and set PCS_APNS_KEY_ID in .env;
-      # team id and topic default in code (ABCDE12345 / com.example.podcasts).
+      # PCS_APNS_TEAM_ID and PCS_APNS_TOPIC come from .env as well.
       # Environment-restricted keys: PCS_APNS_KEY_ID = production (or both),
       # PCS_APNS_KEY_ID_SANDBOX = sandbox-only key (dev-signed builds).
       - PCS_APNS_KEY=${PCS_APNS_KEY_ID:+/data/AuthKey_${PCS_APNS_KEY_ID}.p8}
       - PCS_APNS_KEY_ID=${PCS_APNS_KEY_ID:-}
       - PCS_APNS_KEY_SANDBOX=${PCS_APNS_KEY_ID_SANDBOX:+/data/AuthKey_${PCS_APNS_KEY_ID_SANDBOX}.p8}
       - PCS_APNS_KEY_ID_SANDBOX=${PCS_APNS_KEY_ID_SANDBOX:-}
+      - PCS_APNS_TEAM_ID=${PCS_APNS_TEAM_ID:-}
+      - PCS_APNS_TOPIC=${PCS_APNS_TOPIC:-}
       # Episode watcher cadence and visible-alert policy (synced|all|off).
       - PCS_EPISODE_POLL=${PCS_EPISODE_POLL:-10m}
       - PCS_NOTIFY=${PCS_NOTIFY:-synced}
@@ -54,7 +59,7 @@ services:
       seg15-media:
         gw_priority: 100
     dns:
-      - 2001:db8:1015::1
+      - ${PCS_DNS:?set PCS_DNS in .env}
     cap_drop:
       - NET_RAW
     labels:

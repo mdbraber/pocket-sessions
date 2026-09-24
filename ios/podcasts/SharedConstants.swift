@@ -1,6 +1,8 @@
+import Foundation
+
 enum SharedConstants {
     enum GroupUserDefaults {
-        public static let groupContainerId = "group.com.example.pocketcasts"
+        public static let groupContainerId = Bundle.main.object(forInfoDictionaryKey: "AppGroupIdentifier") as? String ?? "group.au.com.shiftyjelly.pocketcasts"
         public static let upNextItems = "upNextItems"
         public static let upNextItemsCount = "upNextItemsCount"
         public static let siriSearchItems = "siriSearchItems"

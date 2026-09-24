@@ -409,7 +409,7 @@ class Settings: NSObject {
     }
 
     /// The Pocket Casts Sessions (PCS) server base URL. Also settable from the terminal for simulator testing:
-    ///   xcrun simctl spawn booted defaults write com.example.podcasts SJSessionServerURL http://localhost:8080
+    ///   xcrun simctl spawn booted defaults write <bundle-id> SJSessionServerURL http://localhost:8080
     private static let sessionServerURLKey = "SJSessionServerURL"
     class func sessionServerURL() -> URL? {
         guard let raw = UserDefaults.standard.string(forKey: sessionServerURLKey), !raw.isEmpty else { return nil }

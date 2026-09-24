@@ -25,8 +25,8 @@ type Config struct {
 	APNSKeyID        string // PCS_APNS_KEY_ID
 	APNSSandboxKey   string // PCS_APNS_KEY_SANDBOX — sandbox-restricted key (optional)
 	APNSSandboxKeyID string // PCS_APNS_KEY_ID_SANDBOX
-	APNSTeamID       string // PCS_APNS_TEAM_ID, default ABCDE12345
-	APNSTopic        string // PCS_APNS_TOPIC, default com.example.podcasts
+	APNSTeamID       string // PCS_APNS_TEAM_ID
+	APNSTopic        string // PCS_APNS_TOPIC — the app bundle id
 	// Episode watcher: poll the public catalog for new episodes and push.
 	EpisodePoll time.Duration // PCS_EPISODE_POLL, default 10m; "off"/"0" disables
 	NotifyMode  string        // PCS_NOTIFY: "synced" (per-podcast toggle, default), "all", "off"
@@ -51,8 +51,8 @@ func FromEnv() Config {
 		APNSKeyID:        os.Getenv("PCS_APNS_KEY_ID"),
 		APNSSandboxKey:   os.Getenv("PCS_APNS_KEY_SANDBOX"),
 		APNSSandboxKeyID: os.Getenv("PCS_APNS_KEY_ID_SANDBOX"),
-		APNSTeamID:       envOr("PCS_APNS_TEAM_ID", "ABCDE12345"),
-		APNSTopic:        envOr("PCS_APNS_TOPIC", "com.example.podcasts"),
+		APNSTeamID:       os.Getenv("PCS_APNS_TEAM_ID"),
+		APNSTopic:        os.Getenv("PCS_APNS_TOPIC"),
 		EpisodePoll:      parsePoll(envOr("PCS_EPISODE_POLL", "10m")),
 		NotifyMode:       envOr("PCS_NOTIFY", "synced"),
 		ProgressPoll:     parsePoll(envOr("PCS_PROGRESS_POLL", "15m")),

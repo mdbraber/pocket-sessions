@@ -61,8 +61,8 @@ curl -s 'localhost:8080/session/v1/changes?since=0'
 | `PCS_ALLOWED_EMAILS` | *(empty)*        | PC accounts allowed to enroll (comma-separated); empty = the already-linked account, or anyone on a fresh server |
 | `PCS_APNS_KEY`       | *(empty)*        | Path to the APNs `AuthKey_<KEYID>.p8`; unset = log pusher       |
 | `PCS_APNS_KEY_ID`    | *(empty)*        | The key's 10-char id                                            |
-| `PCS_APNS_TEAM_ID`   | `ABCDE12345`     | Apple developer team id                                         |
-| `PCS_APNS_TOPIC`     | `com.example.podcasts` | App bundle id (the push topic)                           |
+| `PCS_APNS_TEAM_ID`   | *(empty)*        | Apple developer team id; unset = log pusher                     |
+| `PCS_APNS_TOPIC`     | *(empty)*        | App bundle id (the push topic); unset = log pusher              |
 | `PCS_EPISODE_POLL`   | `10m`            | New-episode watcher cadence (`off` disables; 1m floor)          |
 | `PCS_NOTIFY`         | `synced`         | Visible new-episode alerts: `synced` (per-podcast toggle), `all`, `off` |
 | `PCS_DEBUG`          | *(empty)*        | Debug logging when set                                          |

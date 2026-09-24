@@ -100,13 +100,20 @@ actor ShowInfoCoordinator: ShowInfoCoordinating {
     /// YouTube id, and chapters for that id live at `<base>/chapters/<videoId>.json`. The host is
     /// matched loosely (any host) because the media origin and the feed origin differ — enclosures
     /// stream from a LAN host while chapters are served publicly — so the enclosure's own host
-    /// cannot be reused. Override the base with the `SJVideoChaptersBase` default if it moves.
+    /// cannot be reused. The host comes from `SJ_VIDEO_CHAPTERS_HOST` in Local.xcconfig; the
+    /// `SJVideoChaptersBase` default overrides it. Unset = no chapters.
     private func videoChaptersUrl(episodeUuid: String) -> String? {
         guard let episode = dataManager.findEpisode(uuid: episodeUuid),
               let downloadUrl = episode.downloadUrl,
               let videoId = Self.videoChaptersVideoId(fromEnclosure: downloadUrl) else { return nil }
-        let base = UserDefaults.standard.string(forKey: "SJVideoChaptersBase") ?? "https://owntube.example.com"
+        guard let base = Self.videoChaptersBase else { return nil }
         return "\(base)/chapters/\(videoId).json"
+    }
+
+    private static var videoChaptersBase: String? {
+        if let base = UserDefaults.standard.string(forKey: "SJVideoChaptersBase"), !base.isEmpty { return base }
+        guard let host = Bundle.main.object(forInfoDictionaryKey: "SJVideoChaptersHost") as? String, !host.isEmpty else { return nil }
+        return "https://\(host)"
     }
 
     /// Exposed for testing: the 11-character id in `…/enclosure/<id>.m4a|.mp4`, or nil.

@@ -90,48 +90,53 @@ external_contributor: ## Generates an empty ApiCredentials.swift so the app buil
 	@sed -i '' 's/%{.*}//' "podcasts/Credentials/LocalApiCredentials.swift"
 	$(info You're ready to build the app, go ahead! 🎙)
 
-DEVICE_ID ?= 00000000-0000-0000-0000-000000000000
+-include config/Local.xcconfig
 
-device: ## Builds, installs and launches on the personal iPhone (paid-team automatic signing)
+local_identity:
+	@test -n "$(PRODUCT_BUNDLE_IDENTIFIER_ROOT)" -a -n "$(DEVELOPMENT_TEAM)" || { echo "copy config/Local.xcconfig.example to config/Local.xcconfig and fill it in"; exit 1; }
+
+device: local_identity ## Builds, installs and launches on the personal iPhone (paid-team automatic signing)
+	@test -n "$(DEVICE_ID)" || { echo "set DEVICE_ID in config/Local.xcconfig"; exit 1; }
 	xcodebuild -project podcasts.xcodeproj \
 	    -scheme pocketcasts \
 	    -configuration Debug \
 	    -destination 'platform=iOS,id=$(DEVICE_ID)' \
-	    PRODUCT_BUNDLE_IDENTIFIER_ROOT=com.example.podcasts \
-	    DEVELOPMENT_TEAM=ABCDE12345 \
+	    PRODUCT_BUNDLE_IDENTIFIER_ROOT=$(PRODUCT_BUNDLE_IDENTIFIER_ROOT) \
+	    DEVELOPMENT_TEAM=$(DEVELOPMENT_TEAM) \
 	    CODE_SIGN_STYLE=Automatic \
 	    PROVISIONING_PROFILE_SPECIFIER= \
 	    -allowProvisioningUpdates build
 	xcrun devicectl device install app --device $(DEVICE_ID) "$$(ls -dt ~/Library/Developer/Xcode/DerivedData/podcasts-*/Build/Products/Debug-iphoneos/podcasts.app | head -1)"
-	xcrun devicectl device process launch --device $(DEVICE_ID) com.example.podcasts
+	xcrun devicectl device process launch --device $(DEVICE_ID) $(PRODUCT_BUNDLE_IDENTIFIER_ROOT)
 
 # --- TestFlight (fork, personal paid team) ---------------------------------
 # Archives a Release build with the fork's bundle-id root + entitlements override
 # (same trick as `device`), then exports and uploads to App Store Connect using an
-# App Store Connect API key. Key lives at $(ASC_KEY_PATH); Key ID / Issuer ID below.
+# App Store Connect API key. Key lives at $(ASC_KEY_PATH); Key ID / Issuer ID come
+# from config/Local.xcconfig.
 TESTFLIGHT_ARCHIVE ?= $(CURDIR)/build/PocketCasts.xcarchive
 TESTFLIGHT_EXPORT ?= $(CURDIR)/build/testflight-export
-ASC_KEY_ID ?= KEYID12345
-ASC_ISSUER_ID ?= 00000000-0000-0000-0000-000000000000
 ASC_KEY_PATH ?= $(HOME)/.appstoreconnect/private/AuthKey_$(ASC_KEY_ID).p8
 
-testflight: ## Archives a Release build and uploads it to TestFlight (paid-team automatic signing)
+testflight: local_identity ## Archives a Release build and uploads it to TestFlight (paid-team automatic signing)
 	xcodebuild -project podcasts.xcodeproj \
 	    -scheme pocketcasts \
 	    -configuration Release \
 	    -destination 'generic/platform=iOS' \
 	    -archivePath "$(TESTFLIGHT_ARCHIVE)" \
 	    -xcconfig "$(CURDIR)/config/fork-testflight.xcconfig" \
-	    PRODUCT_BUNDLE_IDENTIFIER_ROOT=com.example.podcasts \
-	    DEVELOPMENT_TEAM=ABCDE12345 \
+	    PRODUCT_BUNDLE_IDENTIFIER_ROOT=$(PRODUCT_BUNDLE_IDENTIFIER_ROOT) \
+	    DEVELOPMENT_TEAM=$(DEVELOPMENT_TEAM) \
 	    CODE_SIGN_STYLE=Automatic \
 	    "CODE_SIGN_IDENTITY=Apple Development" \
 	    PROVISIONING_PROFILE_SPECIFIER= \
 	    -allowProvisioningUpdates archive
+	@test -n "$(ASC_KEY_ID)" -a -n "$(ASC_ISSUER_ID)" || { echo "set ASC_KEY_ID and ASC_ISSUER_ID in config/Local.xcconfig"; exit 1; }
+	sed 's/__DEVELOPMENT_TEAM__/$(DEVELOPMENT_TEAM)/' config/exportOptions.appstore.plist > build/exportOptions.appstore.plist
 	xcodebuild -exportArchive \
 	    -archivePath "$(TESTFLIGHT_ARCHIVE)" \
 	    -exportPath "$(TESTFLIGHT_EXPORT)" \
-	    -exportOptionsPlist "$(CURDIR)/config/exportOptions.appstore.plist" \
+	    -exportOptionsPlist "$(CURDIR)/build/exportOptions.appstore.plist" \
 	    -allowProvisioningUpdates \
 	    -authenticationKeyPath "$(ASC_KEY_PATH)" \
 	    -authenticationKeyID "$(ASC_KEY_ID)" \

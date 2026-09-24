@@ -50,6 +50,9 @@ artifacts/*
 .claude/settings.local.json
 .claude/worktrees
 
+# Fork: per-machine signing identity and hosts
+config/Local.xcconfig
+
 # Fork: local TestFlight archive/export output
 build/
 *.swp
