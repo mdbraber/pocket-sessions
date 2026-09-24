@@ -91,10 +91,13 @@ make deploy   # rsync source + docker compose up -d --build
 make hooks    # install/update playback hook scripts (deploy never touches them)
 ```
 
-The compose also joins an external `seg15-media` network — a tier of this
-host's site-to-site tunnel home, which is how playback hooks reach LAN-only
-services (see `hooks/README.md`). On a host without that setup, drop the
-`seg15-media`/`dns:` entries and keep just the `caddy` network.
+The compose also joins an external tier network — `PCS_TIER_NETWORK` in the
+host `.env`, default `seg15-media` — a tier of this host's site-to-site
+tunnel home, which is how playback hooks reach LAN-only services (see
+`hooks/README.md`); `PCS_DNS` is that segment's resolver. Set both in `.env`
+rather than editing the compose file on the host: `make deploy` overwrites
+it. On a host without that setup, drop the `tier`/`dns:` entries and keep
+just the `caddy` network.
 
 Devices never need a typed token: enrollment is PC-identity based. A device
 POSTs `/session/v1/pc-link/start` (unauthenticated), approves the pairing

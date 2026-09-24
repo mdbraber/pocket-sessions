@@ -47,8 +47,9 @@ loops terminate.
 ```
 
 Network: vps (Hetzner VPS) reaches the home LAN over a host-level
-site-to-site WireGuard tunnel; PCS joins the `seg15-media` tier network
-(default route, split DNS, `NET_RAW` dropped). Media never leaves home:
+site-to-site WireGuard tunnel; PCS joins a tier network
+(`PCS_TIER_NETWORK`, default `seg15-media`; default route, split DNS,
+`NET_RAW` dropped). Media never leaves home:
 feed *metadata* is public behind auth, enclosures/HLS resolve only on the
 LAN or over the phone's own VPN.
 
