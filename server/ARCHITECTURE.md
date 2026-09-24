@@ -144,10 +144,20 @@ byte-identical; the **observer decompresses only its own copy**
 *Observation:* parsed copies of `/user/sync/update` (both directions — the
 request carries the app's outgoing records), `/sync/update_episode` (the
 hot single-episode position sync), `/history/sync`, and
-`/user/podcast/episodes` feed the replica. Any `/sync/*` mutation also
-triggers the watcher with a **leading + trailing debounce**: one poll
-immediately, one after 6s of session quiet (a sync session is many requests;
-polling only at its start races the batches that matter).
+`/user/podcast/episodes` feed the replica. The app's **outgoing** episode
+records (the `/user/sync/update` request and `/sync/update_episode`) are also
+classified by the watcher directly: PC filters polls by the records'
+client-side stamps, so an action taken offline and synced much later would
+sit behind the cursor and never come back from a poll. Any `/sync/*`
+mutation also triggers the watcher with a **leading + trailing debounce**:
+one poll immediately, one 6s after the session's last request (a sync
+session is many requests; polling only at its start races the batches that
+matter).
+
+*Limits:* at most 8 exchanges are relayed and 4 parsed at once (each may
+buffer up to 64MB per direction); a request body over 64MB is refused with
+413 rather than truncated. Upstream redirects pass through to the client, and
+cookies and client-address headers are not forwarded.
 
 ### The replica
 

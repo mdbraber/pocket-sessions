@@ -36,6 +36,13 @@ func NewSeeder(st *store.Store, logger *slog.Logger) *Seeder {
 
 func (s *Seeder) Running() bool { return s.running.Load() }
 
+// Claim reserves the single seed slot before any work (a token refresh, say)
+// is done for the seed; the claimer must then call Run, or Release.
+func (s *Seeder) Claim() bool { return s.running.CompareAndSwap(false, true) }
+
+// Release gives up a claimed slot without seeding.
+func (s *Seeder) Release() { s.running.Store(false) }
+
 type SeedResult struct {
 	SyncEpisodes  int `json:"syncEpisodes"`
 	OtherRecords  int `json:"otherRecords"`
@@ -48,10 +55,15 @@ type SeedResult struct {
 // Seed runs the three passes. Callers handle token refresh before invoking;
 // a second concurrent seed returns immediately.
 func (s *Seeder) Seed(ctx context.Context, userID int64, accessToken string) (SeedResult, bool) {
-	if !s.running.CompareAndSwap(false, true) {
+	if !s.Claim() {
 		return SeedResult{}, false
 	}
-	defer s.running.Store(false)
+	return s.Run(ctx, userID, accessToken), true
+}
+
+// Run seeds with a slot already claimed (see Claim), releasing it when done.
+func (s *Seeder) Run(ctx context.Context, userID int64, accessToken string) SeedResult {
+	defer s.Release()
 	var result SeedResult
 
 	// Pass 1: full active state.
@@ -127,5 +139,5 @@ func (s *Seeder) Seed(ctx context.Context, userID int64, accessToken string) (Se
 		"podcastsSwept", result.PodcastsSwept,
 		"sweepEpisodes", result.SweepEpisodes,
 		"sweepFailures", result.SweepFailures)
-	return result, true
+	return result
 }

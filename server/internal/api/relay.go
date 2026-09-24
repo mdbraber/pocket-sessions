@@ -27,7 +27,16 @@ import (
 // Overridable for tests.
 var relayUpstream = "https://api.pocketcasts.com"
 
-const relayBodyCap = 64 << 20
+var relayBodyCap int64 = 64 << 20 // var so tests can shrink it
+
+// At most this many relayed exchanges in flight, and this many being parsed
+// for observation: each can hold up to relayBodyCap of request and response
+// bytes (plus a decompressed copy), so an unbounded burst could exhaust the
+// VPS's memory.
+var (
+	relaySlots   = make(chan struct{}, 8)
+	observeSlots = make(chan struct{}, 4)
+)
 
 // Hop-by-hop headers that must not be forwarded either way.
 var hopHeaders = []string{
@@ -57,9 +66,22 @@ func (s *Server) handleRelay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	reqBody, err := io.ReadAll(io.LimitReader(r.Body, relayBodyCap))
+	select {
+	case relaySlots <- struct{}{}:
+		defer func() { <-relaySlots }()
+	case <-r.Context().Done():
+		return
+	}
+
+	// Read one byte past the cap so an oversized body is refused rather than
+	// silently truncated and forwarded.
+	reqBody, err := io.ReadAll(io.LimitReader(r.Body, relayBodyCap+1))
 	if err != nil {
 		http.Error(w, "request read failed", http.StatusBadRequest)
+		return
+	}
+	if int64(len(reqBody)) > relayBodyCap {
+		http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
 		return
 	}
 
@@ -116,9 +138,14 @@ func (s *Server) handleRelay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer resp.Body.Close()
-	respBody, err := io.ReadAll(io.LimitReader(resp.Body, relayBodyCap))
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, relayBodyCap+1))
 	if err != nil {
 		http.Error(w, "upstream read failed", http.StatusBadGateway)
+		return
+	}
+	if int64(len(respBody)) > relayBodyCap {
+		s.logger.Warn("relay: upstream response over the cap", "path", path)
+		http.Error(w, "upstream response too large", http.StatusBadGateway)
 		return
 	}
 
@@ -137,9 +164,18 @@ func (s *Server) handleRelay(w http.ResponseWriter, r *http.Request) {
 	s.logger.Info("relay", "path", path, "status", resp.StatusCode,
 		"reqBytes", len(reqBody), "respBytes", len(respBody))
 
-	// Observation happens after the response is on the wire, off the hot path.
+	// Observation happens after the response is on the wire, off the hot
+	// path. Waiting for a free parse slot here (rather than inside the
+	// goroutine) is the backpressure that keeps buffered bodies bounded.
 	if resp.StatusCode == http.StatusOK {
-		go s.observeRelay(userID, path, reqBody, respBody, resp.Header.Get("Content-Encoding"))
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		observeSlots <- struct{}{}
+		go func() {
+			defer func() { <-observeSlots }()
+			s.observeRelay(userID, path, reqBody, respBody, resp.Header.Get("Content-Encoding"))
+		}()
 	}
 }
 
@@ -190,6 +226,7 @@ func (s *Server) observeRelay(userID int64, path string, reqBody, respBody []byt
 		reqSync, reqErr := pc.ParseSyncRequestRecords(reqBody)
 		if reqErr == nil {
 			s.feedReplica(userID, "relay-req", reqSync)
+			s.observeAppRecords(userID, reqSync.Episodes)
 		}
 		respSync, respErr := pc.ParseProgressResponseExported(respBody)
 		if respErr == nil {
@@ -224,6 +261,7 @@ func (s *Server) observeRelay(userID int64, path string, reqBody, respBody []byt
 			if err := s.store.UpsertReplicaEpisodes(userID, "relay-req", []pc.EpisodeProgress{episode}); err != nil {
 				s.logger.Warn("relay: update_episode", "err", err)
 			}
+			s.observeAppRecords(userID, []pc.EpisodeProgress{episode})
 		}
 		s.triggerRelayPoll(userID)
 	default:
@@ -271,12 +309,15 @@ func (s *Server) triggerRelayPoll(userID int64) {
 	s.relayPollMu.Unlock()
 
 	if leading {
-		s.runRelayPoll(userID)
+		go s.runRelayPoll(userID)
 	}
 	if scheduleTrailing {
 		go func() {
+			// Sleep until `quiet` after the LAST trigger, not a full `quiet`
+			// per round — that could stretch to nearly twice the window.
+			wait := quiet
 			for {
-				time.Sleep(quiet)
+				time.Sleep(wait)
 				s.relayPollMu.Lock()
 				quietFor := time.Since(s.relayTriggerLast[userID])
 				if quietFor >= quiet {
@@ -285,6 +326,7 @@ func (s *Server) triggerRelayPoll(userID int64) {
 					break
 				}
 				s.relayPollMu.Unlock()
+				wait = quiet - quietFor
 			}
 			s.runRelayPoll(userID)
 		}()
@@ -296,6 +338,17 @@ func (s *Server) runRelayPoll(userID int64) {
 	defer cancel()
 	if err := s.progress.PollUser(ctx, userID); err != nil {
 		s.logger.Warn("relay-triggered poll", "user", userID, "err", err)
+	}
+}
+
+// observeAppRecords hands the app's outgoing episode records to the watcher,
+// which catches actions whose client stamps a poll would never return.
+func (s *Server) observeAppRecords(userID int64, episodes []pc.EpisodeProgress) {
+	if s.progress == nil || len(episodes) == 0 {
+		return
+	}
+	if err := s.progress.ObserveAppRecords(userID, episodes); err != nil {
+		s.logger.Warn("relay: app records", "err", err)
 	}
 }
 

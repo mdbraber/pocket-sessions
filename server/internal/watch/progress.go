@@ -163,11 +163,41 @@ func (w *ProgressWatcher) pollUser(ctx context.Context, userID int64) error {
 		return err
 	}
 	seeding := cursor == 0
+	toSave, events := w.diffEpisodes(userID, baseline, sync.Episodes, seeding)
+	events = w.capBurst(userID, events)
 
+	// Baseline, queued events and cursor commit together; delivery happens
+	// in the dispatcher (outbox.go), off this poll's deadline and with retries.
+	queued := w.outboxEvents(events)
+	if err := w.store.CommitProgressPoll(userID, toSave, queued, sync.LastModified); err != nil {
+		return err
+	}
+	// The replica rides along on every poll — same records, richer store.
+	if err := w.store.UpsertReplicaEpisodes(userID, "poll", sync.Episodes); err != nil {
+		w.logger.Warn("replica: poll episodes", "err", err)
+	}
+	if err := w.store.UpsertReplicaRecords(userID, "poll", sync.Others); err != nil {
+		w.logger.Warn("replica: poll records", "err", err)
+	}
+	if seeding {
+		w.logger.Info("progress watcher seeded", "user", userID, "episodes", len(toSave))
+		return nil
+	}
+	if len(queued) > 0 {
+		w.logger.Info("progress changes", "user", userID, "events", len(queued))
+		w.Kick()
+	}
+	return nil
+}
+
+// diffEpisodes merges incoming records into the baseline and classifies each
+// change. baseline is updated in place, so a record repeated within one batch
+// compares against what was just derived rather than re-firing.
+func (w *ProgressWatcher) diffEpisodes(userID int64, baseline map[string]store.EpisodeProgress, episodes []pc.EpisodeProgress, seeding bool) ([]store.EpisodeProgress, []hooks.Event) {
 	var toSave []store.EpisodeProgress
 	var events []hooks.Event
 	now := time.Now().Unix()
-	for _, incoming := range sync.Episodes {
+	for _, incoming := range episodes {
 		previous, known := baseline[incoming.EpisodeUUID]
 		// One response can carry the same episode more than once; keep the
 		// running state so a repeat compares against what we just derived
@@ -217,60 +247,75 @@ func (w *ProgressWatcher) pollUser(ctx context.Context, userID int64) error {
 		}
 	}
 
-	// The seed only covers the episodes PC returns for a fresh sync (a few
-	// thousand of a much larger account), so a bulk operation that touches old
-	// episodes — a mass archive, a re-sync — can present hundreds of long-since
-	// finished episodes as first sightings. Real listening never looks like
-	// that, so a burst this size is mostly dropped rather than replayed —
-	// EXCEPT for first-party feed episodes (PCS_FEED_MATCH, looked up in the
-	// enclosure index): their hooks are idempotent and losing their events is
-	// exactly the outage-recovery gap, so they always deliver. A catch-up
-	// after downtime keeps its meaningful events; the mass-archive noise stays
-	// quiet. Without PCS_FEED_MATCH nothing is exempt — "every subscribed
-	// podcast" would make the cap meaningless.
-	if len(events) > maxEventsPerPoll {
-		indexed := map[string]string{}
-		if w.feedMatch != "" {
-			var err error
-			indexed, err = w.store.EnclosureEpisodes(userID, w.feedMatch)
-			if err != nil {
-				w.logger.Warn("progress: enclosure index for burst filter", "err", err)
-				indexed = map[string]string{}
-			}
-		}
-		var kept []hooks.Event
-		for _, event := range events {
-			if _, ok := indexed[event.EpisodeUUID]; ok {
-				kept = append(kept, event)
-			}
-		}
-		w.logger.Warn("progress: bulk burst — delivering only feed-episode events",
-			"user", userID, "events", len(events), "kept", len(kept), "limit", maxEventsPerPoll)
-		events = kept
-	}
+	return toSave, events
+}
 
-	// Baseline, queued events and cursor commit together; delivery happens
-	// in the dispatcher (outbox.go), off this poll's deadline and with retries.
-	queued := w.outboxEvents(events)
-	if err := w.store.CommitProgressPoll(userID, toSave, queued, sync.LastModified); err != nil {
-		return err
+// capBurst applies the bulk-burst cap. The seed only covers the episodes PC
+// returns for a fresh sync (a few
+// thousand of a much larger account), so a bulk operation that touches old
+// episodes — a mass archive, a re-sync — can present hundreds of long-since
+// finished episodes as first sightings. Real listening never looks like
+// that, so a burst this size is mostly dropped rather than replayed —
+// EXCEPT for first-party feed episodes (PCS_FEED_MATCH, looked up in the
+// enclosure index): their hooks are idempotent and losing their events is
+// exactly the outage-recovery gap, so they always deliver. A catch-up
+// after downtime keeps its meaningful events; the mass-archive noise stays
+// quiet. Without PCS_FEED_MATCH nothing is exempt — "every subscribed
+// podcast" would make the cap meaningless.
+func (w *ProgressWatcher) capBurst(userID int64, events []hooks.Event) []hooks.Event {
+	if len(events) <= maxEventsPerPoll {
+		return events
 	}
-	// The replica rides along on every poll — same records, richer store.
-	if err := w.store.UpsertReplicaEpisodes(userID, "poll", sync.Episodes); err != nil {
-		w.logger.Warn("replica: poll episodes", "err", err)
+	indexed := map[string]string{}
+	if w.feedMatch != "" {
+		var err error
+		indexed, err = w.store.EnclosureEpisodes(userID, w.feedMatch)
+		if err != nil {
+			w.logger.Warn("progress: enclosure index for burst filter", "err", err)
+			indexed = map[string]string{}
+		}
 	}
-	if err := w.store.UpsertReplicaRecords(userID, "poll", sync.Others); err != nil {
-		w.logger.Warn("replica: poll records", "err", err)
+	var kept []hooks.Event
+	for _, event := range events {
+		if _, ok := indexed[event.EpisodeUUID]; ok {
+			kept = append(kept, event)
+		}
 	}
-	if seeding {
-		w.logger.Info("progress watcher seeded", "user", userID, "episodes", len(toSave))
+	w.logger.Warn("progress: bulk burst — delivering only feed-episode events",
+		"user", userID, "events", len(events), "kept", len(kept), "limit", maxEventsPerPoll)
+	return kept
+}
+
+// ObserveAppRecords classifies the app's OWN outgoing sync records, seen by
+// the /pcapi relay before Pocket Casts has them. PC filters polls by the
+// records' client-side modified stamps, so an action taken offline and synced
+// much later sits behind the cursor (and its overlap window) and a poll never
+// returns it; the app's upload is the only place it is certain to appear.
+// Events are queued exactly as a poll queues them; the cursor is untouched.
+func (w *ProgressWatcher) ObserveAppRecords(userID int64, episodes []pc.EpisodeProgress) error {
+	if len(episodes) == 0 {
 		return nil
 	}
-	if len(queued) > 0 {
-		w.logger.Info("progress changes", "user", userID, "events", len(queued))
-		w.Kick()
-	}
-	return nil
+	return w.WithUserLock(userID, func() error {
+		cursor, err := w.store.ProgressCursor(userID)
+		if err != nil || cursor == 0 {
+			return err // not seeded yet: the first poll will seed
+		}
+		baseline, err := w.store.AllEpisodeProgress(userID)
+		if err != nil {
+			return err
+		}
+		toSave, events := w.diffEpisodes(userID, baseline, episodes, false)
+		queued := w.outboxEvents(w.capBurst(userID, events))
+		if err := w.store.CommitProgressPoll(userID, toSave, queued, 0); err != nil {
+			return err
+		}
+		if len(queued) > 0 {
+			w.logger.Info("progress changes (app upload)", "user", userID, "events", len(queued))
+			w.Kick()
+		}
+		return nil
+	})
 }
 
 // outboxEvents serialises events for the delivery queue. Nothing is queued

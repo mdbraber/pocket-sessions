@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/mdbraber/pocket-sessions-server/internal/hooks"
+	"github.com/mdbraber/pocket-sessions-server/internal/pc"
 	"github.com/mdbraber/pocket-sessions-server/internal/store"
 )
 
@@ -101,5 +102,59 @@ func TestRetryDelay(t *testing.T) {
 	}
 	if got := retryDelay(20); got != time.Hour {
 		t.Errorf("retryDelay(20) = %v, want the 1h cap", got)
+	}
+}
+
+// An action the app uploads late (offline) is classified from the app's own
+// record, even though a poll would never return it.
+func TestObserveAppRecordsQueuesEvents(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	if err := st.EnsureBootstrapUser(""); err != nil {
+		t.Fatal(err)
+	}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	runner := hooks.New("", time.Second, logger, []string{"http://127.0.0.1:1"}, "")
+	w := NewProgressWatcher(st, runner, logger, 30, "")
+
+	record := []pc.EpisodeProgress{{EpisodeUUID: "e1", PlayingStatus: pc.StatusCompleted, Archived: -1, Starred: -1}}
+	// Not seeded yet: nothing happens (the first poll seeds).
+	if err := w.ObserveAppRecords(1, record); err != nil {
+		t.Fatal(err)
+	}
+	if pending, _ := st.PendingHookEvents(10); len(pending) != 0 {
+		t.Fatalf("queued before seeding: %+v", pending)
+	}
+
+	if err := st.SetProgressCursor(1, 1000); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SaveEpisodeProgress(1, []store.EpisodeProgress{{EpisodeUUID: "e1", PlayedUpTo: 500, PlayingStatus: pc.StatusInProgress}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.ObserveAppRecords(1, record); err != nil {
+		t.Fatal(err)
+	}
+	pending, _ := st.PendingHookEvents(10)
+	if len(pending) != 1 {
+		t.Fatalf("pending = %+v, want one completed event", pending)
+	}
+	var event hooks.Event
+	_ = json.Unmarshal(pending[0].Payload, &event)
+	if event.Event != hooks.EventCompleted || event.PlayedUpTo != 500 {
+		t.Errorf("event = %+v, want completed keeping position 500", event)
+	}
+	if cursor, _ := st.ProgressCursor(1); cursor != 1000 {
+		t.Errorf("cursor moved to %d; app records must not touch it", cursor)
+	}
+	// The poll that follows sees the same state: no second event.
+	if err := w.ObserveAppRecords(1, record); err != nil {
+		t.Fatal(err)
+	}
+	if pending, _ := st.PendingHookEvents(10); len(pending) != 1 {
+		t.Fatalf("repeat queued again: %+v", pending)
 	}
 }

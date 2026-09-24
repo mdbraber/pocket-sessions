@@ -116,6 +116,10 @@ func (p *pollRecorder) WithUserLock(userID int64, fn func() error) error {
 	return fn()
 }
 
+func (p *pollRecorder) ObserveAppRecords(userID int64, episodes []pc.EpisodeProgress) error {
+	return nil
+}
+
 func (p *pollRecorder) count() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -223,5 +227,42 @@ func TestRelayCompressedPassthroughPlainObservation(t *testing.T) {
 			t.Fatal("gzip response was not observed into the replica")
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// A body over the cap is refused, never truncated and forwarded, and a
+// redirect from upstream reaches the client instead of being followed.
+func TestRelayOversizeAndRedirect(t *testing.T) {
+	forwarded := false
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		forwarded = true
+		if r.Header.Get("Cookie") != "" || r.Header.Get("X-Forwarded-For") != "" {
+			t.Error("cookie or client address forwarded upstream")
+		}
+		http.Redirect(w, r, "https://elsewhere.example/", http.StatusFound)
+	}))
+	defer upstream.Close()
+	oldUpstream, oldCap := relayUpstream, relayBodyCap
+	relayUpstream, relayBodyCap = upstream.URL, 16
+	defer func() { relayUpstream, relayBodyCap = oldUpstream, oldCap }()
+
+	s, _ := relayTestServer(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/pcapi/user/sync/update", bytes.NewReader(make([]byte, 17)))
+	req.Header.Set("X-PCS-Proxy-Token", "tok-relay")
+	rec := httptest.NewRecorder()
+	s.handleRelay(rec, req)
+	if rec.Code != http.StatusRequestEntityTooLarge || forwarded {
+		t.Fatalf("oversize: status %d, forwarded %v", rec.Code, forwarded)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/pcapi/user/sync/update", bytes.NewReader([]byte("small")))
+	req.Header.Set("X-PCS-Proxy-Token", "tok-relay")
+	req.Header.Set("Cookie", "a=b")
+	req.Header.Set("X-Forwarded-For", "203.0.113.9")
+	rec = httptest.NewRecorder()
+	s.handleRelay(rec, req)
+	if rec.Code != http.StatusFound || rec.Header().Get("Location") != "https://elsewhere.example/" {
+		t.Fatalf("redirect: status %d location %q", rec.Code, rec.Header().Get("Location"))
 	}
 }

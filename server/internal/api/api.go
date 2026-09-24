@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mdbraber/pocket-sessions-server/internal/pc"
 	"github.com/mdbraber/pocket-sessions-server/internal/push"
 	"github.com/mdbraber/pocket-sessions-server/internal/replica"
 	"github.com/mdbraber/pocket-sessions-server/internal/store"
@@ -63,6 +64,8 @@ type progressPoller interface {
 	ReplayIndexed(ctx context.Context, userID int64) (int, error)
 	// WithUserLock serialises fn with the user's polls (see playback.go).
 	WithUserLock(userID int64, fn func() error) error
+	// ObserveAppRecords classifies the app's outgoing sync records (relay.go).
+	ObserveAppRecords(userID int64, episodes []pc.EpisodeProgress) error
 }
 
 func New(st *store.Store, pusher push.Pusher, logger *slog.Logger, allowedEmails []string, progress progressPoller) http.Handler {
