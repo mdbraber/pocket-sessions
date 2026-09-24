@@ -4,7 +4,7 @@ The Pocket Casts Sessions (PCS) server (`pcs`) — companion to the Pocket Casts
 fork's Sessions feature: session-state sync (sessions, seen-ledger,
 offeredThrough, filter presets) with push-based sync between devices, a
 background Pocket Casts mirror (M2), and a query / automation API (M2/M3).
-Full design: `SESSIONS_SERVER_PLAN.md` in the `pocket-casts-ios` fork.
+Full design: `ios/SESSIONS_SERVER_PLAN.md` in this monorepo.
 The complete system map — feeds, relay, replica, hooks, guards, operations —
 is in `ARCHITECTURE.md`; the design analysis behind it in
 `SYNC-ARCHITECTURE.md`.
