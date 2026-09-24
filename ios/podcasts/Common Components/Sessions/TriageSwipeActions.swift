@@ -77,31 +77,31 @@ enum TriageSwipes {
         let picker = OptionsPicker(title: L10n.swipeAddToTitle.localizedUppercase, themeOverride: themeOverride)
 
         picker.addAction(action: OptionAction(label: L10n.addToUpNextTop, icon: "list_playnext") {
-            guard let fresh = DataManager.sharedManager.findBaseEpisode(uuid: uuid) else { return }
+            guard let fresh = DataManager.shared.findBaseEpisode(uuid: uuid) else { return }
             PlaybackManager.shared.addToUpNext(episode: fresh, ignoringQueueLimit: true, toTop: true, userInitiated: true)
             SessionLinking.mirrorQueueAdd(episodes: [fresh])
             Analytics.track(.episodeSwipeActionPerformed, properties: ["action": "up_next_add_top", "source": source])
         })
 
         picker.addAction(action: OptionAction(label: L10n.addToUpNextBottom, icon: "list_playlast") {
-            guard let fresh = DataManager.sharedManager.findBaseEpisode(uuid: uuid) else { return }
+            guard let fresh = DataManager.shared.findBaseEpisode(uuid: uuid) else { return }
             PlaybackManager.shared.addToUpNext(episode: fresh, ignoringQueueLimit: true, toTop: false, userInitiated: true)
             SessionLinking.mirrorQueueAdd(episodes: [fresh])
             Analytics.track(.episodeSwipeActionPerformed, properties: ["action": "up_next_add_bottom", "source": source])
         })
 
         // User episodes can't live in a manual playlist, so only offer it for podcast episodes.
-        if DataManager.sharedManager.findEpisode(uuid: uuid) != nil {
+        if DataManager.shared.findEpisode(uuid: uuid) != nil {
             // One-tap repeat: the most recently used playlist target, when it still exists
             // and doesn't already hold the episode. Makes building a playlist episode-by-episode
             // (e.g. from an unsubscribed podcast's back catalog) a two-tap flow with no navigation.
             if let lastUuid = Settings.lastManualPlaylistAddedTo(),
-               let last = DataManager.sharedManager.findPlaylist(uuid: lastUuid),
+               let last = DataManager.shared.findPlaylist(uuid: lastUuid),
                last.manual, !last.wasDeleted,
-               !DataManager.sharedManager.manualPlaylistUUIDs(for: uuid).contains(lastUuid) {
+               !DataManager.shared.manualPlaylistUUIDs(for: uuid).contains(lastUuid) {
                 picker.addAction(action: OptionAction(label: L10n.swipeAddToLastPlaylist(last.playlistName), icon: "plus-circle") {
-                    guard let fresh = DataManager.sharedManager.findEpisode(uuid: uuid) else { return }
-                    let currentCount = DataManager.sharedManager.allPlaylistEpisodeCount(for: last, episodeUuidToAdd: nil, includingArchivedEpisodes: true)
+                    guard let fresh = DataManager.shared.findEpisode(uuid: uuid) else { return }
+                    let currentCount = DataManager.shared.allPlaylistEpisodeCount(for: last, episodeUuidToAdd: nil, includingArchivedEpisodes: true)
                     guard currentCount < Constants.Limits.maxFilterItems else {
                         Toast.show(L10n.playlistManualAddEpisodesAlmostFullToast)
                         return
@@ -110,7 +110,7 @@ enum TriageSwipes {
                     // unarchives, marks seen — the full explicit-add semantics).
                     guard SessionManager.shared.addToManualPlaylist(episodes: [fresh], playlist: last) else { return }
                     last.syncStatus = SyncStatus.notSynced.rawValue
-                    DataManager.sharedManager.save(playlist: last)
+                    DataManager.shared.save(playlist: last)
                     NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged, object: last)
                     Toast.show(L10n.playlistEpisodesAddedToSinglePlaylist(last.playlistName))
                     Analytics.track(.episodeSwipeActionPerformed, properties: ["action": "add_to_last_playlist", "source": source])
@@ -121,8 +121,8 @@ enum TriageSwipes {
                     onPlaylistChooser()
                     return
                 }
-                guard let fresh = DataManager.sharedManager.findEpisode(uuid: uuid) else { return }
-                NavigationManager.sharedManager.navigateTo(
+                guard let fresh = DataManager.shared.findEpisode(uuid: uuid) else { return }
+                NavigationManager.shared.navigateTo(
                     NavigationManager.manualPlaylistsChooserKey,
                     data: [
                         NavigationManager.manualPlaylistsChooserEpisodeKey: fresh
@@ -194,7 +194,7 @@ enum TriageSwipes {
             let uuid = episode.uuid
             if episode.archived {
                 let unarchive = SwipeAction(style: .default, title: nil) { action, _ in
-                    if let fresh = DataManager.sharedManager.findEpisode(uuid: uuid) {
+                    if let fresh = DataManager.shared.findEpisode(uuid: uuid) {
                         EpisodeManager.unarchiveEpisode(episode: fresh, fireNotification: true)
                     }
                     reload()
@@ -207,7 +207,7 @@ enum TriageSwipes {
                 actions.append(unarchive)
             } else {
                 let archive = SwipeAction(style: .default, title: nil) { action, _ in
-                    if let fresh = DataManager.sharedManager.findEpisode(uuid: uuid) {
+                    if let fresh = DataManager.shared.findEpisode(uuid: uuid) {
                         EpisodeManager.archiveEpisode(episode: fresh, fireNotification: true)
                     }
                     reload()

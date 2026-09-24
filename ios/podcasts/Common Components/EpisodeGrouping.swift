@@ -70,7 +70,7 @@ enum EpisodeGrouper {
             var folderNames = [String: String]()
             for item in items {
                 if let folderUuid = (episode(item) as? Episode)?.parentPodcast()?.folderUuid, !folderUuid.isEmpty,
-                   let folder = DataManager.sharedManager.findFolder(uuid: folderUuid) {
+                   let folder = DataManager.shared.findFolder(uuid: folderUuid) {
                     byFolder[folderUuid, default: []].append(item)
                     folderNames[folderUuid] = folder.name
                 } else {

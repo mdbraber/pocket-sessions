@@ -89,10 +89,10 @@ final class NewEpisodePushRecoveryTests: XCTestCase {
         episode.podcastUuid = UUID().uuidString
         episode.addedDate = Date()
         episode.publishedDate = Date()
-        DataManager.sharedManager.save(episode: episode)
-        defer { DataManager.sharedManager.delete(episodeUuid: episode.uuid) }
+        DataManager.shared.save(episode: episode)
+        defer { DataManager.shared.delete(episodeUuid: episode.uuid) }
 
-        XCTAssertNotNil(DataManager.sharedManager.findEpisode(uuid: episode.uuid))
+        XCTAssertNotNil(DataManager.shared.findEpisode(uuid: episode.uuid))
         XCTAssertTrue(recoverSynchronously(payload(episode: episode.uuid, podcast: episode.podcastUuid)))
     }
 }

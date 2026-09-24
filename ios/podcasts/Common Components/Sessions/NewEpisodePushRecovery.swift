@@ -70,11 +70,11 @@ enum NewEpisodePushRecovery {
     static func recover(episodeUuid: String, podcastUuid: String, completion: (() -> Void)? = nil) {
         // The ordinary path works the overwhelming majority of the time. Only step in when it
         // demonstrably has not.
-        guard DataManager.sharedManager.findEpisode(uuid: episodeUuid) == nil else {
+        guard DataManager.shared.findEpisode(uuid: episodeUuid) == nil else {
             completion?()
             return
         }
-        guard let podcast = DataManager.sharedManager.findPodcast(uuid: podcastUuid, includeUnsubscribed: true) else {
+        guard let podcast = DataManager.shared.findPodcast(uuid: podcastUuid, includeUnsubscribed: true) else {
             completion?()
             return
         }

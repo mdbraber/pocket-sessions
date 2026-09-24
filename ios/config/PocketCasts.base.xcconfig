@@ -16,4 +16,9 @@ APP_GROUP_IDENTIFIER = group.au.com.shiftyjelly.pocketcasts
 ICLOUD_CONTAINER_IDENTIFIER = iCloud.$(PRODUCT_BUNDLE_IDENTIFIER_ROOT)
 SJ_VIDEO_CHAPTERS_HOST =
 
+SECRETS_DIR = $(HOME)/.configure/pocketcasts-ios/secrets
+FIREBASE_SECRETS_PATH = $(SECRETS_DIR)/GoogleService-Info.plist
+CREDENTIALS_JSON_PATH = $(SECRETS_DIR)/pocket_casts_credentials.json
+GOOGLE_SIGN_IN_SECRETS_PATH = $(SECRETS_DIR)/GoogleSignIn.txt
+
 #include? "Local.xcconfig"

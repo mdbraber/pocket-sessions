@@ -74,7 +74,7 @@ extension PlaylistFolderManager {
     func previewPodcastUuids(forPlaylistUuids uuids: [String]) -> [String] {
         let members = Set(uuids)
         var result = [String]()
-        for playlist in DataManager.sharedManager.allPlaylists(includeDeleted: false) where members.contains(playlist.uuid) {
+        for playlist in DataManager.shared.allPlaylists(includeDeleted: false) where members.contains(playlist.uuid) {
             // Prefer the explicit podcast rule; a manual playlist or a filter-all smart playlist has
             // no rule uuids, so fall back to the first podcast whose episode is actually in it —
             // otherwise the folder tile is blank even though it clearly has a podcast.
@@ -109,7 +109,7 @@ struct CreatePlaylistFolderView: View {
 
     let onDismiss: () -> Void
 
-    private let allPlaylists = DataManager.sharedManager.allPlaylists(includeDeleted: false)
+    private let allPlaylists = DataManager.shared.allPlaylists(includeDeleted: false)
 
     private var navBarTint: Color? {
         ThemeColor.navBarTint(ThemeColor.secondaryIcon01(for: theme.activeTheme))

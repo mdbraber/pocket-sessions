@@ -3,6 +3,7 @@ import Combine
 import PocketCastsDataModel
 import PocketCastsUtils
 import DifferenceKit
+import UIKit
 
 class PlaylistDetailViewModel: ObservableObject {
     let playlistMetadataLoader = PlaylistMetadataLoader.shared
@@ -325,8 +326,8 @@ class PlaylistDetailViewModel: ObservableObject {
 
     init(
         playlist: EpisodeFilter,
-        dataManager: DataManager = .sharedManager,
-        imageManager: ImageManager = .sharedManager,
+        dataManager: DataManager = .shared,
+        imageManager: ImageManager = .shared,
         episodesDataManager: EpisodesDataManager = .init(),
         onChange: @escaping (StagedChangeset<DataSourceValue>, Bool, Bool) -> Void,
         onButtonTapped: @escaping (ButtonTag) -> Void
@@ -418,7 +419,7 @@ class PlaylistDetailViewModel: ObservableObject {
         }
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
-            if let reloadedPlaylist = DataManager.sharedManager.findPlaylist(uuid: playlist.uuid) {
+            if let reloadedPlaylist = DataManager.shared.findPlaylist(uuid: playlist.uuid) {
                 playlist = reloadedPlaylist
 
                 DispatchQueue.main.async { [weak self] in
@@ -603,7 +604,7 @@ class PlaylistDetailViewModel: ObservableObject {
         // (the feeder's full domain). The fetched episodes ARE the session lineup. Unseen
         // episodes are NOT partitioned out of Episodes: they carry the unread dot instead.
         if let session, !isSearching {
-            let tint = AppTheme.appTintColor()
+            let tint = AppTheme.appTintColor
             let lineup = episodes
             allOverlayEpisodes = episodes
             // This page IS a session store; its members are "in this session" (full brightness).
@@ -653,16 +654,16 @@ class PlaylistDetailViewModel: ObservableObject {
         // feeder, its session's store (if any) is the Session lineup, and Episodes is the
         // query itself. Unseen episodes carry the dot; they are not partitioned off.
         if isLensPage, !isSearching {
-            let tint = AppTheme.appTintColor()
+            let tint = AppTheme.appTintColor
             var lineup = [ListEpisode]()
             if let real = lensSession, let storeUuid = real.storePlaylistUuid,
-               let store = DataManager.sharedManager.findPlaylist(uuid: storeUuid) {
+               let store = DataManager.shared.findPlaylist(uuid: storeUuid) {
                 // Finished episodes have left the session as far as playback and the session
                 // chooser are concerned ("N episodes · time left" counts what's still to
                 // play), so the tab must not count or list them either — a store that
                 // accumulated members historically would otherwise read in the thousands.
-                lineup = DataManager.sharedManager.positionedEpisodeUuids(for: store)
-                    .compactMap { DataManager.sharedManager.findEpisode(uuid: $0) }
+                lineup = DataManager.shared.positionedEpisodeUuids(for: store)
+                    .compactMap { DataManager.shared.findEpisode(uuid: $0) }
                     .filter { !$0.played() }
                     .map { ListEpisode(episode: $0, tintColor: tint) }
             }

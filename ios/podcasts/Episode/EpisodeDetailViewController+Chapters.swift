@@ -35,7 +35,7 @@ extension EpisodeDetailViewController {
         let root = EpisodeChaptersView(chapters: chapters) { [weak self] chapter in
             self?.playFromChapter(chapter)
         }
-        .environmentObject(Theme.sharedTheme)
+        .environmentObject(Theme.shared)
 
         let host = UIHostingController(rootView: root)
         host.view.backgroundColor = .clear
@@ -63,12 +63,12 @@ extension EpisodeDetailViewController {
             "podcast_uuid": episode.parentIdentifier()
         ])
 
-        if PlaybackManager.shared.isActivelyPlaying(episodeUuid: episode.uuid) || PlaybackManager.shared.currentEpisode()?.uuid == episode.uuid {
+        if PlaybackManager.shared.isActivelyPlaying(episodeUuid: episode.uuid) || PlaybackManager.shared.currentEpisode?.uuid == episode.uuid {
             PlaybackManager.shared.seekTo(time: seconds, startPlaybackAfterSeek: true)
             return
         }
 
-        DataManager.sharedManager.saveEpisode(playedUpTo: seconds, episode: episode, updateSyncFlag: false)
+        DataManager.shared.saveEpisode(playedUpTo: seconds, episode: episode, updateSyncFlag: false)
         episode.playedUpTo = seconds
         updateProgress()
         playPauseEpisode(isPlaying: false)

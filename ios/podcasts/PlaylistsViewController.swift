@@ -4,6 +4,7 @@ import UIKit
 import PocketCastsDataModel
 import PocketCastsServer
 import PocketCastsUtils
+import SJUtils
 import Combine
 
 class PlaylistsViewController: PCViewController, FilterCreatedDelegate {
@@ -145,7 +146,7 @@ class PlaylistsViewController: PCViewController, FilterCreatedDelegate {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
 
-            if let lastFilterUuid = UserDefaults.standard.string(forKey: Constants.UserDefaults.lastFilterShown), let filter = DataManager.sharedManager.findPlaylist(uuid: lastFilterUuid) {
+            if let lastFilterUuid = UserDefaults.standard.string(forKey: Constants.UserDefaults.lastFilterShown), let filter = DataManager.shared.findPlaylist(uuid: lastFilterUuid) {
                 DispatchQueue.main.async {
                     self.showFilter(filter)
                 }
@@ -329,7 +330,7 @@ class PlaylistsViewController: PCViewController, FilterCreatedDelegate {
 
         let folders = FeatureFlag.playlistFolders.enabled ? PlaylistFolderManager.shared.allFolders() : []
         let feederUuids = SessionStore.shared.feederPlaylistUuids
-        let playlists = DataManager.sharedManager.allPlaylists(includeDeleted: false)
+        let playlists = DataManager.shared.allPlaylists(includeDeleted: false)
             .filter { PlaylistFolderManager.shared.folderUuid(forPlaylist: $0.uuid) == nil && !feederUuids.contains($0.uuid) }
             .filter { SessionManager.shared.sessionStoreVisible(playlistUuid: $0.uuid) }
             // A smart-playlist session's store is redundant with its visible smart playlist (which
@@ -357,7 +358,7 @@ class PlaylistsViewController: PCViewController, FilterCreatedDelegate {
             },
             items: items
         )
-        gridHost?.rootView = AnyView(grid.environmentObject(Theme.sharedTheme))
+        gridHost?.rootView = AnyView(grid.environmentObject(Theme.shared))
         gridHost?.view.isHidden = playlistsLayout == .list || listPlaylistItems.isEmpty
         filtersTable.isHidden = playlistsLayout != .list && !listPlaylistItems.isEmpty
         updateGridInsets()
@@ -388,11 +389,11 @@ class PlaylistsViewController: PCViewController, FilterCreatedDelegate {
         let createView = CreatePlaylistFolderView { [weak self] in
             self?.dismiss(animated: true)
         }
-        let host = PCHostingController(rootView: createView.environmentObject(Theme.sharedTheme))
+        let host = PCHostingController(rootView: createView.environmentObject(Theme.shared))
         present(host, animated: true)
     }
 
-    private func presentFilterPreview() {
+    func presentFilterPreview() {
         let createPlaylistVC = NewPlaylistViewController()
         createPlaylistVC.delegate = self
         let navVC = SJUIUtils.navController(for: createPlaylistVC)
@@ -442,7 +443,7 @@ class PlaylistsViewController: PCViewController, FilterCreatedDelegate {
                 }
                 : []
             let feederUuids = SessionStore.shared.feederPlaylistUuids
-            var playlistRows = DataManager.sharedManager.allPlaylists(includeDeleted: false)
+            var playlistRows = DataManager.shared.allPlaylists(includeDeleted: false)
                 .filter { PlaylistFolderManager.shared.folderUuid(forPlaylist: $0.uuid) == nil && !feederUuids.contains($0.uuid) }
                 .filter { SessionManager.shared.sessionStoreVisible(playlistUuid: $0.uuid) }
                 .filter { !SessionManager.shared.storeHasVisibleSmartFeeder(playlistUuid: $0.uuid) }
@@ -527,7 +528,7 @@ class PlaylistsViewController: PCViewController, FilterCreatedDelegate {
                 folder.sortPosition = index
                 PlaylistFolderManager.shared.save(folder: folder)
             } else {
-                DataManager.sharedManager.updatePosition(playlist: item.playlist, newPosition: index)
+                DataManager.shared.updatePosition(playlist: item.playlist, newPosition: index)
             }
             index += 1
         }

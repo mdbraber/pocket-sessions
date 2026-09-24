@@ -139,17 +139,17 @@ enum SessionFeederEngine {
         case .none:
             return []
         case .podcast(let uuid):
-            return DataManager.sharedManager.findEpisodesWhere(
+            return DataManager.shared.findEpisodesWhere(
                 customWhere: "podcastUuid = ?\(archivedClause) ORDER BY publishedDate DESC",
                 arguments: [uuid] + presetArgs
             )
         case .smartPlaylist(let uuid):
-            guard let playlist = DataManager.sharedManager.findPlaylist(uuid: uuid) else { return [] }
+            guard let playlist = DataManager.shared.findPlaylist(uuid: uuid) else { return [] }
             return EpisodesDataManager().playlistEpisodes(for: playlist, limit: 0, preset: preset)
                 .compactMap { $0.episode as? Episode }
         case .allPodcasts:
             let optedOut = optOutPodcastUuids()
-            return DataManager.sharedManager.findEpisodesWhere(
+            return DataManager.shared.findEpisodesWhere(
                 customWhere: "podcastUuid IN (SELECT uuid FROM \(DataManager.podcastTableName) WHERE subscribed = 1)\(archivedClause) ORDER BY publishedDate DESC",
                 arguments: presetArgs
             )
@@ -173,13 +173,13 @@ enum SessionFeederEngine {
         let storeUuids = SessionStore.shared.sessions
             .filter { !SessionManager.isOptedOut(feeder: $0.feeder) }
             .compactMap(\.storePlaylistUuid)
-        return DataManager.sharedManager.playlistEpisodeUuids(forPlaylistUuids: storeUuids)
+        return DataManager.shared.playlistEpisodeUuids(forPlaylistUuids: storeUuids)
     }
 
     static func storeMemberUuids(for session: Session) -> [String] {
         guard let storeUuid = session.storePlaylistUuid,
-              let store = DataManager.sharedManager.findPlaylist(uuid: storeUuid) else { return [] }
-        return DataManager.sharedManager.positionedEpisodeUuids(for: store)
+              let store = DataManager.shared.findPlaylist(uuid: storeUuid) else { return [] }
+        return DataManager.shared.positionedEpisodeUuids(for: store)
     }
 
     // MARK: - Grid badges
@@ -187,7 +187,7 @@ enum SessionFeederEngine {
     /// The unseen count for every podcast at once, from ONE grouped query.
     static func inboxBadgeCounts(forPodcasts podcasts: [Podcast]) -> [String: Int] {
         guard !podcasts.isEmpty else { return [:] }
-        let counts = DataManager.sharedManager.playlistEpisodeCountsByPodcast(for: DataManager.inboxPlaylistUuid)
+        let counts = DataManager.shared.playlistEpisodeCountsByPodcast(for: DataManager.inboxPlaylistUuid)
         let wanted = Set(podcasts.map(\.uuid))
         return counts.filter { wanted.contains($0.key) }
     }
@@ -208,7 +208,7 @@ enum SessionFeederEngine {
         guard !unseen.isEmpty else { return 0 }
 
         if playlist.manual {
-            return DataManager.sharedManager.playlistEpisodeUuids(for: playlist.uuid).intersection(unseen).count
+            return DataManager.shared.playlistEpisodeUuids(for: playlist.uuid).intersection(unseen).count
         }
         return EpisodesDataManager().playlistEpisodes(for: playlist, limit: 0)
             .filter { unseen.contains($0.episode.uuid) }
@@ -220,7 +220,7 @@ enum SessionFeederEngine {
     /// as a session).
     static func sessionBadgeCount(forPlaylist playlist: EpisodeFilter) -> Int {
         if playlist.manual {
-            return DataManager.sharedManager.episodeCount(for: playlist, episodeUuidToAdd: nil)
+            return DataManager.shared.episodeCount(for: playlist, episodeUuidToAdd: nil)
         }
         let session = SessionStore.shared.session(forStore: playlist.uuid)
             ?? SessionStore.shared.session(forSmartPlaylistFeeder: playlist.uuid)

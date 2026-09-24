@@ -132,7 +132,7 @@ class NewPlaylistViewController: PCViewController {
     }
 
     private func setupNavBar() {
-        let backgroundColor = AppTheme.viewBackgroundColor()
+        let backgroundColor = AppTheme.viewBackgroundColor
         changeNavTint(titleColor: AppTheme.colorForStyle(.primaryText01), iconsColor: AppTheme.colorForStyle(.primaryIcon03), backgroundColor: backgroundColor)
 
         title = L10n.playlistsDefaultNewPlaylist
@@ -149,7 +149,7 @@ class NewPlaylistViewController: PCViewController {
 
     private func configureLegacyOpaqueNavBarAppearance() {
         let appearance = UINavigationBarAppearance()
-        appearance.backgroundColor = AppTheme.viewBackgroundColor()
+        appearance.backgroundColor = AppTheme.viewBackgroundColor
         appearance.largeTitleTextAttributes = [
             NSAttributedString.Key.foregroundColor: AppTheme.colorForStyle(.primaryText01)
         ]
@@ -158,13 +158,12 @@ class NewPlaylistViewController: PCViewController {
         ]
         navigationController?.navigationBar.scrollEdgeAppearance = appearance
         navigationController?.navigationBar.standardAppearance = appearance
-        navigationController?.navigationBar.sizeToFit()
     }
 
     private func setupContent() {
         isModalInPresentation = true
 
-        view.backgroundColor = AppTheme.viewBackgroundColor()
+        view.backgroundColor = AppTheme.viewBackgroundColor
 
         textFieldBorderView = ThemeableSelectionView()
         view.addSubview(textFieldBorderView)
@@ -218,8 +217,6 @@ class NewPlaylistViewController: PCViewController {
         }
 
         NSLayoutConstraint.activate(constraints)
-
-        view.layoutSubviews()
     }
 
     private func addCloseButton() {
@@ -232,18 +229,18 @@ class NewPlaylistViewController: PCViewController {
     @objc private func createManualPlaylist() {
         delegate?.presentingPlaylistDetail = true
 
-        DataManager.sharedManager.bumpSortPositionForAllPlaylists()
+        DataManager.shared.bumpSortPositionForAllPlaylists()
 
         let playlistName = self.playlistName.isEmpty ? L10n.playlistsDefaultNewPlaylist : self.playlistName
         let playlist = PlaylistManager.createNewPlaylist()
-        let firstSortPosition = max(0, DataManager.sharedManager.firstSortPositionForPlaylist() - 1)
+        let firstSortPosition = max(0, DataManager.shared.firstSortPositionForPlaylist() - 1)
         playlist.sortPosition = Int32(firstSortPosition)
         playlist.setTitle(playlistName, defaultTitle: L10n.playlistsDefaultNewPlaylist.localizedCapitalized)
         playlist.manual = true
         playlist.syncStatus = SyncStatus.notSynced.rawValue
         playlist.isNew = false
         playlist.sortType = PlaylistSort.dragAndDrop.rawValue
-        DataManager.sharedManager.save(playlist: playlist)
+        DataManager.shared.save(playlist: playlist)
         if creationType == .default {
             UserDefaults.standard.set(playlist.uuid, forKey: Constants.UserDefaults.lastFilterShown)
             delegate?.filterCreated(newFilter: playlist)
@@ -251,7 +248,7 @@ class NewPlaylistViewController: PCViewController {
         } else if case let .addEpisode(episode) = creationType {
             let didAdd = SessionManager.shared.addToManualPlaylist(episodes: [episode], playlist: playlist)
             guard didAdd else {
-                let theme: any ToastTheme = ToastIconTheme(iconName: "option-alert", iconColor: Theme.sharedTheme.primaryIcon01)
+                let theme: any ToastTheme = ToastIconTheme(iconName: "option-alert", iconColor: Theme.shared.primaryIcon01)
                 Toast.show(L10n.playlistManualCreateErrorMessage, theme: theme)
                 return
             }
@@ -275,7 +272,7 @@ class NewPlaylistViewController: PCViewController {
                 rootVC.dismiss(animated: true) {
                     Toast.show(L10n.playlistEpisodesAddedToSinglePlaylist(playlist.playlistName), actions: [
                         .init(title: L10n.bookmarkAddedButtonTitle) {
-                            NavigationManager.sharedManager.navigateTo(
+                            NavigationManager.shared.navigateTo(
                                 NavigationManager.filterPageKey,
                                 data: [
                                     NavigationManager.filterUuidKey: playlist.uuid
@@ -294,7 +291,7 @@ class NewPlaylistViewController: PCViewController {
             }
             let didAdd = SessionManager.shared.addToManualPlaylist(episodes: episodes, playlist: playlist)
             guard didAdd else {
-                let theme: any ToastTheme = ToastIconTheme(iconName: "option-alert", iconColor: Theme.sharedTheme.primaryIcon01)
+                let theme: any ToastTheme = ToastIconTheme(iconName: "option-alert", iconColor: Theme.shared.primaryIcon01)
                 Toast.show(L10n.playlistManualCreateErrorMessage, theme: theme)
                 return
             }
@@ -318,7 +315,7 @@ class NewPlaylistViewController: PCViewController {
                 rootVC.dismiss(animated: true) {
                     Toast.show(L10n.playlistEpisodesAddedToSinglePlaylist(playlist.playlistName), actions: [
                         .init(title: L10n.bookmarkAddedButtonTitle) {
-                            NavigationManager.sharedManager.navigateTo(
+                            NavigationManager.shared.navigateTo(
                                 NavigationManager.filterPageKey,
                                 data: [
                                     NavigationManager.filterUuidKey: playlist.uuid

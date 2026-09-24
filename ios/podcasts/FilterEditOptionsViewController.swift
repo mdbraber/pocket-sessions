@@ -64,7 +64,7 @@ class FilterEditOptionsViewController: PCViewController, UITableViewDelegate, UI
 
         filterToEdit.setTitle(filterNameTextField.text, defaultTitle: L10n.filtersDefaultNewFilter.localizedCapitalized)
         filterToEdit.syncStatus = SyncStatus.notSynced.rawValue
-        DataManager.sharedManager.save(playlist: filterToEdit)
+        DataManager.shared.save(playlist: filterToEdit)
         NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged, object: filterToEdit)
 
         if isViewingShortcuts == false {
@@ -400,7 +400,7 @@ class FilterEditOptionsViewController: PCViewController, UITableViewDelegate, UI
     }
 
     private func updateExistingSortcutData() {
-        SiriShortcutsManager.shared.voiceShortcutForFilter(filter: filterToEdit, completion: { voiceShortcut in
+        SiriShortcutsManager.shared.voiceShortcut(for: filterToEdit, completion: { voiceShortcut in
             self.existingShortcut = voiceShortcut
             DispatchQueue.main.async {
                 self.tableView.reloadData()

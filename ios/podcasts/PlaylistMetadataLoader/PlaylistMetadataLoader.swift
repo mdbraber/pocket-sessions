@@ -119,7 +119,7 @@ actor PlaylistMetadataLoader {
     static func gridArtworkItems<T>(
         from episodes: [T],
         limit: Int,
-        imageManager: ImageManager = .sharedManager,
+        imageManager: ImageManager = .shared,
         podcastUuid: (T) -> String
     ) -> [PlaylistArtworkView.ImageItem] {
         let distinctEpisodes = distinctPodcasts(from: episodes, limit: limit, podcastUuid: podcastUuid)
@@ -132,8 +132,8 @@ actor PlaylistMetadataLoader {
     }
 
     init(
-        dataManager: DataManager = .sharedManager,
-        imageManager: ImageManager = .sharedManager,
+        dataManager: DataManager = .shared,
+        imageManager: ImageManager = .shared,
         episodesDataManager: EpisodesDataManager = .init()
     ) {
         self.dataManager = dataManager
@@ -143,10 +143,6 @@ actor PlaylistMetadataLoader {
 
     func cachedCount(for playlistID: String) -> Int? {
         return cache.counts[playlistID]?.count
-    }
-
-    func cachedCountState(for playlistID: String) -> CountCacheState? {
-        return cache.counts[playlistID]
     }
 
     func cachedImages(for playlistID: String) -> [PlaylistArtworkView.ImageItem]? {
@@ -210,7 +206,7 @@ actor PlaylistMetadataLoader {
                 var tiles = Array(session.artworkPodcastUuids.prefix(4))
                 if tiles.count < 4 { tiles = Array(tiles.prefix(1)) }
                 if !tiles.isEmpty {
-                    let items = tiles.map { PlaylistArtworkView.ImageItem(id: $0, url: ImageManager.sharedManager.podcastUrl(imageSize: .grid, uuid: $0)) }
+                    let items = tiles.map { PlaylistArtworkView.ImageItem(id: $0, url: ImageManager.shared.podcastUrl(imageSize: .grid, uuid: $0)) }
                     cache.images[playlistID] = items
                     return items
                 }
@@ -223,7 +219,7 @@ actor PlaylistMetadataLoader {
                 var tiles = Array(ruleUuids.prefix(4))
                 if tiles.count < 4 { tiles = Array(tiles.prefix(1)) }
                 if !tiles.isEmpty {
-                    let items = tiles.map { PlaylistArtworkView.ImageItem(id: $0, url: ImageManager.sharedManager.podcastUrl(imageSize: .grid, uuid: $0)) }
+                    let items = tiles.map { PlaylistArtworkView.ImageItem(id: $0, url: ImageManager.shared.podcastUrl(imageSize: .grid, uuid: $0)) }
                     cache.images[playlistID] = items
                     return items
                 }

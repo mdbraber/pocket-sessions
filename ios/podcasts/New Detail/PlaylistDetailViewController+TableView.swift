@@ -50,7 +50,7 @@ extension PlaylistDetailViewController: UITableViewDataSource {
                       let session = viewModel.session ?? viewModel.lensSession {
                 // Fork: Session rows behave like Up Next — long-press is the inverse
                 // of the tap setting.
-                if !Settings.playUpNextOnTap() {
+                if !Settings.playUpNextOnTap {
                     SessionManager.shared.play(episode: episode, in: session)
                 } else if let parentPodcast = episode.parentPodcast() {
                     let episodeController = EpisodeDetailViewController(episode: episode, podcast: parentPodcast, source: .filters, playlist: .filter(uuid: viewModel.playlist.uuid))
@@ -177,7 +177,7 @@ extension PlaylistDetailViewController: UITableViewDataSource {
             // as the exact Up Next now-playing card; other rows keep the normal layout below.
             if viewModel.usesTriageTabs, viewModel.selectedTriageTab == .lineup, !isMultiSelectEnabled,
                let listEpisode = itemAtRow as? ListEpisode,
-               PlaybackManager.shared.isNowPlayingEpisode(episodeUuid: listEpisode.episode.uuid) {
+               PlaybackManager.shared.isCurrentEpisode(uuid: listEpisode.episode.uuid) {
                 let card = tableView.dequeueReusableCell(withIdentifier: Self.sessionNowPlayingCardId, for: indexPath) as! UpNextNowPlayingCell
                 card.themeOverride = nil
                 card.populateFrom(episode: listEpisode.episode)
@@ -363,7 +363,7 @@ extension PlaylistDetailViewController: UITableViewDelegate {
                     self.viewModel.remove(episode: episodeUuid, at: indexPath.row)
                 }
                 BottomSheetSwiftUIWrapper.present(
-                    view.environmentObject(Theme.sharedTheme),
+                    view.environmentObject(Theme.shared),
                     autoSize: true,
                     showingGrabber: true,
                     in: self
@@ -373,7 +373,7 @@ extension PlaylistDetailViewController: UITableViewDelegate {
 
             // Fork: tapping the row that's already sounding opens the Now Playing
             // player, matching the Up Next now-playing row.
-            if PlaybackManager.shared.isNowPlayingEpisode(episodeUuid: selectedEpisode.uuid) {
+            if PlaybackManager.shared.isCurrentEpisode(uuid: selectedEpisode.uuid) {
                 if let miniPlayer = UIApplication.shared.appDelegate()?.miniPlayer(), miniPlayer.playerOpenState == .closed {
                     miniPlayer.openFullScreenPlayer()
                 }
@@ -383,7 +383,7 @@ extension PlaylistDetailViewController: UITableViewDelegate {
             // Fork: Session rows behave like Up Next — the tap setting decides
             // between playing the episode in this session and showing its card.
             if viewModel.usesTriageTabs, viewModel.selectedTriageTab == .lineup,
-               Settings.playUpNextOnTap(),
+               Settings.playUpNextOnTap,
                let session = viewModel.session ?? viewModel.lensSession {
                 SessionManager.shared.play(episode: selectedEpisode, in: session)
                 return
@@ -510,15 +510,15 @@ extension PlaylistDetailViewController {
     func navigateToGroup(_ target: PlaylistGroupHeaderPlaceholder.GroupNavTarget) {
         switch target {
         case .podcast(let uuid):
-            guard let podcast = DataManager.sharedManager.findPodcast(uuid: uuid, includeUnsubscribed: true) else { return }
+            guard let podcast = DataManager.shared.findPodcast(uuid: uuid, includeUnsubscribed: true) else { return }
             if let nav = navigationController {
                 nav.pushViewController(PodcastViewController(podcast: podcast), animated: true)
             } else {
-                NavigationManager.sharedManager.navigateTo(NavigationManager.podcastPageKey, data: [NavigationManager.podcastKey: podcast])
+                NavigationManager.shared.navigateTo(NavigationManager.podcastPageKey, data: [NavigationManager.podcastKey: podcast])
             }
         case .folder(let uuid):
-            guard let folder = DataManager.sharedManager.findFolder(uuid: uuid) else { return }
-            NavigationManager.sharedManager.navigateTo(NavigationManager.folderPageKey, data: [NavigationManager.folderKey: folder])
+            guard let folder = DataManager.shared.findFolder(uuid: uuid) else { return }
+            NavigationManager.shared.navigateTo(NavigationManager.folderPageKey, data: [NavigationManager.folderKey: folder])
         }
     }
 

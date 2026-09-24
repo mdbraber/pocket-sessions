@@ -107,7 +107,7 @@ class PlaylistFolderManager {
     /// The folder's playlists, in the playlists page's own order.
     func playlists(inFolder folderUuid: String) -> [EpisodeFilter] {
         let members = Set(playlistUuids(inFolder: folderUuid))
-        return DataManager.sharedManager.allPlaylists(includeDeleted: false).filter { members.contains($0.uuid) }
+        return DataManager.shared.allPlaylists(includeDeleted: false).filter { members.contains($0.uuid) }
     }
 
     /// Fork: the playlists actually SHOWN when the folder is opened — the "Session Playlists"

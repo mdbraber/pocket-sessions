@@ -47,7 +47,7 @@ enum FilterPresets {
         guard preset.isScoped else { return nil }
         var uuids = preset.podcastUuids
         if !preset.folderUuids.isEmpty {
-            let members = DataManager.sharedManager.allPodcasts(includeUnsubscribed: false)
+            let members = DataManager.shared.allPodcasts(includeUnsubscribed: false)
                 .filter { preset.folderUuids.contains($0.folderUuid ?? "") }
                 .map(\.uuid)
             uuids.formUnion(members)

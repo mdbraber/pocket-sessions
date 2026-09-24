@@ -67,7 +67,7 @@ extension PlaylistsViewController: UITableViewDelegate, UITableViewDataSource {
         if !informationalBannerCoordinator.shouldShowBanner() {
             return nil
         }
-        return informationalBannerCoordinator.tableHeaderView(size: CGSize(width: filtersTable.bounds.width, height: 135)) {
+        return informationalBannerCoordinator.tableHeaderView(size: CGSize(width: filtersTable.bounds.width, height: 135)) { [weak self] in
             UIView.animate(withDuration: 0.5) { [weak self] in
                 self?.filtersTable.reloadData()
             }
@@ -151,7 +151,7 @@ extension PlaylistsViewController: UITableViewDelegate, UITableViewDataSource {
                 folder.sortPosition = index
                 updatedFolders.append(folder)
             } else {
-                DataManager.sharedManager.updatePosition(playlist: item.playlist, newPosition: index)
+                DataManager.shared.updatePosition(playlist: item.playlist, newPosition: index)
             }
             index += 1
         }

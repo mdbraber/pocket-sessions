@@ -1,6 +1,7 @@
 import Foundation
 import PocketCastsDataModel
 import PocketCastsUtils
+import SJUtils
 import SwipeCellKit
 
 extension UpNextViewController: SwipeTableViewCellDelegate, SwipeHandler {
@@ -226,7 +227,7 @@ extension UpNextViewController: SwipeTableViewCellDelegate, SwipeHandler {
                                         presenting: self,
                                         source: swipeSource,
                                         themeOverride: themeOverride) { [weak self] in
-            guard let self, let fresh = DataManager.sharedManager.findEpisode(uuid: uuid) else { return }
+            guard let self, let fresh = DataManager.shared.findEpisode(uuid: uuid) else { return }
             self.addToManualPlaylist(episode: fresh, at: indexPath)
         }
     }
@@ -239,7 +240,7 @@ extension UpNextViewController: SwipeTableViewCellDelegate, SwipeHandler {
         // Sessions exist only for subscribed podcasts: hide the verb when nothing could
         // receive the episode — its podcast unsubscribed and no existing session covers it.
         if let episode = episode as? Episode,
-           DataManager.sharedManager.findPodcast(uuid: episode.podcastUuid) == nil,
+           DataManager.shared.findPodcast(uuid: episode.podcastUuid) == nil,
            SessionManager.shared.sessionsCovering(podcastUuid: episode.podcastUuid).isEmpty {
             return nil
         }
@@ -274,8 +275,8 @@ extension UpNextViewController: SwipeTableViewCellDelegate, SwipeHandler {
             if let storeSession = self.browsedSession {
                 SessionManager.shared.removeFromLineup(episodeUuids: [episode.uuid], session: storeSession)
             } else if let playbackSession = self.browsedPlaybackSession, playbackSession.type == .playlist,
-                      let playlist = DataManager.sharedManager.findPlaylist(uuid: playbackSession.uuid) {
-                DataManager.sharedManager.deleteEpisodes([episode.uuid], from: playlist)
+                      let playlist = DataManager.shared.findPlaylist(uuid: playbackSession.uuid) {
+                DataManager.shared.deleteEpisodes([episode.uuid], from: playlist)
                 NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged, object: playlist)
             } else {
                 PlaybackManager.shared.removeIfPlayingOrQueued(episode: episode, fireNotification: true, userInitiated: true)
@@ -297,7 +298,7 @@ extension UpNextViewController: SwipeTableViewCellDelegate, SwipeHandler {
         let uuid = episode.uuid
         let archived = episode.archived
         let action = SwipeAction(style: .default, title: nil) { [weak self] action, _ in
-            if let fresh = DataManager.sharedManager.findEpisode(uuid: uuid) {
+            if let fresh = DataManager.shared.findEpisode(uuid: uuid) {
                 if archived {
                     EpisodeManager.unarchiveEpisode(episode: fresh, fireNotification: true)
                 } else {
@@ -318,7 +319,7 @@ extension UpNextViewController: SwipeTableViewCellDelegate, SwipeHandler {
     private func markPlayedSwipeAction(for episode: BaseEpisode) -> SwipeAction {
         let uuid = episode.uuid
         let action = SwipeAction(style: .default, title: nil) { [weak self] action, _ in
-            if let fresh = DataManager.sharedManager.findBaseEpisode(uuid: uuid) {
+            if let fresh = DataManager.shared.findBaseEpisode(uuid: uuid) {
                 EpisodeManager.markAsPlayed(episode: fresh, fireNotification: true)
             }
             self?.reloadTable()
@@ -367,7 +368,7 @@ extension UpNextViewController: SwipeTableViewCellDelegate, SwipeHandler {
 
     func addToManualPlaylist(episode: Episode, at: IndexPath) {
         let presentModal: () -> Void = { [weak self] in
-            NavigationManager.sharedManager.navigateTo(
+            NavigationManager.shared.navigateTo(
                 NavigationManager.manualPlaylistsChooserKey,
                 data: [
                     NavigationManager.manualPlaylistsChooserEpisodeKey: episode,
@@ -384,8 +385,8 @@ extension UpNextViewController: SwipeTableViewCellDelegate, SwipeHandler {
 
     func removeFromManualPlaylist(episode: Episode, at: IndexPath) {
         guard let session = browsedPlaybackSession, session.type == .playlist,
-              let playlist = DataManager.sharedManager.findPlaylist(uuid: session.uuid) else { return }
-        DataManager.sharedManager.deleteEpisodes([episode.uuid], from: playlist)
+              let playlist = DataManager.shared.findPlaylist(uuid: session.uuid) else { return }
+        DataManager.shared.deleteEpisodes([episode.uuid], from: playlist)
         NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged, object: playlist)
         refreshSessionState()
         reloadTable()

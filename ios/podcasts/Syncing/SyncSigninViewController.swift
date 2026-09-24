@@ -294,7 +294,7 @@ class SyncSigninViewController: PCViewController, UITextFieldDelegate {
 
                     self.handleSuccessfulSignIn(username, password: password, userId: userId)
                     RefreshManager.shared.refreshPodcasts(forceEvenIfRefreshedRecently: true)
-                    Settings.setPromotionFinishedAcknowledged(true)
+                    Settings.promotionFinishedAcknowledged = true
                     Settings.setLoginDetailsUpdated()
 
                     NotificationCenter.postOnMainThread(notification: .userSignedIn)
@@ -329,9 +329,8 @@ class SyncSigninViewController: PCViewController, UITextFieldDelegate {
 
         // we've signed in, set all our existing podcasts to
         // be non synced if the user never logged in before
-        if (FeatureFlag.onlyMarkPodcastsUnsyncedForNewUsers.enabled && ServerSettings.lastSyncTime == nil)
-            || !FeatureFlag.onlyMarkPodcastsUnsyncedForNewUsers.enabled {
-            DataManager.sharedManager.markAllPodcastsUnsynced()
+        if ServerSettings.lastSyncTime == nil {
+            DataManager.shared.markAllPodcastsUnsynced()
         }
 
         SyncManager.syncReason = .login

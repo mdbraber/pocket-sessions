@@ -6,36 +6,44 @@ import SwiftUI
 struct BookmarkTranscriptEditView: View {
     let transcript: TranscriptModel
 
+    /// The bookmark's position on the transcript's reference timeline, marking the line it
+    /// sits on; nil for a bookmark that was never resolved against the reference timeline.
+    let referenceTime: TimeInterval?
+
     @Binding var selection: NSRange
 
     @ObservedObject var theme: BookmarkEditTheme
 
     var body: some View {
-        TranscriptSelectionTextView(transcript: transcript,
-                                    selection: $selection,
-                                    textColor: UIColor(theme.title),
-                                    selectionColor: UIColor(theme.transcriptSelection))
-            .mask(topFadeMask)
-            .overlay(alignment: .top) {
-                subtitle
-                    .allowsHitTesting(false)
+        VStack(spacing: 0) {
+            subtitle
+                .padding(.horizontal, 16)
+
+            // The room the transcript keeps clear at the top is the gap below the subtitle
+            TranscriptSelectionTextView(transcript: transcript,
+                                        bookmarkCharacterIndex: referenceTime.flatMap { transcript.characterIndex(at: $0) },
+                                        selection: $selection,
+                                        topInset: Self.topFadeDepth,
+                                        textColor: UIColor(theme.title),
+                                        selectionColor: UIColor(theme.transcriptSelection))
+                .mask(topFadeMask)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top)
+        .background(theme.background.ignoresSafeArea())
+        .ignoresSafeArea(edges: .bottom)
+        // Colors the back button the bar gives us for free
+        .tint(theme.title)
+        .navigationTitle(L10n.bookmarkEditTranscriptTitle)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            // The bar's own title knows nothing about the player's colors
+            ToolbarItem(placement: .principal) {
+                Text(L10n.bookmarkEditTranscriptTitle)
+                    .font(style: .headline, weight: .semibold)
+                    .foregroundStyle(theme.title)
             }
-            .frame(maxWidth: .infinity)
-            .padding([.horizontal, .top])
-            .background(theme.background.ignoresSafeArea())
-            .ignoresSafeArea(edges: .bottom)
-            // Colors the back button the bar gives us for free
-            .tint(theme.title)
-            .navigationTitle(L10n.bookmarkEditTranscriptTitle)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                // The bar's own title knows nothing about the player's colors
-                ToolbarItem(placement: .principal) {
-                    Text(L10n.bookmarkEditTranscriptTitle)
-                        .font(style: .headline, weight: .semibold)
-                        .foregroundStyle(theme.title)
-                }
-            }
+        }
     }
 
     // MARK: - Views
@@ -47,14 +55,18 @@ struct BookmarkTranscriptEditView: View {
             .multilineTextAlignment(.center)
     }
 
-    /// Softens the top edge so the passage scrolls out of view instead of being clipped
+    /// Softens the top edge so lines dissolve as they scroll past, rather than being clipped
     private var topFadeMask: some View {
         VStack(spacing: 0) {
             LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
-                .frame(height: 140)
+                .frame(height: Self.topFadeDepth)
             Color.black
         }
     }
+
+    /// How deep the transcript fades out at the top. It keeps the same room clear at its
+    /// own top edge, so its first line comes to rest clear of the fade.
+    private static let topFadeDepth: CGFloat = 48
 }
 
 // MARK: - TranscriptSelectionTextView
@@ -65,7 +77,13 @@ struct BookmarkTranscriptEditView: View {
 private struct TranscriptSelectionTextView: UIViewRepresentable {
     let transcript: TranscriptModel
 
+    /// The character whose line the bookmark indicator is drawn beside; nil shows no indicator
+    let bookmarkCharacterIndex: Int?
+
     @Binding var selection: NSRange
+
+    /// The room the transcript keeps clear at the top, matching the fade drawn over it
+    let topInset: CGFloat
 
     let textColor: UIColor
     let selectionColor: UIColor
@@ -73,17 +91,26 @@ private struct TranscriptSelectionTextView: UIViewRepresentable {
     /// Where the passage sits vertically once scrolled to
     private let verticalAnchor: CGFloat = 0.5
 
-    func makeUIView(context: Context) -> SelectableTextView {
+    func makeUIView(context: Context) -> BookmarkTranscriptTextView {
         // TextKit 1: `scrollToRange` and the character index lookups work off `layoutManager`
-        let textView = SelectableTextView(usingTextLayoutManager: false)
-        textView.attributedText = styledText()
+        let textView = BookmarkTranscriptTextView(usingTextLayoutManager: false)
+        textView.attributedText = BookmarkTranscriptStyle.styledTranscript(transcript.attributedText, textColor: textColor)
         textView.isEditable = false
         textView.backgroundColor = .clear
-        textView.textContainerInset = .zero
+        // The gutter on both sides is the text view's own inset rather than outside
+        // padding, so the bookmark indicator can sit in the leading one, beside the text
+        textView.textContainerInset = UIEdgeInsets(top: topInset,
+                                                   left: BookmarkTranscriptTextView.gutterWidth,
+                                                   bottom: 0,
+                                                   right: BookmarkTranscriptTextView.gutterWidth)
         textView.textContainer.lineFragmentPadding = 0
         textView.tintColor = selectionColor
         // Leaves room to scroll the text clear of the home indicator it runs under
         textView.contentInsetAdjustmentBehavior = .always
+
+        if let bookmarkCharacterIndex {
+            textView.showBookmarkIndicator(at: bookmarkCharacterIndex, color: textColor)
+        }
 
         // The passage can only be scrolled to once the text has a width to be laid out in
         textView.alpha = 0
@@ -106,7 +133,7 @@ private struct TranscriptSelectionTextView: UIViewRepresentable {
         return textView
     }
 
-    func updateUIView(_ textView: SelectableTextView, context: Context) {
+    func updateUIView(_ textView: BookmarkTranscriptTextView, context: Context) {
         guard textView.selectedRange != selection else { return }
 
         textView.selectedRange = selection
@@ -114,47 +141,6 @@ private struct TranscriptSelectionTextView: UIViewRepresentable {
 
     func makeCoordinator() -> Coordinator {
         Coordinator(selection: $selection)
-    }
-
-    private func styledText() -> NSAttributedString {
-        let text = NSMutableAttributedString(attributedString: transcript.attributedText)
-        let fullRange = NSRange(location: 0, length: text.length)
-
-        let paragraphStyle = NSMutableParagraphStyle()
-        paragraphStyle.minimumLineHeight = BookmarkTranscriptStyle.lineHeight
-        paragraphStyle.maximumLineHeight = BookmarkTranscriptStyle.lineHeight
-        paragraphStyle.paragraphSpacing = 10
-        paragraphStyle.lineBreakMode = .byWordWrapping
-        paragraphStyle.alignment = .natural
-
-        text.addAttributes([.paragraphStyle: paragraphStyle,
-                            .font: BookmarkTranscriptStyle.font,
-                            .baselineOffset: BookmarkTranscriptStyle.baselineOffset,
-                            .foregroundColor: textColor],
-                           range: fullRange)
-
-        text.enumerateAttribute(.transcriptSpeaker, in: fullRange, options: [.longestEffectiveRangeNotRequired]) { value, range, _ in
-            guard value != nil else { return }
-
-            text.addAttribute(.font, value: BookmarkTranscriptStyle.speakerFont, range: range)
-        }
-
-        return text
-    }
-
-    /// A text view that reports the first layout pass it can scroll and select in
-    class SelectableTextView: UITextView {
-        var onFirstLayout: (() -> Void)?
-
-        override func layoutSubviews() {
-            super.layoutSubviews()
-
-            guard window != nil, bounds.width > 0, let onFirstLayout else { return }
-
-            // Cleared first: the callback lays the text out again as it scrolls
-            self.onFirstLayout = nil
-            onFirstLayout()
-        }
     }
 
     class Coordinator: NSObject, UITextViewDelegate {
@@ -165,6 +151,11 @@ private struct TranscriptSelectionTextView: UIViewRepresentable {
         }
 
         func textViewDidChangeSelection(_ textView: UITextView) {
+            // Only the user's own selection counts: the responder machinery also moves the
+            // selection on its own — resigning during a pop, say — and a passage rewritten
+            // by those events would look like one the user picked
+            guard textView.isFirstResponder, textView.window != nil else { return }
+
             let range = textView.selectedRange
 
             if range.length == 0 {
@@ -199,6 +190,7 @@ struct BookmarkTranscriptEditView_Previews: PreviewProvider {
     static var previews: some View {
         NavigationStack {
             BookmarkTranscriptEditView(transcript: previewTranscript,
+                                       referenceTime: 8,
                                        selection: .constant(NSRange(location: 0, length: 42)),
                                        theme: .init(episode: nil))
         }

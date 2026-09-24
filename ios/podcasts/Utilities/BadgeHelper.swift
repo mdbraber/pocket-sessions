@@ -56,7 +56,7 @@ class BadgeHelper {
         if badgeSetting == .off {
             clearBadge()
         } else if badgeSetting == .totalUnplayed {
-            let unplayedCount = DataManager.sharedManager.count(query: "SELECT COUNT(e.id) FROM SJEpisode e LEFT JOIN SJPodcast p ON p.id = e.podcast_id WHERE p.subscribed = 1 AND e.playingStatus == 1 AND e.archived = 0", values: nil)
+            let unplayedCount = DataManager.shared.count(query: "SELECT COUNT(e.id) FROM SJEpisode e LEFT JOIN SJPodcast p ON p.id = e.podcast_id WHERE p.subscribed = 1 AND e.playingStatus == 1 AND e.archived = 0", values: nil)
             setBadgeTo(unplayedCount)
         } else if badgeSetting == .newSinceLastOpened {
             guard let lastClosedDate = UserDefaults.standard.object(forKey: Constants.UserDefaults.lastAppCloseDate) as? Date else {
@@ -65,7 +65,7 @@ class BadgeHelper {
                 return
             }
 
-            let newCount = DataManager.sharedManager.count(query: "SELECT COUNT(e.id) FROM SJEpisode e LEFT JOIN SJPodcast p ON p.id = e.podcast_id WHERE p.subscribed = 1 AND e.playingStatus == 1 AND e.archived = 0 AND e.addedDate > ?", values: [lastClosedDate])
+            let newCount = DataManager.shared.count(query: "SELECT COUNT(e.id) FROM SJEpisode e LEFT JOIN SJPodcast p ON p.id = e.podcast_id WHERE p.subscribed = 1 AND e.playingStatus == 1 AND e.archived = 0 AND e.addedDate > ?", values: [lastClosedDate])
             setBadgeTo(newCount)
         } else if badgeSetting == .inboxCount {
             // Fork: the global Inbox count — the same number the Inbox tab wears. A count
@@ -80,13 +80,13 @@ class BadgeHelper {
                 return
             }
 
-            guard let playlist = DataManager.sharedManager.findPlaylist(uuid: playlistId) else {
+            guard let playlist = DataManager.shared.findPlaylist(uuid: playlistId) else {
                 Settings.appBadge = .off
 
                 return
             }
 
-            let episodeCount = DataManager.sharedManager.episodeCount(for: playlist, episodeUuidToAdd: playlist.episodeUuidToAddToQueries())
+            let episodeCount = DataManager.shared.episodeCount(for: playlist, episodeUuidToAdd: playlist.episodeUuidToAddToQueries())
             setBadgeTo(episodeCount)
         }
     }

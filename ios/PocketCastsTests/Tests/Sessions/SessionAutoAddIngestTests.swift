@@ -81,7 +81,7 @@ final class SessionAutoAddIngestTests: DBTestCase {
 
     private func storeUuids(_ session: Session) -> [String] {
         guard let store = SessionManager.shared.store(for: session) else { return [] }
-        return DataManager.sharedManager.positionedEpisodeUuids(for: store)
+        return DataManager.shared.positionedEpisodeUuids(for: store)
     }
 
     // MARK: - Tests

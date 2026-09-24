@@ -34,7 +34,7 @@ final class SessionMembership {
         defer { lock.unlock() }
         if let cache { return cache }
         let stores = SessionStore.shared.sessions.compactMap(\.storePlaylistUuid)
-        let set = stores.isEmpty ? [] : DataManager.sharedManager.playlistEpisodeUuids(forPlaylistUuids: stores)
+        let set = stores.isEmpty ? [] : DataManager.shared.playlistEpisodeUuids(forPlaylistUuids: stores)
         cache = set
         return set
     }

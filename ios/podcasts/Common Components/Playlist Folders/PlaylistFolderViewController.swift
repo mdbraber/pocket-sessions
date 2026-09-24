@@ -23,7 +23,7 @@ class PlaylistFolderViewController: PCViewController, UITableViewDataSource, UIT
     override func viewDidLoad() {
         super.viewDidLoad()
 
-        view.backgroundColor = AppTheme.viewBackgroundColor()
+        view.backgroundColor = AppTheme.viewBackgroundColor
         table.register(NewPlaylistCell.self, forCellReuseIdentifier: NewPlaylistCell.reuseIdentifier)
         table.dataSource = self
         table.delegate = self
@@ -101,7 +101,7 @@ class PlaylistFolderViewController: PCViewController, UITableViewDataSource, UIT
             let editView = PlaylistFolderEditView(folder: folder) { [weak self] in
                 self?.dismiss(animated: true)
             }
-            let host = PCHostingController(rootView: editView.environmentObject(Theme.sharedTheme))
+            let host = PCHostingController(rootView: editView.environmentObject(Theme.shared))
             self.present(host, animated: true)
         })
 
@@ -110,7 +110,7 @@ class PlaylistFolderViewController: PCViewController, UITableViewDataSource, UIT
             let membersView = EditPlaylistFolderPlaylistsView(folderUuid: self.folderUuid) { [weak self] in
                 self?.dismiss(animated: true)
             }
-            let host = PCHostingController(rootView: membersView.environmentObject(Theme.sharedTheme))
+            let host = PCHostingController(rootView: membersView.environmentObject(Theme.shared))
             self.present(host, animated: true)
         })
 

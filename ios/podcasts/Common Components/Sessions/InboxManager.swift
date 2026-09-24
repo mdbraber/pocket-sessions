@@ -46,7 +46,7 @@ final class InboxManager {
     /// the same uuid and converge. A random uuid would leave two rival Inboxes.
     @discardableResult
     func inboxPlaylist() -> EpisodeFilter {
-        if let existing = DataManager.sharedManager.findPlaylist(uuid: DataManager.inboxPlaylistUuid) {
+        if let existing = DataManager.shared.findPlaylist(uuid: DataManager.inboxPlaylistUuid) {
             return existing
         }
 
@@ -57,14 +57,14 @@ final class InboxManager {
         playlist.sortType = PlaylistSort.dragAndDrop.rawValue
         playlist.isNew = false
         playlist.syncStatus = SyncStatus.notSynced.rawValue
-        DataManager.sharedManager.save(playlist: playlist)
+        DataManager.shared.save(playlist: playlist)
         return playlist
     }
 
     /// Membership, as a Set. Fetch this ONCE per list load and check it per row — never run a
     /// membership query per row.
     func unseenUuids() -> Set<String> {
-        DataManager.sharedManager.playlistEpisodeUuids(for: DataManager.inboxPlaylistUuid)
+        DataManager.shared.playlistEpisodeUuids(for: DataManager.inboxPlaylistUuid)
     }
 
     func isUnseen(episodeUuid: String) -> Bool {
@@ -77,12 +77,12 @@ final class InboxManager {
     /// episodes happened to arrive in. Newest-first is the default *view*; sort and grouping are
     /// display lenses and never rewrite the playlist.
     func unseenEpisodes() -> [Episode] {
-        DataManager.sharedManager.playlistEpisodes(for: inboxPlaylist(), limit: 0, sortType: .newestToOldest)
+        DataManager.shared.playlistEpisodes(for: inboxPlaylist(), limit: 0, sortType: .newestToOldest)
     }
 
     /// The badge number. A count query — it never materialises the episodes.
     func unseenCount() -> Int {
-        DataManager.sharedManager.playlistEpisodeCount(for: inboxPlaylist(), episodeUuidToAdd: nil)
+        DataManager.shared.playlistEpisodeCount(for: inboxPlaylist(), episodeUuidToAdd: nil)
     }
 
     /// Opting a podcast out of the Inbox also clears what it already put there — otherwise the
@@ -91,7 +91,7 @@ final class InboxManager {
         SessionFeederEngine.setOptedOut(optedOut, podcastUuid: podcastUuid)
         guard optedOut else { return }
 
-        let members = DataManager.sharedManager.findEpisodesWhere(
+        let members = DataManager.shared.findEpisodesWhere(
             customWhere: "uuid IN (SELECT episodeUuid FROM \(DataManager.playlistEpisodeTableName) WHERE playlist_uuid = ?) AND podcastUuid = ?",
             arguments: [DataManager.inboxPlaylistUuid, podcastUuid]
         )
@@ -104,7 +104,7 @@ final class InboxManager {
     func setInboxAddPolicy(_ policy: SessionFeederEngine.InboxAddPolicy, podcastUuid: String) {
         SessionFeederEngine.setInboxAddPolicy(policy, forPodcast: podcastUuid)
 
-        let members = DataManager.sharedManager.findEpisodesWhere(
+        let members = DataManager.shared.findEpisodesWhere(
             customWhere: "uuid IN (SELECT episodeUuid FROM \(DataManager.playlistEpisodeTableName) WHERE playlist_uuid = ?) AND podcastUuid = ?",
             arguments: [DataManager.inboxPlaylistUuid, podcastUuid]
         )
@@ -169,7 +169,7 @@ final class InboxManager {
         // over the ledger a few times a day instead of on every mutation.
         store.pruneSeen(olderThan: Date(timeIntervalSinceNow: -InboxStore.seenRetention))
 
-        let podcasts = DataManager.sharedManager.allPodcasts(includeUnsubscribed: false)
+        let podcasts = DataManager.shared.allPodcasts(includeUnsubscribed: false)
         guard !podcasts.isEmpty else { return }
 
         let optedOut = SessionFeederEngine.optOutPodcastUuids()
@@ -235,7 +235,7 @@ final class InboxManager {
         AND archived = 0 AND wasDeleted = 0 AND playedUpTo = 0 AND playingStatus = \(PlayingStatus.notPlayed.rawValue) \
         ORDER BY publishedDate ASC
         """
-        return DataManager.sharedManager.findEpisodesWhere(customWhere: query, arguments: arguments)
+        return DataManager.shared.findEpisodesWhere(customWhere: query, arguments: arguments)
     }
 
     // MARK: - Manual-unseen exemptions
@@ -283,7 +283,7 @@ final class InboxManager {
             incoming = Array(incoming.prefix(room))
         }
 
-        guard DataManager.sharedManager.add(episodes: incoming, to: playlist) else {
+        guard DataManager.shared.add(episodes: incoming, to: playlist) else {
             FileLog.shared.addMessage("InboxManager: failed to add \(incoming.count) episodes to the Inbox")
             return
         }
@@ -296,7 +296,7 @@ final class InboxManager {
     func markSeen(episodeUuids: [String]) {
         guard !episodeUuids.isEmpty else { return }
         let playlist = inboxPlaylist()
-        DataManager.sharedManager.deleteEpisodes(episodeUuids, from: playlist)
+        DataManager.shared.deleteEpisodes(episodeUuids, from: playlist)
         // The seen-ledger records the decision itself, because playlist sync cannot: it is
         // last-writer-wins over the whole membership set, so a lagging device would otherwise
         // re-upload stale membership and resurrect these. Every deliberate removal funnels
@@ -318,7 +318,7 @@ final class InboxManager {
     /// the exemption with it).
     func markUnseen(episodeUuids: [String]) {
         guard !episodeUuids.isEmpty else { return }
-        let episodes = episodeUuids.compactMap { DataManager.sharedManager.findEpisode(uuid: $0) }
+        let episodes = episodeUuids.compactMap { DataManager.shared.findEpisode(uuid: $0) }
         guard !episodes.isEmpty else { return }
 
         // Returning to the Inbox is a decision too: the uuid leaves the seen-ledger (with a
@@ -365,7 +365,7 @@ final class InboxManager {
             clearManualUnseen(Array(staleExemptions))
         }
 
-        let decided = DataManager.sharedManager.findEpisodesWhere(
+        let decided = DataManager.shared.findEpisodesWhere(
             customWhere: """
             uuid IN (SELECT episodeUuid FROM \(DataManager.playlistEpisodeTableName) WHERE playlist_uuid = ?) \
             AND (archived = 1 OR wasDeleted = 1 OR playedUpTo > 0 OR playingStatus != \(PlayingStatus.notPlayed.rawValue))
@@ -410,7 +410,7 @@ final class InboxManager {
         // Membership would otherwise pin the podcast alive: `deletePodcastIfUnused` bails when
         // `playlistContainsPodcast` is true, so an unsubscribed podcast with Inbox members would
         // never be cleaned up.
-        let orphaned = DataManager.sharedManager.findEpisodesWhere(
+        let orphaned = DataManager.shared.findEpisodesWhere(
             customWhere: "uuid IN (SELECT episodeUuid FROM \(DataManager.playlistEpisodeTableName) WHERE playlist_uuid = ?) AND podcastUuid = ?",
             arguments: [DataManager.inboxPlaylistUuid, podcastUuid]
         )

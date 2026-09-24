@@ -2,12 +2,13 @@ import Foundation
 @preconcurrency import PocketCastsDataModel
 import PocketCastsServer
 import PocketCastsUtils
+import UIKit
 
 @MainActor
-class MultiSelectHelper {
+enum MultiSelectHelper {
     // MARK: - Action Helpers
 
-    class func performAction(_ action: MultiSelectAction, actionDelegate: MultiSelectActionDelegate, view: UIView? = nil) {
+    static func performAction(_ action: MultiSelectAction, actionDelegate: MultiSelectActionDelegate, view: UIView? = nil) {
         AnalyticsEpisodeHelper.shared.currentSource = actionDelegate.multiSelectViewSource
 
         switch action {
@@ -56,7 +57,7 @@ class MultiSelectHelper {
         }
     }
 
-    private class func starEpisodes(actionDelegate: MultiSelectActionDelegate, star: Bool) {
+    private static func starEpisodes(actionDelegate: MultiSelectActionDelegate, star: Bool) {
         let selectedEpisodes = actionDelegate.multiSelectedBaseEpisodes().compactMap { $0 as? Episode }
         if star {
             let status = selectedEpisodes.count == 1 ? L10n.multiSelectStarringEpisodesSingular : L10n.multiSelectStarringEpisodesPluralFormat(selectedEpisodes.count.localized())
@@ -75,7 +76,7 @@ class MultiSelectHelper {
         count == 1 ? L10n.multiSelectDeleteFileMessageSingular : L10n.multiSelectDeleteFileMessagePlural(count.localized())
     }
 
-    private class func delete(actionDelegate: MultiSelectActionDelegate) {
+    private static func delete(actionDelegate: MultiSelectActionDelegate) {
         guard let selectedEpisodes = actionDelegate.multiSelectedBaseEpisodes() as? [UserEpisode] else { return }
 
         let downloadedEpisodes = selectedEpisodes.filter { $0.downloaded(pathFinder: DownloadManager.shared) }
@@ -126,7 +127,7 @@ class MultiSelectHelper {
         actionDelegate.multiSelectPresentingViewController().present(alert, animated: true)
     }
 
-    private class func archiveEpisodes(actionDelegate: MultiSelectActionDelegate) {
+    private static func archiveEpisodes(actionDelegate: MultiSelectActionDelegate) {
         let selectedEpisodes = actionDelegate.multiSelectedBaseEpisodes().compactMap { $0 as? Episode }
         let selectedUserEpisodes = actionDelegate.multiSelectedBaseEpisodes().compactMap { $0 as? UserEpisode }
         let status = selectedEpisodes.count == 1 ? L10n.multiSelectArchivingEpisodesSingular : L10n.multiSelectArchivingEpisodesPluralFormat(selectedEpisodes.count.localized())
@@ -138,7 +139,7 @@ class MultiSelectHelper {
         }
     }
 
-    private class func unarchiveEpisodes(actionDelegate: MultiSelectActionDelegate) {
+    private static func unarchiveEpisodes(actionDelegate: MultiSelectActionDelegate) {
         let selectedEpisodes = actionDelegate.multiSelectedBaseEpisodes().compactMap { $0 as? Episode }
         let status = selectedEpisodes.count == 1 ? L10n.multiSelectUnarchivingEpisodesSingular : L10n.multiSelectUnarchivingEpisodesPluralFormat(selectedEpisodes.count.localized())
         actionDelegate.multiSelectActionBegan(status: status)
@@ -148,7 +149,7 @@ class MultiSelectHelper {
         }
     }
 
-    private class func playEpisodes(actionDelegate: MultiSelectActionDelegate, toTop: Bool) {
+    private static func playEpisodes(actionDelegate: MultiSelectActionDelegate, toTop: Bool) {
         let selectedEpisodes = actionDelegate.multiSelectedBaseEpisodes()
         var episodesToAdd = selectedEpisodes
         let statusTime = Date()
@@ -178,7 +179,7 @@ class MultiSelectHelper {
         }
     }
 
-    private class func markAsPlayedEpisodes(actionDelegate: MultiSelectActionDelegate) {
+    private static func markAsPlayedEpisodes(actionDelegate: MultiSelectActionDelegate) {
         let selectedEpisodes = actionDelegate.multiSelectedBaseEpisodes()
         let status = selectedEpisodes.count == 1 ? L10n.multiSelectMarkEpisodesPlayedSingular : L10n.multiSelectMarkEpisodesPlayedPluralFormat(selectedEpisodes.count.localized())
         actionDelegate.multiSelectActionBegan(status: status)
@@ -189,7 +190,7 @@ class MultiSelectHelper {
         }
     }
 
-    private class func markAsUnplayedEpisodes(actionDelegate: MultiSelectActionDelegate) {
+    private static func markAsUnplayedEpisodes(actionDelegate: MultiSelectActionDelegate) {
         let selectedArchiveEpisodes = actionDelegate.multiSelectedBaseEpisodes().compactMap { $0 as? Episode }
         let selectedEpisodes = actionDelegate.multiSelectedBaseEpisodes()
         let status = selectedEpisodes.count == 1 ? L10n.multiSelectMarkEpisodesUnplayedSingular : L10n.multiSelectMarkEpisodesUnplayedPluralFormat(selectedEpisodes.count.localized())
@@ -202,7 +203,7 @@ class MultiSelectHelper {
         }
     }
 
-    private class func downloadOrQueueEpisodes(actionDelegate: MultiSelectActionDelegate) {
+    private static func downloadOrQueueEpisodes(actionDelegate: MultiSelectActionDelegate) {
         let selectedEpisodes = actionDelegate.multiSelectedBaseEpisodes()
 
         let downloadableEpisodes = selectedEpisodes.filter { !$0.downloading() && !$0.queued() && !$0.downloaded(pathFinder: DownloadManager.shared) }
@@ -251,7 +252,7 @@ class MultiSelectHelper {
         confirmPicker.present()
     }
 
-    private class func downloadEpisodes(_ episodes: [BaseEpisode], actionDelegate: MultiSelectActionDelegate) {
+    private static func downloadEpisodes(_ episodes: [BaseEpisode], actionDelegate: MultiSelectActionDelegate) {
         Task.detached {
             var queuedEpisodes = 0
             for episode in episodes {
@@ -267,7 +268,7 @@ class MultiSelectHelper {
         AnalyticsEpisodeHelper.shared.bulkDownloadEpisodes(episodes: episodes)
     }
 
-    private class func queueEpisodes(_ episodes: [BaseEpisode], actionDelegate: MultiSelectActionDelegate) {
+    private static func queueEpisodes(_ episodes: [BaseEpisode], actionDelegate: MultiSelectActionDelegate) {
         Task.detached {
             var queuedEpisodes = 0
             for episode in episodes {
@@ -283,18 +284,18 @@ class MultiSelectHelper {
         AnalyticsEpisodeHelper.shared.bulkDownloadEpisodes(episodes: episodes)
     }
 
-    private class func removeDownload(actionDelegate: MultiSelectActionDelegate) {
+    private static func removeDownload(actionDelegate: MultiSelectActionDelegate) {
         let selectedEpisodes = actionDelegate.multiSelectedBaseEpisodes()
         let status = selectedEpisodes.count == 1 ? L10n.multiSelectRemoveDownloadSingular : L10n.multiSelectRemoveDownloadsPluralFormat(selectedEpisodes.count.localized())
         actionDelegate.multiSelectActionBegan(status: status)
 
         Task.detached {
-            EpisodeManager.removeDownloadForEpisodes(selectedEpisodes)
+            EpisodeManager.removeDownload(for: selectedEpisodes)
             await actionDelegate.multiSelectActionCompleted()
         }
     }
 
-    private class func moveToTop(actionDelegate: MultiSelectActionDelegate) {
+    private static func moveToTop(actionDelegate: MultiSelectActionDelegate) {
         guard let selectedPlayListEpisodes = actionDelegate.multiSelectedPlayListEpisodes() else {
             actionDelegate.multiSelectActionCompleted()
             return
@@ -303,7 +304,7 @@ class MultiSelectHelper {
         actionDelegate.multiSelectActionCompleted()
     }
 
-    private class func moveToBottom(actionDelegate: MultiSelectActionDelegate) {
+    private static func moveToBottom(actionDelegate: MultiSelectActionDelegate) {
         guard let selectedPlayListEpisodes = actionDelegate.multiSelectedPlayListEpisodes() else {
             actionDelegate.multiSelectActionCompleted()
             return
@@ -312,7 +313,7 @@ class MultiSelectHelper {
         actionDelegate.multiSelectActionCompleted()
     }
 
-    private class func removeFromUpNext(actionDelegate: MultiSelectActionDelegate) {
+    private static func removeFromUpNext(actionDelegate: MultiSelectActionDelegate) {
         let selectedUuids: [String]
         if let playlistUuids = actionDelegate.multiSelectedPlayListEpisodes()?.map(\.episodeUuid) {
             selectedUuids = playlistUuids
@@ -328,7 +329,7 @@ class MultiSelectHelper {
         }
     }
 
-    private class func share(actionDelegate: MultiSelectActionDelegate, view: UIView?) {
+    private static func share(actionDelegate: MultiSelectActionDelegate, view: UIView?) {
         guard let episode = actionDelegate.multiSelectedBaseEpisodes().first as? Episode else {
             return
         }
@@ -347,7 +348,7 @@ class MultiSelectHelper {
         )
     }
 
-    private class func addToPlaylist(actionDelegate: MultiSelectActionDelegate) {
+    private static func addToPlaylist(actionDelegate: MultiSelectActionDelegate) {
         let allSelected = actionDelegate.multiSelectedBaseEpisodes()
         let episodes = allSelected.compactMap { $0 as? Episode }
 
@@ -375,7 +376,7 @@ class MultiSelectHelper {
     /// Fork: the Add to Session verb for a selection — routed per Settings → Inbox
     /// (all matching sessions / ask), with the episodes' podcast sessions created on
     /// demand like every other Add to Session.
-    private class func addToSession(actionDelegate: MultiSelectActionDelegate) {
+    private static func addToSession(actionDelegate: MultiSelectActionDelegate) {
         let episodes = actionDelegate.multiSelectedBaseEpisodes().compactMap { $0 as? Episode }
         guard !episodes.isEmpty else { return }
 
@@ -392,7 +393,7 @@ class MultiSelectHelper {
 
     /// Fork: removes the selection from sessions, honoring the Remove from Session mode (all / this
     /// session / ask). The page's own session, if any, is the "current" one.
-    private class func removeFromSession(actionDelegate: MultiSelectActionDelegate) {
+    private static func removeFromSession(actionDelegate: MultiSelectActionDelegate) {
         let uuids = actionDelegate.multiSelectedBaseEpisodes().map(\.uuid)
         guard !uuids.isEmpty else { return }
         SessionManager.shared.removeFromSessions(episodeUuids: uuids, preferred: actionDelegate.multiSelectCurrentSession(), presenting: actionDelegate.multiSelectPresentingViewController()) {
@@ -402,7 +403,7 @@ class MultiSelectHelper {
 
     /// Fork: seen/unseen for a selection — batched and off the main thread, with the
     /// standard progress treatment. Unseen is the full "fresh again" reset.
-    private class func setSeenEpisodes(actionDelegate: MultiSelectActionDelegate, seen: Bool) {
+    private static func setSeenEpisodes(actionDelegate: MultiSelectActionDelegate, seen: Bool) {
         let episodes = actionDelegate.multiSelectedBaseEpisodes()
         guard !episodes.isEmpty else { return }
         actionDelegate.multiSelectActionBegan(status: seen ? L10n.episodeMarkSeen : L10n.episodeMarkUnseen)
@@ -413,7 +414,7 @@ class MultiSelectHelper {
         }
     }
 
-    private class func removeListeningHistory(actionDelegate: MultiSelectActionDelegate) {
+    private static func removeListeningHistory(actionDelegate: MultiSelectActionDelegate) {
         let selectedEpisodes = actionDelegate.multiSelectedBaseEpisodes()
         EpisodeManager.removeListeningHistory(episodes: selectedEpisodes)
         actionDelegate.multiSelectActionCompleted()
@@ -422,7 +423,7 @@ class MultiSelectHelper {
 
     // MARK: - Selection Helpers
 
-    class func shouldSelectAll(onCount: Int, totalCount: Int) -> Bool {
+    static func shouldSelectAll(onCount: Int, totalCount: Int) -> Bool {
         // Nothing selected (including an empty list) always offers "Select All" — "Deselect
         // All" is only meaningful once everything present is selected. Without the onCount == 0
         // guard an empty list (0 < 0) wrongly reads as "Deselect All".
@@ -431,7 +432,7 @@ class MultiSelectHelper {
 
     // MARK: - Inverse Actions
 
-    class func starredAction(actionDelegate: MultiSelectActionDelegate) -> MultiSelectAction {
+    static func starredAction(actionDelegate: MultiSelectActionDelegate) -> MultiSelectAction {
         let selectedEpisodes = actionDelegate.multiSelectedBaseEpisodes()
         for baseEpisode in selectedEpisodes {
             if let episode = baseEpisode as? Episode, !episode.keepEpisode {
@@ -441,7 +442,7 @@ class MultiSelectHelper {
         return .unstar
     }
 
-    class func archiveAction(actionDelegate: MultiSelectActionDelegate) -> MultiSelectAction {
+    static func archiveAction(actionDelegate: MultiSelectActionDelegate) -> MultiSelectAction {
         let selectedEpisodes = actionDelegate.multiSelectedBaseEpisodes()
         for baseEpisode in selectedEpisodes {
             if let episode = baseEpisode as? Episode, !episode.archived {
@@ -451,7 +452,7 @@ class MultiSelectHelper {
         return .unarchive
     }
 
-    class func downloadAction(actionDelegate: MultiSelectActionDelegate) -> MultiSelectAction {
+    static func downloadAction(actionDelegate: MultiSelectActionDelegate) -> MultiSelectAction {
         let selectedEpisodes = actionDelegate.multiSelectedBaseEpisodes()
 
         for episode in selectedEpisodes {
@@ -462,7 +463,7 @@ class MultiSelectHelper {
         return .removeDownload
     }
 
-    class func markAsPlayedAction(actionDelegate: MultiSelectActionDelegate) -> MultiSelectAction {
+    static func markAsPlayedAction(actionDelegate: MultiSelectActionDelegate) -> MultiSelectAction {
         let selectedEpisodes = actionDelegate.multiSelectedBaseEpisodes()
         for episode in selectedEpisodes {
             if !episode.played() {
@@ -472,7 +473,7 @@ class MultiSelectHelper {
         return .markAsUnplayed
     }
 
-    class func invertActionIfRequired(action: MultiSelectAction, actionDelegate: MultiSelectActionDelegate) -> MultiSelectAction {
+    static func invertActionIfRequired(action: MultiSelectAction, actionDelegate: MultiSelectActionDelegate) -> MultiSelectAction {
         if action == .star {
             return MultiSelectHelper.starredAction(actionDelegate: actionDelegate)
         } else if action == .archive {

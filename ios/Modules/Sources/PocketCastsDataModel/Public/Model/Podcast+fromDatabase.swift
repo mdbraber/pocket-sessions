@@ -58,16 +58,10 @@ extension Podcast {
         podcast.isPrivate = rs.bool(forColumn: "isPrivate")
         podcast.fundingURL = rs.string(forColumn: "fundingURL")
         podcast.isExplicit = rs.bool(forColumn: "isExplicit")
-        // Fork: the synced settings blob (JSON with per-field modified dates).
+        podcast.networkListId = rs.string(forColumn: "networkListId")
         podcast.settingsJSON = rs.string(forColumn: "settings") ?? ""
 
         return podcast
-    }
-}
-
-extension DBUtils {
-    static func convertData<T: JSONCodable>(value: Data) throws -> T? {
-        return try JSONDecoder().decode(T.self, from: value)
     }
 }
 

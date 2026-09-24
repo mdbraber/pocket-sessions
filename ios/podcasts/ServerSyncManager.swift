@@ -41,7 +41,7 @@ class ServerSyncManager: ServerSyncDelegate {
     // MARK: - Episode functions
 
     func episodeStarredChanged(episode: Episode) {
-        if PlaybackManager.shared.isNowPlayingEpisode(episodeUuid: episode.uuid) {
+        if PlaybackManager.shared.isCurrentEpisode(uuid: episode.uuid) {
             PlaybackManager.shared.nowPlayingStarredChanged()
         }
         NotificationCenter.postOnMainThread(notification: Constants.Notifications.episodeStarredChanged, object: episode.uuid)
@@ -93,7 +93,7 @@ class ServerSyncManager: ServerSyncDelegate {
             Analytics.shared.refreshRegistered()
             PlaybackManager.shared.effectsChangedExternally()
             #if !os(tvOS)
-            Theme.sharedTheme.toggleTheme()
+            Theme.shared.toggleTheme()
             #endif
             #if !APPCLIP && !os(tvOS)
             NotificationsHelper.shared.register(checkToken: true)
@@ -115,7 +115,7 @@ class ServerSyncManager: ServerSyncDelegate {
         defaults.set(cleanupDate, forKey: Constants.UserDefaults.lastNetworkDataUsageCleanupDate)
 
         Task {
-            let didCleanup = await DataManager.sharedManager.networkDataUsageManager.deleteRecords(
+            let didCleanup = await DataManager.shared.networkDataUsageManager.deleteRecords(
                 olderThan: Date(timeIntervalSinceNow: -Self.networkDataUsageRetentionPeriod)
             )
 
@@ -158,12 +158,20 @@ class ServerSyncManager: ServerSyncDelegate {
         #endif
     }
 
+    func isNewEpisodeNotificationsEnabled() -> Bool {
+        #if APPCLIP || os(tvOS)
+        false
+        #else
+        NotificationsGroup.newEpisodes.isEnabled
+        #endif
+    }
+
     func defaultPodcastGrouping() -> Int32 {
-        Settings.defaultPodcastGrouping().rawValue
+        Settings.defaultPodcastGrouping.rawValue
     }
 
     func defaultShowArchived() -> Bool {
-        Settings.showArchivedDefault()
+        Settings.showArchivedDefault
     }
 
     func uniqueAppId() -> String {
@@ -182,8 +190,12 @@ class ServerSyncManager: ServerSyncDelegate {
         if Settings.autoDownloadEnabled() {
             if Settings.autoDownloadMobileDataAllowed() || NetworkUtils.shared.isConnectedToUnexpensiveConnection() {
                 for uuid in uuids {
-                    AnalyticsEpisodeHelper.shared.downloaded(episodeUUID: uuid)
                     DownloadManager.shared.addToQueue(episodeUuid: uuid)
+                }
+                DispatchQueue.main.async {
+                    for uuid in uuids {
+                        AnalyticsEpisodeHelper.shared.downloaded(episodeUUID: uuid)
+                    }
                 }
             }
         }

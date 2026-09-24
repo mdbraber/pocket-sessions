@@ -1,4 +1,5 @@
 import UIKit
+import SJUtils
 import SwiftUI
 import PocketCastsDataModel
 import DifferenceKit
@@ -98,7 +99,7 @@ extension PodcastViewController {
     /// membership is a query, not a table — so it happens off the main thread.
     func loadPodcastPlaylists(podcast: Podcast, animated: Bool) {
         let searchHeader = ListHeader(headerTitle: L10n.search, isSectionHeader: true, sectionNumber: -1)
-        let searchTerm = (searchController?.searchTextField?.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let searchTerm = (searchController?.searchText ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             var rows = PodcastPlaylistRows.current(forPodcast: podcast.uuid)
@@ -165,7 +166,7 @@ extension PodcastViewController {
         // The other tabs' load paths end with this; without it the counts line above the list keeps
         // whatever the Episodes tab left there ("35 episodes • All Episodes"), which describes a
         // list this tab isn't showing.
-        defer { searchController?.episodesDidReload() }
+        defer { updateSearchHeader() }
         if animated {
             let changeSet = StagedChangeset(source: episodeInfo, target: data)
             do {

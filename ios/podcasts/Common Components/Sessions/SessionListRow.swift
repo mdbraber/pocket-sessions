@@ -196,7 +196,7 @@ enum SessionListRows {
             guard session.uuid != SessionStore.globalInboxUuid,
                   let storeUuid = session.storePlaylistUuid,
                   !feederUuids.contains(storeUuid),
-                  let store = DataManager.sharedManager.findPlaylist(uuid: storeUuid)
+                  let store = DataManager.shared.findPlaylist(uuid: storeUuid)
             else { return nil }
 
             let isActive = activeUuid == storeUuid
@@ -239,7 +239,7 @@ enum SessionListRows {
                 storeUuid: storeUuid,
                 name: store.playlistName,
                 nextEpisodePodcastUuid: (next as? Episode)?.podcastUuid,
-                isPlaying: isActive && !sessionPaused && PlaybackManager.shared.currentEpisodeIsSessionSourced && PlaybackManager.shared.playing(),
+                isPlaying: isActive && !sessionPaused && PlaybackManager.shared.currentEpisodeIsSessionSourced && PlaybackManager.shared.isPlaying,
                 isActive: isActive,
                 nextEpisodeTitle: next?.displayableTitle(),
                 nextEpisodePodcast: next.flatMap { podcastName(for: $0) },
@@ -365,7 +365,7 @@ enum SessionListRows {
         return SessionStore.shared.sessions.filter { session in
             session.uuid != SessionStore.globalInboxUuid
                 && !SessionManager.isOptedOut(feeder: session.feeder)
-                && session.storePlaylistUuid.map { !feederUuids.contains($0) && DataManager.sharedManager.findPlaylist(uuid: $0) != nil } == true
+                && session.storePlaylistUuid.map { !feederUuids.contains($0) && DataManager.shared.findPlaylist(uuid: $0) != nil } == true
         }.count
     }
 

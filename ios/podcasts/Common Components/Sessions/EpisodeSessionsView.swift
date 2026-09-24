@@ -74,14 +74,14 @@ class EpisodeSessionsViewModel: ObservableObject {
         var uuids = session.artworkPodcastUuids
         if uuids.isEmpty {
             for episodeUuid in SessionFeederEngine.storeMemberUuids(for: session) {
-                guard let podcastUuid = DataManager.sharedManager.findEpisode(uuid: episodeUuid)?.podcastUuid else { continue }
+                guard let podcastUuid = DataManager.shared.findEpisode(uuid: episodeUuid)?.podcastUuid else { continue }
                 if !uuids.contains(podcastUuid) { uuids.append(podcastUuid) }
                 if uuids.count == 4 { break }
             }
         }
         var tiles = Array(uuids.prefix(4))
         if tiles.count < 4 { tiles = Array(tiles.prefix(1)) }
-        return tiles.map { PlaylistArtworkView.ImageItem(id: $0, url: ImageManager.sharedManager.podcastUrl(imageSize: .grid, uuid: $0)) }
+        return tiles.map { PlaylistArtworkView.ImageItem(id: $0, url: ImageManager.shared.podcastUrl(imageSize: .grid, uuid: $0)) }
     }
 }
 

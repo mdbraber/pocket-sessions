@@ -15,7 +15,7 @@ enum SessionLinking {
         let grouped = Dictionary(grouping: episodes.compactMap { $0 as? Episode }, by: \.podcastUuid)
         for (podcastUuid, podcastEpisodes) in grouped {
             guard Settings.resolvedMirrorUpNextToSession(podcastUuid: podcastUuid),
-                  let podcast = DataManager.sharedManager.findPodcast(uuid: podcastUuid, includeUnsubscribed: true),
+                  let podcast = DataManager.shared.findPodcast(uuid: podcastUuid, includeUnsubscribed: true),
                   // Unsubscribed podcasts never get a session sprung by the mirror —
                   // their queue adds stay queue-only (an existing session still receives).
                   let session = SessionManager.shared.findOrCreateSession(forPodcast: podcast) else { continue }
@@ -33,7 +33,7 @@ enum SessionLinking {
         // ONE query for which playlists hold this episode, then map to sessions — the old
         // `sessions.filter { storeMemberUuids(for:) … }` ran a DB query PER session on every remove
         // swipe, which is what made the swipe feel slow.
-        let holdingPlaylists = Set(DataManager.sharedManager.manualPlaylistUUIDs(for: episode.uuid))
+        let holdingPlaylists = Set(DataManager.shared.manualPlaylistUUIDs(for: episode.uuid))
         let containing = SessionStore.shared.sessions.filter { $0.storePlaylistUuid.map(holdingPlaylists.contains) ?? false }
 
         PlaybackManager.shared.removeIfPlayingOrQueued(episode: episode, fireNotification: true, userInitiated: true)
@@ -65,7 +65,7 @@ enum SessionLinking {
             uniquingKeysWith: { first, _ in first }
         )
         for episodeUuid in episodeUuids {
-            for playlistUuid in DataManager.sharedManager.manualPlaylistUUIDs(for: episodeUuid) {
+            for playlistUuid in DataManager.shared.manualPlaylistUUIDs(for: episodeUuid) {
                 guard let sessionUuid = storeToSession[playlistUuid] else { continue }
                 membership[sessionUuid, default: []].append(episodeUuid)
             }
@@ -91,11 +91,11 @@ enum SessionLinking {
     /// podcast's queue position (bottom unless the podcast prefers top).
     static func mirrorSessionAdd(episodeUuids: [String]) {
         for uuid in episodeUuids {
-            guard let episode = DataManager.sharedManager.findEpisode(uuid: uuid),
+            guard let episode = DataManager.shared.findEpisode(uuid: uuid),
                   Settings.resolvedMirrorSessionToUpNext(podcastUuid: episode.podcastUuid),
                   !PlaybackManager.shared.inUpNext(episode: episode),
-                  !PlaybackManager.shared.isNowPlayingEpisode(episodeUuid: uuid) else { continue }
-            let toTop = DataManager.sharedManager.findPodcast(uuid: episode.podcastUuid, includeUnsubscribed: true)?
+                  !PlaybackManager.shared.isCurrentEpisode(uuid: uuid) else { continue }
+            let toTop = DataManager.shared.findPodcast(uuid: episode.podcastUuid, includeUnsubscribed: true)?
                 .autoAddToUpNextSetting() == .addFirst
             PlaybackManager.shared.addToUpNext(episode: episode, ignoringQueueLimit: true, toTop: toTop, userInitiated: false)
         }

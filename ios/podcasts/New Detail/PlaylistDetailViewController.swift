@@ -4,6 +4,7 @@ import DifferenceKit
 import SwiftUI
 import PocketCastsServer
 import PocketCastsUtils
+import SJUtils
 
 class PlaylistDetailViewController: PCViewController, UIScrollViewDelegate {
     /// Fork: the search row uses the podcast page's exact metrics (56pt row, 36pt pill).
@@ -298,7 +299,7 @@ class PlaylistDetailViewController: PCViewController, UIScrollViewDelegate {
     }
 
     private func setupContent() {
-        view.backgroundColor = AppTheme.viewBackgroundColor()
+        view.backgroundColor = AppTheme.viewBackgroundColor
 
         tableView = ThemeableTable(frame: .zero, style: .grouped)
         view.insertSubview(tableView, at: 0)
@@ -375,8 +376,6 @@ class PlaylistDetailViewController: PCViewController, UIScrollViewDelegate {
             multiSelectFooterBottomConstraint,
             multiSelectFooter.heightAnchor.constraint(equalToConstant: 64),
         ])
-
-        view.layoutSubviews()
     }
 
     private func updateColors() {
@@ -541,7 +540,7 @@ class PlaylistDetailViewController: PCViewController, UIScrollViewDelegate {
         track(.filterAddEpisodesTapped, properties: ["is_playlist_full": isPlaylistFull])
 
         if isPlaylistFull {
-            let theme: any ToastTheme = ToastIconTheme(iconName: "option-alert", iconColor: Theme.sharedTheme.primaryIcon01)
+            let theme: any ToastTheme = ToastIconTheme(iconName: "option-alert", iconColor: Theme.shared.primaryIcon01)
             Toast.show(L10n.playlistManualAddEpisodeFullPlaylistToast, theme: theme)
             return
         }
@@ -556,7 +555,7 @@ class PlaylistDetailViewController: PCViewController, UIScrollViewDelegate {
                 }
             }
         )
-            .environmentObject(Theme.sharedTheme)
+            .environmentObject(Theme.shared)
             .environmentObject(searchAnalyticsHelper)
             .environmentObject(searchResults)
         )

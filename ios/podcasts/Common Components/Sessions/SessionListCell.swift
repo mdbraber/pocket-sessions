@@ -353,7 +353,7 @@ class SessionListCell: ThemeableSwipeCell {
 
     /// Blue for the queue lane, green for a session — the accent for the equalizer.
     private func laneAccent(isUpNext: Bool) -> UIColor {
-        let theme = themeOverride ?? Theme.sharedTheme.activeTheme
+        let theme = themeOverride ?? Theme.shared.activeTheme
         return isUpNext ? ThemeColor.support01(for: theme) : ThemeColor.support02(for: theme)
     }
 
@@ -456,7 +456,7 @@ class SessionListCell: ThemeableSwipeCell {
         // Fork: uniform list — only the ACTIVE (playing) row is styled. Its accent is blue when it's
         // the Up Next lane, green when it's a session; every other row is a flat, white-play-button
         // list row (matching the lineup, where only the playing episode gets the accent box).
-        let theme = themeOverride ?? Theme.sharedTheme.activeTheme
+        let theme = themeOverride ?? Theme.shared.activeTheme
         let accent = laneAccent(isUpNext: isUpNextLane)
         if showsAccentBox {
             playButton.tintColor = accent

@@ -13,8 +13,8 @@ class SessionPlaylistsSettingsViewController: PCViewController, UITableViewDataS
 
     private let onChange: () -> Void
     private let settingsTable = UITableView(frame: .zero, style: .plain)
-    private let folders = DataManager.sharedManager.allFolders(includeDeleted: false)
-    private let podcasts = DataManager.sharedManager.allPodcasts(includeUnsubscribed: false)
+    private let folders = DataManager.shared.allFolders(includeDeleted: false)
+    private let podcasts = DataManager.shared.allPodcasts(includeUnsubscribed: false)
         .sorted { ($0.title ?? "").localizedCaseInsensitiveCompare($1.title ?? "") == .orderedAscending }
 
     /// Podcasts covered by a selected folder — shown selected + dimmed (visual only; not saved).
@@ -138,7 +138,7 @@ private struct SessionPickerRow: View {
             artworkView
             Text(label)
                 .font(.callout.weight(.medium))
-                .foregroundColor(AppTheme.color(for: .primaryText01, theme: Theme.sharedTheme))
+                .foregroundColor(AppTheme.color(for: .primaryText01, theme: Theme.shared))
                 .lineLimit(1)
             Spacer(minLength: 8)
             checkbox
@@ -162,11 +162,11 @@ private struct SessionPickerRow: View {
         ZStack {
             Image(selected ? "checkbox-selected" : "checkbox-unselected")
                 .renderingMode(.template)
-                .foregroundColor(AppTheme.color(for: .primaryInteractive01, theme: Theme.sharedTheme))
+                .foregroundColor(AppTheme.color(for: .primaryInteractive01, theme: Theme.shared))
             if selected {
                 Image("tick")
                     .renderingMode(.template)
-                    .foregroundColor(AppTheme.color(for: .primaryInteractive02, theme: Theme.sharedTheme))
+                    .foregroundColor(AppTheme.color(for: .primaryInteractive02, theme: Theme.shared))
             }
         }
         .frame(width: 24, height: 24)

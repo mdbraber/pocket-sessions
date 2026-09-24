@@ -105,7 +105,7 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
         super.viewDidLoad()
 
         title = L10n.inboxTitle
-        view.backgroundColor = AppTheme.viewBackgroundColor()
+        view.backgroundColor = AppTheme.viewBackgroundColor
 
         table.register(UINib(nibName: "EpisodeCell", bundle: nil), forCellReuseIdentifier: Self.episodeCellId)
         table.register(EmptyStateCell.self, forCellReuseIdentifier: EmptyStateCell.reuseIdentifier)
@@ -232,7 +232,7 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
                 action: { [weak self] in self?.markAllSeen() },
                 longPress: { [weak self] in self?.clearTapped() }
             )
-            .environmentObject(Theme.sharedTheme)
+            .environmentObject(Theme.shared)
         ))
         host.view.backgroundColor = .clear
         addChild(host)

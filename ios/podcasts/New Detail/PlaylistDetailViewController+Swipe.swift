@@ -1,6 +1,7 @@
 import PocketCastsDataModel
 import PocketCastsUtils
 import SwipeCellKit
+import UIKit
 
 extension PlaylistDetailViewController: SwipeTableViewCellDelegate, SwipeHandler {
     // MARK: - SwipeTableViewCellDelegate
@@ -81,7 +82,7 @@ extension PlaylistDetailViewController: SwipeTableViewCellDelegate, SwipeHandler
             let uuid = episode.uuid
             let archive = SwipeAction(style: .default, title: nil) { [weak self] action, _ in
                 // Fresh object so the diff sees the change; fulfill closes the swipe.
-                if let fresh = DataManager.sharedManager.findEpisode(uuid: uuid) {
+                if let fresh = DataManager.shared.findEpisode(uuid: uuid) {
                     if archived {
                         EpisodeManager.unarchiveEpisode(episode: fresh, fireNotification: true)
                     } else {
@@ -149,7 +150,7 @@ extension PlaylistDetailViewController: SwipeTableViewCellDelegate, SwipeHandler
     }
 
     func addToManualPlaylist(episode: PocketCastsDataModel.Episode, at: IndexPath) {
-        NavigationManager.sharedManager.navigateTo(
+        NavigationManager.shared.navigateTo(
             NavigationManager.manualPlaylistsChooserKey,
             data: [
                 NavigationManager.manualPlaylistsChooserEpisodeKey: episode

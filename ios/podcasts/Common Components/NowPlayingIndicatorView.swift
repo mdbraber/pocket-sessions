@@ -65,7 +65,7 @@ class NowPlayingIndicatorView: UIView {
     }
 
     @objc private func refreshAnimation() {
-        guard window != nil, !isHidden, PlaybackManager.shared.playing() else {
+        guard window != nil, !isHidden, PlaybackManager.shared.isPlaying else {
             stopAnimating()
             return
         }

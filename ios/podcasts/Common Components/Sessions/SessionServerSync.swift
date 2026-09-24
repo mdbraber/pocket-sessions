@@ -113,8 +113,8 @@ final class SessionServerSync {
             let paused = Settings.playbackSessionPaused()
             // The leader episode is only meaningful while this device is actually sounding —
             // otherwise publish the session alone and let the follower pick its own head.
-            let episodeUuid = (session != nil && !paused && PlaybackManager.shared.playing())
-                ? PlaybackManager.shared.currentEpisode()?.uuid : nil
+            let episodeUuid = (session != nil && !paused && PlaybackManager.shared.isPlaying)
+                ? PlaybackManager.shared.currentEpisode?.uuid : nil
             queue.async { self.publishPlaybackPointer(session: session, episodeUuid: episodeUuid) }
         }
     }
@@ -156,8 +156,8 @@ final class SessionServerSync {
         if force { UserDefaults.standard.removeObject(forKey: playbackFingerprintKey) }
         let session = Settings.playbackSession()
         let paused = Settings.playbackSessionPaused()
-        let episodeUuid = (session != nil && !paused && PlaybackManager.shared.playing())
-            ? PlaybackManager.shared.currentEpisode()?.uuid : nil
+        let episodeUuid = (session != nil && !paused && PlaybackManager.shared.isPlaying)
+            ? PlaybackManager.shared.currentEpisode?.uuid : nil
         publishPlaybackPointer(session: session, episodeUuid: episodeUuid)
     }
 
@@ -175,7 +175,7 @@ final class SessionServerSync {
         DispatchQueue.main.async {
             // Recorded only once we're actually allowed to act, so a pointer that
             // arrives mid-playback is retried on a later fetch instead of lost.
-            guard !PlaybackManager.shared.playing(),
+            guard !PlaybackManager.shared.isPlaying,
                   updatedAt > UserDefaults.standard.object(forKey: self.playbackAppliedAtKey) as? Int64 ?? 0 else { return }
             UserDefaults.standard.set(updatedAt, forKey: self.playbackAppliedAtKey)
 
@@ -191,7 +191,7 @@ final class SessionServerSync {
             let session = PlaybackSession(type: type, uuid: uuid)
             let episodeUuid = payload["episodeUuid"] as? String ?? ""
             let alreadyFramed = Settings.playbackSession() == session
-                && (episodeUuid.isEmpty || PlaybackManager.shared.currentEpisode()?.uuid == episodeUuid)
+                && (episodeUuid.isEmpty || PlaybackManager.shared.currentEpisode?.uuid == episodeUuid)
             guard !alreadyFramed else { return }
             PlaybackManager.shared.startPlaybackSession(session, autoPlay: false)
             FileLog.shared.addMessage("SessionServerSync: adopted playback pointer \(typeRaw)/\(uuid) (leader episode \(episodeUuid))")
@@ -216,7 +216,7 @@ final class SessionServerSync {
     }
 
     private func pushNotifyTogglesIfChanged() {
-        let uuids = DataManager.sharedManager.allPodcasts(includeUnsubscribed: false)
+        let uuids = DataManager.shared.allPodcasts(includeUnsubscribed: false)
             .filter { $0.pushEnabled }
             .map(\.uuid)
             .sorted()

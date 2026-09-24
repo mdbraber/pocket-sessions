@@ -129,7 +129,7 @@ class AutoAddToSessionViewController: PCViewController, UITableViewDelegate, UIT
     }
 
     private func reloadAutoAddPodcasts() {
-        autoAddPodcasts = DataManager.sharedManager.allPodcasts(includeUnsubscribed: false)
+        autoAddPodcasts = DataManager.shared.allPodcasts(includeUnsubscribed: false)
             .filter { SessionStore.shared.session(forPodcast: $0.uuid)?.autoAdd == true }
     }
 
@@ -170,7 +170,7 @@ class AutoAddToSessionViewController: PCViewController, UITableViewDelegate, UIT
 
 extension AutoAddToSessionViewController: PodcastSelectionDelegate {
     func bulkSelectionChange(selected: Bool) {
-        for podcast in DataManager.sharedManager.allPodcasts(includeUnsubscribed: false) {
+        for podcast in DataManager.shared.allPodcasts(includeUnsubscribed: false) {
             setAutoAdd(selected, forPodcast: podcast)
         }
         reloadAutoAddPodcasts()
@@ -178,14 +178,14 @@ extension AutoAddToSessionViewController: PodcastSelectionDelegate {
     }
 
     func podcastSelected(podcast: String) {
-        guard let podcast = DataManager.sharedManager.findPodcast(uuid: podcast) else { return }
+        guard let podcast = DataManager.shared.findPodcast(uuid: podcast) else { return }
         setAutoAdd(true, forPodcast: podcast)
         reloadAutoAddPodcasts()
         mainTable.reloadData()
     }
 
     func podcastUnselected(podcast: String) {
-        guard let podcast = DataManager.sharedManager.findPodcast(uuid: podcast) else { return }
+        guard let podcast = DataManager.shared.findPodcast(uuid: podcast) else { return }
         setAutoAdd(false, forPodcast: podcast)
         reloadAutoAddPodcasts()
         mainTable.reloadData()

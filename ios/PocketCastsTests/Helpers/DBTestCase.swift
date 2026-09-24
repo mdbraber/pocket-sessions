@@ -25,7 +25,7 @@ class DBTestCase: XCTestCase {
     private static var realSharedManager: DataManager?
 
     override func tearDown() async throws {
-        if let real = Self.realSharedManager { DataManager.sharedManager = real }
+        if let real = Self.realSharedManager { DataManager.shared = real }
         try await super.tearDown()
     }
 
@@ -39,8 +39,8 @@ class DBTestCase: XCTestCase {
         // These tests run INSIDE the app, so repointing the global manager repoints the app's own
         // data access with it. Remember the real one and put it back in tearDown, or everything
         // after the suite — including the running app — keeps reading the test database.
-        if Self.realSharedManager == nil { Self.realSharedManager = DataManager.sharedManager }
-        DataManager.sharedManager = dataManager
+        if Self.realSharedManager == nil { Self.realSharedManager = DataManager.shared }
+        DataManager.shared = dataManager
 
         let podcast = Podcast()
         podcast.uuid = UUID().uuidString

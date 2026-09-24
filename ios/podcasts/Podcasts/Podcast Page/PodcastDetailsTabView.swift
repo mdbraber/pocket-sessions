@@ -80,6 +80,7 @@ struct PodcastDetailsTabView: View {
         Group {
             if FeatureFlag.recommendations.enabled {
                 ScrollView(.horizontal, showsIndicators: false) { tabs }
+                    .scrollClipDisabled()
             } else {
                 tabs
             }
@@ -115,7 +116,7 @@ struct PodcastDetailsTabView: View {
     }
 
     @ViewBuilder var tabs: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 9) {
             Text(L10n.episodes)
                 .buttonize {
                     selectedTab = .episodes

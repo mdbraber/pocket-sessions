@@ -37,7 +37,6 @@
 				<string>SJChapterIntent</string>
 				<string>SJExtendSleepTimerIntent</string>
 				<string>SJOpenFilterIntent</string>
-				<string>SJSleepTimerIntent</string>
 			</array>
 			<key>SupportedMediaCategories</key>
 			<array>

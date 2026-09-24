@@ -9,28 +9,41 @@ class VideoViewController: SimpleNotificationsViewController, AVPictureInPicture
     var willAttachPlayer: (() -> Void)?
     var willDeattachPlayer: (() -> Void)?
 
+    private var controlsTintColor: UIColor { ThemeColor.contrast01(for: .extraDark) }
+
     @IBOutlet var routePickerView: PCRoutePickerView! {
         didSet {
-            routePickerView.tintColor = ThemeColor.contrast01(for: .extraDark)
+            routePickerView.tintColor = controlsTintColor
             routePickerView.activeTintColor = ThemeColor.primaryIcon01Active(for: .extraDark)
             routePickerView.backgroundColor = UIColor.clear
         }
     }
 
-    @IBOutlet var fillScreenBtn: UIButton!
+    @IBOutlet var closeBtn: UIButton! {
+        didSet {
+            closeBtn.tintColor = controlsTintColor
+        }
+    }
+
+    @IBOutlet var fillScreenBtn: UIButton! {
+        didSet {
+            fillScreenBtn.tintColor = controlsTintColor
+        }
+    }
 
     @IBOutlet var closeFileStackView: UIStackView!
     @IBOutlet var playPauseBtn: PlayPauseButton! {
         didSet {
             playPauseBtn.backgroundColor = UIColor.clear
             playPauseBtn.circleColor = UIColor.clear
-            playPauseBtn.playButtonColor = ThemeColor.contrast01(for: .extraDark)
+            playPauseBtn.playButtonColor = controlsTintColor
         }
     }
 
     @IBOutlet var skipForwardBtn: SkipButton! {
         didSet {
             skipForwardBtn.skipBack = false
+            skipForwardBtn.tintColor = controlsTintColor
             skipForwardBtn.longPressed = { [weak self] in
                 self?.skipForwardLongPressed()
             }
@@ -40,6 +53,7 @@ class VideoViewController: SimpleNotificationsViewController, AVPictureInPicture
     @IBOutlet var skipBackBtn: SkipButton! {
         didSet {
             skipBackBtn.skipBack = true
+            skipBackBtn.tintColor = controlsTintColor
         }
     }
 
@@ -87,14 +101,24 @@ class VideoViewController: SimpleNotificationsViewController, AVPictureInPicture
         }
     }
 
-    @IBOutlet var pipButton: UIButton!
-
-    @IBOutlet var airplayButton: UIButton!
+    @IBOutlet var pipButton: UIButton! {
+        didSet {
+            pipButton.tintColor = controlsTintColor
+        }
+    }
 
     #if APPCLIP
-    @IBOutlet var castButton: UIButton!
+    @IBOutlet var castButton: UIButton! {
+        didSet {
+            castButton.tintColor = controlsTintColor
+        }
+    }
     #else
-    @IBOutlet var castButton: PCGoogleCastButton!
+    @IBOutlet var castButton: PCGoogleCastButton! {
+        didSet {
+            castButton.tintColor = controlsTintColor
+        }
+    }
     #endif
 
     private var pipController: AVPictureInPictureController?
@@ -241,7 +265,7 @@ class VideoViewController: SimpleNotificationsViewController, AVPictureInPicture
         }
         chapterBar.isHidden = false
         let title = PlaybackManager.shared.currentChapters().title
-        chapterTitleLabel.text = title.isEmpty ? PlaybackManager.shared.currentEpisode()?.displayableTitle() : title
+        chapterTitleLabel.text = title.isEmpty ? PlaybackManager.shared.currentEpisode?.displayableTitle() : title
         chapterCounterLabel.text = L10n.playerChapterCount((visible.index + 1).localized(), chapterCount.localized())
         chapterPrevButton.isEnabled = !visible.isFirst
         chapterNextButton.isEnabled = !visible.isLast
@@ -250,7 +274,7 @@ class VideoViewController: SimpleNotificationsViewController, AVPictureInPicture
     }
 
     @objc private func chapterPrevTapped() {
-        if PlaybackManager.shared.playing() { startHideControlsTimer() }
+        if PlaybackManager.shared.isPlaying { startHideControlsTimer() }
         PlaybackManager.shared.trackChapterEvent(.playerPreviousChapterTapped)
 
         #if !APPCLIP
@@ -268,7 +292,7 @@ class VideoViewController: SimpleNotificationsViewController, AVPictureInPicture
     }
 
     @objc private func chapterNextTapped() {
-        if PlaybackManager.shared.playing() { startHideControlsTimer() }
+        if PlaybackManager.shared.isPlaying { startHideControlsTimer() }
         PlaybackManager.shared.trackChapterEvent(.playerNextChapterTapped)
 
         #if !APPCLIP
@@ -305,10 +329,10 @@ class VideoViewController: SimpleNotificationsViewController, AVPictureInPicture
     /// visibility tracks it exactly. Refreshed from `update()` (which the googleCastStatusChanged
     /// observer drives) and from `attachPlayer()`, the two moments the surface can change.
     private func updateCastInfoView() {
-        let casting = GoogleCastManager.sharedManager.connectedOrConnectingToDevice()
+        let casting = GoogleCastManager.shared.connectedOrConnectingToDevice()
         castInfoView.isHidden = !casting
         guard casting else { return }
-        let device = GoogleCastManager.sharedManager.connectedDevice()?.friendlyName ?? L10n.chromecastUnnamedDevice
+        let device = GoogleCastManager.shared.connectedDevice()?.friendlyName ?? L10n.chromecastUnnamedDevice
         castInfoLabel.text = L10n.videoPlayingOnDevice(device)
     }
 
@@ -324,7 +348,7 @@ class VideoViewController: SimpleNotificationsViewController, AVPictureInPicture
         super.viewDidAppear(animated)
 
         addUiNotificationObservers()
-        if PlaybackManager.shared.playing() {
+        if PlaybackManager.shared.isPlaying {
             startHideControlsTimer()
         }
     }
@@ -353,13 +377,13 @@ class VideoViewController: SimpleNotificationsViewController, AVPictureInPicture
     }
 
     @IBAction func skipBackTapped(_ sender: Any) {
-        if PlaybackManager.shared.playing() { startHideControlsTimer() }
+        if PlaybackManager.shared.isPlaying { startHideControlsTimer() }
 
         PlaybackManager.shared.skipBack()
     }
 
     @IBAction func playPauseTapped(_ sender: Any) {
-        let currentlyPlaying = PlaybackManager.shared.playing()
+        let currentlyPlaying = PlaybackManager.shared.isPlaying
         HapticsHelper.triggerPlayPauseHaptic()
         if currentlyPlaying {
             PlaybackManager.shared.pause()
@@ -371,12 +395,12 @@ class VideoViewController: SimpleNotificationsViewController, AVPictureInPicture
     }
 
     @IBAction func skipForwardTapped(_ sender: Any) {
-        if PlaybackManager.shared.playing() { startHideControlsTimer() }
+        if PlaybackManager.shared.isPlaying { startHideControlsTimer() }
         PlaybackManager.shared.skipForward()
     }
 
     private func skipForwardLongPressed() {
-        guard let episode = PlaybackManager.shared.currentEpisode() else { return }
+        guard let episode = PlaybackManager.shared.currentEpisode else { return }
 
         let options = OptionsPicker(title: nil, themeOverride: .dark)
 
@@ -388,7 +412,7 @@ class VideoViewController: SimpleNotificationsViewController, AVPictureInPicture
 
         if PlaybackManager.shared.queue.upNextCount() > 0 {
             let skipToNextAction = OptionAction(label: L10n.nextEpisode, icon: nil) {
-                let currentlyPlayingEpisode = PlaybackManager.shared.currentEpisode()
+                let currentlyPlayingEpisode = PlaybackManager.shared.currentEpisode
                 PlaybackManager.shared.removeIfPlayingOrQueued(episode: currentlyPlayingEpisode, fireNotification: true, userInitiated: true)
             }
             options.addAction(action: skipToNextAction)
@@ -456,22 +480,18 @@ class VideoViewController: SimpleNotificationsViewController, AVPictureInPicture
         addCustomObserver(Constants.Notifications.podcastChapterChanged, selector: #selector(update))
     }
 
-    private func removeUiNotificationObservers() {
-        removeAllCustomObservers()
-    }
-
     @objc private func playbackFinished() {
         dismiss(animated: true, completion: nil)
     }
 
     @objc private func progressUpdated() {
-        if timeSlider.isScrubbing() || PlaybackManager.shared.isSeeking() { return }
+        if timeSlider.isScrubbing() || PlaybackManager.shared.isSeeking { return }
 
         updateUpTo(upTo: PlaybackManager.shared.currentTime(), duration: PlaybackManager.shared.duration(), moveSlider: true)
     }
 
     @objc private func trackChanged() {
-        guard PlaybackManager.shared.currentEpisode() != nil, PlaybackManager.shared.isCurrentEpisodeVideo() else {
+        guard PlaybackManager.shared.currentEpisode != nil, PlaybackManager.shared.isCurrentEpisodeVideo() else {
             dismiss(animated: true, completion: nil)
             return
         }
@@ -503,7 +523,7 @@ class VideoViewController: SimpleNotificationsViewController, AVPictureInPicture
     }
 
     private func updatePlayPauseButton() {
-        playPauseBtn.isPlaying = PlaybackManager.shared.playing()
+        playPauseBtn.isPlaying = PlaybackManager.shared.isPlaying
     }
 
     func updateUpTo(upTo: TimeInterval, duration: TimeInterval, moveSlider: Bool) {

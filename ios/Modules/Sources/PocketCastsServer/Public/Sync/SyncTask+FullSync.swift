@@ -5,15 +5,15 @@ import PocketCastsUtils
 extension SyncTask {
     func processServerPlaylists(_ playlists: [(EpisodeFilter, [Episode])]) {
         // before looking at the server playlists, mark any we have here locally as needing to be syncing so they get pushed up with the next sync
-        DataManager.sharedManager.markAllPlaylistsUnsynced()
+        DataManager.shared.markAllPlaylistsUnsynced()
 
         playlists.forEach { playlist, serverEpisodes in
             // if we have this playlist locally, assume the server version is more up to date, so blow ours away
-            if let localPlaylist = DataManager.sharedManager.findPlaylist(uuid: playlist.uuid) {
+            if let localPlaylist = DataManager.shared.findPlaylist(uuid: playlist.uuid) {
                 // fork-only rule fields aren't in the sync proto — carry them across the
                 // rebuild, and keep smart playlists' custom-order rows (same uuid returns)
                 playlist.copyForkOnlyFields(from: localPlaylist)
-                DataManager.sharedManager.delete(playlist: localPlaylist)
+                DataManager.shared.delete(playlist: localPlaylist)
             }
 
             // save the server version of the filter, as long as it's not deleted
@@ -24,7 +24,7 @@ extension SyncTask {
             var addedEpisodes: [Episode] = []
 
             // Add missing episodes
-            let matchedEpisodeUuids = Set(DataManager.sharedManager.playlistEpisodes(for: playlist).map { $0.uuid })
+            let matchedEpisodeUuids = Set(DataManager.shared.playlistEpisodes(for: playlist).map { $0.uuid })
             addedEpisodes = serverEpisodes.filter { !matchedEpisodeUuids.contains($0.uuid) }
 
             // Fork: a full sync wholesale-restores membership from the server, which for the
@@ -39,9 +39,9 @@ extension SyncTask {
                 }
             }
 
-            let didAdd = DataManager.sharedManager.add(episodes: addedEpisodes, to: playlist)
+            let didAdd = DataManager.shared.add(episodes: addedEpisodes, to: playlist)
             if !didAdd {
-                let playlistCount = DataManager.sharedManager.allPlaylistEpisodeCount(for: playlist, episodeUuidToAdd: nil, includingArchivedEpisodes: true)
+                let playlistCount = DataManager.shared.allPlaylistEpisodeCount(for: playlist, episodeUuidToAdd: nil, includingArchivedEpisodes: true)
                 FileLog.shared.addMessage("SyncTask: Tried to add too many episodes from server playlist \(playlist.playlistName) episodeCount: \(addedEpisodes) playlistCount: \(playlistCount)")
             }
 
@@ -50,16 +50,16 @@ extension SyncTask {
             // freshly-imported playlist dirty and re-upload it. ServerChanges already
             // ordered it this way; this matches it.
             playlist.syncStatus = SyncStatus.synced.rawValue
-            DataManager.sharedManager.save(playlist: playlist)
+            DataManager.shared.save(playlist: playlist)
         }
     }
 
     func processServerHomeGrid(podcasts: [PodcastSyncInfo]?, folders: [FolderSyncInfo]?, lastSyncAt: String) {
         // before looking at the server podcasts, mark any we have here locally as needing to be syncing so they get pushed up with the next sync
-        DataManager.sharedManager.markAllPodcastsUnsyncedWhereLastSyncAtNot(lastSyncAt)
+        DataManager.shared.markAllPodcastsUnsyncedWhereLastSyncAtNot(lastSyncAt)
 
         // for folders we take the opposite approach, anything you currently have on device is old and should be replaced with the server copy
-        DataManager.sharedManager.clearAllFolderInformation()
+        DataManager.shared.clearAllFolderInformation()
 
         // import any folders first, since that's fast and needs no extra calls
         if let folders {
@@ -94,7 +94,7 @@ extension SyncTask {
     func processPodcast(_ podcast: PodcastSyncInfo, lastSyncAt: String) {
         guard let uuid = podcast.uuid else { return }
 
-        if let localPodcast = DataManager.sharedManager.findPodcast(uuid: uuid), lastSyncAt == localPodcast.fullSyncLastSyncAt {
+        if let localPodcast = DataManager.shared.findPodcast(uuid: uuid), lastSyncAt == localPodcast.fullSyncLastSyncAt {
             FileLog.shared.addMessage("Skipping processing of podcast \(uuid) in full sync, already done previously")
             return
         }
@@ -109,7 +109,7 @@ extension SyncTask {
                 return
             }
 
-            guard let localPodcast = DataManager.sharedManager.findPodcast(uuid: uuid) else { return }
+            guard let localPodcast = DataManager.shared.findPodcast(uuid: uuid) else { return }
 
             // we have added the podcast locally so add the synced info for it
             if let startFrom = podcast.autoStartFrom {
@@ -138,11 +138,11 @@ extension SyncTask {
             // now grab the sync info for the episodes
             let retrieveEpisodesTask = RetrieveEpisodesTask(podcastUuid: uuid)
             retrieveEpisodesTask.completion = { episodes in
-                DataManager.sharedManager.save(podcast: localPodcast)
+                DataManager.shared.save(podcast: localPodcast)
 
                 guard let episodes else { return }
 
-                DataManager.sharedManager.saveBulkEpisodeSyncInfo(episodes: DataConverter.convert(syncInfoEpisodes: episodes))
+                DataManager.shared.saveBulkEpisodeSyncInfo(episodes: DataConverter.convert(syncInfoEpisodes: episodes))
             }
             retrieveEpisodesTask.runTaskSynchronously()
             dispatchGroup.leave()
@@ -166,12 +166,16 @@ extension SyncTask {
             await bookmarkManager.markAllBookmarksAsSynced()
 
             for apiBookmark in bookmarks {
-                await bookmarkManager.remove(apiBookmark: apiBookmark).when(false) {
-                    FileLog.shared.addMessage("SyncTask: Process Server Bookmarks - Could not delete existing bookmark: \(apiBookmark.bookmarkUuid)")
+                let existingBookmark = bookmarkManager.bookmark(for: apiBookmark.bookmarkUuid, allowDeleted: true)
+
+                if let existingBookmark {
+                    await bookmarkManager.permanentlyDelete(bookmarks: [existingBookmark]).when(false) {
+                        FileLog.shared.addMessage("SyncTask: Process Server Bookmarks - Could not delete existing bookmark: \(apiBookmark.bookmarkUuid)")
+                    }
                 }
 
                 // Add the incoming bookmark to the database
-                bookmarkManager.add(from: apiBookmark).when(.none) {
+                bookmarkManager.add(from: apiBookmark, existingBookmark: existingBookmark).when(.none) {
                     FileLog.shared.addMessage("SyncTask: Process Server Bookmarks - Could not add bookmark: \(String(describing: try? apiBookmark.jsonString()))")
                 }
             }
@@ -184,22 +188,22 @@ extension SyncTask {
 }
 
 private extension BookmarkDataManager {
-    func add(from apiBookmark: Api_BookmarkResponse) -> String? {
-        add(uuid: apiBookmark.bookmarkUuid,
-            episodeUuid: apiBookmark.episodeUuid,
-            podcastUuid: apiBookmark.podcastUuid,
-            title: apiBookmark.title,
-            time: .init(apiBookmark.time),
-            dateCreated: apiBookmark.createdAt.date,
-            syncStatus: .synced)
-    }
+    func add(from apiBookmark: Api_BookmarkResponse, existingBookmark: Bookmark?) -> String? {
+        let takesServerPassage = apiBookmark.passageModifiedDate.map { $0 >= (existingBookmark?.passageModified ?? .distantPast) } ?? false
+        let takesServerReferenceTime = apiBookmark.referenceTimeModifiedDate.map { $0 >= (existingBookmark?.referenceTimeModified ?? .distantPast) } ?? false
 
-    func remove(apiBookmark: Api_BookmarkResponse) async -> Bool? {
-        guard let bookmark = bookmark(for: apiBookmark.bookmarkUuid, allowDeleted: true) else {
-            return nil
-        }
-
-        return await permanentlyDelete(bookmarks: [bookmark])
+        return add(uuid: apiBookmark.bookmarkUuid,
+                   episodeUuid: apiBookmark.episodeUuid,
+                   podcastUuid: apiBookmark.podcastUuid == DataConstants.userEpisodeFakePodcastId ? nil : apiBookmark.podcastUuid,
+                   title: apiBookmark.title,
+                   time: .init(apiBookmark.time),
+                   dateCreated: apiBookmark.createdAt.date,
+                   passage: takesServerPassage ? apiBookmark.bookmarkPassage : existingBookmark?.passage,
+                   passageLocation: takesServerPassage ? apiBookmark.bookmarkPassageLocation : existingBookmark?.passageLocation,
+                   passageModified: takesServerPassage ? apiBookmark.passageModifiedDate : existingBookmark?.passageModified,
+                   referenceTime: takesServerReferenceTime ? apiBookmark.bookmarkReferenceTime : existingBookmark?.referenceTime,
+                   referenceTimeModified: takesServerReferenceTime ? apiBookmark.referenceTimeModifiedDate : existingBookmark?.referenceTimeModified,
+                   syncStatus: .synced)
     }
 }
 

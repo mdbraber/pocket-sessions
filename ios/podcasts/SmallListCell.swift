@@ -16,8 +16,8 @@ class SmallListCell: ThemeableCollectionCell {
             subscribeButton.onImage = UIImage(named: "discover_tick")?.tintedImage(ThemeColor.support02())
             subscribeButton.offImage = UIImage(named: "discover_add")?.tintedImage(ThemeColor.primaryIcon02())
 
-            subscribeButton.offAccessibilityLabel = FeatureFlag.useFollowNaming.enabled ? L10n.follow : L10n.subscribe
-            subscribeButton.onAccessibilityLabel = FeatureFlag.useFollowNaming.enabled ? L10n.unfollow : L10n.subscribed
+            subscribeButton.offAccessibilityLabel = L10n.follow
+            subscribeButton.onAccessibilityLabel = L10n.unfollow
         }
     }
 
@@ -89,7 +89,7 @@ class SmallListCell: ThemeableCollectionCell {
         discoverPodcast = info
         podcastImage.accessibilityLabel = discoverPodcast?.title?.localized
         if let headerUuid = info.uuid {
-            if let _ = DataManager.sharedManager.findPodcast(uuid: headerUuid) {
+            if let _ = DataManager.shared.findPodcast(uuid: headerUuid) {
                 subscribeButton.currentlyOn = true
             } else {
                 subscribeButton.currentlyOn = false

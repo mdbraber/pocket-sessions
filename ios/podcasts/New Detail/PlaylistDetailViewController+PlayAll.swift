@@ -1,5 +1,6 @@
 import PocketCastsDataModel
 import PocketCastsUtils
+import UIKit
 
 extension PlaylistDetailViewController: UISheetPresentationControllerDelegate, PlaylistPlayAllSheetHostDelegate {
     func playAll() {

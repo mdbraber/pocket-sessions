@@ -85,7 +85,7 @@ public class RefreshManager {
             if SyncManager.isUserLoggedIn() {
                 guard let episodes = ApiServerHandler.shared.retrieveEpisodeTaskSynchronouusly(podcastUuid: podcast.uuid) else { return }
 
-                DataManager.sharedManager.saveBulkEpisodeSyncInfo(episodes: DataConverter.convert(syncInfoEpisodes: episodes))
+                DataManager.shared.saveBulkEpisodeSyncInfo(episodes: DataConverter.convert(syncInfoEpisodes: episodes))
                 podcast.forceRefreshEpisodeFrom = nil
             }
         }
@@ -98,7 +98,7 @@ public class RefreshManager {
                 if SyncManager.isUserLoggedIn() {
                     guard let episodes = ApiServerHandler.shared.retrieveEpisodeTaskSynchronouusly(podcastUuid: podcast.uuid) else { return }
 
-                    DataManager.sharedManager.saveBulkEpisodeSyncInfo(episodes: DataConverter.convert(syncInfoEpisodes: episodes))
+                    DataManager.shared.saveBulkEpisodeSyncInfo(episodes: DataConverter.convert(syncInfoEpisodes: episodes))
                     podcast.forceRefreshEpisodeFrom = nil
                 }
                 continuation.resume()
@@ -121,14 +121,14 @@ public class RefreshManager {
             }
         }
 
-        refresh(podcasts: DataManager.sharedManager.allPodcasts(includeUnsubscribed: false))
+        refresh(podcasts: DataManager.shared.allPodcasts(includeUnsubscribed: false))
     }
 
     #if !os(watchOS)
     private func refresh(podcasts: [Podcast], completion: (() -> Void)? = nil) {
         UserDefaults.standard.set(Date(), forKey: ServerConstants.UserDefaults.lastRefreshStartTime)
 
-        DispatchQueue.global().async {
+        DispatchQueue.global().async { [weak self] in
             MainServerHandler.shared.refresh(podcasts: podcasts) { [weak self] refreshResponse in
                 guard let self else { return }
 
@@ -148,7 +148,7 @@ public class RefreshManager {
     private func refresh(podcasts: [Podcast], completion: (() -> Void)? = nil) {
         UserDefaults.standard.set(Date(), forKey: ServerConstants.UserDefaults.lastRefreshStartTime)
 
-        DispatchQueue.global().async {
+        DispatchQueue.global().async { [self] in
             let watchOsMajorVersion = WKInterfaceDevice.current().systemVersion.split(separator: ".")[safe: 0]
 
             if watchOsMajorVersion == "10" {
@@ -174,8 +174,8 @@ public class RefreshManager {
     #endif
 
     public func refreshPodcasts(completion: @escaping (RefreshFetchResult) -> Void) {
-        DispatchQueue.global().async {
-            let podcasts = DataManager.sharedManager.allPodcasts(includeUnsubscribed: false)
+        DispatchQueue.global().async { [weak self] in
+            let podcasts = DataManager.shared.allPodcasts(includeUnsubscribed: false)
             MainServerHandler.shared.refresh(podcasts: podcasts) { [weak self] refreshResponse in
                 guard let self else { return }
 

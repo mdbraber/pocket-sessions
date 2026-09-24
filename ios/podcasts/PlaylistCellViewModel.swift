@@ -61,7 +61,7 @@ class PlaylistCellViewModel: ObservableObject {
     static func gridArtworkItems<T>(
         from episodes: [T],
         limit: Int,
-        imageManager: ImageManager = .sharedManager,
+        imageManager: ImageManager = .shared,
         podcastUuid: (T) -> String
     ) -> [PlaylistArtworkView.ImageItem] {
         let distinctEpisodes = distinctPodcasts(from: episodes, limit: limit, podcastUuid: podcastUuid)
@@ -80,15 +80,14 @@ class PlaylistCellViewModel: ObservableObject {
     private let dataManager: DataManager
     private let imageManager: ImageManager
     private let episodesDataManager: EpisodesDataManager
-    @MainActor private lazy var episodeArtWork = EpisodeArtwork(imageManager: imageManager)
 
     let displayType: DisplayType
 
     init(
         playlist: EpisodeFilter,
         displayType: DisplayType = .count,
-        dataManager: DataManager = .sharedManager,
-        imageManager: ImageManager = .sharedManager,
+        dataManager: DataManager = .shared,
+        imageManager: ImageManager = .shared,
         episodesDataManager: EpisodesDataManager = .init()
     ) {
         self.playlist = playlist
@@ -155,7 +154,7 @@ class PlaylistCellViewModel: ObservableObject {
         if !ruleUuids.isEmpty {
             var tiles = Array(ruleUuids.prefix(4))
             if tiles.count < 4 { tiles = Array(tiles.prefix(1)) }
-            images = tiles.map { PlaylistArtworkView.ImageItem(id: $0, url: ImageManager.sharedManager.podcastUrl(imageSize: .grid, uuid: $0)) }
+            images = tiles.map { PlaylistArtworkView.ImageItem(id: $0, url: ImageManager.shared.podcastUrl(imageSize: .grid, uuid: $0)) }
             isLoadingImages = false
             return
         }

@@ -7,14 +7,14 @@ final class PlaybackQueueTests: XCTestCase {
 
     let featureFlagMock = FeatureFlagMock()
 
-    /// These tests swap a MOCK into DataManager.sharedManager. They run inside the app, so
+    /// These tests swap a MOCK into DataManager.shared. They run inside the app, so
     /// leaving it there hands the running app a mock data manager for the rest of the process —
     /// which is how a fake "Current Episode" ends up looking like a real Up Next entry.
     private var realSharedManager: DataManager!
 
     override func setUp() {
         super.setUp()
-        realSharedManager = DataManager.sharedManager
+        realSharedManager = DataManager.shared
     }
 
 
@@ -23,7 +23,7 @@ final class PlaybackQueueTests: XCTestCase {
 
         let playbackQueue = PlaybackQueue()
         let mockDataManager = MockDataManager()
-        DataManager.sharedManager = mockDataManager
+        DataManager.shared = mockDataManager
 
         let staleEpisode = PlaylistEpisode()
         staleEpisode.episodeUuid = "stale-uuid"
@@ -48,7 +48,7 @@ final class PlaybackQueueTests: XCTestCase {
     func testReorderUpNextPersistsNewOrderAndKeepsMissingEntriesAtBottom() {
         let playbackQueue = PlaybackQueue()
         let mockDataManager = MockDataManager()
-        DataManager.sharedManager = mockDataManager
+        DataManager.shared = mockDataManager
 
         // Position 0 is the now playing episode, which stays pinned and isn't reordered.
         mockDataManager.upNextEpisodes = [
@@ -73,7 +73,7 @@ final class PlaybackQueueTests: XCTestCase {
     func testReorderUpNextDoesNothingWithFewerThanTwoSortedEpisodes() {
         let playbackQueue = PlaybackQueue()
         let mockDataManager = MockDataManager()
-        DataManager.sharedManager = mockDataManager
+        DataManager.shared = mockDataManager
 
         mockDataManager.upNextEpisodes = [
             playlistEpisode(uuid: "now-playing", position: 0),
@@ -130,7 +130,7 @@ final class PlaybackQueueTests: XCTestCase {
 
     override func tearDown() {
         featureFlagMock.reset()
-        DataManager.sharedManager = realSharedManager
+        DataManager.shared = realSharedManager
         super.tearDown()
     }
 }

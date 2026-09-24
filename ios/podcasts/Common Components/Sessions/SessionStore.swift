@@ -252,7 +252,7 @@ final class SessionStore {
             })
         }
         return Set(candidates.filter {
-            DataManager.sharedManager.findPlaylist(uuid: $0)?.playlistName.hasSuffix(" — feed") ?? false
+            DataManager.shared.findPlaylist(uuid: $0)?.playlistName.hasSuffix(" — feed") ?? false
         })
     }
 

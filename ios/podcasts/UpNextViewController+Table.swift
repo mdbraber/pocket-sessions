@@ -20,11 +20,11 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
     var sessionOwnsCard: Bool {
         !Settings.playbackSessionPaused()
             && PlaybackManager.shared.currentEpisodeIsSessionSourced
-            && PlaybackManager.shared.currentEpisode() != nil
+            && PlaybackManager.shared.currentEpisode != nil
     }
 
     var queueOwnsCard: Bool {
-        PlaybackManager.shared.currentEpisode() != nil && !sessionOwnsCard
+        PlaybackManager.shared.currentEpisode != nil && !sessionOwnsCard
     }
 
     /// Fork: while a session owns playback its episode sits in the queue's now-playing slot (position
@@ -47,7 +47,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         // nothing of its own: the queue world has no head to pin. Without this, the parked
         // session episode (hidden bookkeeping, not a queue member) leaks onto the top card.
         if sessionOwnsCard, !PlaybackManager.shared.currentSessionEpisodeIsSharedToQueue { return nil }
-        return PlaybackManager.shared.currentEpisode()
+        return PlaybackManager.shared.currentEpisode
     }
 
     /// Fork: the session is actually making noise — as opposed to merely holding an
@@ -55,7 +55,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
     /// When it isn't sounding the card is just "what's next", which changes what "top of
     /// the list" means (see `moveSessionEpisodeToTop`) and where the info line sits.
     var sessionIsSounding: Bool {
-        PlaybackManager.shared.playing() && sessionOwnsCard
+        PlaybackManager.shared.isPlaying && sessionOwnsCard
     }
 
     /// Fork: the "Paused — playing from Up Next" banner was removed (the user didn't want it), so it
@@ -116,7 +116,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         // sort or shuffle — the info row is noise, so drop it.
         guard topBlockEpisodeCount > 1 else { return false }
         if displayedWorld == .session { return browsedPlaybackSession != nil }
-        return PlaybackManager.shared.queue.upNextCount() > 0 || PlaybackManager.shared.currentEpisode() != nil
+        return PlaybackManager.shared.queue.upNextCount() > 0 || PlaybackManager.shared.currentEpisode != nil
     }
 
     /// Episodes in the current world, counting the now-playing/pinned card.
@@ -302,7 +302,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
                                         icon: { Image(systemName: "rectangle.stack") },
                         actions: [
                             .init(title: L10n.sessionListNoneAction) {
-                                NavigationManager.sharedManager.navigateTo(NavigationManager.podcastListPageKey, data: nil)
+                                NavigationManager.shared.navigateTo(NavigationManager.podcastListPageKey, data: nil)
                             }
                         ])
                     return emptyCell
@@ -374,7 +374,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
                     actions: [
                         .init(title: L10n.goToDiscover) {
                             Analytics.track(.upNextDiscoverButtonTapped)
-                            NavigationManager.sharedManager.navigateTo(NavigationManager.discoverPageKey)
+                            NavigationManager.shared.navigateTo(NavigationManager.discoverPageKey)
                         }
                     ])
             }
@@ -458,7 +458,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
     /// The played fraction of an episode (live time for the now-playing one, else its saved position).
     func episodeProgressFraction(_ episode: BaseEpisode) -> CGFloat {
         guard episode.duration > 0 else { return 0 }
-        let time = PlaybackManager.shared.isNowPlayingEpisode(episodeUuid: episode.uuid)
+        let time = PlaybackManager.shared.isCurrentEpisode(uuid: episode.uuid)
             ? PlaybackManager.shared.currentTime()
             : episode.playedUpTo
         return CGFloat(min(1, max(0, time / episode.duration)))
@@ -487,7 +487,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
     /// item; paused makes it current but stays paused. A deferred reload keeps the row from vanishing
     /// mid-gesture.
     func switchLineupEpisodeInheritingPlayState(_ episode: BaseEpisode) {
-        let wasPlaying = PlaybackManager.shared.playing()
+        let wasPlaying = PlaybackManager.shared.isPlaying
         if displayedWorld == .upNext {
             AnalyticsPlaybackHelper.shared.currentSource = .upNext
             PlaybackManager.shared.load(episode: episode, autoPlay: wasPlaying, overrideUpNext: false)
@@ -519,7 +519,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
             if !isTopBlockCardRow(indexPath) { return nil }
             // Multi-select: ticking the now-playing card toggles like any queue row.
             if isMultiSelectEnabled, displayedWorld == .upNext,
-               let episode = DataManager.sharedManager.playlistEpisodeAt(index: 0),
+               let episode = DataManager.shared.playlistEpisodeAt(index: 0),
                selectedEpisodesContains(uuid: episode.episodeUuid) {
                 tableView.delegate?.tableView?(tableView, didDeselectRowAt: indexPath)
                 return nil
@@ -548,7 +548,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
             return indexPath
         }
 
-        if let episode = DataManager.sharedManager.playlistEpisodeAt(index: indexPath.row + 1 + upNextListOffset) {
+        if let episode = DataManager.shared.playlistEpisodeAt(index: indexPath.row + 1 + upNextListOffset) {
             if selectedEpisodesContains(uuid: episode.episodeUuid) {
                 tableView.delegate?.tableView?(tableView, didDeselectRowAt: indexPath)
                 return nil
@@ -599,7 +599,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         // multi-select — it maps to position 0 of the Up Next playlist.
         if isMultiSelectEnabled, tableData[indexPath.section] == .nowPlayingSection,
            isTopBlockCardRow(indexPath), displayedWorld == .upNext {
-            if let episode = DataManager.sharedManager.playlistEpisodeAt(index: 0) {
+            if let episode = DataManager.shared.playlistEpisodeAt(index: 0) {
                 if !multiSelectGestureInProgress { selectedEpisodesRemove(uuid: episode.episodeUuid) }
                 if !multiSelectGestureInProgress || !selectedEpisodesContains(uuid: episode.episodeUuid) {
                     selectedPlayListEpisodes.append(episode)
@@ -613,7 +613,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
 
         if isMultiSelectEnabled, tableData[indexPath.section] == .upNextSection {
             // the cell below is optional because cellForRow only returns a cell if it's visible, and we don't need to tick cells that don't exist
-            if let episode = DataManager.sharedManager.playlistEpisodeAt(index: indexPath.row + 1 + upNextListOffset) {
+            if let episode = DataManager.shared.playlistEpisodeAt(index: indexPath.row + 1 + upNextListOffset) {
                 if !multiSelectGestureInProgress {
                     // If the episode is already selected move to the end of the array
                     selectedEpisodesRemove(uuid: episode.episodeUuid)
@@ -639,7 +639,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
                     return
                 }
                 guard isTopBlockCardRow(indexPath) else { return }
-                if Settings.playUpNextOnTap(), !PlaybackManager.shared.playing() {
+                if Settings.playUpNextOnTap, !PlaybackManager.shared.isPlaying {
                     PlaybackManager.shared.play()
                     return
                 }
@@ -662,7 +662,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
                     // Browsing another session is pure navigation — playing from it is
                     // what makes it the active one.
                     if !browsingActiveSession {
-                        if Settings.playUpNextOnTap() {
+                        if Settings.playUpNextOnTap {
                             playFromBrowsedSession(episode: episode)
                         } else {
                             showEpisodeDetailViewController(for: episode, fromSession: true)
@@ -672,9 +672,9 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
                     // The current episode: with tap-to-play ON it resumes only if idle (already
                     // playing → no restart); with the setting OFF, tapping shows the actions page,
                     // exactly like any other episode.
-                    if episode.uuid == PlaybackManager.shared.currentEpisode()?.uuid {
-                        if Settings.playUpNextOnTap() {
-                            if !PlaybackManager.shared.playing() {
+                    if episode.uuid == PlaybackManager.shared.currentEpisode?.uuid {
+                        if Settings.playUpNextOnTap {
+                            if !PlaybackManager.shared.isPlaying {
                                 AnalyticsPlaybackHelper.shared.currentSource = .upNext
                                 PlaybackManager.shared.play(sessionEpisode: episode)
                             }
@@ -685,7 +685,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
                     }
                     // Same tap behavior as queue rows: play directly or show the episode
                     // card, per the "Play Up Next On Tap" setting.
-                    if Settings.playUpNextOnTap() {
+                    if Settings.playUpNextOnTap {
                         AnalyticsPlaybackHelper.shared.currentSource = .upNext
                         PlaybackManager.shared.play(sessionEpisode: episode)
                     } else {
@@ -697,7 +697,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
 
             guard let episode = filteredLineupTail[safe: indexPath.row] else { return }
 
-            let playOnTap = Settings.playUpNextOnTap()
+            let playOnTap = Settings.playUpNextOnTap
 
             track(.upNextQueueEpisodeTapped, properties: ["will_play": playOnTap])
 
@@ -722,7 +722,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         }
         // Fork: the now-playing card (queue world, multi-select) maps to playlist position 0.
         if tableData[indexPath.section] == .nowPlayingSection, isTopBlockCardRow(indexPath), displayedWorld == .upNext {
-            if let episode = DataManager.sharedManager.playlistEpisodeAt(index: 0), let index = selectedPlayListEpisodes.firstIndex(of: episode) {
+            if let episode = DataManager.shared.playlistEpisodeAt(index: 0), let index = selectedPlayListEpisodes.firstIndex(of: episode) {
                 selectedPlayListEpisodes.remove(at: index)
                 if let cell = upNextTable.cellForRow(at: indexPath) as? EpisodeCell {
                     cell.showTick = false
@@ -731,7 +731,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
             return
         }
         guard tableData[indexPath.section] == .upNextSection else { return }
-        if let episode = DataManager.sharedManager.playlistEpisodeAt(index: indexPath.row + 1 + upNextListOffset), let index = selectedPlayListEpisodes.firstIndex(of: episode) {
+        if let episode = DataManager.shared.playlistEpisodeAt(index: indexPath.row + 1 + upNextListOffset), let index = selectedPlayListEpisodes.firstIndex(of: episode) {
             selectedPlayListEpisodes.remove(at: index)
             if let cell = upNextTable.cellForRow(at: indexPath) as? EpisodeCell {
                 cell.showTick = false
@@ -961,10 +961,10 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         // Top block (card + controls line) scrolls with the list.
         sections = [.nowPlayingSection, displayedWorld == .session ? .sessionSection : .upNextSection]
 
-        if PlaybackManager.shared.currentEpisode() != nil {
+        if PlaybackManager.shared.currentEpisode != nil {
             upNextTable.themeStyle = .primaryUi04
         } else {
-            upNextTable.backgroundColor = UIColor(Theme.sharedTheme.primaryUi02)
+            upNextTable.backgroundColor = UIColor(Theme.shared.primaryUi02)
         }
 
         tableData = sections
@@ -1016,10 +1016,10 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
 
     @objc func upNextChanged() {
         if isMultiSelectEnabled {
-            let upNextUuids = Set(DataManager.sharedManager.allUpNextPlaylistEpisodes().map(\.episodeUuid))
+            let upNextUuids = Set(DataManager.shared.allUpNextPlaylistEpisodes().map(\.episodeUuid))
             selectedPlayListEpisodes.removeAll { !upNextUuids.contains($0.episodeUuid) }
 
-            if let currentUuid = PlaybackManager.shared.currentEpisode()?.uuid {
+            if let currentUuid = PlaybackManager.shared.currentEpisode?.uuid {
                 selectedEpisodesRemove(uuid: currentUuid)
             }
             if upNextUuids.isEmpty {
@@ -1074,7 +1074,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         guard section == .upNextSection, let episode = filteredLineupTail[safe: indexPath.row] else { return }
         if isMultiSelectEnabled {
             showLongPressSelectOptions(indexPath: indexPath)
-        } else if !Settings.playUpNextOnTap() {
+        } else if !Settings.playUpNextOnTap {
             AnalyticsPlaybackHelper.shared.currentSource = .upNext
             PlaybackActionHelper.play(episode: episode)
             track(.upNextQueueEpisodeLongPressed, properties: ["will_play": true])

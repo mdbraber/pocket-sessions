@@ -1,5 +1,6 @@
 import PocketCastsServer
 import PocketCastsUtils
+import UIKit
 
 extension PlaylistDetailViewController {
     struct PlaylistReloadScope: OptionSet {
@@ -35,6 +36,8 @@ extension PlaylistDetailViewController {
         addCustomObserver(Constants.Notifications.episodePlayStatusChanged, selector: #selector(refreshEpisodesFromNotification))
         addCustomObserver(Constants.Notifications.episodeArchiveStatusChanged, selector: #selector(refreshEpisodesFromNotification))
         addCustomObserver(Constants.Notifications.episodeStarredChanged, selector: #selector(refreshEpisodesFromNotification))
+        addCustomObserver(Constants.Notifications.episodeDownloaded, selector: #selector(refreshEpisodesIfFilteringByDownloadStatus))
+        addCustomObserver(Constants.Notifications.episodeDownloadStatusChanged, selector: #selector(refreshEpisodesIfFilteringByDownloadStatus))
         addCustomObserver(Constants.Notifications.manyEpisodesChanged, selector: #selector(refreshEpisodesFromNotification))
         // Fork: seen marks and dismissals live in the session store — without this,
         // a mark-as-seen never refreshes the Inbox tab.
@@ -53,6 +56,12 @@ extension PlaylistDetailViewController {
 
     @objc private func miniPlayerVisibilityChanged() {
         view.setNeedsLayout()
+    }
+
+    @objc func refreshEpisodesIfFilteringByDownloadStatus(notification: Notification) {
+        guard viewModel.playlist.isAffected(by: .downloadStatus) else { return }
+
+        reloader.request(.episodes)
     }
 
     @objc func keyboardWillShow(_ notification: Notification) {

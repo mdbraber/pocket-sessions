@@ -22,7 +22,7 @@ extension CarPlaySceneDelegate {
             .compactMap { row in
                 guard let session = SessionStore.shared.session(uuid: row.sessionUuid),
                       let storeUuid = row.storeUuid,
-                      let store = DataManager.sharedManager.findPlaylist(uuid: storeUuid) else { return nil }
+                      let store = DataManager.shared.findPlaylist(uuid: storeUuid) else { return nil }
                 return (session, store)
             }
     }
@@ -54,7 +54,7 @@ extension CarPlaySceneDelegate {
 
         var sessionSection: CPListSection?
         if let current {
-            let lineup: [BaseEpisode] = DataManager.sharedManager.playlistEpisodes(for: current.store, limit: 8)
+            let lineup: [BaseEpisode] = DataManager.shared.playlistEpisodes(for: current.store, limit: 8)
             let item = worldTilesItem(title: current.store.playlistName,
                                       episodes: lineup,
                                       onTileTap: { [weak self] episode in self?.playEpisodeInSession(episode, session: current.session) },
@@ -87,7 +87,7 @@ extension CarPlaySceneDelegate {
     /// One world as one item: title line (standard chevron, opens the details list) with the
     /// episode tiles directly beneath it.
     private func worldTilesItem(title: String, episodes: [BaseEpisode], onTileTap: @escaping (BaseEpisode) -> Void, onRowTap: @escaping () -> Void) -> CPListImageRowItem {
-        let images = episodes.map { CarPlayImageHelper.imageForEpisode($0, maxSize: CPListImageRowItem.maximumImageSize) }
+        let images = episodes.map { CarPlayImageHelper.image(for: $0, maxSize: CPListImageRowItem.maximumImageSize) }
         let item = CPListImageRowItem(text: title, images: images)
         item.listImageRowHandler = { _, index, completion in
             if let episode = episodes[safe: index] { onTileTap(episode) }
@@ -107,7 +107,7 @@ extension CarPlaySceneDelegate {
         let listTemplate = CarPlayListData.template(title: store.playlistName, emptyTitle: L10n.sessionEmptyToast) { [weak self] in
             guard let self else { return nil }
 
-            let episodes: [BaseEpisode] = DataManager.sharedManager.playlistEpisodes(for: store, limit: Constants.Limits.maxCarplayItems)
+            let episodes: [BaseEpisode] = DataManager.shared.playlistEpisodes(for: store, limit: Constants.Limits.maxCarplayItems)
             let episodeItems = self.convertToListItems(episodes: episodes, showArtwork: true, playlist: .filter(uuid: store.uuid), session: session)
 
             // "Play Session" only offers a switch — once this session already owns playback
@@ -163,7 +163,7 @@ extension CarPlaySceneDelegate {
             if let episode = target.nextEpisode(after: nil) {
                 PlaybackManager.shared.play(sessionEpisode: episode)
             }
-        } else if !PlaybackManager.shared.playing() {
+        } else if !PlaybackManager.shared.isPlaying {
             PlaybackManager.shared.play()
         }
         interfaceController?.showNowPlaying()
@@ -175,8 +175,8 @@ extension CarPlaySceneDelegate {
         if Settings.playbackSession() != nil {
             PlaybackManager.shared.endPlaybackSession()
         }
-        if !PlaybackManager.shared.playing() {
-            if PlaybackManager.shared.currentEpisode() != nil {
+        if !PlaybackManager.shared.isPlaying {
+            if PlaybackManager.shared.currentEpisode != nil {
                 PlaybackManager.shared.play()
             } else if let first = PlaybackManager.shared.queue.allEpisodes(includeNowPlaying: false).first {
                 PlaybackManager.shared.load(episode: first, autoPlay: true, overrideUpNext: false)

@@ -1,3 +1,4 @@
+import Foundation
 import PocketCastsDataModel
 import PocketCastsServer
 import PocketCastsUtils
@@ -14,7 +15,7 @@ class EpisodesDataManager: PlaybackSessionEpisodeSource {
             // Sessions play their store (a manual playlist) in its order. This is a PURE read —
             // auto-add ingestion happens once when the session starts (startPlaybackSession), NOT
             // here, which is called on every advance and would re-balloon the store each time.
-            if let filter = DataManager.sharedManager.findPlaylist(uuid: session.uuid) {
+            if let filter = DataManager.shared.findPlaylist(uuid: session.uuid) {
                 return playlistEpisodes(for: filter).map { $0.episode }
             }
             return episodes(for: .filter(uuid: session.uuid))
@@ -27,11 +28,11 @@ class EpisodesDataManager: PlaybackSessionEpisodeSource {
     func episodes(for playlist: AutoplayHelper.Playlist) -> [BaseEpisode] {
         switch playlist {
         case .podcast(uuid: let uuid):
-            if let podcast = DataManager.sharedManager.findPodcast(uuid: uuid, includeUnsubscribed: true) {
+            if let podcast = DataManager.shared.findPodcast(uuid: uuid, includeUnsubscribed: true) {
                 return episodes(for: podcast).flatMap { $0.elements.compactMap { ($0 as? ListEpisode)?.episode } }
             }
         case .filter(uuid: let uuid):
-            if let filter = DataManager.sharedManager.findPlaylist(uuid: uuid) {
+            if let filter = DataManager.shared.findPlaylist(uuid: uuid) {
                 return playlistEpisodes(for: filter).map { $0.episode }
             }
         case .downloads:
@@ -293,12 +294,12 @@ class EpisodesDataManager: PlaybackSessionEpisodeSource {
     // MARK: - Uploaded Files
 
     func uploadedEpisodes() -> [UserEpisode] {
-        let sortBy = UploadedSort(rawValue: Settings.userEpisodeSortBy()) ?? UploadedSort.newestToOldest
+        let sortBy = UploadedSort(rawValue: Settings.userEpisodeSortBy) ?? UploadedSort.newestToOldest
 
         if SubscriptionHelper.hasActiveSubscription() {
-            return DataManager.sharedManager.allUserEpisodes(sortedBy: sortBy)
+            return DataManager.shared.allUserEpisodes(sortedBy: sortBy)
         } else {
-            return DataManager.sharedManager.allUserEpisodesDownloaded(sortedBy: sortBy)
+            return DataManager.shared.allUserEpisodesDownloaded(sortedBy: sortBy)
         }
     }
 }

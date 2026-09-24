@@ -108,7 +108,7 @@ class FolderViewController: PCViewController {
     }
 
     @objc private func reloadFolder() {
-        guard let updatedFolder = DataManager.sharedManager.findFolder(uuid: folder.uuid) else { return }
+        guard let updatedFolder = DataManager.shared.findFolder(uuid: folder.uuid) else { return }
 
         folder = updatedFolder
         title = folder.name
@@ -120,7 +120,7 @@ class FolderViewController: PCViewController {
     /// Only the session-aware badge types care about triage state — everyone else
     /// skips the reload.
     @objc private func sessionStateChanged() {
-        guard Settings.podcastBadgeType().isSessionBased else { return }
+        guard Settings.podcastBadgeType.isSessionBased else { return }
         reloadFolder()
     }
 
@@ -159,7 +159,7 @@ class FolderViewController: PCViewController {
                     }
                 }
             }
-            let hostingController = PCHostingController(rootView: editFolderView.environmentObject(Theme.sharedTheme))
+            let hostingController = PCHostingController(rootView: editFolderView.environmentObject(Theme.shared))
 
             self?.present(hostingController, animated: true, completion: nil)
 
@@ -190,7 +190,7 @@ class FolderViewController: PCViewController {
         let editFoldersView = EditFolderPodcastsView(model: model) { [weak self] in
             self?.dismiss(animated: true)
         }
-        let hostingController = PCHostingController(rootView: editFoldersView.environmentObject(Theme.sharedTheme))
+        let hostingController = PCHostingController(rootView: editFoldersView.environmentObject(Theme.shared))
 
         present(hostingController, animated: true, completion: nil)
     }
@@ -232,7 +232,7 @@ class FolderViewController: PCViewController {
     private func changeSortOrder(_ order: LibrarySort.Old) {
         folder.sortType = Int32(order.rawValue)
         folder.syncModified = TimeFormatter.currentUTCTimeInMillis()
-        DataManager.sharedManager.save(folder: folder)
+        DataManager.shared.save(folder: folder)
 
         NotificationCenter.postOnMainThread(notification: Constants.Notifications.folderChanged, object: folder.uuid)
 
@@ -240,25 +240,25 @@ class FolderViewController: PCViewController {
     }
 
     @objc private func miniPlayerStatusDidChange() {
-        let horizontalMargin: CGFloat = Settings.libraryType() == .list ? 0 : 16
+        let horizontalMargin: CGFloat = Settings.libraryType == .list ? 0 : 16
         let bottomMargin: CGFloat = Constants.effectiveMiniPlayerOffset + 8
         mainGrid.contentInset = UIEdgeInsets(top: mainGrid.contentInset.top, left: horizontalMargin, bottom: bottomMargin, right: horizontalMargin)
     }
 
     // TODO: change this to be diff based and see if we can use the new iOS diffable stuff
     private func reloadPodcasts() {
-        podcasts = DataManager.sharedManager.allPodcastsInFolder(folder: folder)
+        podcasts = DataManager.shared.allPodcastsInFolder(folder: folder)
 
-        let badgeType = Settings.podcastBadgeType()
+        let badgeType = Settings.podcastBadgeType
         // load the required badge information if the supplied badge type needs it
         if badgeType == .allUnplayed {
-            let podcastCounts = DataManager.sharedManager.podcastUnfinishedCounts()
+            let podcastCounts = DataManager.shared.podcastUnfinishedCounts()
             for podcast in podcasts {
                 podcast.cachedUnreadCount = Int(podcastCounts[podcast.uuid] ?? 0)
             }
         } else if badgeType == .latestEpisode {
             for podcast in podcasts {
-                if let latestEpisode = DataManager.sharedManager.findLatestEpisode(podcast: podcast) {
+                if let latestEpisode = DataManager.shared.findLatestEpisode(podcast: podcast) {
                     podcast.cachedUnreadCount = latestEpisode.unplayed() && !latestEpisode.archived ? 1 : 0
                 } else {
                     podcast.cachedUnreadCount = 0

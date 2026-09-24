@@ -3,6 +3,7 @@ import DifferenceKit
 import PocketCastsDataModel
 import PocketCastsServer
 import PocketCastsUtils
+import SJUtils
 import UIKit
 import UIDeviceIdentifier
 import SwiftUI
@@ -23,42 +24,22 @@ enum PodcastFeedReloadSource {
 }
 
 protocol PodcastActionsDelegate: AnyObject {
-    var hasSimilarShowsPublisher: AnyPublisher<Bool, Never> { get }
     var currentViewModePublisher: AnyPublisher<PodcastViewController.ViewMode, Never> { get }
     func isSummaryExpanded() -> Bool
     func setSummaryExpanded(expanded: Bool)
-    func isDescriptionExpanded() -> Bool
-    func setDescriptionExpanded(expanded: Bool)
 
     func tableView() -> UITableView
     func displayedPodcast() -> Podcast?
-    func episodeCount() -> Int
-    func archivedEpisodeCount() -> Int
-    func unseenEpisodeCount() -> Int
 
-    func manageSubscriptionTapped()
     func settingsTapped()
     func fundingTapped()
     func folderTapped()
     func notificationTapped()
     func categoryTapped(_ category: String)
+    func networkTapped(listId: String)
     func subscribe()
     func unsubscribe()
     func refreshArtwork()
-    func searchEpisodes(query: String)
-    func clearSearch()
-    func toggleShowArchived()
-    func episodesDidChange()
-    func showingArchived() -> Bool
-    func archiveAllTapped(playedOnly: Bool)
-    func unarchiveAllTapped()
-    func downloadAllTapped()
-    func queueAllTapped()
-    func downloadableEpisodeCount(items: [ListItem]?) -> Int
-
-    func didActivateSearch()
-
-    func enableMultiSelect()
 
     var podcastRatingViewModel: PodcastRatingViewModel { get }
     var ratingView: UIView { get }
@@ -80,20 +61,16 @@ protocol PodcastActionsDelegate: AnyObject {
     func showYouMightLike()
     func showLogin(message: String?)
 
-    func shouldDisplayPodcastFeedReloadButton() -> Bool
-    func reloadPodcastFeed(source: PodcastFeedReloadSource)
-
     func open(url: URL)
 }
 
-class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigninDelegate, MultiSelectActionDelegate {
+class PodcastViewController: PCViewController, PodcastActionsDelegate, MultiSelectActionDelegate {
     var podcast: Podcast?
     var episodeInfo = [ArraySection<String, ListItem>]()
     var uuidsThatMatchSearch = [String]()
     var featuredPodcast = false
     var listUuid: String?
     var summaryExpanded = false
-    var descriptionExpanded = false
     var currentViewMode: ViewMode = .episodes
 
     /// Fork: which list the episodes surface renders — the podcast's episode list,
@@ -124,16 +101,21 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
     var isLoadingRecommendations = CurrentValueSubject<Bool, Never>(false)
     var currentViewModeSubject = CurrentValueSubject<ViewMode, Never>(.episodes)
 
-    var hasSimilarShowsPublisher: AnyPublisher<Bool, Never> {
-        hasSimilarShows.eraseToAnyPublisher()
-    }
-
     var currentViewModePublisher: AnyPublisher<ViewMode, Never> {
         currentViewModeSubject.eraseToAnyPublisher()
     }
 
     var recommendations: PodcastCollection?
-    var bookmarkViewModel: BookmarkPodcastListViewModel?
+
+    /// Opens the network the podcast belongs to, tapped in the header.
+    private lazy var networkNavigator: NetworkNavigator = {
+        let navigator = NetworkNavigator(source: .podcastScreenNetwork)
+        navigator.presenter = self
+        return navigator
+    }()
+
+    /// The bookmarks tab, created the first time it's displayed
+    var bookmarkList: BookmarkListController?
 
     enum ViewMode {
         case episodes
@@ -219,8 +201,13 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
             } else {
                 self.selectedEpisodes.removeAll()
             }
+            // The bookmarks tab shows the action bar of the bookmarks lists instead of the table's own footer
+            if currentViewMode == .bookmarks {
+                self.multiSelectFooter.isHidden = true
+            }
             self.updateMultiSelectNavBar()
             searchController?.isOverflowButtonEnabled = !self.isMultiSelectEnabled
+            bookmarkList?.isOverflowButtonEnabled = !self.isMultiSelectEnabled
         }
     }
 
@@ -267,18 +254,12 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
 
     static let headerSection = 0
     static let allEpisodesSection = 1
-    static let podrollSection = 1
-    static let similarShowsSection = 2
 
     private var isSearching = false
     private var cancellables = Set<AnyCancellable>()
     private var podcastFeedViewModel: PodcastFeedViewModel?
     private var refreshController: PodcastFeedRefreshController?
     private var podcastFeedReloadTooltip: UIViewController?
-
-    // Hosting for the SwiftUI action bar used by the Bookmarks list when embedded
-    private var bookmarksActionBarHost: UIHostingController<AnyView>?
-    private var bookmarksActionBarBottomConstraint: NSLayoutConstraint?
 
     lazy var ratingView: UIView = {
         let view = StarRatingView(viewModel: podcastRatingViewModel,
@@ -304,7 +285,7 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
     }
 
     init(podcastInfo: PodcastInfo, existingImage: UIImage?) {
-        if let uuid = podcastInfo.uuid, let existingPodcast = DataManager.sharedManager.findPodcast(uuid: uuid, includeUnsubscribed: true) {
+        if let uuid = podcastInfo.uuid, let existingPodcast = DataManager.shared.findPodcast(uuid: uuid, includeUnsubscribed: true) {
             podcast = existingPodcast
             summaryExpanded = !existingPodcast.isSubscribed()
         } else {
@@ -344,11 +325,7 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
             forceCollapsingHeaderIfNeeded()
         }
 
-        let searchController = EpisodeListSearchController()
-        searchController.podcastDelegate = self
-        addChild(searchController)
-        searchController.didMove(toParent: self)
-        self.searchController = searchController
+        setupSearchController()
 
         operationQueue.maxConcurrentOperationCount = 1
 
@@ -410,10 +387,6 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
         setupLogin()
 
         setupRefreshControl()
-
-        // Keep external action bar aligned with mini player
-        NotificationCenter.default.addObserver(self, selector: #selector(miniPlayerStatusDidChange), name: Constants.Notifications.miniPlayerDidAppear, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(miniPlayerStatusDidChange), name: Constants.Notifications.miniPlayerDidDisappear, object: nil)
     }
 
     private var isScrolledPastHeader = false
@@ -447,19 +420,6 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
         podcastRatingViewModel.presentLogin = { [weak self] _ in
             self?.showLogin(message: L10n.ratingLoginRequired)
         }
-    }
-
-    private func setupBookmarkViewModel() {
-        guard let podcast else { return }
-
-        let sortOption = Settings.podcastBookmarksSort
-        let viewModel = BookmarkPodcastListViewModel(podcast: podcast,
-                                                      bookmarkManager: PlaybackManager.shared.bookmarkManager,
-                                                      sortOption: sortOption)
-        viewModel.analyticsSource = .podcasts
-        viewModel.router = self
-
-        self.bookmarkViewModel = viewModel
     }
 
     func showLogin(message: String?) {
@@ -634,16 +594,16 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
     }
 
     @objc private func searchRequested() {
-        guard podcast != nil, let searchBar = searchController?.searchTextField else { return }
+        guard podcast != nil else { return }
 
-        searchBar.becomeFirstResponder()
+        searchController?.beginEditing()
     }
 
     @objc private func colorsDidDownload(_ notification: Notification) {
         guard let uuidLoaded = notification.object as? String else { return }
 
         if let uuid = podcast?.uuid, uuid == uuidLoaded {
-            if let podcast = DataManager.sharedManager.findPodcast(uuid: uuid, includeUnsubscribed: true) {
+            if let podcast = DataManager.shared.findPodcast(uuid: uuid, includeUnsubscribed: true) {
                 self.podcast = podcast
             }
             updateColors()
@@ -651,6 +611,9 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
     }
 
     func reloadData() {
+        if currentViewMode == .bookmarks {
+            bookmarkList?.rebuildRows()
+        }
         episodesTable.reloadData()
     }
 
@@ -667,7 +630,7 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
     @objc private func podcastUpdated(_ notification: Notification) {
         guard let podcastUuid = notification.object as? String, podcastUuid == podcast?.uuid else { return }
 
-        podcast = DataManager.sharedManager.findPodcast(uuid: podcastUuid, includeUnsubscribed: true)
+        podcast = DataManager.shared.findPodcast(uuid: podcastUuid, includeUnsubscribed: true)
         if viewIfLoaded?.window != nil {
             refreshEpisodes()
         }
@@ -676,7 +639,7 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
     @objc private func folderChanged(_ notification: Notification) {
         guard let podcastUuid = podcast?.uuid else { return }
 
-        podcast = DataManager.sharedManager.findPodcast(uuid: podcastUuid, includeUnsubscribed: true)
+        podcast = DataManager.shared.findPodcast(uuid: podcastUuid, includeUnsubscribed: true)
         if viewIfLoaded?.window != nil {
             refreshEpisodes()
         }
@@ -709,7 +672,7 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
                 let podcastUuid = podcast.uuid
                 Task {
                     await PodcastManager.shared.deletePodcastIfUnused(podcast)
-                    if let _ = DataManager.sharedManager.findPodcast(uuid: podcastUuid, includeUnsubscribed: true) {
+                    if let _ = DataManager.shared.findPodcast(uuid: podcastUuid, includeUnsubscribed: true) {
                         // podcast wasn't deleted, but needs to be updated
                         loadLocalEpisodes(podcast: podcast, animated: false)
                         checkIfPodcastNeedsUpdating()
@@ -743,7 +706,7 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
             break
         }
 
-        let uuidsToFilter = (searchController?.searchInProgress() ?? false) ? uuidsThatMatchSearch : nil
+        let uuidsToFilter = isSearching ? uuidsThatMatchSearch : nil
         let refreshOperation = PodcastEpisodesRefreshOperation(podcast: podcast, uuidsToFilter: uuidsToFilter) { [weak self] newData in
             guard let self else { return }
 
@@ -753,7 +716,7 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
             var finalData = newData
             var needsNoEpisodesMessage = false
             var needsNoSearchResultsMessage = false
-            let searching = self.searchController?.searchTextField?.text?.count ?? 0 > 0
+            let searching = self.searchController?.searchText.isEmpty == false
             if podcast.podcastGrouping() == .none {
                 let episodeLimit = Int(podcast.autoArchiveEpisodeLimit)
                 var episodes = newData[safe: 1]?.elements
@@ -822,7 +785,7 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
             }
             // Instant restore when switching back to this tab later.
             self.cachedEpisodesTabData = finalData
-            self.searchController?.episodesDidReload()
+            self.updateSearchHeader()
             if self.isMultiSelectEnabled {
                 self.updateSelectAllBtn()
             }
@@ -839,16 +802,16 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
 
         // Search applies here too: server matches by uuid, plus a local title match so
         // store members from other podcasts don't silently vanish while searching.
-        let uuidsToFilter = (searchController?.searchInProgress() ?? false) ? uuidsThatMatchSearch : nil
-        let searchTerm = searchController?.searchTextField?.text ?? ""
+        let uuidsToFilter = isSearching ? uuidsThatMatchSearch : nil
+        let searchTerm = searchController?.searchText ?? ""
 
         var episodes = [ListItem]()
         if let session = SessionStore.shared.session(forPodcast: podcast.uuid),
            let storeUuid = session.storePlaylistUuid,
-           let store = DataManager.sharedManager.findPlaylist(uuid: storeUuid) {
-            let tintColor = AppTheme.appTintColor()
-            episodes = DataManager.sharedManager.positionedEpisodeUuids(for: store)
-                .compactMap { DataManager.sharedManager.findEpisode(uuid: $0) }
+           let store = DataManager.shared.findPlaylist(uuid: storeUuid) {
+            let tintColor = AppTheme.appTintColor
+            episodes = DataManager.shared.positionedEpisodeUuids(for: store)
+                .compactMap { DataManager.shared.findEpisode(uuid: $0) }
                 .filter { episode in
                     guard let uuidsToFilter else { return true }
                     return uuidsToFilter.contains(episode.uuid) || (!searchTerm.isEmpty && episode.displayableTitle().localizedCaseInsensitiveContains(searchTerm))
@@ -863,12 +826,12 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
         // surface it at the top of this podcast's Session tab even when the store it's
         // playing from is a different session (e.g. a smart-playlist session). Gated on
         // session playback — a plain queue episode must NOT appear here.
-        if !(searchController?.searchInProgress() ?? false),
+        if !isSearching,
            PlaybackManager.shared.isPlayingSessionEpisode,
-           let current = PlaybackManager.shared.currentEpisode() as? Episode,
+           let current = PlaybackManager.shared.currentEpisode as? Episode,
            current.parentPodcast()?.uuid == podcast.uuid,
            !listEpisodes.contains(where: { $0.episode.uuid == current.uuid }) {
-            listEpisodes.insert(ListEpisode(episode: current, tintColor: AppTheme.appTintColor()), at: 0)
+            listEpisodes.insert(ListEpisode(episode: current, tintColor: AppTheme.appTintColor), at: 0)
         }
         episodes = listEpisodes
         if episodes.isEmpty, !searchTerm.isEmpty {
@@ -896,7 +859,7 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
                 self.episodeInfo = finalData
                 self.reloadData()
             }
-            self.searchController?.episodesDidReload()
+            self.updateSearchHeader()
             if self.isMultiSelectEnabled {
                 self.updateSelectAllBtn()
             }
@@ -920,7 +883,7 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
 
         let optionsPicker = OptionsPicker(title: nil)
         let refreshAction = OptionAction(label: L10n.podcastRefreshArtwork, icon: "option-download-retry") {
-            ImageManager.sharedManager.clearCache(podcastUuid: podcast.uuid, recacheWhenDone: true)
+            ImageManager.shared.clearCache(podcastUuid: podcast.uuid, recacheWhenDone: true)
         }
         optionsPicker.addAction(action: refreshAction)
 
@@ -937,19 +900,18 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
             }
         }
 
-        let label = FeatureFlag.useFollowNaming.enabled ? L10n.unfollow : L10n.unsubscribe
         let title: String
         let message: String?
         if downloadedCount > 0 {
             title = L10n.downloadedFilesConf(downloadedCount)
-            message = FeatureFlag.useFollowNaming.enabled ? L10n.downloadedFilesConfMessageNew : L10n.downloadedFilesConfMessage
+            message = L10n.downloadedFilesConfMessageNew
         } else {
             title = L10n.areYouSure
             message = nil
         }
         let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: L10n.cancel, style: .cancel))
-        alert.addAction(UIAlertAction(title: label, style: .destructive) { [weak self] _ in
+        alert.addAction(UIAlertAction(title: L10n.unfollow, style: .destructive) { [weak self] _ in
             self?.performUnsubscribe()
         })
         present(alert, animated: true)
@@ -971,8 +933,8 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
         podcast.subscribed = 1
         podcast.syncStatus = SyncStatus.notSynced.rawValue
         podcast.autoDownloadSetting = (FeatureFlag.autoDownloadOnSubscribe.enabled && Settings.autoDownloadEnabled() && Settings.autoDownloadOnFollow() ? AutoDownloadSetting.latest : AutoDownloadSetting.off).rawValue
-        DataManager.sharedManager.save(podcast: podcast)
-        ServerPodcastManager.shared.updateLatestEpisodeInfo(podcast: podcast, setDefaults: true, autoDownloadLimit: Settings.autoDownloadOnFollow() ? Settings.autoDownloadLimits().rawValue : 0)
+        DataManager.shared.save(podcast: podcast)
+        ServerPodcastManager.shared.updateLatestEpisodeInfo(podcast: podcast, setDefaults: true, autoDownloadLimit: Settings.autoDownloadOnFollow() ? Settings.autoDownloadLimits.rawValue : 0)
         loadLocalEpisodes(podcast: podcast, animated: true)
 
         if featuredPodcast {
@@ -1038,16 +1000,7 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
         }
     }
 
-    func isDescriptionExpanded() -> Bool {
-        descriptionExpanded
-    }
-
-    func setDescriptionExpanded(expanded: Bool) {
-        descriptionExpanded = expanded
-    }
-
     @objc private func miniPlayerStatusDidChange() {
-        updateBookmarksActionBarBottomConstraint()
         // The pill appears/disappears without changing the table's bounds, so nothing would
         // recompute its bottom clearance — force a layout pass so the last row clears the pill.
         view.setNeedsLayout()
@@ -1064,14 +1017,14 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
     func episodeCount() -> Int {
         guard let podcast else { return 0 }
 
-        return DataManager.sharedManager.count(query: "SELECT COUNT(*) FROM \(DataManager.episodeTableName) WHERE podcast_id == ?", values: [podcast.id])
+        return DataManager.shared.count(query: "SELECT COUNT(*) FROM \(DataManager.episodeTableName) WHERE podcast_id == ?", values: [podcast.id])
     }
 
     /// Fork: what the Episodes tab currently shows, after the display filters.
     func archivedEpisodeCount() -> Int {
         guard let podcast else { return 0 }
 
-        return DataManager.sharedManager.count(query: "SELECT COUNT(*) FROM \(DataManager.episodeTableName) WHERE podcast_id == ? AND archived = 1", values: [podcast.id])
+        return DataManager.shared.count(query: "SELECT COUNT(*) FROM \(DataManager.episodeTableName) WHERE podcast_id == ? AND archived = 1", values: [podcast.id])
     }
 
     /// Fork: how many of the rows on screen still wear the unread dot. Counted from the
@@ -1099,19 +1052,6 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
         UIApplication.shared.open(url, options: [:], completionHandler: nil)
     }
 
-    func manageSubscriptionTapped() {
-        guard SyncManager.isUserLoggedIn() else {
-            let signinPage = SyncSigninViewController()
-            signinPage.delegate = self
-
-            navigationController?.pushViewController(signinPage, animated: true)
-            return
-        }
-        guard let podcast, let bundle = SubscriptionHelper.bundleSubscriptionForPodcast(podcastUuid: podcast.uuid) else { return }
-        let subscriptionController = SupporterPodcastViewController(bundleSubscription: bundle)
-        navigationController?.pushViewController(subscriptionController, animated: true)
-    }
-
     func didActivateSearch() {
         // Add padding to the bottom of the table to allow it to scroll up
         let tableBounds = tableView().bounds
@@ -1127,7 +1067,7 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
     func folderTapped() {
         Analytics.track(.podcastScreenFolderTapped)
         if !SubscriptionHelper.hasActiveSubscription() {
-            NavigationManager.sharedManager.showUpsellView(from: self, source: .folders)
+            NavigationManager.shared.showUpsellView(from: self, source: .folders)
             return
         }
 
@@ -1153,24 +1093,40 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
     }
 
     func categoryTapped(_ category: String) {
-        NavigationManager.sharedManager.navigateTo(NavigationManager.discoverPageKey, data: [NavigationManager.discoverCategoryKey: category])
+        NavigationManager.shared.navigateTo(NavigationManager.discoverPageKey, data: [NavigationManager.discoverCategoryKey: category])
         Analytics.track(.podcastScreenCategoryTapped, properties: ["category": category])
     }
 
+    func networkTapped(listId: String) {
+        Analytics.track(.podcastScreenNetworkTapped, properties: ["podcast_uuid": podcast?.uuid ?? "", "list_id": listId])
+        networkNavigator.show(listId: listId)
+    }
+
     func searchEpisodes(query: String) {
+        guard !query.isEmpty else {
+            clearSearch()
+            return
+        }
+
+        // don't allow searching for less than 2 characters
+        guard query.count > 1 else { return }
+
+        searchController?.isLoading = true
         performEpisodeSearch(query: query)
+
         if !isSearching {
             isSearching = true
             Analytics.track(.podcastScreenSearchPerformed)
         }
     }
 
-    func clearSearch() {
+    private func clearSearch() {
         guard let podcast else { return }
 
+        searchController?.isLoading = false
+        isSearching = false
         uuidsThatMatchSearch.removeAll()
         loadLocalEpisodes(podcast: podcast, animated: true)
-        isSearching = false
         Analytics.track(.podcastScreenSearchCleared)
     }
 
@@ -1197,15 +1153,11 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
         loadLocalEpisodes(podcast: podcast, animated: true)
     }
 
-    func archiveAllTapped(playedOnly: Bool) {
-        archiveAll(playedOnly: playedOnly)
-    }
-
-    func unarchiveAllTapped() {
+    func unarchiveAll() {
         guard let podcast else { return }
 
-        DispatchQueue.global().async {
-            DataManager.sharedManager.markAllUnarchivedForPodcast(id: podcast.id)
+        DispatchQueue.global().async { [self] in
+            DataManager.shared.markAllUnarchived(forPodcastId: podcast.id)
 
             AnalyticsEpisodeHelper.shared.currentSource = .podcastScreen
             AnalyticsEpisodeHelper.shared.bulkUnarchiveEpisodes(count: self.episodeCount())
@@ -1244,7 +1196,7 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
         }
     }
 
-    func downloadAllTapped() {
+    func downloadAll() {
         DispatchQueue.global().async { [weak self] in
             guard let self, let allObjects = self.episodeInfo[safe: 1]?.elements, !allObjects.isEmpty else { return }
 
@@ -1386,7 +1338,7 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
         let allDownloaded = episodes.allSatisfy { $0.downloaded(pathFinder: DownloadManager.shared) }
         if allDownloaded {
             return .init(label: L10n.removeAll, icon: "episode-remove-download") {
-                EpisodeManager.removeDownloadForEpisodes(episodes)
+                EpisodeManager.removeDownload(for: episodes)
                 if let season { Analytics.track(.podcastScreenSeasonOptionsRemoveAllTapped, properties: ["season": season]) }
             }
         } else {
@@ -1455,7 +1407,7 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
         }
     }
 
-    func queueAllTapped() {
+    func queueAll() {
         DispatchQueue.global().async { [weak self] in
             guard let self, let allObjects = self.episodeInfo[safe: 1]?.elements, !allObjects.isEmpty else { return }
             self.queueItems(allObjects: allObjects)
@@ -1499,108 +1451,17 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
         isMultiSelectEnabled = true
     }
 
-    // MARK: - External Bookmarks Action Bar
-
-    func updateBookmarksActionBar(state: ExternalActionBarState, viewModel: BookmarkPodcastListViewModel) {
-        if state.isMultiSelecting {
-            // Ensure top nav/selection header matches multiselect state
-            if !isMultiSelectEnabled {
-                isMultiSelectEnabled = true
-            }
-            // Hide the table's native multiSelectFooter; we present a SwiftUI bar instead
-            multiSelectFooter.isHidden = true
-
-            let actions: [ActionBarView<ThemedActionBarStyle>.Action] = makeBookmarkActions(BookmarkActionConfig(
-                showShare: state.showShare,
-                showEdit: state.showEdit,
-                onShare: { viewModel.shareSelectedBookmarks() },
-                onEdit: { viewModel.editSelectedBookmarks() },
-                onDelete: { viewModel.deleteSelectedBookmarks() }
-            ))
-
-            let bar = ActionBarView(title: state.title, style: ThemedActionBarStyle(), actions: actions)
-                .padding(.bottom) // match internal spacing
-
-            if let host = bookmarksActionBarHost {
-                host.rootView = AnyView(bar)
-            } else {
-                let host = UIHostingController(rootView: AnyView(bar))
-                host.view.backgroundColor = .clear
-                bookmarksActionBarHost = host
-
-                addChild(host)
-                view.addSubview(host.view)
-                host.view.translatesAutoresizingMaskIntoConstraints = false
-
-                let bottom = host.view.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor)
-                bookmarksActionBarBottomConstraint = bottom
-
-                NSLayoutConstraint.activate([
-                    host.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-                    host.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-                    bottom
-                ])
-
-                host.didMove(toParent: self)
-
-                // Ensure initial layout has the correct offset without animating from the top
-                updateBookmarksActionBarBottomConstraint(animated: false)
-            }
-
-            if state.visible {
-                // Subsequent updates can animate
-                updateBookmarksActionBarBottomConstraint(animated: true)
-            } else {
-                // If not visible (no selected items), remove bar if present
-                removeBookmarksActionBar()
-            }
-            // Keep Select All button title in sync
-            updateSelectAllBtn()
-        } else {
-            removeBookmarksActionBar()
-            if isMultiSelectEnabled {
-                isMultiSelectEnabled = false
-            }
-        }
-    }
-
-    private func updateBookmarksActionBarBottomConstraint(animated: Bool = true) {
-        guard let bottom = bookmarksActionBarBottomConstraint else { return }
-        guard let host = bookmarksActionBarHost else { return }
-        bottom.constant = -bookmarksActionBarBottomOffset()
-        if animated {
-            UIView.animate(withDuration: 0.1) { host.view.layoutIfNeeded(); self.view.layoutIfNeeded() }
-        } else {
-            host.view.layoutIfNeeded()
-            self.view.layoutIfNeeded()
-        }
-    }
-
-    func removeBookmarksActionBar() {
-        if let host = bookmarksActionBarHost {
-            host.willMove(toParent: nil)
-            host.view.removeFromSuperview()
-            host.removeFromParent()
-        }
-        bookmarksActionBarHost = nil
-        bookmarksActionBarBottomConstraint = nil
-    }
-
-    private func bookmarksActionBarBottomOffset() -> CGFloat {
-        Constants.effectiveMiniPlayerOffset
-    }
-
     private func showPodcastFolderMoveOptions(currentFolderUuid: String) {
-        guard let podcast, let folder = DataManager.sharedManager.findFolder(uuid: currentFolderUuid) else { return }
+        guard let podcast, let folder = DataManager.shared.findFolder(uuid: currentFolderUuid) else { return }
 
         let optionsPicker = OptionsPicker(title: folder.name.localizedUppercase)
         let removeAction = OptionAction(label: L10n.folderRemoveFrom.localizedCapitalized, icon: "folder-remove") {
             podcast.sortOrder = ServerPodcastManager.shared.highestSortOrderForHomeGrid() + 1
             podcast.folderUuid = nil
             podcast.syncStatus = SyncStatus.notSynced.rawValue
-            DataManager.sharedManager.save(podcast: podcast)
+            DataManager.shared.save(podcast: podcast)
 
-            DataManager.sharedManager.updateFolderSyncModified(folderUuid: currentFolderUuid, syncModified: TimeFormatter.currentUTCTimeInMillis())
+            DataManager.shared.updateFolderSyncModified(folderUuid: currentFolderUuid, syncModified: TimeFormatter.currentUTCTimeInMillis())
 
             NotificationCenter.postOnMainThread(notification: Constants.Notifications.folderChanged, object: currentFolderUuid)
 
@@ -1618,7 +1479,7 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
         optionsPicker.addAction(action: changeFolderAction)
 
         let goToFolderAction = OptionAction(label: L10n.folderGoTo.localizedCapitalized, icon: "folder-goto") {
-            NavigationManager.sharedManager.navigateTo(NavigationManager.folderPageKey, data: [NavigationManager.folderKey: folder])
+            NavigationManager.shared.navigateTo(NavigationManager.folderPageKey, data: [NavigationManager.folderKey: folder])
             Analytics.track(.folderPodcastModalOptionTapped, properties: ["option": "go_to"])
         }
         optionsPicker.addAction(action: goToFolderAction)
@@ -1633,7 +1494,7 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
         let chooseFolderView = ChoosePodcastFolderView(model: model) { [weak self] _ in
             self?.dismiss(animated: true, completion: nil)
         }
-        let hostingController = PCHostingController(rootView: chooseFolderView.environmentObject(Theme.sharedTheme))
+        let hostingController = PCHostingController(rootView: chooseFolderView.environmentObject(Theme.shared))
 
         present(hostingController, animated: true, completion: nil)
     }
@@ -1686,13 +1547,7 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
     }
 
     func showBookmarks() {
-        if FeatureFlag.podcastBookmarksInline.enabled {
-            switchViewMode(to: .bookmarks)
-        } else {
-            guard let podcast else { return }
-            let controller = BookmarksPodcastListController(podcast: podcast)
-            present(controller, animated: true)
-        }
+        switchViewMode(to: .bookmarks)
     }
 
     func showYouMightLike() {
@@ -1715,7 +1570,7 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
             // so resolve the contrast color off the main thread and apply when ready.
             let uuid = podcastUUID
             Task.detached(priority: .utility) { [refreshControl = controller.refreshControl] in
-                guard let image = ImageManager.sharedManager.cachedImageFor(podcastUuid: uuid, size: .grid) else { return }
+                guard let image = ImageManager.shared.cachedImageFor(podcastUuid: uuid, size: .grid) else { return }
                 let isDark = image.isDark
                 await MainActor.run {
                     refreshControl.customTintColor = isDark ? .white : .black
@@ -1746,15 +1601,6 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
                 self?.loadPodcastInfo()
             }
         }
-    }
-
-    func refreshPodcastFeed() {
-        // In case the FF is switched off
-        guard shouldDisplayPodcastFeedReloadButton() else {
-            refreshController?.refreshControl.endRefreshing()
-            return
-        }
-        reloadPodcastFeed(source: .refreshControl)
     }
 
     func open(url: URL) {
@@ -1936,12 +1782,6 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
         return true
     }
 
-    // MARK: - SyncSigninDelegate
-
-    func signingProcessCompleted() {
-        navigationController?.popToViewController(self, animated: true)
-    }
-
     @MainActor
     func loadRecommendations() async {
         guard let podcast else { return }
@@ -1981,7 +1821,7 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
 
     private func switchViewMode(to mode: ViewMode) {
         // Clear any externally presented action bar when switching modes
-        removeBookmarksActionBar()
+        bookmarkList?.removeActionBar()
         if isMultiSelectEnabled {
             isMultiSelectEnabled = false
         }
@@ -2004,11 +1844,14 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, SyncSigni
                 }
             }
         case .bookmarks:
-            if bookmarkViewModel == nil {
-                setupBookmarkViewModel() // Reloads on init
+            if bookmarkList == nil {
+                setupBookmarkList() // Reloads on init
             } else {
-                bookmarkViewModel?.reload()
+                bookmarkList?.viewModel.reload()
             }
+
+            // The multi select state is kept when switching between the tabs
+            bookmarkList?.updateActionBar()
         }
         Analytics.track(.podcastsScreenTabTapped, properties: ["value": mode.analyticsValue])
         reloadData()
@@ -2055,8 +1898,7 @@ extension PodcastViewController: BookmarkListRouter {
     }
 
     func bookmarkEdit(_ bookmark: Bookmark) {
-        let controller = BookmarkEditTitleViewController(manager: PlaybackManager.shared.bookmarkManager, bookmark: bookmark, state: .updating, style: .themed)
-        controller.source = .podcasts
+        let controller = BookmarkEditTitleViewController(manager: PlaybackManager.shared.bookmarkManager, bookmark: bookmark, state: .updating, style: .themed, source: .podcasts)
 
         present(controller, animated: true)
     }

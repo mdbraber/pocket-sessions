@@ -87,7 +87,7 @@ struct ChoosePlaylistFolderView: View {
     }
 
     private var topLevelPlaylistCount: Int {
-        DataManager.sharedManager.allPlaylists(includeDeleted: false)
+        DataManager.shared.allPlaylists(includeDeleted: false)
             .filter { PlaylistFolderManager.shared.folderUuid(forPlaylist: $0.uuid) == nil }
             .count
     }

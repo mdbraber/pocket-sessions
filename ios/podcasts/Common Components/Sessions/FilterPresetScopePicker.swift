@@ -11,8 +11,8 @@ struct FilterPresetScopePicker: View {
     @EnvironmentObject var theme: Theme
     @ObservedObject var model: FilterPresetEditorModel
 
-    private let folders = DataManager.sharedManager.allFolders(includeDeleted: false).sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-    private let podcasts = DataManager.sharedManager.allPodcasts(includeUnsubscribed: false).sorted { ($0.title ?? "").localizedCaseInsensitiveCompare($1.title ?? "") == .orderedAscending }
+    private let folders = DataManager.shared.allFolders(includeDeleted: false).sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    private let podcasts = DataManager.shared.allPodcasts(includeUnsubscribed: false).sorted { ($0.title ?? "").localizedCaseInsensitiveCompare($1.title ?? "") == .orderedAscending }
 
     var body: some View {
         List {

@@ -119,7 +119,7 @@ struct EditPlaylistFolderPlaylistsView: View {
 
     @State private var selectedUuids: [String] = []
 
-    private let allPlaylists = DataManager.sharedManager.allPlaylists(includeDeleted: false)
+    private let allPlaylists = DataManager.shared.allPlaylists(includeDeleted: false)
 
     var body: some View {
         NavigationView {

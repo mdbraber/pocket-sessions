@@ -8,7 +8,7 @@ import XCTest
 final class SmartPlaylistCustomOrderTests: DataManagerTestCase {
 
     func testOverlayQueryReturnsInboxFirstThenLineup() throws {
-        try runWithBothImplementations { dataManager, impl in
+        try runWithDataManager { dataManager in
             let playlist = makeCustomOrderedSmartPlaylist(uuid: "sp-overlay", dataManager: dataManager)
 
             // e1 oldest … e4 newest
@@ -18,14 +18,14 @@ final class SmartPlaylistCustomOrderTests: DataManagerTestCase {
             dataManager.setCustomOrder(episodeUuids: ["e1", "e2"], for: playlist)
 
             let episodes = dataManager.playlistEpisodes(for: playlist).map { $0.uuid }
-            XCTAssertEqual(episodes, ["e4", "e3", "e1", "e2"], "\(impl): inbox newest-first, then lineup order")
+            XCTAssertEqual(episodes, ["e4", "e3", "e1", "e2"], "inbox newest-first, then lineup order")
 
-            XCTAssertEqual(dataManager.positionedEpisodeUuids(for: playlist), ["e1", "e2"], "\(impl): lineup uuids in position order")
+            XCTAssertEqual(dataManager.positionedEpisodeUuids(for: playlist), ["e1", "e2"], "lineup uuids in position order")
         }
     }
 
     func testInsertModeTopReversesConsecutiveInserts() throws {
-        try runWithBothImplementations { dataManager, impl in
+        try runWithDataManager { dataManager in
             let playlist = makeCustomOrderedSmartPlaylist(uuid: "sp-top", dataManager: dataManager)
             playlist.insertMode = .top
             saveEpisodes(uuids: ["a", "b", "x"], dataManager: dataManager)
@@ -34,12 +34,12 @@ final class SmartPlaylistCustomOrderTests: DataManagerTestCase {
             dataManager.insertIntoCustomOrder(episodeUuids: ["a"], for: playlist)
             dataManager.insertIntoCustomOrder(episodeUuids: ["b"], for: playlist)
 
-            XCTAssertEqual(dataManager.positionedEpisodeUuids(for: playlist), ["b", "a", "x"], "\(impl): pinned top inserts above everything")
+            XCTAssertEqual(dataManager.positionedEpisodeUuids(for: playlist), ["b", "a", "x"], "pinned top inserts above everything")
         }
     }
 
     func testInsertModeBottomAppends() throws {
-        try runWithBothImplementations { dataManager, impl in
+        try runWithDataManager { dataManager in
             let playlist = makeCustomOrderedSmartPlaylist(uuid: "sp-bottom", dataManager: dataManager)
             playlist.insertMode = .bottom
             saveEpisodes(uuids: ["a", "b", "x"], dataManager: dataManager)
@@ -48,12 +48,12 @@ final class SmartPlaylistCustomOrderTests: DataManagerTestCase {
             dataManager.insertIntoCustomOrder(episodeUuids: ["a"], for: playlist)
             dataManager.insertIntoCustomOrder(episodeUuids: ["b"], for: playlist)
 
-            XCTAssertEqual(dataManager.positionedEpisodeUuids(for: playlist), ["x", "a", "b"], "\(impl): bottom mode appends in insert order")
+            XCTAssertEqual(dataManager.positionedEpisodeUuids(for: playlist), ["x", "a", "b"], "bottom mode appends in insert order")
         }
     }
 
     func testInsertModeAfterLastInsertedPreservesTriageOrder() throws {
-        try runWithBothImplementations { dataManager, impl in
+        try runWithDataManager { dataManager in
             let playlist = makeCustomOrderedSmartPlaylist(uuid: "sp-after", dataManager: dataManager)
             playlist.insertMode = .afterLastInserted
             saveEpisodes(uuids: ["a", "b", "c", "d", "x"], dataManager: dataManager)
@@ -62,17 +62,17 @@ final class SmartPlaylistCustomOrderTests: DataManagerTestCase {
             // No anchor yet: seeds at top, then chains downward.
             dataManager.insertIntoCustomOrder(episodeUuids: ["a"], for: playlist)
             dataManager.insertIntoCustomOrder(episodeUuids: ["b"], for: playlist)
-            XCTAssertEqual(dataManager.positionedEpisodeUuids(for: playlist), ["a", "b", "x"], "\(impl): consecutive inserts chain in triage order")
+            XCTAssertEqual(dataManager.positionedEpisodeUuids(for: playlist), ["a", "b", "x"], "consecutive inserts chain in triage order")
 
             // A block insert lands as a block after the anchor.
             dataManager.insertIntoCustomOrder(episodeUuids: ["c", "d"], for: playlist)
-            XCTAssertEqual(dataManager.positionedEpisodeUuids(for: playlist), ["a", "b", "c", "d", "x"], "\(impl): block keeps on-screen order")
-            XCTAssertEqual(playlist.customOrderLastInsertedUuid, "d", "\(impl): marker anchors to the last of the block")
+            XCTAssertEqual(dataManager.positionedEpisodeUuids(for: playlist), ["a", "b", "c", "d", "x"], "block keeps on-screen order")
+            XCTAssertEqual(playlist.customOrderLastInsertedUuid, "d", "marker anchors to the last of the block")
         }
     }
 
     func testInsertModeBeforeLastInsertedGrowsUpward() throws {
-        try runWithBothImplementations { dataManager, impl in
+        try runWithDataManager { dataManager in
             let playlist = makeCustomOrderedSmartPlaylist(uuid: "sp-before", dataManager: dataManager)
             playlist.insertMode = .beforeLastInserted
             saveEpisodes(uuids: ["a", "b", "x", "y"], dataManager: dataManager)
@@ -82,13 +82,13 @@ final class SmartPlaylistCustomOrderTests: DataManagerTestCase {
             dataManager.insertIntoCustomOrder(episodeUuids: ["a"], for: playlist)
             dataManager.insertIntoCustomOrder(episodeUuids: ["b"], for: playlist)
 
-            XCTAssertEqual(dataManager.positionedEpisodeUuids(for: playlist), ["x", "y", "b", "a"], "\(impl): before-mode block grows upward")
-            XCTAssertEqual(playlist.customOrderLastInsertedUuid, "b", "\(impl): marker anchors to the block head")
+            XCTAssertEqual(dataManager.positionedEpisodeUuids(for: playlist), ["x", "y", "b", "a"], "before-mode block grows upward")
+            XCTAssertEqual(playlist.customOrderLastInsertedUuid, "b", "marker anchors to the block head")
         }
     }
 
     func testMarkerFallsBackWhenAnchorLeavesPlaylist() throws {
-        try runWithBothImplementations { dataManager, impl in
+        try runWithDataManager { dataManager in
             let playlist = makeCustomOrderedSmartPlaylist(uuid: "sp-fallback", dataManager: dataManager)
             playlist.insertMode = .afterLastInserted
             playlist.customOrderLastInsertedUuid = "gone"
@@ -97,12 +97,12 @@ final class SmartPlaylistCustomOrderTests: DataManagerTestCase {
 
             dataManager.insertIntoCustomOrder(episodeUuids: ["a"], for: playlist)
 
-            XCTAssertEqual(dataManager.positionedEpisodeUuids(for: playlist), ["a", "x"], "\(impl): after-mode falls back to top when the anchor is gone")
+            XCTAssertEqual(dataManager.positionedEpisodeUuids(for: playlist), ["a", "x"], "after-mode falls back to top when the anchor is gone")
         }
     }
 
     func testReinsertingPositionedEpisodeMovesInsteadOfDuplicating() throws {
-        try runWithBothImplementations { dataManager, impl in
+        try runWithDataManager { dataManager in
             let playlist = makeCustomOrderedSmartPlaylist(uuid: "sp-move", dataManager: dataManager)
             playlist.insertMode = .top
             saveEpisodes(uuids: ["a", "b", "c"], dataManager: dataManager)
@@ -110,19 +110,19 @@ final class SmartPlaylistCustomOrderTests: DataManagerTestCase {
 
             dataManager.insertIntoCustomOrder(episodeUuids: ["c"], for: playlist)
 
-            XCTAssertEqual(dataManager.positionedEpisodeUuids(for: playlist), ["c", "a", "b"], "\(impl): re-inserting moves the episode")
+            XCTAssertEqual(dataManager.positionedEpisodeUuids(for: playlist), ["c", "a", "b"], "re-inserting moves the episode")
         }
     }
 
     func testPruneKeepsOrderAndReindexes() throws {
-        try runWithBothImplementations { dataManager, impl in
+        try runWithDataManager { dataManager in
             let playlist = makeCustomOrderedSmartPlaylist(uuid: "sp-prune", dataManager: dataManager)
             saveEpisodes(uuids: ["a", "b", "c", "d"], dataManager: dataManager)
             dataManager.setCustomOrder(episodeUuids: ["a", "b", "c", "d"], for: playlist)
 
             dataManager.pruneCustomOrder(keepingEpisodeUuids: ["b", "d"], for: playlist)
 
-            XCTAssertEqual(dataManager.positionedEpisodeUuids(for: playlist), ["b", "d"], "\(impl): pruned lineup keeps relative order")
+            XCTAssertEqual(dataManager.positionedEpisodeUuids(for: playlist), ["b", "d"], "pruned lineup keeps relative order")
         }
     }
 

@@ -24,7 +24,7 @@ class BadgeSettingsViewController: PCViewController, UITableViewDelegate, UITabl
     override func viewDidLoad() {
         super.viewDidLoad()
 
-        playlists = DataManager.sharedManager.allSmartPlaylists(includeDeleted: false)
+        playlists = DataManager.shared.allSmartPlaylists(includeDeleted: false)
 
         insetAdjuster.setupInsetAdjustmentsForMiniPlayer(scrollView: optionsTable)
 

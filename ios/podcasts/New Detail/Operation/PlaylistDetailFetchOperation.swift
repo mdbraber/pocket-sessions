@@ -10,7 +10,7 @@ class PlaylistDetailFetchOperation: Operation, @unchecked Sendable {
     private let completion: CompletionHandler
 
     init(
-        dataManager: DataManager = .sharedManager,
+        dataManager: DataManager = .shared,
         episodesDataManager: EpisodesDataManager = .init(),
         playlist: EpisodeFilter,
         completion: @escaping CompletionHandler

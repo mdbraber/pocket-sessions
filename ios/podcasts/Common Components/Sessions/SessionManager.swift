@@ -111,7 +111,7 @@ class SessionManager {
         var map = [String: Set<SessionFeederEngine.FeederSignal>]()
         for session in SessionStore.shared.sessions {
             guard case .smartPlaylist(let uuid) = session.feeder,
-                  let feeder = DataManager.sharedManager.findPlaylist(uuid: uuid) else { continue }
+                  let feeder = DataManager.shared.findPlaylist(uuid: uuid) else { continue }
             map[session.uuid] = SessionFeederEngine.signals(of: feeder)
         }
         cachedFeederSignals = map
@@ -243,7 +243,7 @@ class SessionManager {
         let selectedFolders = Settings.showPodcastSessionFolders()
         let selectedPodcasts = Settings.showPodcastSessionPodcasts()
         guard !selectedFolders.isEmpty || !selectedPodcasts.isEmpty else { return }
-        let podcasts = DataManager.sharedManager.allPodcasts(includeUnsubscribed: false)
+        let podcasts = DataManager.shared.allPodcasts(includeUnsubscribed: false)
         var filed = false
 
         for podcast in podcasts {
@@ -272,7 +272,7 @@ class SessionManager {
     func fileFolderScopedPodcastSession(podcast: Podcast, storeUuid: String) -> Bool {
         guard let podcastFolderUuid = podcast.folderUuid,
               Settings.showPodcastSessionFolders().contains(podcastFolderUuid),
-              let podcastFolder = DataManager.sharedManager.findFolder(uuid: podcastFolderUuid) else { return false }
+              let podcastFolder = DataManager.shared.findFolder(uuid: podcastFolderUuid) else { return false }
         let playlistFolder = PlaylistFolderManager.shared.allFolders().first { $0.name == podcastFolder.name }
             ?? PlaylistFolderManager.shared.createFolder(name: podcastFolder.name, color: podcastFolder.color, playlistUuids: [])
         guard PlaylistFolderManager.shared.folderUuid(forPlaylist: storeUuid) != playlistFolder.uuid else { return false }
@@ -305,13 +305,13 @@ class SessionManager {
         store.sortType = PlaylistSort.dragAndDrop.rawValue
         store.isNew = false
         store.syncStatus = SyncStatus.notSynced.rawValue
-        DataManager.sharedManager.save(playlist: store)
+        DataManager.shared.save(playlist: store)
 
         if !seedEpisodeUuids.isEmpty {
             unarchiveIfNeeded(episodeUuids: seedEpisodeUuids)
             unplayIfNeeded(episodeUuids: seedEpisodeUuids)
-            let episodes = seedEpisodeUuids.compactMap { DataManager.sharedManager.findEpisode(uuid: $0) }
-            _ = DataManager.sharedManager.add(episodes: episodes, to: store)
+            let episodes = seedEpisodeUuids.compactMap { DataManager.shared.findEpisode(uuid: $0) }
+            _ = DataManager.shared.add(episodes: episodes, to: store)
         }
 
         // Fork: deterministic uuid for identity-bearing feeders — every device creates the
@@ -347,14 +347,14 @@ class SessionManager {
 
     /// Deletes the session, its store playlist, and (for rule sessions) its feeder playlist.
     func deleteSession(_ session: Session) {
-        if let storeUuid = session.storePlaylistUuid, let store = DataManager.sharedManager.findPlaylist(uuid: storeUuid) {
+        if let storeUuid = session.storePlaylistUuid, let store = DataManager.shared.findPlaylist(uuid: storeUuid) {
             PlaylistManager.delete(playlist: store, fireEvent: false)
         }
         // Only hidden "— feed" machinery dies with its session — a real lens acting
         // as feeder is the user's own smart playlist and must survive.
         if case .smartPlaylist(let feederUuid) = session.feeder,
            SessionStore.shared.feederPlaylistUuids.contains(feederUuid),
-           let feederPlaylist = DataManager.sharedManager.findPlaylist(uuid: feederUuid) {
+           let feederPlaylist = DataManager.shared.findPlaylist(uuid: feederUuid) {
             PlaylistManager.delete(playlist: feederPlaylist, fireEvent: false)
         }
         SessionStore.shared.delete(sessionUuid: session.uuid)
@@ -393,7 +393,7 @@ class SessionManager {
             for loser in sorted.dropFirst() {
                 if let loserStore = store(for: loser) {
                     let winnerMembers = Set(SessionFeederEngine.storeMemberUuids(for: winner))
-                    let toMove = DataManager.sharedManager.positionedEpisodeUuids(for: loserStore).filter { !winnerMembers.contains($0) }
+                    let toMove = DataManager.shared.positionedEpisodeUuids(for: loserStore).filter { !winnerMembers.contains($0) }
                     if !toMove.isEmpty { addToLineup(episodeUuids: toMove, session: winner) }
                 }
                 if !loser.pinnedEpisodeUuids.isEmpty {
@@ -421,7 +421,7 @@ class SessionManager {
         var removed = 0
         for session in SessionStore.shared.sessions {
             guard case .podcast(let podcastUuid) = session.feeder,
-                  DataManager.sharedManager.findPodcast(uuid: podcastUuid) == nil, // unsubscribed
+                  DataManager.shared.findPodcast(uuid: podcastUuid) == nil, // unsubscribed
                   SessionFeederEngine.storeMemberUuids(for: session).isEmpty else { continue }
             deleteSession(session)
             removed += 1
@@ -481,15 +481,15 @@ class SessionManager {
         feeder.sortType = PlaylistSort.newestToOldest.rawValue
         feeder.sortPosition = 32000
         feeder.syncStatus = SyncStatus.notSynced.rawValue
-        DataManager.sharedManager.save(playlist: feeder)
+        DataManager.shared.save(playlist: feeder)
 
         lens.manual = true
         lens.sortType = PlaylistSort.dragAndDrop.rawValue
         lens.syncStatus = SyncStatus.notSynced.rawValue
-        DataManager.sharedManager.save(playlist: lens)
+        DataManager.shared.save(playlist: lens)
 
-        let episodes = seedEpisodeUuids.compactMap { DataManager.sharedManager.findEpisode(uuid: $0) }
-        _ = DataManager.sharedManager.add(episodes: episodes, to: lens)
+        let episodes = seedEpisodeUuids.compactMap { DataManager.shared.findEpisode(uuid: $0) }
+        _ = DataManager.shared.add(episodes: episodes, to: lens)
 
         let session = Session(uuid: UUID().uuidString, storePlaylistUuid: lens.uuid, feeder: .smartPlaylist(uuid: feeder.uuid))
         SessionStore.shared.upsert(session)
@@ -504,7 +504,7 @@ class SessionManager {
             return playlist.manual ? nil : playlist
         }
         if case .smartPlaylist(let feederUuid) = session.feeder {
-            return DataManager.sharedManager.findPlaylist(uuid: feederUuid)
+            return DataManager.shared.findPlaylist(uuid: feederUuid)
         }
         return nil
     }
@@ -513,7 +513,7 @@ class SessionManager {
 
     func store(for session: Session) -> EpisodeFilter? {
         guard let uuid = session.storePlaylistUuid else { return nil }
-        return DataManager.sharedManager.findPlaylist(uuid: uuid)
+        return DataManager.shared.findPlaylist(uuid: uuid)
     }
 
     // MARK: - Lineup mutations (all mark the store for sync)
@@ -522,7 +522,7 @@ class SessionManager {
     /// notification at the end instead of one per episode.
     private func unarchiveIfNeeded(episodeUuids: [String]) {
         let archived = episodeUuids
-            .compactMap { DataManager.sharedManager.findEpisode(uuid: $0) }
+            .compactMap { DataManager.shared.findEpisode(uuid: $0) }
             .filter { $0.archived }
         guard !archived.isEmpty else { return }
         for episode in archived {
@@ -536,7 +536,7 @@ class SessionManager {
     /// which already unplays on add — so a finished episode shouldn't land in the lineup done.
     private func unplayIfNeeded(episodeUuids: [String]) {
         let played = episodeUuids
-            .compactMap { DataManager.sharedManager.findEpisode(uuid: $0) }
+            .compactMap { DataManager.shared.findEpisode(uuid: $0) }
             .filter { $0.played() }
         guard !played.isEmpty else { return }
         for episode in played {
@@ -562,7 +562,7 @@ class SessionManager {
         // denormalize title/podcast → mark for sync), replacing the former read + add() + setCustomOrder
         // trio whose separate statements left a lost-update window for a concurrent reconcile/add.
         let insertMode = PlaylistInsertMode(rawValue: session.insertMode) ?? .top
-        DataManager.sharedManager.insertSessionMembers(episodeUuids: episodeUuids, insertMode: insertMode, anchorUuid: session.lastInsertedUuid, for: store)
+        DataManager.shared.insertSessionMembers(episodeUuids: episodeUuids, insertMode: insertMode, anchorUuid: session.lastInsertedUuid, for: store)
         markStoreChanged(store)
 
         // Deciding to play something is deciding about it: it leaves the Inbox.
@@ -592,7 +592,7 @@ class SessionManager {
     @discardableResult
     func addToManualPlaylist(episodes: [Episode], playlist: EpisodeFilter) -> Bool {
         guard let session = SessionStore.shared.session(forStore: playlist.uuid) else {
-            return DataManager.sharedManager.add(episodes: episodes, to: playlist)
+            return DataManager.shared.add(episodes: episodes, to: playlist)
         }
         addToLineup(episodeUuids: episodes.map(\.uuid), session: session, pinning: true)
         return true
@@ -604,15 +604,15 @@ class SessionManager {
     /// pins the new lineup (an explicit USER choice, e.g. "Make This the Session").
     func replaceLineup(episodeUuids: [String], session: Session, pinning: Bool = false) {
         guard let store = store(for: session), !episodeUuids.isEmpty else { return }
-        let current = DataManager.sharedManager.positionedEpisodeUuids(for: store).filter { !episodeUuids.contains($0) }
+        let current = DataManager.shared.positionedEpisodeUuids(for: store).filter { !episodeUuids.contains($0) }
         if !current.isEmpty {
-            DataManager.sharedManager.deleteEpisodes(current, from: store)
+            DataManager.shared.deleteEpisodes(current, from: store)
         }
         unarchiveIfNeeded(episodeUuids: episodeUuids)
         unplayIfNeeded(episodeUuids: episodeUuids)
-        let episodes = episodeUuids.compactMap { DataManager.sharedManager.findEpisode(uuid: $0) }
-        _ = DataManager.sharedManager.add(episodes: episodes, to: store)
-        DataManager.sharedManager.setCustomOrder(episodeUuids: episodeUuids, for: store)
+        let episodes = episodeUuids.compactMap { DataManager.shared.findEpisode(uuid: $0) }
+        _ = DataManager.shared.add(episodes: episodes, to: store)
+        DataManager.shared.setCustomOrder(episodeUuids: episodeUuids, for: store)
         markStoreChanged(store)
         InboxManager.shared.markSeen(episodeUuids: episodeUuids)
 
@@ -632,7 +632,7 @@ class SessionManager {
     /// Persists a full lineup order (after drag reorder).
     func setLineupOrder(episodeUuids: [String], session: Session) {
         guard let store = store(for: session) else { return }
-        DataManager.sharedManager.setCustomOrder(episodeUuids: episodeUuids, for: store)
+        DataManager.shared.setCustomOrder(episodeUuids: episodeUuids, for: store)
         markStoreChanged(store)
     }
 
@@ -648,13 +648,13 @@ class SessionManager {
     /// covers the Up Next card, the Session tabs, and multi-select alike.
     func removeFromLineup(episodeUuids: [String], session: Session) {
         guard let store = store(for: session) else { return }
-        DataManager.sharedManager.deleteEpisodes(episodeUuids, from: store) // already marks the playlist dirty
+        DataManager.shared.deleteEpisodes(episodeUuids, from: store) // already marks the playlist dirty
         // Pins never outlive membership: leaving the lineup unpins, so a later
         // re-gather behaves normally.
         SessionStore.shared.unpin(episodeUuids: episodeUuids, for: session.uuid)
         NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged, object: store)
 
-        if let playing = PlaybackManager.shared.currentEpisode(), episodeUuids.contains(playing.uuid) {
+        if let playing = PlaybackManager.shared.currentEpisode, episodeUuids.contains(playing.uuid) {
             PlaybackManager.shared.removeIfPlayingOrQueued(episode: playing, fireNotification: true, userInitiated: true)
         }
     }
@@ -682,7 +682,7 @@ class SessionManager {
         // The direct-add sites mark the playlist dirty and save it themselves, but they
         // don't post playlistChanged the way `markStoreChanged` does — post it here so
         // session UI refreshes. No double-post: those sites post nothing on this path.
-        if let store = DataManager.sharedManager.findPlaylist(uuid: storePlaylistUuid) {
+        if let store = DataManager.shared.findPlaylist(uuid: storePlaylistUuid) {
             NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged, object: store)
         }
     }
@@ -695,7 +695,7 @@ class SessionManager {
               let session = SessionStore.shared.session(forStore: storePlaylistUuid),
               session.uuid != SessionStore.globalInboxUuid else { return }
         SessionStore.shared.unpin(episodeUuids: episodeUuids, for: session.uuid)
-        if let store = DataManager.sharedManager.findPlaylist(uuid: storePlaylistUuid) {
+        if let store = DataManager.shared.findPlaylist(uuid: storePlaylistUuid) {
             NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged, object: store)
         }
     }
@@ -704,7 +704,7 @@ class SessionManager {
     /// "Add to Session" swipe when the episode is already in a session.
     func removeFromAllSessions(episodeUuids: [String]) {
         for uuid in episodeUuids {
-            let holding = Set(DataManager.sharedManager.manualPlaylistUUIDs(for: uuid))
+            let holding = Set(DataManager.shared.manualPlaylistUUIDs(for: uuid))
             guard !holding.isEmpty else { continue }
             for session in SessionStore.shared.sessions where session.storePlaylistUuid.map(holding.contains) == true {
                 removeFromLineup(episodeUuids: [uuid], session: session)
@@ -714,7 +714,7 @@ class SessionManager {
 
     /// Whether any session's store currently holds this episode.
     func isInAnySession(episodeUuid: String) -> Bool {
-        let holding = Set(DataManager.sharedManager.manualPlaylistUUIDs(for: episodeUuid))
+        let holding = Set(DataManager.shared.manualPlaylistUUIDs(for: episodeUuid))
         guard !holding.isEmpty else { return false }
         return SessionStore.shared.sessions.contains { $0.storePlaylistUuid.map(holding.contains) == true }
     }
@@ -727,14 +727,14 @@ class SessionManager {
     @discardableResult
     func backfillSessions() -> Int {
         let inSessionUuids = SessionMembership.shared.inAnySession
-        let episodes = inSessionUuids.compactMap { DataManager.sharedManager.findEpisode(uuid: $0) }
+        let episodes = inSessionUuids.compactMap { DataManager.shared.findEpisode(uuid: $0) }
         FileLog.shared.addMessage("Backfill: \(SessionStore.shared.sessions.count) sessions, \(episodes.count)/\(inSessionUuids.count) in-session episodes resolved")
         guard !episodes.isEmpty else { return 0 }
 
         // Ensure a session exists for any feeder source that would actually receive episodes —
         // created here, on the explicit Backfill (empty-overlap sources get nothing).
         // Smart playlists:
-        for playlist in DataManager.sharedManager.allSmartPlaylists(includeDeleted: false)
+        for playlist in DataManager.shared.allSmartPlaylists(includeDeleted: false)
         where SessionStore.shared.session(forSmartPlaylistFeeder: playlist.uuid) == nil {
             if episodes.contains(where: { feeder(.smartPlaylist(uuid: playlist.uuid), coversEpisode: $0) }) {
                 _ = findOrCreateSession(forSmartPlaylist: playlist)
@@ -744,7 +744,7 @@ class SessionManager {
         // Per podcast: every podcast that has an in-session episode gets its own session.
         for podcastUuid in Set(episodes.map(\.podcastUuid))
         where SessionStore.shared.session(forPodcast: podcastUuid) == nil {
-            if let podcast = DataManager.sharedManager.findPodcast(uuid: podcastUuid) {
+            if let podcast = DataManager.shared.findPodcast(uuid: podcastUuid) {
                 _ = findOrCreateSession(forPodcast: podcast)
             }
         }
@@ -765,7 +765,7 @@ class SessionManager {
             FileLog.shared.addMessage("Backfill: '\(store.playlistName)' feeder=\(session.feeder) existing=\(existing.count) missing=\(missing.count)")
             guard !missing.isEmpty else { continue }
             // Bulk catch-up counts as gathered, NOT pinned — the feeder may prune these later.
-            _ = DataManager.sharedManager.add(episodes: missing, to: store)
+            _ = DataManager.shared.add(episodes: missing, to: store)
             markStoreChanged(store)
             added += missing.count
         }
@@ -780,7 +780,7 @@ class SessionManager {
     @discardableResult
     func backfillSession(forSmartPlaylist playlist: EpisodeFilter) -> Int {
         let inSessionUuids = SessionMembership.shared.inAnySession
-        let episodes = inSessionUuids.compactMap { DataManager.sharedManager.findEpisode(uuid: $0) }
+        let episodes = inSessionUuids.compactMap { DataManager.shared.findEpisode(uuid: $0) }
         guard !episodes.isEmpty else { return 0 }
 
         guard let session = findOrCreateSession(forSmartPlaylist: playlist), let store = store(for: session) else {
@@ -792,14 +792,14 @@ class SessionManager {
         FileLog.shared.addMessage("Backfill: '\(store.playlistName)' existing=\(existing.count) missing=\(missing.count)")
         guard !missing.isEmpty else { return 0 }
         // Bulk catch-up counts as gathered, NOT pinned — the feeder may prune these later.
-        _ = DataManager.sharedManager.add(episodes: missing, to: store)
+        _ = DataManager.shared.add(episodes: missing, to: store)
         markStoreChanged(store)
         return missing.count
     }
 
     /// Every non-inbox session whose store currently holds any of these episodes.
     func sessionsHolding(episodeUuids: [String]) -> [Session] {
-        let holders = Set(episodeUuids.flatMap { DataManager.sharedManager.manualPlaylistUUIDs(for: $0) })
+        let holders = Set(episodeUuids.flatMap { DataManager.shared.manualPlaylistUUIDs(for: $0) })
         guard !holders.isEmpty else { return [] }
         return SessionStore.shared.sessions.filter {
             $0.uuid != SessionStore.globalInboxUuid
@@ -826,12 +826,12 @@ class SessionManager {
                 let members = Set(SessionFeederEngine.storeMemberUuids(for: session))
                 let toRemove = episodeUuids.filter { members.contains($0) }
                 guard !toRemove.isEmpty else { continue }
-                DataManager.sharedManager.deleteEpisodes(toRemove, from: store) // marks the store dirty
+                DataManager.shared.deleteEpisodes(toRemove, from: store) // marks the store dirty
                 SessionStore.shared.unpin(episodeUuids: toRemove, for: session.uuid) // pins never outlive membership
-                if let playing = PlaybackManager.shared.currentEpisode(), toRemove.contains(playing.uuid) { removedPlaying = true }
+                if let playing = PlaybackManager.shared.currentEpisode, toRemove.contains(playing.uuid) { removedPlaying = true }
             }
             SessionMembership.shared.invalidate()
-            if removedPlaying, let playing = PlaybackManager.shared.currentEpisode() {
+            if removedPlaying, let playing = PlaybackManager.shared.currentEpisode {
                 PlaybackManager.shared.removeIfPlayingOrQueued(episode: playing, fireNotification: true, userInitiated: true)
             }
             NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged)
@@ -883,7 +883,7 @@ class SessionManager {
     /// the episodes their feeder actually covers.
     func addToSessions(episodeUuids: [String], preferred: Session?, presenting: UIViewController?, onAdded: (([Session]) -> Void)? = nil) {
         guard !episodeUuids.isEmpty else { return }
-        let episodes = episodeUuids.compactMap { DataManager.sharedManager.findEpisode(uuid: $0) }
+        let episodes = episodeUuids.compactMap { DataManager.shared.findEpisode(uuid: $0) }
 
         // Existing sessions whose feeder covers any of the episodes, current page first.
         var covering = SessionStore.shared.sessions.filter { session in
@@ -912,7 +912,7 @@ class SessionManager {
                 guard !seen.contains(episode.podcastUuid) else { return nil }
                 seen.insert(episode.podcastUuid)
                 guard SessionStore.shared.session(forPodcast: episode.podcastUuid) == nil else { return nil }
-                return DataManager.sharedManager.findPodcast(uuid: episode.podcastUuid)
+                return DataManager.shared.findPodcast(uuid: episode.podcastUuid)
             }
         }()
 
@@ -1013,7 +1013,7 @@ class SessionManager {
         SessionStore.shared.sessions.contains { session in
             guard case .smartPlaylist(let uuid) = session.feeder,
                   !Settings.playlistOptedOutOfSession(uuid: uuid),
-                  let playlist = DataManager.sharedManager.findPlaylist(uuid: uuid),
+                  let playlist = DataManager.shared.findPlaylist(uuid: uuid),
                   !playlist.filterAllPodcasts else { return false }
             return playlist.podcastUuids.components(separatedBy: ",").contains(podcastUuid)
         }
@@ -1028,7 +1028,7 @@ class SessionManager {
         for session in SessionStore.shared.sessions {
             guard case .smartPlaylist(let uuid) = session.feeder,
                   !Settings.playlistOptedOutOfSession(uuid: uuid),
-                  let playlist = DataManager.sharedManager.findPlaylist(uuid: uuid),
+                  let playlist = DataManager.shared.findPlaylist(uuid: uuid),
                   !playlist.filterAllPodcasts else { continue }
             covered.formUnion(playlist.podcastUuids.components(separatedBy: ","))
         }
@@ -1050,7 +1050,7 @@ class SessionManager {
             // be offered as an add target, nor gathered into by any sweep. Its existing lineup is
             // untouched — this only stops new traffic reaching it.
             guard !Settings.playlistOptedOutOfSession(uuid: uuid) else { return false }
-            guard let playlist = DataManager.sharedManager.findPlaylist(uuid: uuid) else { return false }
+            guard let playlist = DataManager.shared.findPlaylist(uuid: uuid) else { return false }
             if playlist.filterAllPodcasts { return true }
             return playlist.podcastUuids.components(separatedBy: ",").contains(podcastUuid)
         }
@@ -1067,14 +1067,14 @@ class SessionManager {
             return self.feeder(feeder, coversPodcast: episode.parentIdentifier())
         }
         guard !Settings.playlistOptedOutOfSession(uuid: uuid),
-              let playlist = DataManager.sharedManager.findPlaylist(uuid: uuid) else { return false }
+              let playlist = DataManager.shared.findPlaylist(uuid: uuid) else { return false }
         // Run the playlist's own query constrained to this one episode: a hit means it matches the rules.
         let query = PlaylistQueryBuilder.query(clause: .episode,
                                                for: playlist,
                                                limit: 1,
                                                shouldShowArchived: true,
                                                extraWhere: "episode.uuid = '\(episode.uuid)'")
-        return !DataManager.sharedManager.findPlaylistEpisodesWhere(query: query, arguments: nil).isEmpty
+        return !DataManager.shared.findPlaylistEpisodesWhere(query: query, arguments: nil).isEmpty
     }
 
     /// Whether a session's lineup has nothing left to play (every episode finished, or none
@@ -1093,7 +1093,7 @@ class SessionManager {
     func storeHasVisibleSmartFeeder(playlistUuid: String) -> Bool {
         guard let session = SessionStore.shared.session(forStore: playlistUuid),
               case .smartPlaylist(let feederUuid) = session.feeder,
-              let feeder = DataManager.sharedManager.findPlaylist(uuid: feederUuid) else { return false }
+              let feeder = DataManager.shared.findPlaylist(uuid: feederUuid) else { return false }
         return !feeder.playlistName.hasSuffix(" — feed")
     }
 
@@ -1111,7 +1111,7 @@ class SessionManager {
             return Settings.showSmartPlaylistSessions()
         case .podcast(let podcastUuid):
             if Settings.showPodcastSessionPodcasts().contains(podcastUuid) { return true }
-            guard let folderUuid = DataManager.sharedManager.findPodcast(uuid: podcastUuid, includeUnsubscribed: true)?.folderUuid else { return false }
+            guard let folderUuid = DataManager.shared.findPodcast(uuid: podcastUuid, includeUnsubscribed: true)?.folderUuid else { return false }
             return Settings.showPodcastSessionFolders().contains(folderUuid)
         }
     }
@@ -1125,7 +1125,7 @@ class SessionManager {
         case .podcast:
             return 1
         case .smartPlaylist(let uuid):
-            guard let playlist = DataManager.sharedManager.findPlaylist(uuid: uuid) else { return 0 }
+            guard let playlist = DataManager.shared.findPlaylist(uuid: uuid) else { return 0 }
             if playlist.filterAllPodcasts { return Int.max }
             return playlist.podcastUuids.components(separatedBy: ",").filter { !$0.isEmpty && $0 != "none" }.count
         case .allPodcasts:
@@ -1194,7 +1194,7 @@ class SessionManager {
         reconcileOnView(session: session)
         guard let storeUuid = session.storePlaylistUuid else { return }
         guard !SessionFeederEngine.storeMemberUuids(for: session).isEmpty else {
-            Toast.show(L10n.sessionEmptyToast)
+            DispatchQueue.main.async { Toast.show(L10n.sessionEmptyToast) }
             return
         }
         PlaybackManager.shared.startPlaybackSession(PlaybackSession(type: .playlist, uuid: storeUuid))
@@ -1224,7 +1224,7 @@ class SessionManager {
                 // played/archived needn't touch a single store. (This is the hot path behind a
                 // slow "Mark as Played" — without it, every mark queried every session's store.)
                 guard SessionMembership.shared.inAnySession.contains(uuid) else { return }
-                guard let episode = DataManager.sharedManager.findEpisode(uuid: uuid),
+                guard let episode = DataManager.shared.findEpisode(uuid: uuid),
                       episode.played() || episode.archived else { return }
                 self.sweepLineups(decidedFilter: { $0 == uuid })
             } else {
@@ -1243,14 +1243,14 @@ class SessionManager {
         guard !SessionMembership.shared.inAnySession.isEmpty else { return }
         for session in SessionStore.shared.sessions {
             guard let store = store(for: session) else { continue }
-            let members = DataManager.sharedManager.positionedEpisodeUuids(for: store)
+            let members = DataManager.shared.positionedEpisodeUuids(for: store)
             let decided = members.filter { uuid in
                 if let decidedFilter, !decidedFilter(uuid) { return false }
-                guard let episode = DataManager.sharedManager.findEpisode(uuid: uuid) else { return false }
+                guard let episode = DataManager.shared.findEpisode(uuid: uuid) else { return false }
                 return episode.played() || episode.archived
             }
             guard !decided.isEmpty else { continue }
-            DataManager.sharedManager.deleteEpisodes(decided, from: store)
+            DataManager.shared.deleteEpisodes(decided, from: store)
             SessionStore.shared.unpin(episodeUuids: decided, for: session.uuid) // pins never outlive membership
             NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged, object: store)
             promptIfSessionFinished(session, store: store, remaining: members.count - decided.count)
@@ -1306,7 +1306,7 @@ class SessionManager {
         // The global limit caps auto-adds only: once the lineup is full, new arrivals
         // stay in the inbox. Manual adds are never capped.
         if let store = store(for: session) {
-            let capacity = Settings.sessionAutoAddLimit() - DataManager.sharedManager.positionedEpisodeUuids(for: store).count
+            let capacity = Settings.sessionAutoAddLimit() - DataManager.shared.positionedEpisodeUuids(for: store).count
             guard capacity > 0 else { return }
             offers = Array(offers.prefix(capacity))
         }
@@ -1322,9 +1322,9 @@ class SessionManager {
     @objc func refreshFolderRules() {
         guard FeatureFlag.smartPlaylistFolderRules.enabled else { return }
         DispatchQueue.global(qos: .utility).async {
-            let linked = DataManager.sharedManager.allSmartPlaylists(includeDeleted: false).filter { !$0.folderUuids.isEmpty }
+            let linked = DataManager.shared.allSmartPlaylists(includeDeleted: false).filter { !$0.folderUuids.isEmpty }
             guard !linked.isEmpty else { return }
-            let podcasts = DataManager.sharedManager.allPodcasts(includeUnsubscribed: false)
+            let podcasts = DataManager.shared.allPodcasts(includeUnsubscribed: false)
             var changed = false
             var changedFeederSessions: [Session] = []
             for playlist in linked {
@@ -1335,7 +1335,7 @@ class SessionManager {
                 playlist.podcastUuids = materialized
                 playlist.filterAllPodcasts = false
                 if SyncManager.isUserLoggedIn() { playlist.syncStatus = SyncStatus.notSynced.rawValue }
-                DataManager.sharedManager.save(playlist: playlist)
+                DataManager.shared.save(playlist: playlist)
                 changed = true
                 if let session = SessionStore.shared.session(forSmartPlaylistFeeder: playlist.uuid) {
                     changedFeederSessions.append(session)
@@ -1358,12 +1358,12 @@ class SessionManager {
     func healSessions() {
         for session in SessionStore.shared.sessions where session.uuid != SessionStore.globalInboxUuid {
             if let storeUuid = session.storePlaylistUuid,
-               DataManager.sharedManager.findPlaylist(uuid: storeUuid) == nil {
+               DataManager.shared.findPlaylist(uuid: storeUuid) == nil {
                 SessionStore.shared.delete(sessionUuid: session.uuid)
                 continue
             }
             if case .smartPlaylist(let feederUuid) = session.feeder,
-               DataManager.sharedManager.findPlaylist(uuid: feederUuid) == nil {
+               DataManager.shared.findPlaylist(uuid: feederUuid) == nil {
                 var updated = session
                 updated.feeder = .none
                 SessionStore.shared.upsert(updated)
@@ -1373,7 +1373,7 @@ class SessionManager {
 
     private func markStoreChanged(_ store: EpisodeFilter) {
         store.syncStatus = SyncStatus.notSynced.rawValue
-        DataManager.sharedManager.save(playlist: store)
+        DataManager.shared.save(playlist: store)
         NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged, object: store)
     }
 }
@@ -1395,7 +1395,7 @@ extension Session {
         case .podcast(let uuid):
             return [uuid]
         case .smartPlaylist(let feederUuid):
-            guard let feeder = DataManager.sharedManager.findPlaylist(uuid: feederUuid), !feeder.filterAllPodcasts else { return [] }
+            guard let feeder = DataManager.shared.findPlaylist(uuid: feederUuid), !feeder.filterAllPodcasts else { return [] }
             return feeder.podcastUuids.components(separatedBy: ",").filter { !$0.isEmpty && $0 != "none" }
         case .none, .allPodcasts:
             return []

@@ -1,4 +1,5 @@
 import PocketCastsDataModel
+import PocketCastsUtils
 import UIKit
 import Combine
 
@@ -58,7 +59,7 @@ class ShortcutManager: CustomObserver {
         let session = Settings.playbackSession()
 
         let upNextEpisode: BaseEpisode? = session == nil
-            ? (PlaybackManager.shared.currentEpisode() ?? PlaybackManager.shared.queue.allEpisodes(includeNowPlaying: false).first)
+            ? (PlaybackManager.shared.currentEpisode ?? PlaybackManager.shared.queue.allEpisodes(includeNowPlaying: false).first)
             : PlaybackManager.shared.queue.allEpisodes(includeNowPlaying: false).first
         let upNextItem: UIMutableApplicationShortcutItem? = upNextEpisode.map { episode in
             UIMutableApplicationShortcutItem(
@@ -75,11 +76,11 @@ class ShortcutManager: CustomObserver {
             let sessionName: String?
             switch session.type {
             case .podcast:
-                sessionName = DataManager.sharedManager.findPodcast(uuid: session.uuid, includeUnsubscribed: true)?.title
+                sessionName = DataManager.shared.findPodcast(uuid: session.uuid, includeUnsubscribed: true)?.title
             case .playlist, .smartPlaylist:
-                sessionName = DataManager.sharedManager.findPlaylist(uuid: session.uuid)?.playlistName
+                sessionName = DataManager.shared.findPlaylist(uuid: session.uuid)?.playlistName
             }
-            let sessionEpisode = PlaybackManager.shared.currentEpisode() ?? session.nextEpisode(after: nil)
+            let sessionEpisode = PlaybackManager.shared.currentEpisode ?? session.nextEpisode(after: nil)
             if let sessionName {
                 sessionItem = UIMutableApplicationShortcutItem(
                     type: "au.com.shiftyjelly.podcasts",

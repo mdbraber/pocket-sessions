@@ -19,7 +19,7 @@ enum LineupReorder {
     static func pinnedEpisodeUuid(forPlaylistUuid playlistUuid: String) -> String? {
         guard let active = Settings.playbackSession(), active.uuid == playlistUuid,
               PlaybackManager.shared.currentEpisodeIsSessionSourced else { return nil }
-        return PlaybackManager.shared.currentEpisode()?.uuid
+        return PlaybackManager.shared.currentEpisode?.uuid
     }
 
     /// Rewrites `playlist`'s stored order to `order`, keeping the playing episode first.
@@ -44,18 +44,18 @@ enum LineupReorder {
         guard !orderedUuids.isEmpty else { return }
 
         if playlist.manual {
-            DataManager.sharedManager.applyEpisodeOrder(orderedUuids, for: playlist)
+            DataManager.shared.applyEpisodeOrder(orderedUuids, for: playlist)
         } else {
             // Clearing the insert anchor keeps a later "add to session" landing where the insert
             // mode says, rather than beside whatever the last insert happened to be before this
             // re-arrange moved it.
             playlist.customOrderLastInsertedUuid = ""
-            DataManager.sharedManager.setCustomOrder(episodeUuids: orderedUuids, for: playlist)
+            DataManager.shared.setCustomOrder(episodeUuids: orderedUuids, for: playlist)
         }
 
         playlist.sortType = PlaylistSort.dragAndDrop.rawValue
         playlist.syncStatus = SyncStatus.notSynced.rawValue
-        DataManager.sharedManager.save(playlist: playlist)
+        DataManager.shared.save(playlist: playlist)
 
         NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged, object: playlist)
     }
@@ -74,17 +74,17 @@ enum LineupReorder {
             needsSave = true
         }
 
-        if !playlist.manual, DataManager.sharedManager.positionedEpisodeUuids(for: playlist).isEmpty {
+        if !playlist.manual, DataManager.shared.positionedEpisodeUuids(for: playlist).isEmpty {
             // Custom order without a seeded lineup: moving an episode would silently no-op against
             // zero position rows. Materialize the order on screen first so the move has something
             // to move within.
             playlist.customOrderLastInsertedUuid = ""
-            DataManager.sharedManager.setCustomOrder(episodeUuids: currentOrder(), for: playlist)
+            DataManager.shared.setCustomOrder(episodeUuids: currentOrder(), for: playlist)
         }
 
         if needsSave {
             playlist.syncStatus = SyncStatus.notSynced.rawValue
-            DataManager.sharedManager.save(playlist: playlist)
+            DataManager.shared.save(playlist: playlist)
         }
         return true
     }

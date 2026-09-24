@@ -69,7 +69,7 @@ struct SubscriptionInfoView: View {
         if case .lifetime = coordinator.userState.subscriptionStatus {
             return L10n.tvSettingsSubscriptionLifetime
         }
-        return DateFormatHelper.sharedHelper.longLocalizedFormat(coordinator.userState.expirationDate)
+        return DateFormatHelper.shared.longLocalizedFormat(coordinator.userState.expirationDate)
     }
 
     var body: some View {
@@ -124,6 +124,7 @@ struct InfoRow: View {
                 .wrappingMultiline()
         }
         .frame(minWidth: 400, maxWidth: 500)
+        .accessibilityElement(children: .combine)
     }
 }
 

@@ -156,7 +156,7 @@ enum PodcastPlaylistRows {
         let ownSessionStore = SessionStore.shared.session(forPodcast: podcastUuid)?.storePlaylistUuid
         let feederUuids = SessionStore.shared.feederPlaylistUuids
 
-        return DataManager.sharedManager.allPlaylists(includeDeleted: false).compactMap { playlist -> PodcastPlaylistRow? in
+        return DataManager.shared.allPlaylists(includeDeleted: false).compactMap { playlist -> PodcastPlaylistRow? in
             guard playlist.uuid != ownSessionStore, !feederUuids.contains(playlist.uuid) else { return nil }
             guard let kind = kind(for: playlist) else { return nil }
             guard show == .both || kind.isSession == (show == .sessions) else { return nil }
@@ -176,10 +176,10 @@ enum PodcastPlaylistRows {
     /// most lists.
     private static func episodeCount(of podcastUuid: String, in playlist: EpisodeFilter) -> Int {
         if playlist.manual {
-            return DataManager.sharedManager.playlistEpisodeCountsByPodcast(for: playlist.uuid)[podcastUuid] ?? 0
+            return DataManager.shared.playlistEpisodeCountsByPodcast(for: playlist.uuid)[podcastUuid] ?? 0
         }
         guard smartPlaylistCouldCover(podcastUuid: podcastUuid, playlist: playlist) else { return 0 }
-        return DataManager.sharedManager.playlistEpisodes(for: playlist, matching: "episode.podcastUuid = '\(podcastUuid)'").count
+        return DataManager.shared.playlistEpisodes(for: playlist, matching: "episode.podcastUuid = '\(podcastUuid)'").count
     }
 
     /// The cheap pre-filter: a smart playlist scoped to named podcasts can only match those.

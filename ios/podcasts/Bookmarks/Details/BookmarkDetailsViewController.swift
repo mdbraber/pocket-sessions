@@ -2,6 +2,7 @@ import PocketCastsDataModel
 import SwiftUI
 
 /// Hosts `BookmarkDetailsView` and performs the actions its navigation bar offers.
+@MainActor
 class BookmarkDetailsViewController: ThemedHostingController<BookmarkDetailsView> {
     private let bookmarkManager: BookmarkManager
     private let playbackManager: PlaybackManager
@@ -11,7 +12,8 @@ class BookmarkDetailsViewController: ThemedHostingController<BookmarkDetailsView
     init(bookmark: Bookmark,
          bookmarkManager: BookmarkManager = PlaybackManager.shared.bookmarkManager,
          playbackManager: PlaybackManager = .shared,
-         source: BookmarkAnalyticsSource = .unknown) {
+         source: BookmarkAnalyticsSource = .unknown,
+         opensEpisode: Bool = true) {
         self.bookmarkManager = bookmarkManager
         self.playbackManager = playbackManager
         self.analyticsSource = source
@@ -24,10 +26,30 @@ class BookmarkDetailsViewController: ThemedHostingController<BookmarkDetailsView
         viewModel.onPlay = { [weak self] in
             self?.play()
         }
+
+        if opensEpisode, let episode = viewModel.episode as? Episode {
+            viewModel.onEpisodeTapped = { [weak self] in
+                self?.presentBookmarkEpisode(episode)
+            }
+        }
     }
 
     @MainActor dynamic required init?(coder aDecoder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+
+        var properties: [String: Sendable] = [
+            "has_passage": viewModel.passage?.isEmpty == false,
+            "episode_uuid": bookmark.episodeUuid
+        ]
+        if let podcastUuid = bookmark.podcastUuid {
+            properties["podcast_uuid"] = podcastUuid
+        }
+
+        Analytics.track(.bookmarkDetailsShown, source: analyticsSource, properties: properties)
     }
 
     override func viewDidLoad() {
@@ -89,11 +111,10 @@ private extension BookmarkDetailsViewController {
         let controller = BookmarkEditTitleViewController(manager: bookmarkManager,
                                                          bookmark: bookmark,
                                                          state: .updating,
-                                                         style: .themed) { [weak self] _, _ in
+                                                         style: .themed,
+                                                         source: analyticsSource) { [weak self] _ in
             self?.viewModel.refresh()
         }
-
-        controller.source = analyticsSource
 
         present(controller, animated: true)
     }

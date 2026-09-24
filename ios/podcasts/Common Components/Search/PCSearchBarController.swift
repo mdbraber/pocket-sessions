@@ -90,8 +90,6 @@ class PCSearchBarController: UIViewController {
         }
     }
 
-    var startWithToolbarHidden = true
-
     weak var searchDelegate: PCSearchBarDelegate?
 
     private var isVisible = false

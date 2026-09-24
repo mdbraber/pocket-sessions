@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 extension UIScrollView {
     /// Fork: under Liquid Glass the now-playing pill is a `UITabAccessory` meant to ride the bottom

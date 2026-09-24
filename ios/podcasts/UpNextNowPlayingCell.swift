@@ -41,7 +41,7 @@ class UpNextNowPlayingCell: ThemeableSwipeCell {
             return
         }
         roundedBackgroundView.layer.borderWidth = 0
-        let activeTheme = themeOverride ?? Theme.sharedTheme.activeTheme
+        let activeTheme = themeOverride ?? Theme.shared.activeTheme
         if activeTheme.isDark {
             roundedBackgroundView.style = .playerContrast06
         } else {
@@ -183,7 +183,7 @@ class UpNextNowPlayingCell: ThemeableSwipeCell {
     }
 
     func populateFrom(episode: BaseEpisode) {
-        self.episode = DataManager.sharedManager.findBaseEpisode(uuid: episode.uuid) // this is a bit hacky, but we're likely to be passed the cached version here from the player, so reload it from the database to get the latest version with the correct download stats
+        self.episode = DataManager.shared.findBaseEpisode(uuid: episode.uuid) // this is a bit hacky, but we're likely to be passed the cached version here from the player, so reload it from the database to get the latest version with the correct download stats
 
         episodeTitle.text = episode.displayableTitle()
 
@@ -228,8 +228,8 @@ class UpNextNowPlayingCell: ThemeableSwipeCell {
         progressViewWidthConstraint.constant = percentageLapsed * roundedBackgroundView.frame.width
 
         // The equalizer only shows while actually playing — hidden (not just frozen) when paused/idle.
-        playingAnimationView.animating = PlaybackManager.shared.playing()
-        playingAnimationView.isHidden = !PlaybackManager.shared.playing()
+        playingAnimationView.animating = PlaybackManager.shared.isPlaying
+        playingAnimationView.isHidden = !PlaybackManager.shared.isPlaying
         updatePlayPauseButton()
 
         updateDownloadStatus()
@@ -242,13 +242,13 @@ class UpNextNowPlayingCell: ThemeableSwipeCell {
     }
 
     @objc func updatePlayingAnimation() {
-        playingAnimationView.animating = PlaybackManager.shared.playing()
-        playingAnimationView.isHidden = !PlaybackManager.shared.playing()
+        playingAnimationView.animating = PlaybackManager.shared.isPlaying
+        playingAnimationView.isHidden = !PlaybackManager.shared.isPlaying
         updatePlayPauseButton()
     }
 
     @objc private func playPauseTapped() {
-        if PlaybackManager.shared.playing() {
+        if PlaybackManager.shared.isPlaying {
             PlaybackManager.shared.pause()
         } else {
             PlaybackManager.shared.play()
@@ -256,7 +256,7 @@ class UpNextNowPlayingCell: ThemeableSwipeCell {
     }
 
     private func updatePlayPauseButton() {
-        let playing = PlaybackManager.shared.playing()
+        let playing = PlaybackManager.shared.isPlaying
         let config = UIImage.SymbolConfiguration(pointSize: 30, weight: .regular)
         playPauseButton.setImage(UIImage(systemName: playing ? "pause.circle" : "play.circle", withConfiguration: config), for: .normal)
         playPauseButton.tintColor = worldAccent ?? playingEqualizerColor
@@ -271,7 +271,7 @@ class UpNextNowPlayingCell: ThemeableSwipeCell {
     override func handleThemeDidChange() {
         super.handleThemeDidChange()
 
-        let activeTheme = themeOverride ?? Theme.sharedTheme.activeTheme
+        let activeTheme = themeOverride ?? Theme.shared.activeTheme
 
         // Rounded background — tinted with the world accent (chooser-card look) when one is set.
         applyCardSurfaceColor()
@@ -340,10 +340,10 @@ class UpNextNowPlayingCell: ThemeableSwipeCell {
     }
 
     @objc private func updateCellForDownloadProgressChange() {
-        guard let ourEpisode = episode, let _ = DownloadManager.shared.progressManager.progressForEpisode(ourEpisode.uuid) else { return }
+        guard let ourEpisode = episode, let _ = DownloadManager.shared.progressManager.progress(forEpisodeUuid: ourEpisode.uuid) else { return }
 
         if !ourEpisode.downloading() {
-            episode = DataManager.sharedManager.findBaseEpisode(uuid: ourEpisode.uuid)
+            episode = DataManager.shared.findBaseEpisode(uuid: ourEpisode.uuid)
         }
 
         updateDownloadStatus()
@@ -354,7 +354,7 @@ class UpNextNowPlayingCell: ThemeableSwipeCell {
         guard let ourEpisode = episode, let uuid = notification.object as? String, ourEpisode.uuid == uuid else { return }
 
         // if it is, reload our episode so we get the latest status for it
-        episode = DataManager.sharedManager.findBaseEpisode(uuid: ourEpisode.uuid)
+        episode = DataManager.shared.findBaseEpisode(uuid: ourEpisode.uuid)
 
         updateDownloadStatus()
     }

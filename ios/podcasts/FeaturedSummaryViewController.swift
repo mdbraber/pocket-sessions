@@ -1,4 +1,5 @@
 import PocketCastsServer
+import PocketCastsUtils
 import UIKit
 
 class FeaturedSummaryViewController: SimpleNotificationsViewController, GridLayoutDelegate, UICollectionViewDataSource, UICollectionViewDelegate, DiscoverSummaryProtocol, TinyPageControlDelegate {
@@ -20,7 +21,6 @@ class FeaturedSummaryViewController: SimpleNotificationsViewController, GridLayo
         return DiscoverFeaturedView.scaledHeight
     }
 
-    private let cellSpacing = 0 as CGFloat
     private var listType: String = ""
     private var lastLayedOutWidth = 0 as CGFloat
     private let maxFeaturedItems = 5
@@ -29,6 +29,8 @@ class FeaturedSummaryViewController: SimpleNotificationsViewController, GridLayo
 
     private weak var delegate: DiscoverDelegate?
     private var category: DiscoverCategory?
+
+    var serverHandler: DiscoverServerHandling = DiscoverServerHandler.shared
     @IBOutlet var featuredCollectionViewHeight: NSLayoutConstraint!
     @IBOutlet var dividerHeightConstraint: NSLayoutConstraint! {
         didSet {
@@ -118,7 +120,7 @@ class FeaturedSummaryViewController: SimpleNotificationsViewController, GridLayo
         }
 
         if let uuid = podcast.uuid {
-            ColorManager.darkThemeTintColorForPodcastUuid(uuid, completion: { (color: UIColor) in
+            ColorManager.darkThemeTintColor(forPodcastUuid: uuid, completion: { (color: UIColor) in
                 DispatchQueue.main.async {
                     cell.setPodcastColor(color)
                 }
@@ -189,7 +191,7 @@ class FeaturedSummaryViewController: SimpleNotificationsViewController, GridLayo
         var sponsoredPodcastsToAdd: [Int: DiscoverPodcast] = [:]
 
         dispatchGroup.enter()
-        DiscoverServerHandler.shared.discoverPodcastList(source: source, authenticated: item.authenticated, completion: { podcastList in
+        serverHandler.discoverPodcastList(source: source, authenticated: item.authenticated, completion: { podcastList in
             guard let discoverPodcast = podcastList?.podcasts else { return }
 
             podcastsToShow = discoverPodcast
@@ -201,7 +203,7 @@ class FeaturedSummaryViewController: SimpleNotificationsViewController, GridLayo
             for sponsored in sponsoredPodcasts {
                 if let source = sponsored.source, let position = sponsored.position {
                     dispatchGroup.enter()
-                    DiscoverServerHandler.shared.discoverPodcastCollection(source: source, authenticated: item.authenticated, completion: { [weak self] podcastList in
+                    serverHandler.discoverPodcastCollection(source: source, authenticated: item.authenticated, completion: { [weak self] podcastList in
                         guard let podcastList, let discoverPodcast = podcastList.podcasts?.first else { return }
 
                         sponsoredPodcastsToAdd[position] = discoverPodcast
@@ -276,3 +278,42 @@ class FeaturedSummaryViewController: SimpleNotificationsViewController, GridLayo
         featuredCollectionViewHeight.constant = cellHeight
     }
 }
+
+#if DEBUG
+
+import SwiftUI
+
+#Preview("Featured carousel") {
+    let section = FeaturedSummaryViewController()
+    section.serverHandler = PreviewDiscoverServerHandler(
+        podcastList: DiscoverPreviewData.podcastList(title: "Featured", podcasts: DiscoverPreviewData.podcasts(5))
+    )
+    return DiscoverSectionPreview(
+        section: section,
+        item: DiscoverPreviewData.item(.featuredSummary, title: "Featured")
+    )
+}
+
+#Preview("Featured carousel · sponsored slot") {
+    let sponsoredSource = "https://lists.pocketcasts.com/preview-sponsored.json"
+    let section = FeaturedSummaryViewController()
+    section.serverHandler = PreviewDiscoverServerHandler(
+        podcastList: DiscoverPreviewData.podcastList(title: "Featured", podcasts: DiscoverPreviewData.podcasts(5)),
+        collectionsBySource: [
+            sponsoredSource: DiscoverPreviewData.podcastCollection(
+                title: "Paid placement",
+                podcasts: [DiscoverPreviewData.podcast(at: 9)]
+            )
+        ]
+    )
+    return DiscoverSectionPreview(
+        section: section,
+        item: DiscoverPreviewData.item(
+            .featuredSummary,
+            title: "Featured",
+            sponsoredPodcasts: [DiscoverPreviewData.sponsoredPodcast(position: 1, source: sponsoredSource)]
+        )
+    )
+}
+
+#endif

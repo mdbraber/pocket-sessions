@@ -23,59 +23,11 @@ public enum FeatureFlag: String, CaseIterable {
     /// Enable the AVExportSession parallel download of any playing episode
     case streamAndCachePlayingEpisode
 
-    /// When enabled it updates the code on filter callback to use a safer method to convert unmanaged player references
-    /// This is to fix this: https://a8c.sentry.io/share/issue/39a6d2958b674ec3b7a4d9248b4b5ffa/
-    case defaultPlayerFilterCallbackFix
-
-    /// When a user sign in, we always mark ALL podcasts as unsynced
-    /// This recently caused issues, syncing changes that shouldn't have been synced
-    /// When `true`, we only mark podcasts as unsynced if the user never signed in before
-    case onlyMarkPodcastsUnsyncedForNewUsers
-
-    /// Only update an episode if it fails playing
-    /// If set to `false`, it will use the previous mechanism that always update
-    /// but can lead to a bigger time between tapping play and actually playing it
-    case whenPlayingOnlyUpdateEpisodeIfPlaybackFails
-
     /// Enables the Kids banner
     case kidsProfile
 
     /// Enable the new Upgrade Experiments
     case upgradeExperiment
-
-    /// When enabled, we ignore audio interruptions with InterruptionReason set to routeDisconnected
-    /// (introduced in iOS 17 and watchOS 10) because these are not really interruptions as we have
-    /// implemented them previously. If the route is disconnected, audio stops indefinitely
-    /// until a new route connects (for which we'll received a different notification and handle accordingly)
-    /// See: https://github.com/Automattic/pocket-casts-ios/issues/2049
-    case ignoreRouteDisconnectedInterruption
-
-    /// Enable the Referrals feature
-    case referrals
-
-    /// Enables the referrals Send Flow
-    case referralsSend
-
-    /// Enables the referrals Claim Flow
-    case referralsClaim
-
-    /// When accessing Stats, it checks if the local stats are behind remote
-    /// If it is, it updates it
-    /// This is meant to fix an issue for users that were losing stats
-    case syncStats
-
-    /// Uses the `isReadyToPlay` function to decide what logic to use when skipping.
-    /// There's some scenario when the Default player switched to the Effects player when the stream is paused.
-    /// This makes the skip unusable as the player doesn't have its task set yet.
-    /// If the player is not ready to play, we should use the same logic we use when the player doesn't exist yet.
-    case playerIsReadyToPlay
-
-    /// Use the Mimetype library to check the file mimetype
-    case useMimetypePackage
-
-    /// Enable the Segmented Control into the Effects Player panel
-    /// to apply the Global or local settings
-    case customPlaybackSettings
 
     /// Run a vacuum process on the database in order to optimize data fetch
     case runVacuumOnVersionUpdate
@@ -100,26 +52,11 @@ public enum FeatureFlag: String, CaseIterable {
     /// Push two auto downloads on subscribe of a podcast
     case autoDownloadOnSubscribe
 
-    /// Replace Subscribe/Unsubscribe with Follow/Unfollow
-    case useFollowNaming
-
-    /// Use a cookie to manage `MTAudioProcessingTap` deallocation
-    case useDefaultPlayerTapCookie
-
-    /// Use single update query to mark all episodes selected synced
-    case markAllSyncedInSingleStatement
-
     /// Enable the winback screen and flow
     case winback
 
-    /// Show Manage Downloaded episode banner/modal when running in low space in the device
-    case manageDownloadedEpisodes
-
     /// Enable/Disable the podcast feed reload feature
     case podcastFeedUpdate
-
-    /// Enable/Disable the use of a thread safe ongoing downloads cache
-    case downloadsThreadSafeCache
 
     /// Enable Disable the use of suggested folders
     case suggestedFolders
@@ -166,9 +103,6 @@ public enum FeatureFlag: String, CaseIterable {
     /// Improves configuration for the streaming requet download session
     case streamingCustomSessionConfiguration
 
-    /// Guest List and Network Highligh Redesign
-    case guestListsNetworkHighlightsRedesign
-
     /// Adds Discover category user recommendations
     case smartCategories
 
@@ -183,9 +117,6 @@ public enum FeatureFlag: String, CaseIterable {
 
     /// Show a satisfaction survey before prompting to rate
     case userSatisfactionSurvey
-
-    /// Whether to use database concurrent reads or not
-    case concurrentDatabaseReads
 
     /// Limit playback position changes when switching episodes
     case limitPlaybackPositionChanges
@@ -202,9 +133,6 @@ public enum FeatureFlag: String, CaseIterable {
     /// Use the new predictive endpoint and show predictions
     case searchPredictive
 
-    /// Render Bookmarks inline in PodcastViewController using SwiftUI BookmarksListView
-    case podcastBookmarksInline
-
     /// Enable reloading the subscription status in App Delegate
     case earlyReloadSubscriptionStatus
 
@@ -220,20 +148,15 @@ public enum FeatureFlag: String, CaseIterable {
     /// Upgrades the Effects Player's AudioReadTask to a QOS level of "userInitiated" from "default"
     case effectsPlayerQOSUpgrade
 
-    /// Refreshes by listening to notifications for podcast subscribe/unsubscribe
-    case refreshPlaylistOnSubscriptions
-
     /// Uses the PlaylistMetadataLoader cache before running the query (the query will update when it's done)
     case playlistDataCacheBeforeQuery
 
     /// Ignores play remote commands when another app is playing non-mixable audio
     case ignorePlayWithOtherAudio
 
-    /// activates the audio session in the background to avoid locks in the main thread
-    case activateAudioSessionInBackground
-
     /// Use cellular-specific network APIs instead of expensive network APIs
     case useCellularNetworkApis
+
     /// Optimizes manual playlist queries with improved deduplication
     case optimizeManualPlaylistQueries
 
@@ -257,9 +180,6 @@ public enum FeatureFlag: String, CaseIterable {
 
     /// Enable VoiceBoostN with updated description copy (TestFlight only)
     case voiceBoostN
-
-    /// Use GRDB QueryInterface for database queries instead of raw SQL
-    case grdbQueryInterface
 
     /// Adds invalidation to the playlist cache on appearance when its been > 30 seconds
     case playlistCacheInvalidation
@@ -297,9 +217,6 @@ public enum FeatureFlag: String, CaseIterable {
 
     /// Show the listening activity heatmap on the Stats screen
     case statsHeatmap
-    /// If enabled, send explicit watch-related error logs to Sentry.
-    /// This does not control automatic crash reporting.
-    case watchSentryLogs
 
     /// Show explicit content badges on podcasts
     case showExplicitBadges
@@ -321,6 +238,34 @@ public enum FeatureFlag: String, CaseIterable {
 
     /// Enable Smart Bookmarks
     case smartBookmarks
+
+    /// Use best frame when capturing a thumbnail for video cells
+    case captureBestFrame
+
+    /// Make the tab bar's minimize-on-scroll behavior opt-in: it's off unless the
+    /// user turns it on in Appearance
+    case minimizeTabsOptIn
+
+    /// Introduce Smart Bookmarks with a tip in the player and a "New" badge on the Add Bookmark row.
+    ///
+    /// The promo runs for 8.19, 8.20 and 8.21 only. Remove this flag and `SmartBookmarksPromo` when 8.22 is cut.
+    case smartBookmarksPromo
+
+    /// Show a Live Activity on the Lock Screen and Dynamic Island while the sleep timer is running
+    case sleepTimerLiveActivity
+
+    /// Enable the network discovery Discover sections and podcast page entry points
+    case networkDiscovery
+
+    /// Tell the server that no podcast wants new episode pushes while the "New Episodes"
+    /// notification group is off, instead of relying on the named settings sync
+    case newEpisodeNotificationsPushOptOut
+
+    /// Enable the What's New feed
+    case whatsNewFeed
+
+    /// Show the What's New feed's research messages, which ask the user to answer a poll
+    case whatsNewPolls
 
     public var enabled: Bool {
         if let overriddenValue = FeatureFlagOverrideStore().overriddenValue(for: self) {
@@ -350,32 +295,10 @@ public enum FeatureFlag: String, CaseIterable {
             false
         case .streamAndCachePlayingEpisode:
             true
-        case .defaultPlayerFilterCallbackFix:
-            true
-        case .onlyMarkPodcastsUnsyncedForNewUsers:
-            true
-        case .whenPlayingOnlyUpdateEpisodeIfPlaybackFails:
-            true
         case .kidsProfile:
             false
         case .upgradeExperiment:
             false
-        case .ignoreRouteDisconnectedInterruption:
-            true
-        case .referrals:
-            true
-        case .referralsClaim:
-            true
-        case .referralsSend:
-            true
-        case .syncStats:
-            true
-        case .playerIsReadyToPlay:
-            true
-        case .useMimetypePackage:
-            true
-        case .customPlaybackSettings:
-            true
         case .runVacuumOnVersionUpdate:
             false
         case .endOfYear2024:
@@ -390,19 +313,9 @@ public enum FeatureFlag: String, CaseIterable {
             true
         case .autoDownloadOnSubscribe:
             true
-        case .useFollowNaming:
-            true
-        case .useDefaultPlayerTapCookie:
-            true
-        case .markAllSyncedInSingleStatement:
-            true
         case .winback:
             true
-        case .manageDownloadedEpisodes:
-			true
         case .podcastFeedUpdate:
-            true
-        case .downloadsThreadSafeCache:
             true
         case .suggestedFolders:
             true
@@ -434,8 +347,6 @@ public enum FeatureFlag: String, CaseIterable {
             false
         case .streamingCustomSessionConfiguration:
             true
-        case .guestListsNetworkHighlightsRedesign:
-            true
         case .smartCategories:
             true
         case .useDescriptiveActionAttributedTextView:
@@ -445,8 +356,6 @@ public enum FeatureFlag: String, CaseIterable {
         case .retryWithoutUserAgent:
             true
         case .userSatisfactionSurvey:
-            true
-        case .concurrentDatabaseReads:
             true
         case .limitPlaybackPositionChanges:
             true
@@ -458,8 +367,6 @@ public enum FeatureFlag: String, CaseIterable {
             true
         case .searchPredictive:
             true
-        case .podcastBookmarksInline:
-            true
         case .earlyReloadSubscriptionStatus:
             true
         case .enableLocalizationHeaders:
@@ -470,18 +377,10 @@ public enum FeatureFlag: String, CaseIterable {
 			true
         case .effectsPlayerQOSUpgrade:
             true
-        case .refreshPlaylistOnSubscriptions:
-            true
         case .playlistDataCacheBeforeQuery:
             true
         case .ignorePlayWithOtherAudio:
             true
-        case .activateAudioSessionInBackground:
-#if os(tvOS)
-            false
-#else
-            true
-#endif
         case .useCellularNetworkApis:
             true
         case .optimizeManualPlaylistQueries:
@@ -500,8 +399,6 @@ public enum FeatureFlag: String, CaseIterable {
             true
         case .voiceBoostN:
             false
-        case .grdbQueryInterface:
-            true
         case .playlistCacheInvalidation:
             true
         case .watchLogFileTransfer:
@@ -526,8 +423,6 @@ public enum FeatureFlag: String, CaseIterable {
             true
         case .statsHeatmap:
             true
-        case .watchSentryLogs:
-            false
         case .showExplicitBadges:
             true
         case .shareProfile:
@@ -541,7 +436,23 @@ public enum FeatureFlag: String, CaseIterable {
         case .troubleshooting:
             true
         case .smartBookmarks:
+            true
+        case .captureBestFrame:
+            true
+        case .minimizeTabsOptIn:
+            true
+        case .smartBookmarksPromo:
+            true
+        case .sleepTimerLiveActivity:
+            true
+        case .networkDiscovery:
+            true
+        case .newEpisodeNotificationsPushOptOut:
+            true
+        case .whatsNewFeed:
             BuildEnvironment.current == .debug
+        case .whatsNewPolls:
+            false
         }
     }
 
@@ -551,10 +462,10 @@ public enum FeatureFlag: String, CaseIterable {
         switch self {
         case .newAccountUpgradePromptFlow:
             "new_account_upgrade_prompt_flow"
-        case .defaultPlayerFilterCallbackFix:
-            "default_player_filter_callback_fix"
         case .endOfYear2025:
             "end_of_year_2025"
+        case .encourageAccountCreation:
+            "encourage_account_creation_recurring"
         default:
             rawValue.lowerSnakeCased()
         }
@@ -569,6 +480,4 @@ extension FeatureFlag: OverrideableFlag {
     public var canOverride: Bool {
         true
     }
-
-    private static let isTestFlight = Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt"
 }

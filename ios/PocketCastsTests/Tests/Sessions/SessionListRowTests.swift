@@ -352,7 +352,7 @@ final class SessionListRowTests: DBTestCase {
 
         let episode = try XCTUnwrap(lineup(started).first)
         episode.playedUpTo = 90
-        DataManager.sharedManager.save(episode: episode)
+        DataManager.shared.save(episode: episode)
 
         Settings.setSessionListHideUnplayed(true)
         XCTAssertEqual(SessionListRows.current().map(\.name), ["Started"])
@@ -383,7 +383,7 @@ final class SessionListRowTests: DBTestCase {
 
         let episode = try XCTUnwrap(lineup(started).first)
         episode.playedUpTo = 120
-        DataManager.sharedManager.save(episode: episode)
+        DataManager.shared.save(episode: episode)
 
         let names = SessionListRows.current(sort: .recentlyPlayed).map(\.name)
         XCTAssertEqual(names, ["Untouched", "Started"])

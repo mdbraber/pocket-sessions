@@ -2,13 +2,14 @@ import Foundation
 import PocketCastsDataModel
 import PocketCastsUtils
 import SwipeCellKit
+import UIKit
 
 extension PodcastViewController: SwipeTableViewCellDelegate, SwipeHandler {
     // MARK: - SwipeTableViewCellDelegate
 
     func tableView(_ tableView: UITableView, editActionsForRowAt indexPath: IndexPath, for orientation: SwipeActionsOrientation) -> [SwipeAction]? {
         // Reorder mode suspends swipes — a horizontal drag there is an attempt to grab the grip.
-        guard !isMultiSelectEnabled, !lineupReorderMode,
+        guard currentViewMode == .episodes, !isMultiSelectEnabled, !lineupReorderMode,
               indexPath.section == PodcastViewController.allEpisodesSection,
               let episode = episodeAtIndexPath(indexPath) else { return nil }
 
@@ -110,7 +111,7 @@ extension PodcastViewController: SwipeTableViewCellDelegate, SwipeHandler {
     }
 
     func addToManualPlaylist(episode: Episode, at: IndexPath) {
-        NavigationManager.sharedManager.navigateTo(
+        NavigationManager.shared.navigateTo(
             NavigationManager.manualPlaylistsChooserKey,
             data: [
                 NavigationManager.manualPlaylistsChooserEpisodeKey: episode

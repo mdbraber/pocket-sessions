@@ -900,8 +900,8 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         if row.isUpNext {
             if queueOwnsCard {
                 PlaybackManager.shared.play() // resume the paused queue
-            } else if let current = PlaybackManager.shared.currentEpisode(),
-                      upNextCardEpisode?.uuid == current.uuid, PlaybackManager.shared.playing() {
+            } else if let current = PlaybackManager.shared.currentEpisode,
+                      upNextCardEpisode?.uuid == current.uuid, PlaybackManager.shared.isPlaying {
                 // The SAME episode heads both worlds and is already sounding — just move the pointer
                 // to the queue. No restart, and it stays in the session too (see adoptCurrentEpisodeIntoQueue).
                 PlaybackManager.shared.adoptCurrentEpisodeIntoQueue()
@@ -910,7 +910,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
                 // A session owns the card — hand playback back to the queue's OWN next episode. This is a
                 // SWITCH, not a deliberate end, so it doesn't toast "Session ended" (the session stays).
                 PlaybackManager.shared.endPlaybackSession()
-                if !PlaybackManager.shared.playing() { PlaybackManager.shared.play() }
+                if !PlaybackManager.shared.isPlaying { PlaybackManager.shared.play() }
             }
             return
         }
@@ -935,7 +935,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     /// becomes current but stays paused. (A TAP on the play button always makes-current-and-plays.)
     func makeSessionCurrentInheritingPlayState(_ row: SessionListRow) {
         guard !row.isUpNext else { return }
-        let wasPlaying = PlaybackManager.shared.playing()
+        let wasPlaying = PlaybackManager.shared.isPlaying
         makeCurrentSession(row.sessionUuid)
         if wasPlaying {
             playSessionLane(row) // resumes / starts it playing
@@ -1000,7 +1000,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         }
         // startPlaybackSession primes the session's FIRST episode; if that's the tapped
         // one there is nothing to switch to, just start the audio.
-        if PlaybackManager.shared.currentEpisode()?.uuid == episode.uuid {
+        if PlaybackManager.shared.currentEpisode?.uuid == episode.uuid {
             PlaybackManager.shared.play()
         } else {
             PlaybackManager.shared.play(sessionEpisode: episode)
@@ -1079,9 +1079,9 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         let sourceName: String
         switch session.type {
         case .podcast:
-            sourceName = DataManager.sharedManager.findPodcast(uuid: session.uuid, includeUnsubscribed: true)?.title ?? L10n.playbackSessionTabSession
+            sourceName = DataManager.shared.findPodcast(uuid: session.uuid, includeUnsubscribed: true)?.title ?? L10n.playbackSessionTabSession
         case .playlist, .smartPlaylist:
-            sourceName = DataManager.sharedManager.findPlaylist(uuid: session.uuid)?.playlistName ?? L10n.playbackSessionTabSession
+            sourceName = DataManager.shared.findPlaylist(uuid: session.uuid)?.playlistName ?? L10n.playbackSessionTabSession
         }
         sessionHeaderLabel.text = sourceName
         sessionHeaderLabel.style = .primaryText01
@@ -1253,7 +1253,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
                 if let nav = self?.navigationController {
                     nav.pushViewController(PodcastViewController(podcast: podcast), animated: true)
                 } else {
-                    NavigationManager.sharedManager.navigateTo(
+                    NavigationManager.shared.navigateTo(
                         NavigationManager.podcastPageKey,
                         data: [NavigationManager.podcastKey: podcast]
                     )
@@ -1263,10 +1263,10 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         let pushPlaylist: (String) -> () -> Void = { uuid in
             return { [weak self] in
                 if let self, let nav = self.navigationController,
-                   let filter = DataManager.sharedManager.findPlaylist(uuid: uuid) {
+                   let filter = DataManager.shared.findPlaylist(uuid: uuid) {
                     nav.pushViewController(PlaylistDetailViewController(playlist: filter, delegate: self), animated: true)
                 } else {
-                    NavigationManager.sharedManager.navigateTo(
+                    NavigationManager.shared.navigateTo(
                         NavigationManager.filterPageKey,
                         data: [NavigationManager.filterUuidKey: uuid]
                     )
@@ -1280,12 +1280,12 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         let navigate: () -> Void
         switch (session.type, feeder) {
         case (.podcast, _):
-            guard let podcast = DataManager.sharedManager.findPodcast(uuid: session.uuid, includeUnsubscribed: true) else { return }
+            guard let podcast = DataManager.shared.findPodcast(uuid: session.uuid, includeUnsubscribed: true) else { return }
             navigate = pushPodcast(podcast)
         case (_, .smartPlaylist(let uuid)):
             navigate = pushPlaylist(uuid)
         case (_, .podcast(let uuid)):
-            guard let podcast = DataManager.sharedManager.findPodcast(uuid: uuid, includeUnsubscribed: true) else {
+            guard let podcast = DataManager.shared.findPodcast(uuid: uuid, includeUnsubscribed: true) else {
                 navigate = pushPlaylist(session.uuid); break
             }
             navigate = pushPodcast(podcast)
@@ -1476,7 +1476,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
             NotificationCenter.default.addObserver(self, selector: #selector(upNextTabActivated), name: Constants.Notifications.upNextTabActivated, object: nil)
         }
 
-        if FeatureFlag.upNextShuffle.enabled, showingInTab {
+        if showingInTab {
             NotificationCenter.default.addObserver(self, selector: #selector(updateShuffleButtonState), name: Constants.Notifications.upNextShuffleToggle, object: nil)
         }
 
@@ -1639,9 +1639,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         lastNavBarSignature = nil
         updateNavBarButtons()
         setupActionButtonsIfNecessary()
-        if FeatureFlag.upNextShuffle.enabled {
-            themeDidChange()
-        }
+        themeDidChange()
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -1678,10 +1676,10 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
             // In this case we need to dismiss the UpNext to present the paywall
             if let mainTabBar = presentingViewController?.presentingViewController, presentingViewController is PlayerContainerViewController {
                 dismiss(animated: true) {
-                    NavigationManager.sharedManager.showUpsellView(from: mainTabBar, source: .upNextShuffle)
+                    NavigationManager.shared.showUpsellView(from: mainTabBar, source: .upNextShuffle)
                 }
             } else {
-                NavigationManager.sharedManager.showUpsellView(from: self, source: .upNextShuffle)
+                NavigationManager.shared.showUpsellView(from: self, source: .upNextShuffle)
             }
             return
         }
@@ -1723,15 +1721,12 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     @objc private func subscriptionStatusDidChange() {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            if FeatureFlag.upNextShuffle.enabled {
-                // Update UI
-                FileLog.shared.addMessage("UpNext subscriptionStatusDidChange: user has active subscription: \(SubscriptionHelper.hasActiveSubscription()) and is logged in: \(SyncManager.isUserLoggedIn())")
+            FileLog.shared.addMessage("UpNext subscriptionStatusDidChange: user has active subscription: \(SubscriptionHelper.hasActiveSubscription()) and is logged in: \(SyncManager.isUserLoggedIn())")
 
-                setupActionButtonsIfNecessary()
-                themeDidChange()
-                updateNavBarButtons()
-                reloadTable()
-            }
+            setupActionButtonsIfNecessary()
+            themeDidChange()
+            updateNavBarButtons()
+            reloadTable()
         }
     }
 
@@ -1884,7 +1879,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         // Resolve the target after any sort switch: the session excludes played episodes,
         // so map the drop position onto the playlist's full order.
         guard let targetIndex = session.orderedEpisodes().firstIndex(where: { $0.uuid == target.uuid }) else { return }
-        DataManager.sharedManager.moveEpisode(moved.uuid, in: playlist, to: targetIndex)
+        DataManager.shared.moveEpisode(moved.uuid, in: playlist, to: targetIndex)
         Self.mirrorOrderIntoSmartFeeder(episodeUuid: moved.uuid, storePlaylist: playlist, to: targetIndex)
         // See `writeSessionLineupTop`: announce after the drop animation, not during it.
         DispatchQueue.main.async {
@@ -1902,7 +1897,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     /// `moveEpisode(from: -1, ...)`). It stays on the card and keeps playing; only its place in the
     /// lineup order changes, so the next advance follows the new order.
     func moveSessionCardEpisode(toRow: Int) {
-        guard let currentUuid = PlaybackManager.shared.currentEpisode()?.uuid,
+        guard let currentUuid = PlaybackManager.shared.currentEpisode?.uuid,
               let sessionEpisodes,
               let (session, playlist) = sessionPlaylistPreparedForReorder() else { return }
 
@@ -1915,7 +1910,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         } else {
             targetIndex = max(ordered.count - 1, 0)
         }
-        DataManager.sharedManager.moveEpisode(currentUuid, in: playlist, to: targetIndex)
+        DataManager.shared.moveEpisode(currentUuid, in: playlist, to: targetIndex)
         Self.mirrorOrderIntoSmartFeeder(episodeUuid: currentUuid, storePlaylist: playlist, to: targetIndex)
         DispatchQueue.main.async {
             NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged, object: playlist)
@@ -1931,22 +1926,22 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         // The lineup on screen is the one being edited — browsed, not necessarily active.
         guard let session = browsedPlaybackSession,
               session.type == .playlist || session.type == .smartPlaylist,
-              let playlist = DataManager.sharedManager.findPlaylist(uuid: session.uuid) else { return nil }
+              let playlist = DataManager.shared.findPlaylist(uuid: session.uuid) else { return nil }
 
         if playlist.sortType != PlaylistSort.dragAndDrop.rawValue {
             if !playlist.manual {
                 playlist.customOrderLastInsertedUuid = ""
-                DataManager.sharedManager.setCustomOrder(episodeUuids: session.orderedEpisodes().map { $0.uuid }, for: playlist)
+                DataManager.shared.setCustomOrder(episodeUuids: session.orderedEpisodes().map { $0.uuid }, for: playlist)
             }
             playlist.syncStatus = SyncStatus.notSynced.rawValue
             playlist.sortType = PlaylistSort.dragAndDrop.rawValue
-            DataManager.sharedManager.save(playlist: playlist)
-        } else if !playlist.manual, DataManager.sharedManager.positionedEpisodeUuids(for: playlist).isEmpty {
+            DataManager.shared.save(playlist: playlist)
+        } else if !playlist.manual, DataManager.shared.positionedEpisodeUuids(for: playlist).isEmpty {
             // Custom order without a seeded lineup (the session is playing the fallback
             // order): moving an episode would silently no-op against zero position rows.
             // Materialize the current order first so the move mirrors into the playlist.
             playlist.customOrderLastInsertedUuid = ""
-            DataManager.sharedManager.setCustomOrder(episodeUuids: session.orderedEpisodes().map { $0.uuid }, for: playlist)
+            DataManager.shared.setCustomOrder(episodeUuids: session.orderedEpisodes().map { $0.uuid }, for: playlist)
         }
 
         return (session, playlist)
@@ -1956,7 +1951,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     /// so it can run (and be covered by tests) without a live player: the episode becomes
     /// first in the session's lineup.
     static func writeSessionLineupTop(episodeUuid: String, in playlist: EpisodeFilter) {
-        DataManager.sharedManager.moveEpisode(episodeUuid, in: playlist, to: 0)
+        DataManager.shared.moveEpisode(episodeUuid, in: playlist, to: 0)
         mirrorOrderIntoSmartFeeder(episodeUuid: episodeUuid, storePlaylist: playlist, to: 0)
         // Deferred by one runloop: posting inline runs every observer synchronously, which
         // means a full table refresh executes in the middle of the drop animation.
@@ -1972,14 +1967,14 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     static func mirrorOrderIntoSmartFeeder(episodeUuid: String, storePlaylist: EpisodeFilter, to index: Int) {
         guard let session = SessionStore.shared.session(forStore: storePlaylist.uuid),
               case .smartPlaylist(let feederUuid) = session.feeder,
-              let feeder = DataManager.sharedManager.findPlaylist(uuid: feederUuid),
+              let feeder = DataManager.shared.findPlaylist(uuid: feederUuid),
               feeder.sortType == PlaylistSort.dragAndDrop.rawValue else { return }
 
         // Deliberately silent: announcing the feeder here would trigger the smart-feeder
         // reconcile, which re-derives the store from this very playlist — pure duplicate
         // work right after a move, and the reason a reorder felt sluggish. The store's own
         // notification (posted by the caller) is what the UI listens to.
-        DataManager.sharedManager.moveEpisode(episodeUuid, in: feeder, to: index)
+        DataManager.shared.moveEpisode(episodeUuid, in: feeder, to: index)
     }
 
     /// Fork: the single "move this row to the top" entry point — used by the left-swipe
@@ -2004,7 +1999,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         // equalizer — "active" doesn't require sounding). Never unconditional autoplay.
         guard let sessionEpisodes, fromRow < sessionEpisodes.count else { return }
         let moved = sessionEpisodes[fromRow]
-        makeSessionEpisodeCurrentAtTop(moved, autoPlay: PlaybackManager.shared.playing())
+        makeSessionEpisodeCurrentAtTop(moved, autoPlay: PlaybackManager.shared.isPlaying)
     }
 
     /// Fork: make `episode` the CURRENT item of the active session AND its top row. `autoPlay` carries
@@ -2045,7 +2040,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     ///
     /// Re-arranging never disturbs playback: what's playing keeps playing and keeps position 0.
     private func presentLineupReorderPicker(for session: PlaybackSession) {
-        guard let playlist = DataManager.sharedManager.findPlaylist(uuid: session.uuid) else { return }
+        guard let playlist = DataManager.shared.findPlaylist(uuid: session.uuid) else { return }
 
         let picker = OptionsPicker(title: L10n.lineupReorder.localizedUppercase, themeOverride: themeOverride)
         picker.addAction(action: OptionAction(label: L10n.lineupReorderEpisodes, icon: "line.3.horizontal") { [weak self] in
@@ -2102,7 +2097,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         // A browsed session whose store went away (deleted while it was open) stops being
         // browsable — fall back to the active session, or to the chooser.
         if let browsedSessionUuid, browsedSessionUuid != Settings.playbackSession()?.uuid,
-           DataManager.sharedManager.findPlaylist(uuid: browsedSessionUuid) == nil {
+           DataManager.shared.findPlaylist(uuid: browsedSessionUuid) == nil {
             self.browsedSessionUuid = nil
         }
 
@@ -2136,7 +2131,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     /// a session row is, so it sits naturally at the top. Tapping it opens the queue world.
     private func upNextListRow() -> SessionListRow {
         let queue = PlaybackManager.shared.queue
-        let current = PlaybackManager.shared.currentEpisode()
+        let current = PlaybackManager.shared.currentEpisode
         let ownsCard = queueOwnsCard
         // A shared session episode is a genuine Up Next member at the head, even though the session (not
         // the queue) is what's sounding — so the row frames it just like a queue-owned now-playing.
@@ -2161,7 +2156,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
             storeUuid: nil,
             name: L10n.upNext,
             nextEpisodePodcastUuid: (next as? Episode)?.podcastUuid,
-            isPlaying: ownsCard && PlaybackManager.shared.playing(),
+            isPlaying: ownsCard && PlaybackManager.shared.isPlaying,
             isActive: ownsCard,
             nextEpisodeTitle: next?.displayableTitle(),
             nextEpisodePodcast: next?.subTitle(),
@@ -2235,7 +2230,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
             episodeController.themeOverride = themeOverride
             present(episodeController, animated: true, completion: nil)
         } else if let userEpisode = episode as? UserEpisode {
-            if let fullEpisode = DataManager.sharedManager.findUserEpisode(uuid: userEpisode.uuid) {
+            if let fullEpisode = DataManager.shared.findUserEpisode(uuid: userEpisode.uuid) {
                 userEpisodeDetailVC = UserEpisodeDetailViewController(episode: fullEpisode)
                 userEpisodeDetailVC?.delegate = self
                 userEpisodeDetailVC?.themeOverride = themeOverride
@@ -2249,7 +2244,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     /// queue (a parked queue under an active session doesn't own the playing episode).
     func queueCountsText(includeNowPlaying: Bool) -> String {
         var totalDuration = PlaybackManager.shared.queue.upNextTotalDuration(includePlayingEpisode: false)
-        if includeNowPlaying, let episode = PlaybackManager.shared.currentEpisode() {
+        if includeNowPlaying, let episode = PlaybackManager.shared.currentEpisode {
             totalDuration += episode.duration.seconds - PlaybackManager.shared.currentTime()
         }
         let time = TimeFormatter.shared.multipleUnitFormattedShortTime(time: totalDuration)
@@ -2315,7 +2310,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
             multiSelectActionBar.setSelectedCount(count: selectedSessionEpisodes.count)
             contentInseter.isMultiSelectEnabled = !selectedSessionEpisodes.isEmpty
         } else {
-            guard DataManager.sharedManager.allUpNextEpisodes().count > 1 else { return }
+            guard DataManager.shared.allUpNextEpisodes().count > 1 else { return }
             bulkSelecting = true
             upNextTable.selectAllBelow(fromIndexPath: IndexPath(row: 0, section: tableData.firstIndex(of: .upNextSection) ?? 0))
             bulkSelecting = false
@@ -2817,7 +2812,7 @@ class SwitchSessionViewController: UIViewController, UITableViewDataSource, UITa
                 }
                 dismiss(animated: true) { [onSwitched] in
                     onSwitched(true)
-                    NavigationManager.sharedManager.navigateTo(NavigationManager.upNextPageKey)
+                    NavigationManager.shared.navigateTo(NavigationManager.upNextPageKey)
                 }
                 return
             }
@@ -2826,8 +2821,8 @@ class SwitchSessionViewController: UIViewController, UITableViewDataSource, UITa
             }
             // Switching to Up Next means the queue takes over — start it if it isn't
             // already playing (ending a paused session doesn't autoplay).
-            if !PlaybackManager.shared.playing() {
-                if PlaybackManager.shared.currentEpisode() != nil {
+            if !PlaybackManager.shared.isPlaying {
+                if PlaybackManager.shared.currentEpisode != nil {
                     PlaybackManager.shared.play()
                 } else if let first = PlaybackManager.shared.queue.allEpisodes(includeNowPlaying: false).first {
                     PlaybackManager.shared.load(episode: first, autoPlay: true, overrideUpNext: false)
@@ -2836,7 +2831,7 @@ class SwitchSessionViewController: UIViewController, UITableViewDataSource, UITa
             dismiss(animated: true) { [onSwitched] in
                 onSwitched(true)
                 // Choosing Up Next means going there — land on the Up Next tab.
-                NavigationManager.sharedManager.navigateTo(NavigationManager.upNextPageKey)
+                NavigationManager.shared.navigateTo(NavigationManager.upNextPageKey)
             }
             return
         }
@@ -2862,7 +2857,7 @@ class SwitchSessionViewController: UIViewController, UITableViewDataSource, UITa
             // Switching to a session means going there — land on the Up Next tab
             // showing the Session world (the tab-activated snap follows whichever
             // world owns playback, which is now the session).
-            NavigationManager.sharedManager.navigateTo(NavigationManager.upNextPageKey)
+            NavigationManager.shared.navigateTo(NavigationManager.upNextPageKey)
             NotificationCenter.postOnMainThread(notification: Constants.Notifications.upNextTabActivated)
         }
     }
