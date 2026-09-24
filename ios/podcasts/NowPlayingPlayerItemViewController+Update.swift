@@ -115,7 +115,7 @@ extension NowPlayingPlayerItemViewController {
         sessionCaptionLabel.isHidden = !active
         sessionCaptionGap?.constant = active ? 4 : 0
         sessionCaptionZeroHeight?.isActive = !active
-        sessionCaptionLabel.text = active ? L10n.playerSessionCaption(Settings.playbackSession()?.title ?? L10n.playbackSessionTabSession) : nil
+        sessionCaptionLabel.text = active ? L10n.playerSessionCaption(Settings.playbackSession?.title ?? L10n.playbackSessionTabSession) : nil
     }
 
     private func updateColors() {

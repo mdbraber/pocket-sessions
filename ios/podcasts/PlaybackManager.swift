@@ -202,7 +202,7 @@ class PlaybackManager: ServerPlaybackDelegate {
         // within it — episode card, list row, wherever the tap came from. Only
         // choosing something outside the session pauses it.
         let jumpingWithinSession = episodeIsChanging
-            && !isLoadingSessionEpisode && !Settings.playbackSessionPaused()
+            && !isLoadingSessionEpisode && !Settings.playbackSessionPaused
             && activeSessionContains(episode: episode)
 
         if episodeIsChanging, !isLoadingSessionEpisode {
@@ -213,9 +213,9 @@ class PlaybackManager: ServerPlaybackDelegate {
         // collapsed in Up Next, and playing one of its episodes resumes it
         if episodeIsChanging, !isLoadingSessionEpisode,
            !jumpingWithinSession,
-           Settings.playbackSession() != nil, !Settings.playbackSessionPaused() {
+           Settings.playbackSession != nil, !Settings.playbackSessionPaused {
             FileLog.shared.addMessage("Playback session paused: a different episode was played explicitly")
-            Settings.setPlaybackSessionPaused(true)
+            Settings.playbackSessionPaused = true
         }
 
         return interruptedEpisodeIsFromSession
@@ -781,8 +781,8 @@ class PlaybackManager: ServerPlaybackDelegate {
             // simply ends. (Autoplay still applies to natural episode completion.)
             if queue.upNextCount() > 0 {
                 playNextEpisode(autoPlay: isPlaying)
-            } else if Settings.playbackSession() != nil, Settings.playbackSessionPaused() {
-                Settings.setPlaybackSessionPaused(false)
+            } else if Settings.playbackSession != nil, Settings.playbackSessionPaused {
+                Settings.playbackSessionPaused = false
                 if !advanceSessionIfNeeded(autoPlay: isPlaying, requireSessionEpisode: false) {
                     endPlayback(saveCurrentEpisode: saveCurrentEpisode)
                 }
@@ -819,7 +819,7 @@ class PlaybackManager: ServerPlaybackDelegate {
     /// queue. Session episodes never move into Up Next when interrupted — they stay in the
     /// (paused) session's own list instead. Seeded for app relaunch mid-session.
     private lazy var currentEpisodeIsFromSession: Bool = {
-        Settings.playbackSession() != nil && !Settings.playbackSessionPaused()
+        Settings.playbackSession != nil && !Settings.playbackSessionPaused
     }()
 
     /// Whether the now-playing episode is being played AS part of the active session (not the
@@ -827,14 +827,14 @@ class PlaybackManager: ServerPlaybackDelegate {
     /// authoritative over its own framing — a remote pointer change (another device that merely
     /// adopted, or cleared, the session) must not flip live session playback into Up Next.
     var isPlayingSessionEpisode: Bool {
-        Settings.playbackSession() != nil && !Settings.playbackSessionPaused() && currentEpisodeIsFromSession
+        Settings.playbackSession != nil && !Settings.playbackSessionPaused && currentEpisodeIsFromSession
     }
 
     /// Fork: the current episode's playback SOURCE, for the now-playing equalizer's colour — green
     /// when it plays as part of a session, blue when it plays from the Up Next queue. Independent of
     /// play/pause, since a paused session episode is still session-sourced.
     var currentEpisodeIsSessionSourced: Bool {
-        Settings.playbackSession() != nil && currentEpisodeIsFromSession
+        Settings.playbackSession != nil && currentEpisodeIsFromSession
     }
 
     /// Fork: the session episode the user explicitly added to Up Next. A session episode normally plays
@@ -889,8 +889,8 @@ class PlaybackManager: ServerPlaybackDelegate {
 
         // Announce the session only after its first episode is loaded — announcing first
         // makes the UI briefly resolve "current episode" as the queue's top episode.
-        Settings.setPlaybackSession(session)
-        Settings.setPlaybackSessionLastEpisodeUuid(first.uuid)
+        Settings.playbackSession = session
+        Settings.playbackSessionLastEpisodeUuid = first.uuid
 
         // With an empty queue, load() replaces the whole Up Next table with the new episode,
         // which would silently drop what was playing — put it back at the top of the queue.
@@ -914,9 +914,9 @@ class PlaybackManager: ServerPlaybackDelegate {
     /// world; only the source pointer flips (session card → play, Up Next card → pause). Callers must
     /// verify the queue's takeover episode is the same one first; otherwise use `endPlaybackSession`.
     func adoptCurrentEpisodeIntoQueue() {
-        guard currentEpisode != nil, Settings.playbackSession() != nil else { return }
+        guard currentEpisode != nil, Settings.playbackSession != nil else { return }
         FileLog.shared.addMessage("Adopting the current session episode into Up Next (pointer only, no restart)")
-        Settings.setPlaybackSession(nil)
+        Settings.playbackSession = nil
         currentEpisodeIsFromSession = false
         NotificationCenter.postOnMainThread(notification: Constants.Notifications.playbackTrackChanged)
         NotificationCenter.postOnMainThread(notification: Constants.Notifications.upNextQueueChanged)
@@ -927,9 +927,9 @@ class PlaybackManager: ServerPlaybackDelegate {
     /// Now Playing becomes the first (filter-matching) queued episode, playing if the
     /// session was. A paused session just clears — the queue is already playing.
     func endPlaybackSession() {
-        guard Settings.playbackSession() != nil else { return }
-        let handOverToQueue = currentEpisodeIsFromSession && !Settings.playbackSessionPaused()
-        Settings.setPlaybackSession(nil)
+        guard Settings.playbackSession != nil else { return }
+        let handOverToQueue = currentEpisodeIsFromSession && !Settings.playbackSessionPaused
+        Settings.playbackSession = nil
         // Fork: no "Session ended" toast — session/Up Next play/pause/switch toasts are disabled.
         guard handOverToQueue else { return }
 
@@ -950,10 +950,10 @@ class PlaybackManager: ServerPlaybackDelegate {
     /// and the queue stays untouched. With `autoPlay: false` the session un-pauses and the
     /// episode is primed as Now Playing, but audio doesn't start.
     func play(sessionEpisode episode: BaseEpisode, autoPlay: Bool = true) {
-        guard let session = Settings.playbackSession() else { return }
-        let resumingFromQueue = Settings.playbackSessionPaused()
+        guard let session = Settings.playbackSession else { return }
+        let resumingFromQueue = Settings.playbackSessionPaused
         if resumingFromQueue {
-            Settings.setPlaybackSessionPaused(false)
+            Settings.playbackSessionPaused = false
         }
         let wasFromSession = currentEpisodeIsFromSession
         let interrupted = wasFromSession && !resumingFromQueue ? currentEpisode : nil
@@ -969,7 +969,7 @@ class PlaybackManager: ServerPlaybackDelegate {
         // interrupted-episode path, so setting it early is safe.)
         currentEpisodeIsFromSession = true
         switchTo(episodeToPlay: episode, moveExistingToUpNext: moveExistingToUpNext, autoPlay: autoPlay)
-        Settings.setPlaybackSessionLastEpisodeUuid(episode.uuid)
+        Settings.playbackSessionLastEpisodeUuid = episode.uuid
 
         // Symmetry with the queue: jumping within the session moves the interrupted
         // episode to the top of the session's custom order (a live mirror, so the
@@ -998,7 +998,7 @@ class PlaybackManager: ServerPlaybackDelegate {
 
     /// Whether the active playback session's list contains the episode.
     private func activeSessionContains(episode: BaseEpisode) -> Bool {
-        guard let session = Settings.playbackSession() else { return false }
+        guard let session = Settings.playbackSession else { return false }
         return session.orderedEpisodes().contains { $0.uuid == episode.uuid }
     }
 
@@ -1006,14 +1006,14 @@ class PlaybackManager: ServerPlaybackDelegate {
     /// no active session, or the session just ran dry (it's then ended, and the caller
     /// falls through to normal queue handling — which is the "return to your queue" step).
     private func advanceSessionIfNeeded(autoPlay: Bool, requireSessionEpisode: Bool = true) -> Bool {
-        guard let session = Settings.playbackSession(), !Settings.playbackSessionPaused() else { return false }
+        guard let session = Settings.playbackSession, !Settings.playbackSessionPaused else { return false }
         // Only session playback advances the session — a queue episode playing while
         // a session is somehow unpaused must not get hijacked into it.
         if requireSessionEpisode, !currentEpisodeIsFromSession { return false }
 
         guard let next = session.nextEpisode(after: currentEpisode?.uuid) else {
             FileLog.shared.addMessage("Playback session finished — returning to the Up Next queue")
-            Settings.setPlaybackSession(nil)
+            Settings.playbackSession = nil
             // Fork: no "Session finished" toast — session/Up Next play/pause/switch toasts are disabled.
             return false
         }
@@ -1023,7 +1023,7 @@ class PlaybackManager: ServerPlaybackDelegate {
         defer { isLoadingSessionEpisode = false }
         switchTo(episodeToPlay: next, moveExistingToUpNext: false, autoPlay: autoPlay)
         currentEpisodeIsFromSession = true
-        Settings.setPlaybackSessionLastEpisodeUuid(next.uuid)
+        Settings.playbackSessionLastEpisodeUuid = next.uuid
         numberOfEpisodesToSleepAfter -= 1
         return true
     }
@@ -2911,7 +2911,7 @@ class PlaybackManager: ServerPlaybackDelegate {
         // the podcast's next episode to Up Next: for a podcast session that's the session's own next
         // episode, and it would leak into the queue. (A paused/parked session is fine — the queue
         // is what's playing then.)
-        if Settings.playbackSession() != nil, !Settings.playbackSessionPaused() {
+        if Settings.playbackSession != nil, !Settings.playbackSessionPaused {
             return
         }
 

@@ -1385,7 +1385,7 @@ extension MainTabBarController {
     @objc func refreshUpNextTabBadge() {
         // Fork: the tab is always "Queue"; the Up Next / Session worlds live inside it as the
         // bottom switcher, so the tab name no longer follows which world is playing.
-        let activeSession = Settings.playbackSession()
+        let activeSession = Settings.playbackSession
         upNextTabBarItem.title = L10n.tabQueue
 
         guard #available(iOS 26.0, *) else { return }

@@ -22,6 +22,12 @@ extension PodcastViewController {
         }
         optionPicker.addAction(action: multiSelectAction)
 
+        if showingSession {
+            let reorderAction = OptionAction(label: L10n.lineupReorder, icon: "podcastlist_sort") {}
+            reorderAction.submenu = { [weak self] in self?.makeLineupReorderPicker() }
+            optionPicker.addAction(action: reorderAction)
+        }
+
         let currentSort = podcast.podcastSortOrder?.description ?? ""
         let sortAction = OptionAction(label: L10n.sortEpisodes, secondaryLabel: currentSort, icon: "podcastlist_sort") {}
         sortAction.submenu = { [weak self] in self?.makeSortOptionsPicker() }

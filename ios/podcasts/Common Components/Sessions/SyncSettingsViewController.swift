@@ -14,7 +14,7 @@ class SyncSettingsViewController: PCViewController, UITableViewDataSource, UITab
     /// The server-detail and manual-sync sections only show while the server mode is selected.
     private var sections: [[TableRow]] {
         var sections: [[TableRow]] = [[.modeServer, .modeICloud, .modeLocal]]
-        if Settings.sessionSyncMode() == .server {
+        if Settings.sessionSyncMode == .server {
             // One section per concern, so each one's footer sits directly under the rows it
             // describes. The server footer used to trail Follow Now Playing, which read as if it
             // were explaining it.
@@ -97,7 +97,7 @@ class SyncSettingsViewController: PCViewController, UITableViewDataSource, UITab
         cell.accessoryView = nil
         cell.selectionStyle = .default
 
-        let mode = Settings.sessionSyncMode()
+        let mode = Settings.sessionSyncMode
         switch sections[indexPath.section][indexPath.row] {
         case .modeServer:
             cell.textLabel?.text = L10n.sessionSyncModeServer
@@ -127,7 +127,7 @@ class SyncSettingsViewController: PCViewController, UITableViewDataSource, UITab
             cell.accessoryType = .none
             cell.selectionStyle = .none
             let toggle = UISwitch()
-            toggle.isOn = Settings.sessionSyncPlayback()
+            toggle.isOn = Settings.sessionSyncPlayback
             toggle.addTarget(self, action: #selector(followPlaybackToggled(_:)), for: .valueChanged)
             cell.accessoryView = toggle
         case .relayAPI:
@@ -139,7 +139,7 @@ class SyncSettingsViewController: PCViewController, UITableViewDataSource, UITab
             let available = Settings.sessionServerRelayAvailable()
             cell.detailTextLabel?.text = available ? nil : L10n.sessionSyncRelayApiUnavailable
             let toggle = UISwitch()
-            toggle.isOn = available && Settings.sessionServerRelayAPI()
+            toggle.isOn = available && Settings.sessionServerRelayAPI
             toggle.isEnabled = available
             toggle.addTarget(self, action: #selector(relayAPIToggled(_:)), for: .valueChanged)
             cell.accessoryView = toggle
@@ -208,8 +208,8 @@ class SyncSettingsViewController: PCViewController, UITableViewDataSource, UITab
     }
 
     private func select(mode: Settings.SessionSyncMode) {
-        guard mode != Settings.sessionSyncMode() else { return }
-        Settings.setSessionSyncMode(mode)
+        guard mode != Settings.sessionSyncMode else { return }
+        Settings.sessionSyncMode = mode
         // The engines hook the stores at launch; switching applies on next launch (the
         // footer says so). Reload so the checkmark and the server section follow.
         settingsTable.reloadData()
@@ -264,7 +264,7 @@ class SyncSettingsViewController: PCViewController, UITableViewDataSource, UITab
     }
 
     @objc private func followPlaybackToggled(_ toggle: UISwitch) {
-        Settings.setSessionSyncPlayback(toggle.isOn)
+        Settings.sessionSyncPlayback = toggle.isOn
     }
 
     /// Routing goes through `PCAPIRelaySettings` rather than `Settings` directly, so the transport's

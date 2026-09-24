@@ -19,9 +19,9 @@ enum PCAPIRelaySettings {
     /// toggle, a server URL and a device token; missing any of them means going direct, which is
     /// also exactly what happens when the user signs out or unlinks.
     static func apply() {
-        guard Settings.sessionServerRelayAPI(),
+        guard Settings.sessionServerRelayAPI,
               let baseURL = Settings.sessionServerURL(),
-              let token = Settings.sessionServerToken() else {
+              let token = Settings.sessionServerToken else {
             PCAPIRelay.configure(nil)
             return
         }
@@ -30,7 +30,7 @@ enum PCAPIRelaySettings {
 
     /// Flips the toggle and applies it in one step, so no caller can set one without the other.
     static func setEnabled(_ enabled: Bool) {
-        Settings.setSessionServerRelayAPI(enabled)
+        Settings.sessionServerRelayAPI = enabled
         apply()
         FileLog.shared.addMessage("PCAPIRelay: user set relay \(enabled ? "on" : "off")")
     }

@@ -175,10 +175,10 @@ enum SessionListRows {
     static func current(sort: SessionListSort? = nil, filters: SessionListFilters? = nil) -> [SessionListRow] {
         let sort = sort ?? Settings.sessionListSort()
         let filters = filters ?? .current
-        let activeUuid = Settings.playbackSession()?.uuid
-        let sessionPaused = Settings.playbackSessionPaused()
-        let resumeUuid = Settings.playbackSessionLastEpisodeUuid()
-        let hideEmpty = Settings.hideEmptySessions()
+        let activeUuid = Settings.playbackSession?.uuid
+        let sessionPaused = Settings.playbackSessionPaused
+        let resumeUuid = Settings.playbackSessionLastEpisodeUuid
+        let hideEmpty = Settings.hideEmptySessions
         let feederUuids = SessionStore.shared.feederPlaylistUuids
         // Hoisted out of the per-session loop: the toggle (read once) and, only when it's on, the
         // covered-podcast set (computed once instead of an O(sessions) scan per podcast session).

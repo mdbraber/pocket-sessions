@@ -118,7 +118,7 @@ class PlaylistFolderManager {
         playlists(inFolder: folderUuid)
             .filter { SessionManager.shared.sessionStoreVisible(playlistUuid: $0.uuid) }
             .filter { !SessionManager.shared.storeHasVisibleSmartFeeder(playlistUuid: $0.uuid) }
-            .filter { !Settings.hideEmptySessions() || !SessionManager.shared.sessionIsEmpty(storePlaylistUuid: $0.uuid) }
+            .filter { !Settings.hideEmptySessions || !SessionManager.shared.sessionIsEmpty(storePlaylistUuid: $0.uuid) }
     }
 
     // MARK: - Storage

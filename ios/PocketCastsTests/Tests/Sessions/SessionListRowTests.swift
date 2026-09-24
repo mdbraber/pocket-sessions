@@ -56,9 +56,9 @@ final class SessionListRowTests: DBTestCase {
     }
 
     private func clearPlaybackSession() {
-        Settings.setPlaybackSession(nil)
-        Settings.setPlaybackSessionPaused(false)
-        Settings.setPlaybackSessionLastEpisodeUuid(nil)
+        Settings.playbackSession = nil
+        Settings.playbackSessionPaused = false
+        Settings.playbackSessionLastEpisodeUuid = nil
     }
 
     // MARK: - Helpers
@@ -126,9 +126,9 @@ final class SessionListRowTests: DBTestCase {
     }
 
     private func activate(_ session: Session, paused: Bool = false, lastEpisodeUuid: String? = nil) {
-        Settings.setPlaybackSession(PlaybackSession(type: .playlist, uuid: session.storePlaylistUuid!))
-        Settings.setPlaybackSessionPaused(paused)
-        Settings.setPlaybackSessionLastEpisodeUuid(lastEpisodeUuid)
+        Settings.playbackSession = PlaybackSession(type: .playlist, uuid: session.storePlaylistUuid!)
+        Settings.playbackSessionPaused = paused
+        Settings.playbackSessionLastEpisodeUuid = lastEpisodeUuid
     }
 
     // MARK: - Next episode resolution

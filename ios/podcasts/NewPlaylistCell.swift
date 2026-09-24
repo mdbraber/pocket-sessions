@@ -140,7 +140,7 @@ class NewPlaylistCell: ThemeableCell {
         playlistID = playlist.uuid
 
         // Fork: the row badge (replaces the plain count when a type is chosen).
-        let badgeType = Settings.playlistsBadgeType()
+        let badgeType = Settings.playlistsBadgeType
         viewModel.badgeType = badgeType
         if badgeType != .off {
             Task { [weak self] in

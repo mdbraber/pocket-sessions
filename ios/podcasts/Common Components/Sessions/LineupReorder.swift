@@ -17,7 +17,7 @@ enum LineupReorder {
     /// The episode that must stay at position 0: a lineup's head is what's playing, and
     /// re-arranging the rest never displaces it.
     static func pinnedEpisodeUuid(forPlaylistUuid playlistUuid: String) -> String? {
-        guard let active = Settings.playbackSession(), active.uuid == playlistUuid,
+        guard let active = Settings.playbackSession, active.uuid == playlistUuid,
               PlaybackManager.shared.currentEpisodeIsSessionSourced else { return nil }
         return PlaybackManager.shared.currentEpisode?.uuid
     }

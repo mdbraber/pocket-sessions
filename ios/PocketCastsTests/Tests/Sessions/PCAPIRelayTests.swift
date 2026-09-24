@@ -137,37 +137,37 @@ final class PCAPIRelayTests: XCTestCase {
 
     func testRelayIsUnavailableWithoutAServerOrToken() {
         let url = Settings.sessionServerURL()
-        let token = Settings.sessionServerToken()
+        let token = Settings.sessionServerToken
         defer {
             Settings.setSessionServerURL(url?.absoluteString)
-            Settings.setSessionServerToken(token)
+            Settings.sessionServerToken = token
         }
 
         Settings.setSessionServerURL(nil)
-        Settings.setSessionServerToken(nil)
+        Settings.sessionServerToken = nil
         XCTAssertFalse(Settings.sessionServerRelayAvailable())
 
         Settings.setSessionServerURL("https://pcs.example.org")
         XCTAssertFalse(Settings.sessionServerRelayAvailable(), "a URL alone cannot authenticate")
 
-        Settings.setSessionServerToken("tok")
+        Settings.sessionServerToken = "tok"
         XCTAssertTrue(Settings.sessionServerRelayAvailable())
     }
 
     func testApplyingSettingsWithoutATokenLeavesTheRelayOff() {
         let url = Settings.sessionServerURL()
-        let token = Settings.sessionServerToken()
-        let enabled = Settings.sessionServerRelayAPI()
+        let token = Settings.sessionServerToken
+        let enabled = Settings.sessionServerRelayAPI
         defer {
             Settings.setSessionServerURL(url?.absoluteString)
-            Settings.setSessionServerToken(token)
-            Settings.setSessionServerRelayAPI(enabled)
+            Settings.sessionServerToken = token
+            Settings.sessionServerRelayAPI = enabled
             PCAPIRelay.configure(nil)
         }
 
-        Settings.setSessionServerRelayAPI(true)
+        Settings.sessionServerRelayAPI = true
         Settings.setSessionServerURL("https://pcs.example.org")
-        Settings.setSessionServerToken(nil)
+        Settings.sessionServerToken = nil
         PCAPIRelaySettings.apply()
         XCTAssertFalse(PCAPIRelay.isEnabled, "the toggle alone must not route traffic at a server we cannot authenticate to")
     }

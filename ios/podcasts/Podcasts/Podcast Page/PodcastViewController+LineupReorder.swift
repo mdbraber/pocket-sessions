@@ -29,6 +29,21 @@ extension PodcastViewController {
         episodesDidChange()
     }
 
+    /// Hand-ordering first, since it's the base state everything falls back to, then the
+    /// one-shot arrangements. Nothing is checked: none of them is a mode you stay in.
+    func makeLineupReorderPicker() -> OptionsPicker {
+        let picker = OptionsPicker(title: L10n.lineupReorder.localizedUppercase)
+        picker.addAction(action: OptionAction(label: L10n.lineupReorderEpisodes, icon: "line.3.horizontal") { [weak self] in
+            self?.enterLineupReorderMode()
+        })
+        for option in LineupReorder.options {
+            picker.addAction(action: OptionAction(label: option.title) { [weak self] in
+                self?.reorderSessionLineup(order: option)
+            })
+        }
+        return picker
+    }
+
     // MARK: - Reorder Episodes mode
 
     /// A long-press drag is invisible until you know it's there; this mode puts a grip on every row

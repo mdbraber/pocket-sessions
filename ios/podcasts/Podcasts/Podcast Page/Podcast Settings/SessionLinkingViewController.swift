@@ -108,8 +108,8 @@ class SessionLinkingViewController: PCViewController, UITableViewDataSource, UIT
         if sender.isOn {
             // Seed each direction from the current global setting, so enabling Custom changes nothing
             // until the user flips a direction.
-            Settings.setMirrorOverride(Settings.mirrorUpNextToSession() ? .on : .off, key: Settings.mirrorUpNextToSessionKey, podcastUuid: podcast.uuid)
-            Settings.setMirrorOverride(Settings.mirrorSessionToUpNext() ? .on : .off, key: Settings.mirrorSessionToUpNextKey, podcastUuid: podcast.uuid)
+            Settings.setMirrorOverride(Settings.mirrorUpNextToSession ? .on : .off, key: Settings.mirrorUpNextToSessionKey, podcastUuid: podcast.uuid)
+            Settings.setMirrorOverride(Settings.mirrorSessionToUpNext ? .on : .off, key: Settings.mirrorSessionToUpNextKey, podcastUuid: podcast.uuid)
         } else {
             Settings.setMirrorOverride(.followGlobal, key: Settings.mirrorUpNextToSessionKey, podcastUuid: podcast.uuid)
             Settings.setMirrorOverride(.followGlobal, key: Settings.mirrorSessionToUpNextKey, podcastUuid: podcast.uuid)

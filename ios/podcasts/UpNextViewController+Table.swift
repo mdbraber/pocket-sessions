@@ -18,7 +18,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
     /// it IS narrowed to the source, so playing a queue episode (even mid-session) hands the card to
     /// the Up Next world and the session drops back to regular rows.
     var sessionOwnsCard: Bool {
-        !Settings.playbackSessionPaused()
+        !Settings.playbackSessionPaused
             && PlaybackManager.shared.currentEpisodeIsSessionSourced
             && PlaybackManager.shared.currentEpisode != nil
     }
@@ -70,9 +70,9 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
     /// Fork: the paused banner's tap — resumes the session at its last-played episode,
     /// falling back to the first remaining one. Same call as the session row-tap resume.
     func resumePausedSession() {
-        guard let session = Settings.playbackSession(), Settings.playbackSessionPaused() else { return }
+        guard let session = Settings.playbackSession, Settings.playbackSessionPaused else { return }
         let remaining = session.remainingEpisodes(excluding: nil)
-        guard let episode = remaining.first(where: { $0.uuid == Settings.playbackSessionLastEpisodeUuid() }) ?? remaining.first else { return }
+        guard let episode = remaining.first(where: { $0.uuid == Settings.playbackSessionLastEpisodeUuid }) ?? remaining.first else { return }
         AnalyticsPlaybackHelper.shared.currentSource = .upNext
         PlaybackManager.shared.play(sessionEpisode: episode)
     }
@@ -197,7 +197,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
 
         updateTimeRemainingLabel()
 
-        shuffleButton.isHidden = !FeatureFlag.upNextShuffle.enabled || PlaybackManager.shared.queue.upNextCount() == 0
+        shuffleButton.isHidden = PlaybackManager.shared.queue.upNextCount() == 0
         if FeatureFlag.upNextSort.enabled {
             sortButton.isHidden = PlaybackManager.shared.queue.upNextCount() == 0
         }
@@ -313,7 +313,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
                 // long-pressing the play button makes it current while inheriting the play state.
                 sessionCell.onPlayTapped = { [weak self] in self?.playSessionLane(row) }
                 sessionCell.onPlayLongPressed = { [weak self] in self?.makeSessionCurrentInheritingPlayState(row) }
-                sessionCell.upNextInSessionList = Settings.upNextInSessionList()
+                sessionCell.upNextInSessionList = Settings.upNextInSessionList
                 // The "top session" is the CURRENT one — read it off the placement, not off a fixed
                 // index. Up Next can be hidden (⋯ → Empty Up Next → Hide), and a hardcoded index 1
                 // then landed on the first pool row, handing it the current session's green accent

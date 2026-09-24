@@ -56,7 +56,7 @@ class ShortcutManager: CustomObserver {
 
         // Fork: two play options — Up Next and the active session, each captioned with
         // the episode that would play there.
-        let session = Settings.playbackSession()
+        let session = Settings.playbackSession
 
         let upNextEpisode: BaseEpisode? = session == nil
             ? (PlaybackManager.shared.currentEpisode ?? PlaybackManager.shared.queue.allEpisodes(includeNowPlaying: false).first)

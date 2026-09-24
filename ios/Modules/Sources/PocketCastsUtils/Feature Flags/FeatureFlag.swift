@@ -35,20 +35,6 @@ public enum FeatureFlag: String, CaseIterable {
     /// Enable the End of Year 2024 recap
     case endOfYear2024
 
-    /// Enable the Up Next shuffle button
-    case upNextShuffle
-
-    /// Playlist folders in the Playlists overview (personal fork feature)
-    case playlistFolders
-
-    /// Folder rules on smart playlists, materialized into their podcast rule
-    /// (personal fork feature)
-    case smartPlaylistFolderRules
-
-    /// The extended library badges: session-aware podcast badge types and
-    /// playlist-row badges (personal fork feature)
-    case libraryBadges
-
     /// Push two auto downloads on subscribe of a podcast
     case autoDownloadOnSubscribe
 
@@ -303,14 +289,6 @@ public enum FeatureFlag: String, CaseIterable {
             false
         case .endOfYear2024:
             false
-        case .upNextShuffle:
-            true
-        case .playlistFolders:
-            true
-        case .smartPlaylistFolderRules:
-            true
-        case .libraryBadges:
-            true
         case .autoDownloadOnSubscribe:
             true
         case .winback:

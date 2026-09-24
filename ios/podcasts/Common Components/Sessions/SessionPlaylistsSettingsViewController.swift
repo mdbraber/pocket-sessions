@@ -20,7 +20,7 @@ class SessionPlaylistsSettingsViewController: PCViewController, UITableViewDataS
     /// Podcasts covered by a selected folder — shown selected + dimmed (visual only; not saved).
     private var covered: Set<String> = []
     private func recomputeCovered() {
-        let selectedFolders = Settings.showPodcastSessionFolders()
+        let selectedFolders = Settings.showPodcastSessionFolders
         covered = selectedFolders.isEmpty ? [] : Set(podcasts.filter { $0.folderUuid.map(selectedFolders.contains) ?? false }.map(\.uuid))
     }
 
@@ -75,17 +75,17 @@ class SessionPlaylistsSettingsViewController: PCViewController, UITableViewDataS
         case .hideEmpty:
             // A view filter, not a session — the tick reads as "empty playlists are shown" (the
             // inverse of the underlying `hideEmptySessions` setting).
-            content = SessionPickerRow(label: L10n.sessionShowHideEmpty, selected: !Settings.hideEmptySessions(), artwork: .none, dimmed: false)
+            content = SessionPickerRow(label: L10n.sessionShowHideEmpty, selected: !Settings.hideEmptySessions, artwork: .none, dimmed: false)
         case .manual:
-            content = SessionPickerRow(label: L10n.sessionPlaylistsManual, selected: Settings.showManualSessions(), artwork: .none, dimmed: false)
+            content = SessionPickerRow(label: L10n.sessionPlaylistsManual, selected: Settings.showManualSessions, artwork: .none, dimmed: false)
         case .smart:
-            content = SessionPickerRow(label: L10n.sessionPlaylistsSmart, selected: Settings.showSmartPlaylistSessions(), artwork: .none, dimmed: false)
+            content = SessionPickerRow(label: L10n.sessionPlaylistsSmart, selected: Settings.showSmartPlaylistSessions, artwork: .none, dimmed: false)
         case .folder(let folder):
-            content = SessionPickerRow(label: folder.name, selected: Settings.showPodcastSessionFolders().contains(folder.uuid), artwork: .folder(folder.uuid), dimmed: false)
+            content = SessionPickerRow(label: folder.name, selected: Settings.showPodcastSessionFolders.contains(folder.uuid), artwork: .folder(folder.uuid), dimmed: false)
         case .podcast(let podcast):
             // A podcast covered by a selected folder reads as selected but dimmed (not saved on its own).
             let isCovered = covered.contains(podcast.uuid)
-            content = SessionPickerRow(label: podcast.title ?? "", selected: isCovered || Settings.showPodcastSessionPodcasts().contains(podcast.uuid), artwork: .podcast(podcast.uuid), dimmed: isCovered)
+            content = SessionPickerRow(label: podcast.title ?? "", selected: isCovered || Settings.showPodcastSessionPodcasts.contains(podcast.uuid), artwork: .podcast(podcast.uuid), dimmed: isCovered)
         }
         cell.contentConfiguration = UIHostingConfiguration { content }.margins(.vertical, 6)
         return cell
@@ -95,22 +95,22 @@ class SessionPlaylistsSettingsViewController: PCViewController, UITableViewDataS
         tableView.deselectRow(at: indexPath, animated: false)
         switch sections[indexPath.section].rows[indexPath.row] {
         case .hideEmpty:
-            Settings.setHideEmptySessions(!Settings.hideEmptySessions())
+            Settings.hideEmptySessions = !Settings.hideEmptySessions
             tableView.reloadRows(at: [indexPath], with: .none)
         case .manual:
-            Settings.setShowManualSessions(!Settings.showManualSessions())
+            Settings.showManualSessions = !Settings.showManualSessions
             tableView.reloadRows(at: [indexPath], with: .none)
         case .smart:
-            Settings.setShowSmartPlaylistSessions(!Settings.showSmartPlaylistSessions())
+            Settings.showSmartPlaylistSessions = !Settings.showSmartPlaylistSessions
             tableView.reloadRows(at: [indexPath], with: .none)
         case .folder(let folder):
-            flip(Settings.showPodcastSessionFolders(), folder.uuid, set: Settings.setShowPodcastSessionFolders)
+            flip(Settings.showPodcastSessionFolders, folder.uuid, set: { Settings.showPodcastSessionFolders = $0 })
             recomputeCovered() // covered podcasts changed — redraw the whole list
             SessionManager.shared.syncFolderScopedPodcastSessions()
             tableView.reloadData()
         case .podcast(let podcast):
             if covered.contains(podcast.uuid) { return } // owned by a selected folder — not individually toggleable
-            flip(Settings.showPodcastSessionPodcasts(), podcast.uuid, set: Settings.setShowPodcastSessionPodcasts)
+            flip(Settings.showPodcastSessionPodcasts, podcast.uuid, set: { Settings.showPodcastSessionPodcasts = $0 })
             SessionManager.shared.syncFolderScopedPodcastSessions()
             tableView.reloadRows(at: [indexPath], with: .none)
         }

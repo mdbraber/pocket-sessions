@@ -72,9 +72,6 @@ class Settings: NSObject {
             let storedBadgeType = UserDefaults.standard.integer(forKey: Settings.badgeKey)
 
             if let type = BadgeType(rawValue: Int32(storedBadgeType)) {
-                if type.isSessionBased, !FeatureFlag.libraryBadges.enabled {
-                    return .off
-                }
                 return type
             }
 
@@ -302,14 +299,14 @@ class Settings: NSObject {
     static let playlistsBadgeKey = "SJPlaylistsBadgeType"
 
     /// Fork: the Playlists overview's badge type — same option set as the podcast
-    /// badges. Off whenever the library-badges flag is.
-    class func playlistsBadgeType() -> BadgeType {
-        guard FeatureFlag.libraryBadges.enabled else { return .off }
-        return BadgeType(rawValue: Int32(UserDefaults.standard.integer(forKey: Settings.playlistsBadgeKey))) ?? .off
-    }
-
-    class func setPlaylistsBadgeType(_ badgeType: BadgeType) {
-        UserDefaults.standard.set(badgeType.rawValue, forKey: Settings.playlistsBadgeKey)
+    /// badges.
+    static var playlistsBadgeType: BadgeType {
+        get {
+            return BadgeType(rawValue: Int32(UserDefaults.standard.integer(forKey: Settings.playlistsBadgeKey))) ?? .off
+        }
+        set(badgeType) {
+            UserDefaults.standard.set(badgeType.rawValue, forKey: Settings.playlistsBadgeKey)
+        }
     }
 
     // MARK: - Fork: linked adds (Up Next ⇄ Session)
@@ -317,20 +314,22 @@ class Settings: NSObject {
     static let mirrorUpNextToSessionKey = "SJMirrorUpNextToSession"
     static let mirrorSessionToUpNextKey = "SJMirrorSessionToUpNext"
 
-    class func mirrorUpNextToSession() -> Bool {
-        UserDefaults.standard.bool(forKey: Settings.mirrorUpNextToSessionKey)
+    static var mirrorUpNextToSession: Bool {
+        get {
+            UserDefaults.standard.bool(forKey: Settings.mirrorUpNextToSessionKey)
+        }
+        set(on) {
+            UserDefaults.standard.set(on, forKey: Settings.mirrorUpNextToSessionKey)
+        }
     }
 
-    class func setMirrorUpNextToSession(_ on: Bool) {
-        UserDefaults.standard.set(on, forKey: Settings.mirrorUpNextToSessionKey)
-    }
-
-    class func mirrorSessionToUpNext() -> Bool {
-        UserDefaults.standard.bool(forKey: Settings.mirrorSessionToUpNextKey)
-    }
-
-    class func setMirrorSessionToUpNext(_ on: Bool) {
-        UserDefaults.standard.set(on, forKey: Settings.mirrorSessionToUpNextKey)
+    static var mirrorSessionToUpNext: Bool {
+        get {
+            UserDefaults.standard.bool(forKey: Settings.mirrorSessionToUpNextKey)
+        }
+        set(on) {
+            UserDefaults.standard.set(on, forKey: Settings.mirrorSessionToUpNextKey)
+        }
     }
 
     /// Per-podcast override: follow the global switch (live) or pin On/Off.
@@ -344,7 +343,7 @@ class Settings: NSObject {
 
     class func resolvedMirrorUpNextToSession(podcastUuid: String) -> Bool {
         switch mirrorOverride(key: Settings.mirrorUpNextToSessionKey, podcastUuid: podcastUuid) {
-        case .followGlobal: return mirrorUpNextToSession()
+        case .followGlobal: return mirrorUpNextToSession
         case .on: return true
         case .off: return false
         }
@@ -352,7 +351,7 @@ class Settings: NSObject {
 
     class func resolvedMirrorSessionToUpNext(podcastUuid: String) -> Bool {
         switch mirrorOverride(key: Settings.mirrorSessionToUpNextKey, podcastUuid: podcastUuid) {
-        case .followGlobal: return mirrorSessionToUpNext()
+        case .followGlobal: return mirrorSessionToUpNext
         case .on: return true
         case .off: return false
         }
@@ -367,20 +366,28 @@ class Settings: NSObject {
 
     /// Hide sessions/playlists that have nothing left to play (all episodes finished). Governs
     /// both the Playlists grid and the Up Next session chooser, since they share the sheet.
-    class func hideEmptySessions() -> Bool {
-        UserDefaults.standard.bool(forKey: hideEmptySessionsKey)
+    static var hideEmptySessions: Bool {
+        get {
+            UserDefaults.standard.bool(forKey: hideEmptySessionsKey)
+        }
+        set(on) {
+            UserDefaults.standard.set(on, forKey: hideEmptySessionsKey)
+        }
     }
-    class func setHideEmptySessions(_ on: Bool) { UserDefaults.standard.set(on, forKey: hideEmptySessionsKey) }
 
     static let hideEmptyUpNextKey = "SJHideEmptyUpNext"
 
     /// Hide the pinned Up Next row in the session chooser while the queue is empty. Separate from
     /// `hideEmptySessions`: Up Next is a permanent lane, not one of the sessions in the pool, so
     /// hiding empty sessions must not silently take the queue away with them.
-    class func hideEmptyUpNext() -> Bool {
-        UserDefaults.standard.bool(forKey: hideEmptyUpNextKey)
+    static var hideEmptyUpNext: Bool {
+        get {
+            UserDefaults.standard.bool(forKey: hideEmptyUpNextKey)
+        }
+        set(on) {
+            UserDefaults.standard.set(on, forKey: hideEmptyUpNextKey)
+        }
     }
-    class func setHideEmptyUpNext(_ on: Bool) { UserDefaults.standard.set(on, forKey: hideEmptyUpNextKey) }
 
     // MARK: Fork: Pocket Sessions sync
 
@@ -399,15 +406,17 @@ class Settings: NSObject {
     }
 
     private static let sessionSyncModeKey = "SJSessionSyncMode"
-    class func sessionSyncMode() -> SessionSyncMode {
-        if let raw = UserDefaults.standard.string(forKey: sessionSyncModeKey), let mode = SessionSyncMode(rawValue: raw) {
-            return mode
+    static var sessionSyncMode: SessionSyncMode {
+        get {
+            if let raw = UserDefaults.standard.string(forKey: sessionSyncModeKey), let mode = SessionSyncMode(rawValue: raw) {
+                return mode
+            }
+            // Pre-setting installs: a configured server URL implied server sync, else iCloud.
+            return sessionServerURL() != nil ? .server : .icloud
         }
-        // Pre-setting installs: a configured server URL implied server sync, else iCloud.
-        return sessionServerURL() != nil ? .server : .icloud
-    }
-    class func setSessionSyncMode(_ mode: SessionSyncMode) {
-        UserDefaults.standard.set(mode.rawValue, forKey: sessionSyncModeKey)
+        set(mode) {
+            UserDefaults.standard.set(mode.rawValue, forKey: sessionSyncModeKey)
+        }
     }
 
     /// The Pocket Casts Sessions (PCS) server base URL. Also settable from the terminal for simulator testing:
@@ -422,12 +431,14 @@ class Settings: NSObject {
     }
 
     private static let sessionServerTokenKey = "SJSessionServerToken"
-    class func sessionServerToken() -> String? {
-        guard let token = UserDefaults.standard.string(forKey: sessionServerTokenKey), !token.isEmpty else { return nil }
-        return token
-    }
-    class func setSessionServerToken(_ token: String?) {
-        UserDefaults.standard.set(token, forKey: sessionServerTokenKey)
+    static var sessionServerToken: String? {
+        get {
+            guard let token = UserDefaults.standard.string(forKey: sessionServerTokenKey), !token.isEmpty else { return nil }
+            return token
+        }
+        set(token) {
+            UserDefaults.standard.set(token, forKey: sessionServerTokenKey)
+        }
     }
 
     /// Fork: whether Pocket Casts API traffic is routed through the PCS relay
@@ -435,38 +446,44 @@ class Settings: NSObject {
     /// default, and inert unless both a server URL and a device token exist — see
     /// `PCAPIRelaySettings.apply()`, which is what actually hands the config to the transport.
     private static let sessionServerRelayAPIKey = "SJSessionServerRelayAPI"
-    class func sessionServerRelayAPI() -> Bool {
-        UserDefaults.standard.bool(forKey: sessionServerRelayAPIKey)
-    }
-    class func setSessionServerRelayAPI(_ enabled: Bool) {
-        UserDefaults.standard.set(enabled, forKey: sessionServerRelayAPIKey)
+    static var sessionServerRelayAPI: Bool {
+        get {
+            UserDefaults.standard.bool(forKey: sessionServerRelayAPIKey)
+        }
+        set(enabled) {
+            UserDefaults.standard.set(enabled, forKey: sessionServerRelayAPIKey)
+        }
     }
 
     /// Whether the relay can be turned on at all: without a server and a token there is nothing to
     /// relay through, and no token to authenticate with.
     class func sessionServerRelayAvailable() -> Bool {
-        sessionServerURL() != nil && sessionServerToken() != nil
+        sessionServerURL() != nil && sessionServerToken != nil
     }
 
     /// Whether the active playback session follows across devices via the PCS server:
     /// the leader publishes its session pointer + current episode, and idle devices
     /// adopt it AND load the episode into the mini player (paused). Off by default.
     private static let sessionSyncPlaybackKey = "SJSessionSyncPlayback"
-    class func sessionSyncPlayback() -> Bool {
-        UserDefaults.standard.bool(forKey: sessionSyncPlaybackKey)
-    }
-    class func setSessionSyncPlayback(_ enabled: Bool) {
-        UserDefaults.standard.set(enabled, forKey: sessionSyncPlaybackKey)
+    static var sessionSyncPlayback: Bool {
+        get {
+            UserDefaults.standard.bool(forKey: sessionSyncPlaybackKey)
+        }
+        set(enabled) {
+            UserDefaults.standard.set(enabled, forKey: sessionSyncPlaybackKey)
+        }
     }
 
     /// The raw APNs device token (hex), for the PCS server's silent-push fan-out.
     private static let sessionAPNSTokenKey = "SJSessionAPNSToken"
-    class func sessionAPNSToken() -> String? {
-        guard let token = UserDefaults.standard.string(forKey: sessionAPNSTokenKey), !token.isEmpty else { return nil }
-        return token
-    }
-    class func setSessionAPNSToken(_ token: String?) {
-        UserDefaults.standard.set(token, forKey: sessionAPNSTokenKey)
+    static var sessionAPNSToken: String? {
+        get {
+            guard let token = UserDefaults.standard.string(forKey: sessionAPNSTokenKey), !token.isEmpty else { return nil }
+            return token
+        }
+        set(token) {
+            UserDefaults.standard.set(token, forKey: sessionAPNSTokenKey)
+        }
     }
 
     /// A stable per-install device id — the server's push fan-out excludes the originator by it.
@@ -491,39 +508,55 @@ class Settings: NSObject {
     static let upNextInSessionListKey = "SJUpNextInSessionList"
     /// Fork: where the "Up Next" row sits on the session-list screen. False (default) = pinned at the
     /// top with its own accent box. True = a normal session row in the list (no separate styling).
-    class func upNextInSessionList() -> Bool {
-        UserDefaults.standard.bool(forKey: upNextInSessionListKey)
+    static var upNextInSessionList: Bool {
+        get {
+            UserDefaults.standard.bool(forKey: upNextInSessionListKey)
+        }
+        set(on) {
+            UserDefaults.standard.set(on, forKey: upNextInSessionListKey)
+        }
     }
-    class func setUpNextInSessionList(_ on: Bool) { UserDefaults.standard.set(on, forKey: upNextInSessionListKey) }
 
     /// Hand-built (manual) session playlists.
-    class func showManualSessions() -> Bool {
-        UserDefaults.standard.object(forKey: showManualSessionsKey) as? Bool ?? true
+    static var showManualSessions: Bool {
+        get {
+            UserDefaults.standard.object(forKey: showManualSessionsKey) as? Bool ?? true
+        }
+        set(on) {
+            UserDefaults.standard.set(on, forKey: showManualSessionsKey)
+        }
     }
-    class func setShowManualSessions(_ on: Bool) { UserDefaults.standard.set(on, forKey: showManualSessionsKey) }
 
     /// Sessions fed by a smart playlist (also folder / all-podcasts feeders, which are smart under the hood).
-    class func showSmartPlaylistSessions() -> Bool {
-        UserDefaults.standard.object(forKey: showSmartPlaylistSessionsKey) as? Bool ?? true
+    static var showSmartPlaylistSessions: Bool {
+        get {
+            UserDefaults.standard.object(forKey: showSmartPlaylistSessionsKey) as? Bool ?? true
+        }
+        set(on) {
+            UserDefaults.standard.set(on, forKey: showSmartPlaylistSessionsKey)
+        }
     }
-    class func setShowSmartPlaylistSessions(_ on: Bool) { UserDefaults.standard.set(on, forKey: showSmartPlaylistSessionsKey) }
 
     /// Per-podcast sessions show for podcasts whose folder is selected here (e.g. "Series")…
-    class func showPodcastSessionFolders() -> Set<String> {
-        Set(UserDefaults.standard.stringArray(forKey: showPodcastSessionFoldersKey) ?? [])
-    }
-    class func setShowPodcastSessionFolders(_ uuids: Set<String>) {
-        UserDefaults.standard.set(Array(uuids), forKey: showPodcastSessionFoldersKey)
+    static var showPodcastSessionFolders: Set<String> {
+        get {
+            Set(UserDefaults.standard.stringArray(forKey: showPodcastSessionFoldersKey) ?? [])
+        }
+        set(uuids) {
+            UserDefaults.standard.set(Array(uuids), forKey: showPodcastSessionFoldersKey)
+        }
     }
 
     static let showPodcastSessionPodcastsKey = "SJShowPodcastSessionPodcasts"
 
     /// …or for individually selected podcasts.
-    class func showPodcastSessionPodcasts() -> Set<String> {
-        Set(UserDefaults.standard.stringArray(forKey: showPodcastSessionPodcastsKey) ?? [])
-    }
-    class func setShowPodcastSessionPodcasts(_ uuids: Set<String>) {
-        UserDefaults.standard.set(Array(uuids), forKey: showPodcastSessionPodcastsKey)
+    static var showPodcastSessionPodcasts: Set<String> {
+        get {
+            Set(UserDefaults.standard.stringArray(forKey: showPodcastSessionPodcastsKey) ?? [])
+        }
+        set(uuids) {
+            UserDefaults.standard.set(Array(uuids), forKey: showPodcastSessionPodcastsKey)
+        }
     }
 
     static let playlistsOptedOutOfSessionKey = "SJPlaylistsOptedOutOfSession"
@@ -550,13 +583,14 @@ class Settings: NSObject {
 
     /// Fork: auto-add to Session stops once a session's lineup holds this many
     /// episodes (manual adds are never capped). Mirrors the Up Next auto-add limit.
-    class func sessionAutoAddLimit() -> Int {
-        let limit = UserDefaults.standard.integer(forKey: Settings.sessionAutoAddLimitKey)
-        return limit > 0 ? limit : 100
-    }
-
-    class func setSessionAutoAddLimit(_ limit: Int) {
-        UserDefaults.standard.set(limit, forKey: Settings.sessionAutoAddLimitKey)
+    static var sessionAutoAddLimit: Int {
+        get {
+            let limit = UserDefaults.standard.integer(forKey: Settings.sessionAutoAddLimitKey)
+            return limit > 0 ? limit : 100
+        }
+        set(limit) {
+            UserDefaults.standard.set(limit, forKey: Settings.sessionAutoAddLimitKey)
+        }
     }
 
     // Fork: collapsed episode-group headers per podcast (keyed by group title, which
@@ -581,30 +615,30 @@ class Settings: NSObject {
     /// The active playback session, or nil when the Up Next queue plays normally. The pointer
     /// (type + uuid) syncs via ForkSettingsSync so idle devices adopt the same session framing;
     /// a device actively playing its own session is never yanked off it (see `pull`).
-    class func playbackSession() -> PlaybackSession? {
-        guard let typeValue = UserDefaults.standard.string(forKey: Settings.playbackSessionTypeKey),
-              let type = PlaybackSessionType(rawValue: typeValue),
-              let uuid = UserDefaults.standard.string(forKey: Settings.playbackSessionUuidKey)
-        else {
-            return nil
+    static var playbackSession: PlaybackSession? {
+        get {
+            guard let typeValue = UserDefaults.standard.string(forKey: Settings.playbackSessionTypeKey),
+                  let type = PlaybackSessionType(rawValue: typeValue),
+                  let uuid = UserDefaults.standard.string(forKey: Settings.playbackSessionUuidKey)
+            else {
+                return nil
+            }
+
+            return PlaybackSession(type: type, uuid: uuid)
         }
+        set(session) {
+            if let session {
+                UserDefaults.standard.set(session.type.rawValue, forKey: Settings.playbackSessionTypeKey)
+                UserDefaults.standard.set(session.uuid, forKey: Settings.playbackSessionUuidKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: Settings.playbackSessionTypeKey)
+                UserDefaults.standard.removeObject(forKey: Settings.playbackSessionUuidKey)
+            }
+            UserDefaults.standard.removeObject(forKey: Settings.playbackSessionPausedKey)
+            UserDefaults.standard.removeObject(forKey: Settings.playbackSessionLastEpisodeKey)
 
-        return PlaybackSession(type: type, uuid: uuid)
-    }
-
-    class func setPlaybackSession(_ session: PlaybackSession?) {
-
-        if let session {
-            UserDefaults.standard.set(session.type.rawValue, forKey: Settings.playbackSessionTypeKey)
-            UserDefaults.standard.set(session.uuid, forKey: Settings.playbackSessionUuidKey)
-        } else {
-            UserDefaults.standard.removeObject(forKey: Settings.playbackSessionTypeKey)
-            UserDefaults.standard.removeObject(forKey: Settings.playbackSessionUuidKey)
+            NotificationCenter.postOnMainThread(notification: Constants.Notifications.playbackSessionChanged)
         }
-        UserDefaults.standard.removeObject(forKey: Settings.playbackSessionPausedKey)
-        UserDefaults.standard.removeObject(forKey: Settings.playbackSessionLastEpisodeKey)
-
-        NotificationCenter.postOnMainThread(notification: Constants.Notifications.playbackSessionChanged)
     }
 
 
@@ -612,15 +646,16 @@ class Settings: NSObject {
 
     /// The most recently played session episode — a paused session's collapsed view offers
     /// it as the "resume here" row.
-    class func playbackSessionLastEpisodeUuid() -> String? {
-        UserDefaults.standard.string(forKey: Settings.playbackSessionLastEpisodeKey)
-    }
-
-    class func setPlaybackSessionLastEpisodeUuid(_ uuid: String?) {
-        if let uuid {
-            UserDefaults.standard.set(uuid, forKey: Settings.playbackSessionLastEpisodeKey)
-        } else {
-            UserDefaults.standard.removeObject(forKey: Settings.playbackSessionLastEpisodeKey)
+    static var playbackSessionLastEpisodeUuid: String? {
+        get {
+            UserDefaults.standard.string(forKey: Settings.playbackSessionLastEpisodeKey)
+        }
+        set(uuid) {
+            if let uuid {
+                UserDefaults.standard.set(uuid, forKey: Settings.playbackSessionLastEpisodeKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: Settings.playbackSessionLastEpisodeKey)
+            }
         }
     }
 
@@ -628,13 +663,14 @@ class Settings: NSObject {
 
     /// Whether the saved session is paused: it stays collapsed in Up Next while the queue
     /// plays normally, and playing one of its episodes resumes it.
-    class func playbackSessionPaused() -> Bool {
-        UserDefaults.standard.bool(forKey: Settings.playbackSessionPausedKey)
-    }
-
-    class func setPlaybackSessionPaused(_ paused: Bool) {
-        UserDefaults.standard.set(paused, forKey: Settings.playbackSessionPausedKey)
-        NotificationCenter.postOnMainThread(notification: Constants.Notifications.playbackSessionChanged)
+    static var playbackSessionPaused: Bool {
+        get {
+            UserDefaults.standard.bool(forKey: Settings.playbackSessionPausedKey)
+        }
+        set(paused) {
+            UserDefaults.standard.set(paused, forKey: Settings.playbackSessionPausedKey)
+            NotificationCenter.postOnMainThread(notification: Constants.Notifications.playbackSessionChanged)
+        }
     }
 
     // MARK: - Discover Region

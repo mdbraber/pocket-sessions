@@ -128,7 +128,7 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
             cell.cellLabel.text = L10n.settingsGlobalSettings
             cell.setImage(imageName: nil)
             cell.showSecondaryLabel = true
-            cell.cellSecondaryLabel.text = L10n.settingsEpisodeLimitFormat(Settings.sessionAutoAddLimit().localized())
+            cell.cellSecondaryLabel.text = L10n.settingsEpisodeLimitFormat(Settings.sessionAutoAddLimit.localized())
 
             return cell
         case .sessionLinking:
@@ -377,7 +377,7 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
         } else if firstRow == .globalInbox {
             return L10n.inboxPodcastFooter
         } else if firstRow == .sessionAutoAdd {
-            return L10n.settingsSessionLimit(Settings.sessionAutoAddLimit().localized())
+            return L10n.settingsSessionLimit(Settings.sessionAutoAddLimit.localized())
         } else if firstRow == .feedError {
             return L10n.settingsFeedErrorMsg
         } else if firstRow == .autoArchive {

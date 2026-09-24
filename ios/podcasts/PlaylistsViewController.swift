@@ -214,7 +214,7 @@ class PlaylistsViewController: PCViewController, FilterCreatedDelegate {
     /// Only rows wearing a badge care about triage/play state. Counts change
     /// without row changes, so the diff reload alone would leave cells stale.
     @objc private func badgeStateChanged() {
-        guard Settings.playlistsBadgeType() != .off else { return }
+        guard Settings.playlistsBadgeType != .off else { return }
         debounce.call { [weak self] in
             self?.filtersTable.reloadData()
             self?.reloadFilters()
@@ -244,11 +244,9 @@ class PlaylistsViewController: PCViewController, FilterCreatedDelegate {
 
         // Fork: row badges, same option set as the podcast grid's. A badge replaces
         // the row's plain episode count.
-        if FeatureFlag.libraryBadges.enabled {
-            let badgeAction = OptionAction(label: L10n.podcastsBadges, secondaryLabel: Settings.playlistsBadgeType().description, icon: "badges") {}
-            badgeAction.submenu = { [weak self] in self?.makeBadgeOptionsPicker() }
-            optionsPicker.addAction(action: badgeAction)
-        }
+        let badgeAction = OptionAction(label: L10n.podcastsBadges, secondaryLabel: Settings.playlistsBadgeType.description, icon: "badges") {}
+        badgeAction.submenu = { [weak self] in self?.makeBadgeOptionsPicker() }
+        optionsPicker.addAction(action: badgeAction)
 
         let largeGridAction = OptionAction(label: L10n.podcastsLargeGrid, icon: "podcastlist_largegrid", selected: playlistsLayout == .threeByThree) { [weak self] in
             self?.playlistsLayout = .threeByThree
@@ -261,11 +259,9 @@ class PlaylistsViewController: PCViewController, FilterCreatedDelegate {
         }
         optionsPicker.addSegmentedAction(name: L10n.podcastsLayout, icon: "podcastlist_largegrid", actions: [largeGridAction, smallGridAction, listAction])
 
-        if FeatureFlag.playlistFolders.enabled {
-            optionsPicker.addAction(action: OptionAction(label: L10n.folderCreateNew, icon: "folder-create") { [weak self] in
-                self?.presentNewPlaylistFolder()
-            })
-        }
+        optionsPicker.addAction(action: OptionAction(label: L10n.folderCreateNew, icon: "folder-create") { [weak self] in
+            self?.presentNewPlaylistFolder()
+        })
 
         // Reordering needs the list layout and the custom order to mean anything.
         if playlistsLayout == .list, playlistsSortOrder == .custom {
@@ -280,11 +276,11 @@ class PlaylistsViewController: PCViewController, FilterCreatedDelegate {
 
     private func makeBadgeOptionsPicker() -> OptionsPicker {
         let options = OptionsPicker(title: L10n.podcastsBadges.localizedUppercase)
-        let current = Settings.playlistsBadgeType()
+        let current = Settings.playlistsBadgeType
         let orderedTypes: [BadgeType] = [.off, .allUnplayed, .latestEpisode, .anyInInbox, .inboxCount, .sessionCount]
         for type in orderedTypes {
             options.addAction(action: OptionAction(label: type.description, selected: current == type) { [weak self] in
-                Settings.setPlaylistsBadgeType(type)
+                Settings.playlistsBadgeType = type
                 // The row set is unchanged, so the diff reload won't reconfigure
                 // cells — force it so the new badge type renders immediately.
                 self?.filtersTable.reloadData()
@@ -328,7 +324,7 @@ class PlaylistsViewController: PCViewController, FilterCreatedDelegate {
             gridHost = host
         }
 
-        let folders = FeatureFlag.playlistFolders.enabled ? PlaylistFolderManager.shared.allFolders() : []
+        let folders = PlaylistFolderManager.shared.allFolders()
         let feederUuids = SessionStore.shared.feederPlaylistUuids
         let playlists = DataManager.shared.allPlaylists(includeDeleted: false)
             .filter { PlaylistFolderManager.shared.folderUuid(forPlaylist: $0.uuid) == nil && !feederUuids.contains($0.uuid) }
@@ -336,7 +332,7 @@ class PlaylistsViewController: PCViewController, FilterCreatedDelegate {
             // A smart-playlist session's store is redundant with its visible smart playlist (which
             // opens the session) — show only the smart playlist, not both.
             .filter { !SessionManager.shared.storeHasVisibleSmartFeeder(playlistUuid: $0.uuid) }
-            .filter { !Settings.hideEmptySessions() || !SessionManager.shared.sessionIsEmpty(storePlaylistUuid: $0.uuid) }
+            .filter { !Settings.hideEmptySessions || !SessionManager.shared.sessionIsEmpty(storePlaylistUuid: $0.uuid) }
 
         let items: [PlaylistGridItem]
         if playlistsSortOrder == .titleAtoZ {
@@ -436,18 +432,16 @@ class PlaylistsViewController: PCViewController, FilterCreatedDelegate {
 
             // Fork: Playlist Folders lead the list; playlists inside a folder show on
             // the folder's own page instead of the top level.
-            var folderRows: [ListPlaylist] = FeatureFlag.playlistFolders.enabled
-                ? PlaylistFolderManager.shared.allFolders().map { folder in
-                    // Count only what's visible when the folder is opened (not hidden session stores/feeders).
-                    ListPlaylistFolder(folder: folder, count: PlaylistFolderManager.shared.visiblePlaylists(inFolder: folder.uuid).count)
-                }
-                : []
+            var folderRows: [ListPlaylist] = PlaylistFolderManager.shared.allFolders().map { folder in
+                // Count only what's visible when the folder is opened (not hidden session stores/feeders).
+                ListPlaylistFolder(folder: folder, count: PlaylistFolderManager.shared.visiblePlaylists(inFolder: folder.uuid).count)
+            }
             let feederUuids = SessionStore.shared.feederPlaylistUuids
             var playlistRows = DataManager.shared.allPlaylists(includeDeleted: false)
                 .filter { PlaylistFolderManager.shared.folderUuid(forPlaylist: $0.uuid) == nil && !feederUuids.contains($0.uuid) }
                 .filter { SessionManager.shared.sessionStoreVisible(playlistUuid: $0.uuid) }
                 .filter { !SessionManager.shared.storeHasVisibleSmartFeeder(playlistUuid: $0.uuid) }
-                .filter { !Settings.hideEmptySessions() || !SessionManager.shared.sessionIsEmpty(storePlaylistUuid: $0.uuid) }
+                .filter { !Settings.hideEmptySessions || !SessionManager.shared.sessionIsEmpty(storePlaylistUuid: $0.uuid) }
                 .map { ListPlaylist(playlist: $0) }
             // Fork: fold the legacy folders-first/playlists-first split into one shared
             // position space (once), so drag order can interleave the two kinds.

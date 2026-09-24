@@ -627,7 +627,7 @@ extension AppDelegate {
     // MARK: - Fork: icon quick action playback
 
     static func playUpNextShortcut(retriesLeft: Int = 4) {
-        if Settings.playbackSession() != nil {
+        if Settings.playbackSession != nil {
             PlaybackManager.shared.endPlaybackSession()
         }
         guard !PlaybackManager.shared.isPlaying else { openUpNextTab(); return }
@@ -645,9 +645,9 @@ extension AppDelegate {
     }
 
     static func playSessionShortcut(retriesLeft: Int = 4) {
-        guard let session = Settings.playbackSession() else { return }
+        guard let session = Settings.playbackSession else { return }
         guard !PlaybackManager.shared.isPlaying else { openUpNextTab(); return }
-        if Settings.playbackSessionPaused() || PlaybackManager.shared.currentEpisode == nil {
+        if Settings.playbackSessionPaused || PlaybackManager.shared.currentEpisode == nil {
             if let episode = PlaybackManager.shared.currentEpisode ?? session.nextEpisode(after: nil) {
                 PlaybackManager.shared.play(sessionEpisode: episode)
                 openUpNextTab()

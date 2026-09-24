@@ -158,7 +158,7 @@ extension UpNextViewController: SwipeTableViewCellDelegate, SwipeHandler {
                     self.changedViaSwipeToRemove = true
                     self.refreshSessionState()
                     self.reloadTable()
-                    if PlaybackManager.shared.queue.upNextCount() == 0, FeatureFlag.upNextShuffle.enabled {
+                    if PlaybackManager.shared.queue.upNextCount() == 0 {
                         self.isMultiSelectEnabled = false
                         self.updateNavBarButtons()
                     }

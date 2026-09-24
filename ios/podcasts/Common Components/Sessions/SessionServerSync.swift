@@ -108,9 +108,9 @@ final class SessionServerSync {
         // change of session is not that. So publishing now follows the session CHANGING, and the
         // fingerprint check below still suppresses anything that isn't genuinely new.
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-            guard let self, Settings.sessionSyncPlayback() else { return }
-            let session = Settings.playbackSession()
-            let paused = Settings.playbackSessionPaused()
+            guard let self, Settings.sessionSyncPlayback else { return }
+            let session = Settings.playbackSession
+            let paused = Settings.playbackSessionPaused
             // The leader episode is only meaningful while this device is actually sounding —
             // otherwise publish the session alone and let the follower pick its own head.
             let episodeUuid = (session != nil && !paused && PlaybackManager.shared.isPlaying)
@@ -152,10 +152,10 @@ final class SessionServerSync {
     /// Publishes this device's CURRENT pointer. `force` clears the suppression fingerprint first,
     /// so an explicit Upload re-states the pointer even when it hasn't changed since last time.
     private func publishCurrentPointer(force: Bool) {
-        guard Settings.sessionSyncPlayback() else { return }
+        guard Settings.sessionSyncPlayback else { return }
         if force { UserDefaults.standard.removeObject(forKey: playbackFingerprintKey) }
-        let session = Settings.playbackSession()
-        let paused = Settings.playbackSessionPaused()
+        let session = Settings.playbackSession
+        let paused = Settings.playbackSessionPaused
         let episodeUuid = (session != nil && !paused && PlaybackManager.shared.isPlaying)
             ? PlaybackManager.shared.currentEpisode?.uuid : nil
         publishPlaybackPointer(session: session, episodeUuid: episodeUuid)
@@ -167,7 +167,7 @@ final class SessionServerSync {
     /// without audio. A device that is actively playing is never yanked; the
     /// publisher's playing() requirement means adopting can't echo anything back.
     private func applyRemotePlayback(_ playback: [String: Any]) {
-        guard Settings.sessionSyncPlayback(),
+        guard Settings.sessionSyncPlayback,
               let updatedAt = (playback["updatedAt"] as? NSNumber)?.int64Value,
               let payload = playback["payload"] as? [String: Any],
               payload["deviceId"] as? String != Settings.sessionServerDeviceId() else { return }
@@ -180,8 +180,8 @@ final class SessionServerSync {
             UserDefaults.standard.set(updatedAt, forKey: self.playbackAppliedAtKey)
 
             if payload["cleared"] as? Bool == true {
-                guard Settings.playbackSession() != nil else { return }
-                Settings.setPlaybackSession(nil)
+                guard Settings.playbackSession != nil else { return }
+                Settings.playbackSession = nil
                 FileLog.shared.addMessage("SessionServerSync: adopted cleared playback pointer")
                 return
             }
@@ -190,7 +190,7 @@ final class SessionServerSync {
                   let uuid = payload["uuid"] as? String else { return }
             let session = PlaybackSession(type: type, uuid: uuid)
             let episodeUuid = payload["episodeUuid"] as? String ?? ""
-            let alreadyFramed = Settings.playbackSession() == session
+            let alreadyFramed = Settings.playbackSession == session
                 && (episodeUuid.isEmpty || PlaybackManager.shared.currentEpisode?.uuid == episodeUuid)
             guard !alreadyFramed else { return }
             PlaybackManager.shared.startPlaybackSession(session, autoPlay: false)
@@ -236,8 +236,8 @@ final class SessionServerSync {
     /// Called from the AppDelegate when APNs hands over (a possibly new) device
     /// token; re-registers so the server's fan-out set stays current.
     func updateAPNSToken(_ token: String) {
-        guard token != Settings.sessionAPNSToken() else { return }
-        Settings.setSessionAPNSToken(token)
+        guard token != Settings.sessionAPNSToken else { return }
+        Settings.sessionAPNSToken = token
         queue.async { [weak self] in self?.registerDevice() }
     }
 
@@ -694,7 +694,7 @@ final class SessionServerSync {
             }
             DispatchQueue.main.async {
                 if let token = dict["apiToken"] as? String, !token.isEmpty {
-                    Settings.setSessionServerToken(token)
+                    Settings.sessionServerToken = token
                     // The relay authenticates with this token, so it only becomes usable now.
                     PCAPIRelaySettings.apply()
                 }
@@ -735,7 +735,7 @@ final class SessionServerSync {
         #endif
         request(path: "/session/v1/devices", method: "POST",
                 body: ["deviceId": Settings.sessionServerDeviceId(),
-                       "apnsToken": Settings.sessionAPNSToken() ?? "",
+                       "apnsToken": Settings.sessionAPNSToken ?? "",
                        "apnsEnv": apnsEnv]) { _ in }
     }
 
@@ -750,7 +750,7 @@ final class SessionServerSync {
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.setValue(Settings.sessionServerDeviceId(), forHTTPHeaderField: "X-Device-Id")
-        if let token = Settings.sessionServerToken() {
+        if let token = Settings.sessionServerToken {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
         if let body {

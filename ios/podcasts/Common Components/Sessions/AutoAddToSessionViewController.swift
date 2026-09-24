@@ -58,7 +58,7 @@ class AutoAddToSessionViewController: PCViewController, UITableViewDelegate, UIT
             switch row {
             case .autoAddLimit:
                 cell.cellLabel.text = L10n.settingsAutoAddLimit
-                cell.cellSecondaryLabel.text = Settings.sessionAutoAddLimit().localized()
+                cell.cellSecondaryLabel.text = Settings.sessionAutoAddLimit.localized()
             case .selectPodcasts:
                 let podcastCount = autoAddPodcasts.count
                 cell.cellLabel.text = podcastCount == 1 ? L10n.chosenPodcastsSingular : L10n.chosenPodcastsPluralFormat(podcastCount.localized())
@@ -117,7 +117,7 @@ class AutoAddToSessionViewController: PCViewController, UITableViewDelegate, UIT
     }
 
     func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        section == 0 ? L10n.settingsSessionAutoAddLimitSubtitle(Settings.sessionAutoAddLimit().localized()) : nil
+        section == 0 ? L10n.settingsSessionAutoAddLimitSubtitle(Settings.sessionAutoAddLimit.localized()) : nil
     }
 
     func tableView(_ tableView: UITableView, willDisplayFooterView view: UIView, forSection section: Int) {
@@ -159,9 +159,9 @@ class AutoAddToSessionViewController: PCViewController, UITableViewDelegate, UIT
     }
 
     private func addAutoAddLimit(amount: Int, to: OptionsPicker) {
-        let selectedSetting = Settings.sessionAutoAddLimit()
+        let selectedSetting = Settings.sessionAutoAddLimit
         let action = OptionAction(label: L10n.episodeCountPluralFormat(amount.localized()).localizedCapitalized, selected: selectedSetting == amount) { [weak self] in
-            Settings.setSessionAutoAddLimit(amount)
+            Settings.sessionAutoAddLimit = amount
             self?.mainTable.reloadData()
         }
         to.addAction(action: action)

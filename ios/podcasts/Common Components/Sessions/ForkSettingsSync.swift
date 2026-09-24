@@ -85,7 +85,7 @@ final class ForkSettingsSync {
     /// In server mode the PCS channel owns the playback pointer (opt-in, richer
     /// semantics: it also loads the episode) — the KV store must not fight it.
     private var syncedExactKeys: [String] {
-        guard Settings.sessionSyncMode() == .server else { return Self.exactKeys }
+        guard Settings.sessionSyncMode == .server else { return Self.exactKeys }
         return Self.exactKeys.filter { !Self.pointerKeys.contains($0) }
     }
 

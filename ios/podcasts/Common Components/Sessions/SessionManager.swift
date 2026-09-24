@@ -240,8 +240,8 @@ class SessionManager {
     /// Fork: for each podcast folder ticked in Session Playlists, ensure every podcast in it has an
     /// (empty, auto-add-off) session, filed into a playlist folder with the same name. Idempotent.
     @objc func syncFolderScopedPodcastSessions() {
-        let selectedFolders = Settings.showPodcastSessionFolders()
-        let selectedPodcasts = Settings.showPodcastSessionPodcasts()
+        let selectedFolders = Settings.showPodcastSessionFolders
+        let selectedPodcasts = Settings.showPodcastSessionPodcasts
         guard !selectedFolders.isEmpty || !selectedPodcasts.isEmpty else { return }
         let podcasts = DataManager.shared.allPodcasts(includeUnsubscribed: false)
         var filed = false
@@ -271,7 +271,7 @@ class SessionManager {
     @discardableResult
     func fileFolderScopedPodcastSession(podcast: Podcast, storeUuid: String) -> Bool {
         guard let podcastFolderUuid = podcast.folderUuid,
-              Settings.showPodcastSessionFolders().contains(podcastFolderUuid),
+              Settings.showPodcastSessionFolders.contains(podcastFolderUuid),
               let podcastFolder = DataManager.shared.findFolder(uuid: podcastFolderUuid) else { return false }
         let playlistFolder = PlaylistFolderManager.shared.allFolders().first { $0.name == podcastFolder.name }
             ?? PlaylistFolderManager.shared.createFolder(name: podcastFolder.name, color: podcastFolder.color, playlistUuids: [])
@@ -987,9 +987,9 @@ class SessionManager {
     func play(episode: BaseEpisode, in session: Session) {
         guard let storeUuid = session.storePlaylistUuid else { return }
         let target = PlaybackSession(type: .playlist, uuid: storeUuid)
-        if Settings.playbackSession() != target {
-            Settings.setPlaybackSession(target)
-            Settings.setPlaybackSessionPaused(false)
+        if Settings.playbackSession != target {
+            Settings.playbackSession = target
+            Settings.playbackSessionPaused = false
         }
         PlaybackManager.shared.play(sessionEpisode: episode)
     }
@@ -997,7 +997,7 @@ class SessionManager {
     /// Stamps the active session as recently played once audio starts, whatever started it
     /// — the chooser, the Switch sheet, a Play Session button, CarPlay, or a resume.
     @objc private func sessionPlaybackStarted() {
-        guard let playing = Settings.playbackSession(), !Settings.playbackSessionPaused() else { return }
+        guard let playing = Settings.playbackSession, !Settings.playbackSessionPaused else { return }
         SessionStore.shared.markUsed(playbackUuid: playing.uuid)
     }
 
@@ -1106,13 +1106,13 @@ class SessionManager {
         guard let session = SessionStore.shared.session(forStore: playlistUuid) else { return true }
         switch session.feeder {
         case .none:
-            return Settings.showManualSessions()
+            return Settings.showManualSessions
         case .smartPlaylist, .allPodcasts:
-            return Settings.showSmartPlaylistSessions()
+            return Settings.showSmartPlaylistSessions
         case .podcast(let podcastUuid):
-            if Settings.showPodcastSessionPodcasts().contains(podcastUuid) { return true }
+            if Settings.showPodcastSessionPodcasts.contains(podcastUuid) { return true }
             guard let folderUuid = DataManager.shared.findPodcast(uuid: podcastUuid, includeUnsubscribed: true)?.folderUuid else { return false }
-            return Settings.showPodcastSessionFolders().contains(folderUuid)
+            return Settings.showPodcastSessionFolders.contains(folderUuid)
         }
     }
 
@@ -1261,11 +1261,11 @@ class SessionManager {
     /// via a toast — dismissing it keeps the playlist. This can't stack with
     /// PlaybackManager's plain "session finished" toast: that path clears the
     /// playback-session pointer synchronously before this (main-async) sweep runs,
-    /// so the `Settings.playbackSession()` guard below fails whenever it fired.
+    /// so the `Settings.playbackSession` guard below fails whenever it fired.
     private func promptIfSessionFinished(_ session: Session, store: EpisodeFilter, remaining: Int) {
         guard remaining <= 0,
               session.feeder == SessionFeeder.none,
-              let playing = Settings.playbackSession(), playing.uuid == store.uuid else { return }
+              let playing = Settings.playbackSession, playing.uuid == store.uuid else { return }
         let name = store.playlistName
         DispatchQueue.main.async { [weak self] in
             Toast.show(L10n.sessionFinishedTitle(name), actions: [
@@ -1306,7 +1306,7 @@ class SessionManager {
         // The global limit caps auto-adds only: once the lineup is full, new arrivals
         // stay in the inbox. Manual adds are never capped.
         if let store = store(for: session) {
-            let capacity = Settings.sessionAutoAddLimit() - DataManager.shared.positionedEpisodeUuids(for: store).count
+            let capacity = Settings.sessionAutoAddLimit - DataManager.shared.positionedEpisodeUuids(for: store).count
             guard capacity > 0 else { return }
             offers = Array(offers.prefix(capacity))
         }
@@ -1320,7 +1320,6 @@ class SessionManager {
     /// Smart playlists carrying a folder rule re-materialize the folder's podcasts
     /// into their synced podcast rule whenever folders change.
     @objc func refreshFolderRules() {
-        guard FeatureFlag.smartPlaylistFolderRules.enabled else { return }
         DispatchQueue.global(qos: .utility).async {
             let linked = DataManager.shared.allSmartPlaylists(includeDeleted: false).filter { !$0.folderUuids.isEmpty }
             guard !linked.isEmpty else { return }

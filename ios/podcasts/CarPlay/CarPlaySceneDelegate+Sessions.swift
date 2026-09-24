@@ -29,7 +29,7 @@ extension CarPlaySceneDelegate {
 
     /// True while a session (not the queue) owns playback.
     private var sessionWorldActive: Bool {
-        Settings.playbackSession() != nil && !Settings.playbackSessionPaused()
+        Settings.playbackSession != nil && !Settings.playbackSessionPaused
     }
 
     /// The one tab that carries every world: two tile rows — Up Next and the most recent
@@ -80,7 +80,7 @@ extension CarPlaySceneDelegate {
         // The swap needs the leading row to BE the session that owns playback. A parked
         // pointer still counts as the session world, but the most-recent row can be a
         // different session — promoting that one would put a session you aren't in on top.
-        let leads = sessionWorldActive && leaderStoreUuid == Settings.playbackSession()?.uuid
+        let leads = sessionWorldActive && leaderStoreUuid == Settings.playbackSession?.uuid
         return leads ? [session, upNext] : [upNext, session]
     }
 
@@ -112,7 +112,7 @@ extension CarPlaySceneDelegate {
 
             // "Play Session" only offers a switch — once this session already owns playback
             // there is nothing to switch to, so the row hides.
-            let isPlaying = self.sessionWorldActive && Settings.playbackSession()?.uuid == store.uuid
+            let isPlaying = self.sessionWorldActive && Settings.playbackSession?.uuid == store.uuid
             guard !isPlaying else { return [CPListSection(items: episodeItems)] }
 
             let playItem = CPListItem(text: L10n.playlistPlayAsSession, detailText: nil, image: UIImage(named: "car_filter_play"))
@@ -128,7 +128,7 @@ extension CarPlaySceneDelegate {
 
     /// One session as a plain row: tap hands playback over.
     private func switchRow(for row: (session: Session, store: EpisodeFilter)) -> CPListItem {
-        let isActive = sessionWorldActive && row.store.uuid == Settings.playbackSession()?.uuid
+        let isActive = sessionWorldActive && row.store.uuid == Settings.playbackSession?.uuid
         let remaining = SessionFeederEngine.storeMemberUuids(for: row.session).count
         let detail = isActive ? L10n.nowPlaying : L10n.episodeCountPluralFormat(remaining.localized())
         let item = CPListItem(text: row.store.playlistName, detailText: detail, image: row.store.grid())
@@ -157,9 +157,9 @@ extension CarPlaySceneDelegate {
         // Recency is stamped when audio starts (SessionManager.sessionPlaybackStarted) —
         // CarPlay's switch always plays, so it needs no stamp of its own.
 
-        if target != Settings.playbackSession() {
+        if target != Settings.playbackSession {
             SessionManager.shared.play(session: session) // guards empty, then startPlaybackSession
-        } else if Settings.playbackSessionPaused() {
+        } else if Settings.playbackSessionPaused {
             if let episode = target.nextEpisode(after: nil) {
                 PlaybackManager.shared.play(sessionEpisode: episode)
             }
@@ -172,7 +172,7 @@ extension CarPlaySceneDelegate {
     /// Returns playback to the Up Next queue, mirroring the app's Switch Session sheet.
     func switchToUpNextWorld() {
         AnalyticsPlaybackHelper.shared.currentSource = .carPlay
-        if Settings.playbackSession() != nil {
+        if Settings.playbackSession != nil {
             PlaybackManager.shared.endPlaybackSession()
         }
         if !PlaybackManager.shared.isPlaying {

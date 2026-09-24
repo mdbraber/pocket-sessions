@@ -124,14 +124,14 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     /// Fork: which session the LINEUP level is showing. View state only — never persisted,
     /// and it never touches playback: browsing a session is navigation, nothing more. Holds
     /// the session's store-playlist uuid, i.e. the same uuid a `PlaybackSession` carries, so
-    /// it compares directly against `Settings.playbackSession()`.
+    /// it compares directly against `Settings.playbackSession`.
     var browsedSessionUuid: String?
 
     /// The session the lineup renders: whatever is being browsed, falling back to the
     /// active one (entering the Session world mid-session lands on it). Every lineup-level
     /// read — episodes, header, counts, sort, swipes, moves — goes through this.
     var browsedPlaybackSession: PlaybackSession? {
-        let active = Settings.playbackSession()
+        let active = Settings.playbackSession
         guard let browsedSessionUuid else { return active }
         // Browsing the active session keeps its own type (a podcast session has no store
         // playlist); anything reached from the chooser plays its store, a manual playlist.
@@ -150,7 +150,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     /// "true top" re-prime) is gated on this: a browsed, non-active session has no
     /// relationship with the player at all.
     var browsingActiveSession: Bool {
-        guard let active = Settings.playbackSession() else { return false }
+        guard let active = Settings.playbackSession else { return false }
         return browsedPlaybackSession == active
     }
 
@@ -173,13 +173,13 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     /// Entering the Session world lands on the lineup whenever a session is active
     /// (playing or paused — mid-session, continuity wins), on the chooser otherwise.
     var sessionLandingLevel: SessionLevel {
-        Settings.playbackSession() != nil ? .lineup : .list
+        Settings.playbackSession != nil ? .lineup : .list
     }
 
     /// Entering the Session world: browse the active session (landing on its lineup) or,
     /// with none, land on the chooser with nothing browsed.
     func enterSessionWorld() {
-        browsedSessionUuid = Settings.playbackSession()?.uuid
+        browsedSessionUuid = Settings.playbackSession?.uuid
         sessionLevel = sessionLandingLevel
     }
 
@@ -659,7 +659,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     /// re-tapped while already on the list home (see MainTabBarController).
     func openActiveLane() {
         guard showingSessionList else { return }
-        if Settings.playbackSession() != nil, let row = sessionListRows.first(where: { $0.isActive && !$0.isUpNext }) {
+        if Settings.playbackSession != nil, let row = sessionListRows.first(where: { $0.isActive && !$0.isUpNext }) {
             openSessionFromList(row)
         } else {
             enterUpNextWorld()
@@ -856,7 +856,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         // asked for empty Up Next to be hidden, in which case it only appears once it has episodes
         // (or is what's playing, where hiding it would strand the now-playing lane).
         let upNext = upNextListRow()
-        sessionListHasUpNext = !Settings.hideEmptyUpNext() || upNext.episodeCount > 0 || upNext.isActive
+        sessionListHasUpNext = !Settings.hideEmptyUpNext || upNext.episodeCount > 0 || upNext.isActive
         sessionListRows = (sessionListHasUpNext ? [upNext] : []) + (currentRow.map { [$0] } ?? []) + pool
     }
 
@@ -993,10 +993,10 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     func playFromBrowsedSession(episode: BaseEpisode) {
         guard let session = browsedPlaybackSession else { return }
         AnalyticsPlaybackHelper.shared.currentSource = .upNext
-        if session != Settings.playbackSession() {
+        if session != Settings.playbackSession {
             PlaybackManager.shared.startPlaybackSession(session, autoPlay: false)
             // The session must actually have started for the pointer to be there.
-            guard Settings.playbackSession() == session else { return }
+            guard Settings.playbackSession == session else { return }
         }
         // startPlaybackSession primes the session's FIRST episode; if that's the tapped
         // one there is nothing to switch to, just start the audio.
@@ -1147,7 +1147,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
 
     @objc func sessionPlaybackProgressed() {
         // Only the lineup of the session that's actually sounding has a ticking line.
-        guard browsingActiveSession, !Settings.playbackSessionPaused() else { return }
+        guard browsingActiveSession, !Settings.playbackSessionPaused else { return }
         sessionMetaLabel.text = sessionMetaText()
     }
 
@@ -1379,7 +1379,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
             shuffleButton.heightAnchor.constraint(equalToConstant: 24)
         ])
 
-        shuffleButton.isHidden = !FeatureFlag.upNextShuffle.enabled || PlaybackManager.shared.queue.upNextCount() == 0
+        shuffleButton.isHidden = PlaybackManager.shared.queue.upNextCount() == 0
         if FeatureFlag.upNextSort.enabled {
             sortButton.isHidden = PlaybackManager.shared.queue.upNextCount() == 0
         }
@@ -1731,7 +1731,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     }
 
     private func setupActionButtonsIfNecessary() {
-        if FeatureFlag.upNextShuffle.enabled, shuffleButton.allTargets.isEmpty {
+        if shuffleButton.allTargets.isEmpty {
             NotificationCenter.default.addObserver(self, selector: #selector(themeDidChange), name: Constants.Notifications.themeChanged, object: nil)
             NotificationCenter.default.addObserver(self, selector: #selector(subscriptionStatusDidChange), name: ServerNotifications.subscriptionStatusChanged, object: nil)
             themeDidChange()
@@ -1804,18 +1804,18 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         // Visibility toggles: noun label + a Hide/Show secondary that reads back the current state.
         // Up Next leads — it's the pinned lane at the very top of the list, so the toggle that
         // governs it sits at the top of the menu too.
-        let emptyUpNextHidden = Settings.hideEmptyUpNext()
+        let emptyUpNextHidden = Settings.hideEmptyUpNext
         picker.addAction(action: OptionAction(label: L10n.sessionEmptyUpNext, secondaryLabel: emptyUpNextHidden ? L10n.settingsGeneralHide : L10n.settingsGeneralShow, icon: "list.bullet") { [weak self] in
-            Settings.setHideEmptyUpNext(!emptyUpNextHidden)
+            Settings.hideEmptyUpNext = !emptyUpNextHidden
             self?.reloadSessionListAndScrollToTop()
         })
         // "Reorder Sessions" — a one-shot re-arrange of the drag order (submenu, no sticky selection).
         let sortAction = OptionAction(label: L10n.sessionSortOnce, icon: "podcastlist_sort") {}
         sortAction.submenu = { [weak self] in self?.makeSessionSortPicker() }
         picker.addAction(action: sortAction)
-        let emptyHidden = Settings.hideEmptySessions()
+        let emptyHidden = Settings.hideEmptySessions
         picker.addAction(action: OptionAction(label: L10n.sessionEmptySessions, secondaryLabel: emptyHidden ? L10n.settingsGeneralHide : L10n.settingsGeneralShow, icon: "square.stack") { [weak self] in
-            Settings.setHideEmptySessions(!emptyHidden)
+            Settings.hideEmptySessions = !emptyHidden
             self?.reloadSessionListAndScrollToTop()
         })
         let smartHidden = Settings.hidePodcastSessionsInSmartPlaylist()
@@ -2096,7 +2096,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
 
         // A browsed session whose store went away (deleted while it was open) stops being
         // browsable — fall back to the active session, or to the chooser.
-        if let browsedSessionUuid, browsedSessionUuid != Settings.playbackSession()?.uuid,
+        if let browsedSessionUuid, browsedSessionUuid != Settings.playbackSession?.uuid,
            DataManager.shared.findPlaylist(uuid: browsedSessionUuid) == nil {
             self.browsedSessionUuid = nil
         }
@@ -2287,6 +2287,55 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         isMultiSelectEnabled = true
     }
 
+    private func setQueueRightButtons(hasEpisodes: Bool, animated: Bool) {
+        guard hasEpisodes else {
+            navigationItem.setRightBarButtonItems(nil, animated: animated)
+            return
+        }
+
+        let selectButton = UIBarButtonItem(title: L10n.select, style: .plain, target: self, action: #selector(selectTapped))
+        let moreButton = UIBarButtonItem(image: UIImage(named: "more"), style: .plain, target: self, action: #selector(moreTapped))
+        moreButton.accessibilityLabel = L10n.accessibilityMoreActions
+        navigationItem.trailingItemGroups = [UIBarButtonItemGroup(barButtonItems: [selectButton, moreButton], representativeItem: nil)]
+    }
+
+    @objc func moreTapped() {
+        let optionsPicker = OptionsPicker(title: nil, themeOverride: themeOverride)
+        let clearAction = OptionAction(label: L10n.clearUpNext, icon: "episode-removenext") { [weak self] in
+            self?.clearQueueTapped()
+        }
+        clearAction.destructive = true
+        optionsPicker.addAction(action: clearAction)
+        optionsPicker.present(from: self)
+    }
+
+    @objc func clearQueueTapped() {
+        let queueCount = PlaybackManager.shared.queue.upNextCount()
+
+        let alert = UIAlertController(title: L10n.clearUpNext, message: L10n.clearUpNextMessage, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: L10n.cancel, style: .cancel))
+        alert.addAction(UIAlertAction(title: actionLabelText(queueCount), style: .destructive) { [weak self] _ in
+            self?.performClearAll()
+        })
+        present(alert, animated: true)
+
+        selectedPlayListEpisodes.removeAll()
+        isMultiSelectEnabled = false
+    }
+
+    private func actionLabelText(_ queueCount: Int) -> String {
+        if queueCount == 1 {
+            return L10n.queueClearEpisodeQueueSingular
+        }
+        return L10n.queueClearEpisodeQueuePlural(queueCount.localized())
+    }
+
+    private func performClearAll() {
+        PlaybackManager.shared.queue.clearUpNextList()
+        reloadTable()
+        track(.upNextQueueCleared)
+    }
+
     @objc func selectAllTapped() {
         // Bulk-select: suppress the per-row selection didSet (which rebuilds the nav bar each append)
         // and apply the count/inset update once at the end.
@@ -2395,20 +2444,18 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
                 leftButton = showingInTab ? nil : UIBarButtonItem(title: L10n.done, style: .plain, target: self, action: #selector(doneTapped))
             }
         } else {
-            let selectButton = worldCount > 0 ? UIBarButtonItem(title: L10n.select, style: .plain, target: self, action: #selector(selectTapped)) : nil
             if showingInTab {
                 // Fork: the queue is a lineup entered from the pinned "Up Next" row in the session
                 // list, so the top-left is a native back chevron to the list (mirroring a session
-                // lineup). Select rides top-right; the nav-bar "Clear" was dropped — the scrolling
-                // controls row still carries the native "Clear Queue" text button.
+                // lineup). Select and the ⋯ menu with Clear Up Next ride top-right.
                 let backButton = UIBarButtonItem(image: UIImage(systemName: "chevron.backward"), style: .plain, target: self, action: #selector(exitToSessionList))
                 backButton.accessibilityLabel = L10n.sessions
                 navigationItem.setLeftBarButton(backButton, animated: animated)
-                navigationItem.setRightBarButtonItems(selectButton.map { [$0] }, animated: animated)
-                return
+            } else {
+                navigationItem.setLeftBarButton(UIBarButtonItem(title: L10n.done, style: .plain, target: self, action: #selector(doneTapped)), animated: animated)
             }
-            leftButton = UIBarButtonItem(title: L10n.done, style: .plain, target: self, action: #selector(doneTapped))
-            rightButton = selectButton
+            setQueueRightButtons(hasEpisodes: worldCount > 0, animated: animated)
+            return
         }
 
         navigationItem.setRightBarButtonItems(rightButton.map { [$0] }, animated: animated)
@@ -2672,7 +2719,7 @@ class SwitchSessionViewController: UIViewController, UITableViewDataSource, UITa
     init(themeOverride: Theme.ThemeType?, includeUpNext: Bool = true, onSwitched: @escaping (Bool) -> Void) {
         self.themeOverride = themeOverride
         self.includeUpNext = includeUpNext
-        self.showsEndSession = includeUpNext && Settings.playbackSession() != nil
+        self.showsEndSession = includeUpNext && Settings.playbackSession != nil
         self.onSwitched = onSwitched
         super.init(nibName: nil, bundle: nil)
     }
@@ -2807,7 +2854,7 @@ class SwitchSessionViewController: UIViewController, UITableViewDataSource, UITa
             if isEndSessionRow(indexPath) {
                 // End the session without forcing playback over to the queue — whatever
                 // was playing keeps playing; the Up Next world is simply shown.
-                if Settings.playbackSession() != nil {
+                if Settings.playbackSession != nil {
                     PlaybackManager.shared.endPlaybackSession()
                 }
                 dismiss(animated: true) { [onSwitched] in
@@ -2816,7 +2863,7 @@ class SwitchSessionViewController: UIViewController, UITableViewDataSource, UITa
                 }
                 return
             }
-            if Settings.playbackSession() != nil {
+            if Settings.playbackSession != nil {
                 PlaybackManager.shared.endPlaybackSession()
             }
             // Switching to Up Next means the queue takes over — start it if it isn't
@@ -2840,11 +2887,11 @@ class SwitchSessionViewController: UIViewController, UITableViewDataSource, UITa
         guard let storeUuid = SessionStore.shared.session(uuid: row.sessionUuid)?.storePlaylistUuid ?? row.storeUuid else { return }
         // A session always plays its store — a manual playlist holding the lineup.
         let session = PlaybackSession(type: .playlist, uuid: storeUuid)
-        if session != Settings.playbackSession() {
+        if session != Settings.playbackSession {
             // Switching activates the session and primes its next episode as Now
             // Playing, but never starts audio — the user presses play when ready.
             PlaybackManager.shared.startPlaybackSession(session, autoPlay: false)
-        } else if Settings.playbackSessionPaused() {
+        } else if Settings.playbackSessionPaused {
             // Re-picking the active-but-paused session un-pauses and primes it,
             // again without starting audio.
             if let episode = session.nextEpisode(after: nil) {

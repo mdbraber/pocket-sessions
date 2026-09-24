@@ -356,7 +356,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         InboxManager.shared.setup()
         // Fork: exactly one Sessions sync engine per launch (they'd fight over the stores'
         // diff handlers) — chosen in Settings → Synchronization. Local = no engine at all.
-        switch Settings.sessionSyncMode() {
+        switch Settings.sessionSyncMode {
         case .server: SessionServerSync.start()
         case .icloud: SessionCloudSync.start()
         case .local: break

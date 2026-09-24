@@ -80,12 +80,12 @@ class InboxSettingsViewController: PCViewController, UITableViewDataSource, UITa
     }
 
     @objc private func mirrorUpNextToSessionChanged(_ sender: UISwitch) {
-        Settings.setMirrorUpNextToSession(sender.isOn)
+        Settings.mirrorUpNextToSession = sender.isOn
     }
 
 
     @objc private func mirrorSessionToUpNextChanged(_ sender: UISwitch) {
-        Settings.setMirrorSessionToUpNext(sender.isOn)
+        Settings.mirrorSessionToUpNext = sender.isOn
     }
 
     func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
@@ -126,13 +126,13 @@ class InboxSettingsViewController: PCViewController, UITableViewDataSource, UITa
             cell.detailTextLabel?.text = L10n.settingsEpisodeLimitFormat(ServerSettings.autoAddToUpNextLimit().localized())
         case .autoAddToSession:
             cell.textLabel?.text = L10n.settingsAutoAddSession
-            cell.detailTextLabel?.text = L10n.settingsEpisodeLimitFormat(Settings.sessionAutoAddLimit().localized())
+            cell.detailTextLabel?.text = L10n.settingsEpisodeLimitFormat(Settings.sessionAutoAddLimit.localized())
         case .mirrorUpNextToSession, .mirrorSessionToUpNext:
             let isUpNextToSession = sections[indexPath.section][indexPath.row] == .mirrorUpNextToSession
             cell.textLabel?.text = isUpNextToSession ? L10n.settingsMirrorUpNextToSession : L10n.settingsMirrorSessionToUpNext
             cell.detailTextLabel?.text = nil
             let toggle = UISwitch()
-            toggle.isOn = isUpNextToSession ? Settings.mirrorUpNextToSession() : Settings.mirrorSessionToUpNext()
+            toggle.isOn = isUpNextToSession ? Settings.mirrorUpNextToSession : Settings.mirrorSessionToUpNext
             toggle.addTarget(self, action: isUpNextToSession ? #selector(mirrorUpNextToSessionChanged(_:)) : #selector(mirrorSessionToUpNextChanged(_:)), for: .valueChanged)
             cell.accessoryView = toggle
             cell.accessoryType = .none
