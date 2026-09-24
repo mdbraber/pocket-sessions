@@ -7,7 +7,7 @@ n8n: it is a URL that receives event JSON, exactly like any other receiver.
 
 | File | Trigger | What it does |
 |---|---|---|
-| `mesh-pcs-playback.json` | `POST /webhook/pcs-playback` | Pocket Casts playback → OwnTube: filters to our media origin, resolves the channel, writes watch state, and on `archived` also removes the video from the collection its feed was published from |
+| `mesh-pcs-playback.json` | `POST /webhook/pcs-playback` | Pocket Casts playback → OwnTube: filters to our media origin (host `owntube-media.*`), resolves the channel (a video OwnTube doesn't have is skipped; any other failure fails the run so PCS retries), writes watch state, and on `archived` also removes the video from the collection its feed was published from |
 | `mesh-owntube-playback.json` | `POST /webhook/owntube-playback` | OwnTube playback → PCS `/api/v1/playback`, which guards and writes it through to Pocket Casts |
 | `mesh-replay-cron.json` | every 6 hours | Calls `POST /api/v1/hooks/replay` — the PC→OwnTube direction's outage recovery, mirroring what the feeds pusher already does for the other direction |
 
@@ -46,10 +46,15 @@ docker exec n8n n8n update:workflow --id=meshPcsPlayback01 --active=true
 docker compose restart n8n
 ```
 
-HTTP nodes carry a 30s timeout and one retry: a cold enclosure lookup makes
-PCS rebuild its catalog index inside the request, which can outlast a
-default timeout. The state such a call would have carried is re-offered by
-the next replay sweep anyway.
+HTTP nodes carry a 30s timeout and one retry. If a cold enclosure lookup
+makes PCS rebuild its catalog index, the rebuild keeps running after the
+caller gives up (it is detached from the request), so the retry finds the
+index built. Replay only queues events and returns at once.
+
+`mesh-pcs-playback` answers its webhook when the flow **finishes**
+(`responseMode: lastNode`), not on receipt: a failed OwnTube call then fails
+the webhook, and PCS's delivery queue retries the event later. Answering on
+receipt would report success for events the flow went on to drop.
 
 Flows call services by their **public names**. That works from a
 tier-routed container only because of `docker-tier-hairpin.service` on

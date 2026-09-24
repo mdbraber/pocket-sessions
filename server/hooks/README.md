@@ -3,7 +3,9 @@
 PCS watches what you actually listened to and runs local scripts when it
 changes. The server stays generic: it reports the event with enough context to
 identify the episode, and each script decides whether it cares. Credentials for
-other services live in the script's environment, never in PCS.
+other services live in the script's environment, never in PCS — and PCS's own
+configuration (every `PCS_*` variable, including the operator token) is
+stripped from the environment hooks run with.
 
 ## How it works
 
@@ -17,6 +19,14 @@ the 15-minute tick is purely a backstop for devices that do neither.
 
 The first poll only seeds the baseline; a lifetime of listening is never
 replayed as fresh events.
+
+Events are not fired inside the poll. The poll writes them to a delivery
+queue (`hook_outbox`) in the same database transaction that advances its
+baseline and cursor, and a dispatcher delivers them: a failed webhook or a
+hook exiting non-zero is retried with exponential backoff (30s doubling to
+1h, for about a day), and an episode's later events wait behind a failed one
+so they arrive in order. Delivery is therefore **at-least-once** — an n8n
+restart or an expired OwnTube token delays events instead of losing them.
 
 ## Events
 
@@ -34,7 +44,7 @@ the event as JSON on **stdin** and as environment variables (so a hook needs no
 JSON parser):
 
 ```
-PCS_EVENT           progress | completed | reopened
+PCS_EVENT           progress | completed | reopened | archived
 PCS_USER_ID
 PCS_EPISODE_UUID    PCS_PODCAST_UUID
 PCS_EPISODE_URL     the enclosure — how a hook recognises its own content
@@ -46,8 +56,10 @@ PCS_AT              unix seconds
 ```
 
 Title and URL are resolved from Pocket Casts' public catalog — its sync records
-carry neither. A hook's exit status is logged; a failure never blocks other
-hooks or the watcher.
+carry neither — with the enclosure index as the fallback for the URL. A hook
+that exits non-zero (or times out) marks the event failed, so it is retried
+later; exit 0 for "not mine". One failing hook never blocks the others or the
+watcher. Retries re-run every hook for the event, so hooks must be idempotent.
 
 ## Configuration
 
@@ -56,8 +68,8 @@ hooks or the watcher.
 | `PCS_HOOKS_DIR` | *(unset — hooks off)* | Directory of executables |
 | `PCS_PROGRESS_POLL` | `15m` | Backstop cadence (`off` disables the watcher) |
 | `PCS_PROGRESS_MIN_DELTA` | `30` | Seconds of movement before a `progress` event |
-| `PCS_HOOK_TIMEOUT` | `30s` | Per-hook time limit (also the webhook POST timeout) |
-| `PCS_WEBHOOK_URLS` | *(unset)* | Comma-separated webhook sinks: every event is POSTed as JSON (the stdin payload) — the Todoist shape; receivers such as n8n flows subscribe by URL. Replays re-deliver, so receivers must be idempotent |
+| `PCS_HOOK_TIMEOUT` | `30s` | Per-hook time limit (also the webhook POST timeout); a timed-out hook's leftover child processes get 2s more before PCS stops waiting |
+| `PCS_WEBHOOK_URLS` | *(unset)* | Comma-separated webhook sinks: every event is POSTed as JSON (the stdin payload) — the Todoist shape; receivers such as n8n flows subscribe by URL. A non-2xx answer (redirects included) is a failed delivery and is retried; retries and replays re-deliver, so receivers must be idempotent |
 | `PCS_WEBHOOK_TOKEN` | *(unset)* | Sent as `X-Webhook-Token` so receivers can verify the sender |
 
 ## owntube.sh
@@ -138,7 +150,10 @@ Caddy reached PCS through that container, it takes the server down with it.
 
 `make hooks` installs the hook scripts: `make deploy` only ships the server
 and compose file, never the contents of `data/hooks`, so run `make hooks`
-again after changing a hook.
+again after changing a hook. While the n8n flows run the bridge it installs
+`owntube.sh` **non-executable**, so PCS skips it; `make hooks HOOKS_ENABLE=1`
+switches the script path back on (don't run both — every event would be
+delivered twice).
 
 ## The reverse direction
 
@@ -146,10 +161,17 @@ Hooks carry Pocket Casts playback *out*; `POST /api/v1/playback` carries
 external playback back *in*. A service the account also watches through
 (OwnTube) reports `{enclosureContains, positionSeconds, completed,
 durationSeconds}` with a bearer token; PCS resolves the episode by matching
-the fragment against the subscribed podcasts' catalog enclosures (indexed
-lazily on first miss) and writes the state to Pocket Casts as a sync record.
+the fragment against the subscribed podcasts' catalog enclosures and writes
+the state to Pocket Casts as a sync record — to **every** episode the fragment
+matches, since one video is published as an audio and a video episode and
+may sit in several feeds. The enclosure index is refreshed by the new-episode
+watcher on each cycle, and rebuilt on a miss (at most every 10 minutes).
 
 Loops terminate by an ahead-only guard: a report that isn't ahead of the
 watcher's baseline is dropped (`behind` / `already-completed`), completion is
 sticky in both directions, and every accepted write advances the baseline so
 the watcher sees Pocket Casts' echo of it as a no-op — hooks don't re-fire.
+Once Pocket Casts reopens an episode (mark unplayed, or listening again), a
+`completed` report only completes it again when its position is at the end;
+otherwise it counts as a position. OwnTube's "watched" flag never clears, so
+without this every report would undo the reopen.

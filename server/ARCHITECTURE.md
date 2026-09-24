@@ -120,7 +120,7 @@ simultaneous completion).
 | **archive in PC** | OwnTube marks watched **and** removes from the source collection (queue/saved/that playlist), resolved by feed title via the published ledger |
 | watch in OwnTube | PC position updates (ahead-only) |
 | finish in OwnTube | PC marks played |
-| reopen in PC / remove in OwnTube | *not mirrored* (deliberate gaps — see SYNC-ARCHITECTURE §2) |
+| reopen in PC / remove in OwnTube | *not mirrored* (deliberate gaps — see SYNC-ARCHITECTURE §2); a reopen in PC is **protected** from OwnTube's sticky "watched" flag, which would otherwise re-complete it (§5) |
 
 The same video can exist as several PC episodes (audio + video feed
 variants); state converges across variants via the write-through path.
@@ -169,24 +169,39 @@ watcher's polls and relay observation keep it current.
 ### The watcher
 
 Polls `/user/sync/update` as a sync device, diffs against the baseline,
-fires hooks on material change. Two hard-won subtleties: polls re-fetch a
+and queues hook events on material change. Polls for one user never overlap:
+the ticker, nudge- and relay-triggered polls and playback write-through share
+a per-user lock, and the cursor only moves forward. Two hard-won subtleties: polls re-fetch a
 **10-minute overlap window** behind the cursor (sync records carry
 *client-side* action timestamps, so a fresh cursor can permanently skip an
 action taken minutes before the app synced — the baseline diff makes the
 overlap free of duplicate events); and the **bulk-burst cap** (25 events)
 suppresses mass-operation noise but always delivers events for first-party
 feed episodes (`PCS_FEED_MATCH` scopes "first-party" by enclosure
-substring).
+substring; unset, nothing is exempt).
+
+**Delivery queue.** Events land in `hook_outbox` in the same transaction as
+the baseline and cursor they were diffed from; a dispatcher (its own
+context — never a poll's or a request's deadline) enriches them with title
+and enclosure URL, delivers them, deletes each on success and retries
+failures with backoff (30s → 1h, about a day in total), holding an episode's
+later events behind a failed one. A receiver outage delays events; it no
+longer loses them.
 
 ### Reverse write-through (`POST /api/v1/playback`)
 
 An external player reports `{enclosureContains, positionSeconds, completed,
-durationSeconds}`. PCS resolves the episode via the enclosure index
-(lazily built from subscribed podcasts' catalogs; misses negative-cached
-6h; rebuilds rate-limited to 1/10min), applies the **ahead-only guard**
-(nothing ≤ known state applies; completion is sticky both ways), writes a
-sync record to PC (per-field modified stamps, like the app), advances the
-baseline so the watcher sees PC's echo as a no-op, and nudges devices.
+durationSeconds}`. PCS resolves **every** episode the fragment matches (a
+video is published as an audio and a video episode, and may sit in several
+feeds) via the enclosure index — refreshed by the new-episode watcher each
+cycle from the catalogs it already fetches, and rebuilt on a miss (at most
+1/10min, detached from the request so a caller's timeout can't cut it
+short; only a complete rebuild caches a miss, per user, for 6h). For each
+episode it applies the **ahead-only guard** (nothing ≤ known state applies;
+completion is sticky both ways; episodes the baseline hasn't seen fall back
+to the replica's state), writes a sync record to PC (per-field modified
+stamps, like the app), advances the baseline so the watcher sees PC's echo
+as a no-op, and nudges devices.
 
 ### Hooks — symmetric on both sides
 
@@ -201,9 +216,11 @@ Both runners also emit **webhook sinks**: every event is POSTed as JSON
 (the same payload scripts get on stdin) to each URL in `PCS_WEBHOOK_URLS` /
 `OWNTUBE_WEBHOOK_URLS`, with an optional `X-Webhook-Token` for sender
 verification. This is the Todoist shape — a receiver (an n8n flow, anything)
-subscribes by URL and the servers know nothing about it. Replay sweeps
-re-fire through the same path, so receivers get at-least-once delivery and
-must be idempotent, exactly like scripts.
+subscribes by URL and the servers know nothing about it. On the PCS side a
+non-2xx answer or a non-zero script exit is retried from the delivery queue,
+and replay sweeps re-fire through the same path, so receivers get
+at-least-once delivery and must be idempotent, exactly like scripts. Hooks
+run without PCS's own `PCS_*` configuration in their environment.
 
 OwnTube side (mirror design, `owntube/hooks/README.md`): history writes
 fire `watched`/`progress` events through every executable in
@@ -218,6 +235,11 @@ effects are idempotent by contract.
 - **Ahead-only:** inbound reports not strictly ahead of the watcher
   baseline drop (`behind` / `already-completed`).
 - **Sticky completion, both sides:** a position update never un-finishes.
+- **Reopen wins over a stale "watched":** once PC reopens an episode, an
+  inbound `completed` only re-completes it when the reported position is at
+  the end (last 5%, at least 30s); otherwise it is treated as a position.
+  OwnTube never clears its watched flag, so without this the reopen would
+  bounce straight back as a completion.
 - **Baseline advance on write:** every accepted write-through updates the
   baseline, so the watcher classifies PC's echo as no-change → no hook.
 - **Hook idempotency:** re-delivery (replay, re-report) is harmless by
@@ -238,9 +260,11 @@ recovery, state converges automatically:
   OwnTube hooks** every cycle (`OT_SOURCE=replay`) — receivers dedupe (the
   ahead-only guard makes steady state free) and a dead window heals within
   one cycle;
-- `POST /api/v1/hooks/replay` re-delivers every feed episode's *current*
+- events that failed to deliver while a receiver was down are retried from
+  the delivery queue for about a day;
+- `POST /api/v1/hooks/replay` queues every feed episode's *current*
   replica state as one synthetic event each (archived > completed >
-  progress) — the manual big hammer, safe any time.
+  progress) and returns at once — the manual big hammer, safe any time.
 
 ## 7. API reference (PCS)
 
@@ -250,7 +274,7 @@ device token) unless noted.
 | Endpoint | Purpose |
 |---|---|
 | `POST /api/v1/playback` | external playback report (see §4) |
-| `POST /api/v1/hooks/replay` | re-deliver feed episodes' current state |
+| `POST /api/v1/hooks/replay` | queue feed episodes' current state for re-delivery |
 | `POST /api/v1/replica/seed` | run the three-pass seed (async, single-flight) |
 | `GET /api/v1/replica/status` | counts: episodes/played/archived/records/ledger |
 | `GET /api/v1/replica/history` | the accumulated listening ledger (`?limit=`) |
@@ -286,7 +310,8 @@ server* toggle (adds `X-PCS-Proxy-Token`, falls back to direct);
 # Deploy PCS (from this repo; ControlMaster/agent quirks: add
 #   -o IdentityAgent=none -i ~/.ssh/id_ed25519 if the agent is wedged)
 make deploy          # rsync + rebuild container
-make hooks           # ship hook scripts (deploy never touches data/hooks)
+make hooks           # ship hook scripts, non-executable while n8n runs the
+                     # bridge (HOOKS_ENABLE=1 to switch the script path on)
 
 # Deploy OwnTube (homeserver)
 ssh homeserver 'cd /usr/local/src/owntube && git pull &&
@@ -306,14 +331,15 @@ ssh homeserver 'docker exec owntube-publisher pnpm push:feeds'
 curl https://pcs.example.com/healthz
 curl https://owntube.example.com/health
 ssh vps 'docker logs --since 10m pocket-sessions | \
-  grep -E "msg=relay|relay observe|progress changes|hook ran|WARN"'
+  grep -E "msg=relay|relay observe|progress changes|hook ran|hook queue|WARN"'
 curl -H "Authorization: Bearer $PCS_TOKEN" \
   https://pcs.example.com/api/v1/replica/status
 ```
 
 Log lines that matter: `relay observe sync` (per-sync parse outcomes —
 `respErr=true` or all-zero counts means the encoding contract broke),
-`progress changes` + `hook ran` (the delivery chain), `bulk burst` (kept vs
+`progress changes` + `hook ran` (the delivery chain), `hook queue: delivery
+failed, will retry` / `giving up` (a receiver is down), `bulk burst` (kept vs
 suppressed), `playback write-through` (reverse direction), `relay:
 unauthorized` (a client without the proxy token).
 

@@ -51,6 +51,30 @@ case "$OWNTUBE_TOKEN" in
     ;;
 esac
 
+# The token goes to curl through a config on stdin rather than argv, so it
+# never shows up in the process list.
+auth_config() {
+  printf 'header = "Authorization: Bearer %s"\n' "$OWNTUBE_TOKEN"
+}
+
+# json_string escapes a value for a JSON string literal. Control characters
+# (a newline in a title) would make the body invalid JSON, so they become
+# spaces.
+json_string() {
+  printf '%s' "$1" | tr '\000-\037' ' ' | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
+
+# OwnTube's history input caps durations at 24h; a longer VOD (a livestream
+# archive) would otherwise be rejected on every event.
+cap_seconds() {
+  _v=${1:-0}
+  case "$_v" in
+    ''|*[!0-9]*) _v=0 ;;
+  esac
+  [ "$_v" -le 86400 ] || _v=86400
+  printf '%s' "$_v"
+}
+
 # tRPC distinguishes queries from mutations by HTTP method: a query takes
 # GET ?input=<json>, a mutation takes POST with the body. Both are wrapped in
 # {"json": …} because the router uses the superjson transformer.
@@ -69,14 +93,12 @@ trpc() { # trpc <get|post> <procedure> <json-input>
   _input=$3
 
   if [ "$_method" = get ]; then
-    _raw=$(curl -sS -L --max-time 25 -G -w '\n%{http_code}' \
-      -H "Authorization: Bearer $OWNTUBE_TOKEN" \
+    _raw=$(auth_config | curl -sS -L --max-time 25 -K - -G -w '\n%{http_code}' \
       --data-urlencode "input={\"json\":$_input}" \
       "$OWNTUBE_URL/api/trpc/$_proc") || return 1
   else
-    _raw=$(curl -sS -L --max-time 25 -X POST -w '\n%{http_code}' \
+    _raw=$(auth_config | curl -sS -L --max-time 25 -K - -X POST -w '\n%{http_code}' \
       -H "Content-Type: application/json" \
-      -H "Authorization: Bearer $OWNTUBE_TOKEN" \
       -d "{\"json\":$_input}" \
       "$OWNTUBE_URL/api/trpc/$_proc") || return 1
   fi
@@ -105,37 +127,56 @@ trpc() { # trpc <get|post> <procedure> <json-input>
   printf '%s' "$_body"
 }
 
+played=$(cap_seconds "${PCS_PLAYED_UP_TO:-0}")
+duration=$(cap_seconds "${PCS_DURATION:-0}")
+
 # Archiving in the app means "done with this": mark the video watched in
 # OwnTube (which also dequeues it) and remove it from the collection this feed
 # was published from (queue / saved / playlist) — the server maps the podcast
-# title back to the feed.
+# title back to the feed. A failed mark-watched is reported (exit 1) after the
+# removal has been tried, so PCS retries the event; both steps are idempotent.
 if [ "${PCS_EVENT:-}" = "archived" ]; then
+  marked=no
+  mark_failed=false
   rc=0
   detail=$(trpc get "video.detail" "{\"videoId\":\"$video_id\"}") || rc=$?
   if [ "$rc" = 0 ]; then
     channel_id=$(printf '%s' "$detail" | sed -nE 's/.*"channelId"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' | head -1)
     if [ -n "$channel_id" ]; then
       mark=$(cat <<EOF
-{"videoId":"$video_id","channelId":"$channel_id","durationWatched":${PCS_PLAYED_UP_TO:-0},"positionSeconds":${PCS_PLAYED_UP_TO:-0},"completed":true,"videoDurationSeconds":${PCS_DURATION:-0}}
+{"videoId":"$video_id","channelId":"$channel_id","durationWatched":$played,"positionSeconds":$played,"completed":true,"videoDurationSeconds":$duration}
 EOF
 )
-      trpc post "history.upsertEvent" "$mark" >/dev/null \
-        || echo "owntube: archived $video_id — mark-watched failed" >&2
+      if trpc post "history.upsertEvent" "$mark" >/dev/null; then
+        marked=yes
+      else
+        echo "owntube: archived $video_id — mark-watched failed" >&2
+        mark_failed=true
+      fi
+    else
+      echo "owntube: archived $video_id — no channelId in video.detail" >&2
+      mark_failed=true
     fi
   elif [ "$rc" != 2 ]; then
     echo "owntube: archived $video_id — video.detail failed, skipping mark-watched" >&2
+    mark_failed=true
   fi
 
-  [ -n "${PCS_PODCAST_TITLE:-}" ] || { echo "owntube: archived event without podcast title" >&2; exit 0; }
-  title=$(printf '%s' "$PCS_PODCAST_TITLE" | sed 's/\\/\\\\/g; s/"/\\"/g')
-  rc=0
-  out=$(trpc post "remote.archiveFromFeed" "{\"videoId\":\"$video_id\",\"feedTitle\":\"$title\"}") || rc=$?
-  if [ "$rc" != 0 ]; then
-    echo "owntube: archiveFromFeed failed for $video_id" >&2
-    exit 1
+  removed=""
+  if [ -n "${PCS_PODCAST_TITLE:-}" ]; then
+    title=$(json_string "$PCS_PODCAST_TITLE")
+    rc=0
+    out=$(trpc post "remote.archiveFromFeed" "{\"videoId\":\"$video_id\",\"feedTitle\":\"$title\"}") || rc=$?
+    if [ "$rc" != 0 ]; then
+      echo "owntube: archiveFromFeed failed for $video_id" >&2
+      exit 1
+    fi
+    removed=$(printf '%s' "$out" | sed -nE 's/.*"removed"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p')
+  else
+    echo "owntube: archived event without podcast title — nothing to remove" >&2
   fi
-  removed=$(printf '%s' "$out" | sed -nE 's/.*"removed"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p')
-  echo "owntube: archived $video_id — marked watched, removed from ${removed:-no removable feed}"
+  echo "owntube: archived $video_id — marked watched: $marked, removed from ${removed:-no removable feed}"
+  [ "$mark_failed" = false ] || exit 1
   exit 0
 fi
 
@@ -163,17 +204,16 @@ completed=false
 
 title_json=""
 if [ -n "${PCS_EPISODE_TITLE:-}" ]; then
-  escaped=$(printf '%s' "$PCS_EPISODE_TITLE" | sed 's/\\/\\\\/g; s/"/\\"/g')
-  title_json=",\"videoTitle\":\"$escaped\""
+  title_json=",\"videoTitle\":\"$(json_string "$PCS_EPISODE_TITLE")\""
 fi
 
 input=$(cat <<EOF
-{"videoId":"$video_id","channelId":"$channel_id","durationWatched":${PCS_PLAYED_UP_TO:-0},"positionSeconds":${PCS_PLAYED_UP_TO:-0},"completed":$completed,"videoDurationSeconds":${PCS_DURATION:-0}$title_json}
+{"videoId":"$video_id","channelId":"$channel_id","durationWatched":$played,"positionSeconds":$played,"completed":$completed,"videoDurationSeconds":$duration$title_json}
 EOF
 )
 
 if trpc post "history.upsertEvent" "$input" >/dev/null; then
-  echo "owntube: $PCS_EVENT $video_id at ${PCS_PLAYED_UP_TO:-0}s (completed=$completed)"
+  echo "owntube: $PCS_EVENT $video_id at ${played}s (completed=$completed)"
 else
   echo "owntube: upsertEvent failed for $video_id" >&2
   exit 1

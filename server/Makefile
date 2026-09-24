@@ -36,11 +36,14 @@ deploy:
 
 # Hooks are data, not source: `make deploy` never touches data/hooks, so this
 # is how hook scripts get installed — and updated, after any change to one.
+# The n8n flows run the OwnTube bridge now, so the script is shipped
+# NON-executable (PCS skips it) unless HOOKS_ENABLE=1 — running both would
+# deliver every event twice. Re-running this leaves the mode as chosen here.
 hooks:
 	@test -n "$(DEPLOY_HOST)" -a -n "$(DEPLOY_DIR)" || { echo "create deploy.env with DEPLOY_HOST=... and DEPLOY_DIR=..."; exit 1; }
 	ssh $(DEPLOY_HOST) "mkdir -p $(DEPLOY_DIR)/data/hooks"
 	scp hooks/owntube.sh $(DEPLOY_HOST):$(DEPLOY_DIR)/data/hooks/owntube.sh
-	ssh $(DEPLOY_HOST) "chmod +x $(DEPLOY_DIR)/data/hooks/owntube.sh && chown 1000:1000 $(DEPLOY_DIR)/data/hooks/owntube.sh"
+	ssh $(DEPLOY_HOST) "chmod $(if $(HOOKS_ENABLE),755,644) $(DEPLOY_DIR)/data/hooks/owntube.sh && chown 1000:1000 $(DEPLOY_DIR)/data/hooks/owntube.sh"
 
 clean:
 	rm -rf bin *.db *.db-wal *.db-shm
