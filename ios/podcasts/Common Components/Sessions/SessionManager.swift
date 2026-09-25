@@ -595,7 +595,9 @@ class SessionManager {
         // denormalize title/podcast → mark for sync), replacing the former read + add() + setCustomOrder
         // trio whose separate statements left a lost-update window for a concurrent reconcile/add.
         let insertMode = PlaylistInsertMode(rawValue: session.insertMode) ?? .top
-        DataManager.shared.insertSessionMembers(episodeUuids: episodeUuids, insertMode: insertMode, anchorUuid: session.lastInsertedUuid, for: store)
+        // While this lineup is the active session, nothing lands above its current episode.
+        let head = Settings.playbackSession?.uuid == store.uuid ? Settings.playbackSessionLastEpisodeUuid : nil
+        DataManager.shared.insertSessionMembers(episodeUuids: episodeUuids, insertMode: insertMode, anchorUuid: session.lastInsertedUuid, below: head, for: store)
         markStoreChanged(store)
 
         // Deciding to play something is deciding about it: it leaves the Inbox.

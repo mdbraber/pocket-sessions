@@ -670,7 +670,9 @@ class PlaylistDataManager {
     /// its own insert state, separate from the playlist's `customOrder` marker), rewrite positions,
     /// denormalize title/podcast, and mark the playlist for sync. Doing read+compute+write together
     /// closes the read-modify-write window `addToLineup` had across three separate statements.
-    func insertSessionMembers(episodeUuids: [String], insertMode: PlaylistInsertMode, anchorUuid: String, for playlist: EpisodeFilter, dbQueue: GRDBQueue) {
+    /// `headUuid` is the active session's current episode: nothing is ever inserted above it, so an
+    /// add can't displace what's playing (or paused, waiting to resume) from the lineup's head.
+    func insertSessionMembers(episodeUuids: [String], insertMode: PlaylistInsertMode, anchorUuid: String, below headUuid: String? = nil, for playlist: EpisodeFilter, dbQueue: GRDBQueue) {
         guard !episodeUuids.isEmpty else { return }
         dbQueue.write { db in
             do {
@@ -682,15 +684,19 @@ class PlaylistDataManager {
                 let incoming = Set(episodeUuids)
                 order.removeAll { incoming.contains($0) }
 
+                // The first index below the head; 0 when there is no head in the lineup.
+                let floor = headUuid.flatMap { order.firstIndex(of: $0) }.map { $0 + 1 } ?? 0
+
                 // Resolve the insert index from the session's marker — mirrors SessionManager.insertMarkerIndex.
+                // "Top" and a lost after-anchor mean just below the head, never above it.
                 let index: Int
                 switch insertMode {
-                case .top: index = 0
+                case .top: index = floor
                 case .bottom: index = order.count
-                case .afterLastInserted: index = order.firstIndex(of: anchorUuid).map { $0 + 1 } ?? 0
+                case .afterLastInserted: index = order.firstIndex(of: anchorUuid).map { $0 + 1 } ?? floor
                 case .beforeLastInserted: index = order.firstIndex(of: anchorUuid) ?? order.count
                 }
-                order.insert(contentsOf: episodeUuids, at: min(index, order.count))
+                order.insert(contentsOf: episodeUuids, at: min(max(index, floor), order.count))
 
                 try db.executeUpdate("DELETE FROM \(DataManager.playlistEpisodeTableName) WHERE playlist_uuid = ?", values: [playlist.uuid])
                 try self.insertPositionRows(episodeUuids: order, startingAt: 0, for: playlist, db: db)

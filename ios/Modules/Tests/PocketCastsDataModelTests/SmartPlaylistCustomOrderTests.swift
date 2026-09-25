@@ -101,6 +101,39 @@ final class SmartPlaylistCustomOrderTests: DataManagerTestCase {
         }
     }
 
+    func testSessionInsertNeverLandsAboveTheHead() throws {
+        try runWithDataManager { dataManager in
+            let store = makeCustomOrderedSmartPlaylist(uuid: "store-head", dataManager: dataManager)
+            saveEpisodes(uuids: ["h", "x", "a", "b", "c"], dataManager: dataManager)
+            dataManager.setCustomOrder(episodeUuids: ["x", "h"], for: store)
+
+            // Top mode goes right under the head, not above it.
+            dataManager.insertSessionMembers(episodeUuids: ["a"], insertMode: .top, anchorUuid: "", below: "h", for: store)
+            XCTAssertEqual(dataManager.positionedEpisodeUuids(for: store), ["x", "h", "a"], "top means just below the head")
+
+            // A missing anchor falls back to just below the head, not to position 0.
+            dataManager.insertSessionMembers(episodeUuids: ["b"], insertMode: .afterLastInserted, anchorUuid: "gone", below: "h", for: store)
+            XCTAssertEqual(dataManager.positionedEpisodeUuids(for: store), ["x", "h", "b", "a"], "after-mode without its anchor lands below the head")
+
+            // An anchor above the head can't pull an insert above it either.
+            dataManager.insertSessionMembers(episodeUuids: ["c"], insertMode: .beforeLastInserted, anchorUuid: "x", below: "h", for: store)
+            XCTAssertEqual(dataManager.positionedEpisodeUuids(for: store), ["x", "h", "c", "b", "a"], "before-mode is clamped below the head")
+        }
+    }
+
+    func testSessionInsertWithoutHeadKeepsTopAndFallback() throws {
+        try runWithDataManager { dataManager in
+            let store = makeCustomOrderedSmartPlaylist(uuid: "store-nohead", dataManager: dataManager)
+            saveEpisodes(uuids: ["x", "a", "b"], dataManager: dataManager)
+            dataManager.setCustomOrder(episodeUuids: ["x"], for: store)
+
+            dataManager.insertSessionMembers(episodeUuids: ["a"], insertMode: .top, anchorUuid: "", for: store)
+            dataManager.insertSessionMembers(episodeUuids: ["b"], insertMode: .afterLastInserted, anchorUuid: "gone", for: store)
+
+            XCTAssertEqual(dataManager.positionedEpisodeUuids(for: store), ["b", "a", "x"], "no head: top and the missing-anchor fallback are position 0")
+        }
+    }
+
     func testReinsertingPositionedEpisodeMovesInsteadOfDuplicating() throws {
         try runWithDataManager { dataManager in
             let playlist = makeCustomOrderedSmartPlaylist(uuid: "sp-move", dataManager: dataManager)

@@ -1112,8 +1112,8 @@ public class DataManager {
     }
 
     /// Fork: atomic session add — see `PlaylistDataManager.insertSessionMembers`.
-    public func insertSessionMembers(episodeUuids: [String], insertMode: PlaylistInsertMode, anchorUuid: String, for playlist: EpisodeFilter) {
-        playlistManager.insertSessionMembers(episodeUuids: episodeUuids, insertMode: insertMode, anchorUuid: anchorUuid, for: playlist, dbQueue: dbQueue)
+    public func insertSessionMembers(episodeUuids: [String], insertMode: PlaylistInsertMode, anchorUuid: String, below headUuid: String? = nil, for playlist: EpisodeFilter) {
+        playlistManager.insertSessionMembers(episodeUuids: episodeUuids, insertMode: insertMode, anchorUuid: anchorUuid, below: headUuid, for: playlist, dbQueue: dbQueue)
     }
 
     public func pruneCustomOrder(keepingEpisodeUuids: [String], for playlist: EpisodeFilter) {

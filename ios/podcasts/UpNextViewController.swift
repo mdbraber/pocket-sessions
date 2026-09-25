@@ -2110,8 +2110,12 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
             // to the whole list.
             let remaining = session.remainingEpisodes(excluding: nil)
             if browsingActiveSession {
-                sessionCurrentEpisode = remaining.first
-                sessionEpisodes = Array(remaining.dropFirst())
+                // The card is the episode the session resumes (and is playing), the same one the
+                // chooser row and resume use — not merely the lineup's first row, which an insert
+                // or another device's reorder can put above it.
+                let current = remaining.first { $0.uuid == Settings.playbackSessionLastEpisodeUuid } ?? remaining.first
+                sessionCurrentEpisode = current
+                sessionEpisodes = remaining.filter { $0.uuid != current?.uuid }
             } else {
                 sessionCurrentEpisode = nil
                 sessionEpisodes = remaining
