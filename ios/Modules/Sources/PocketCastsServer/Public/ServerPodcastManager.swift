@@ -197,7 +197,7 @@ public class ServerPodcastManager: NSObject {
         episode.podcast_id = podcast.id
         episode.hlsUrl = upNextItem.hlsUrl
 
-        DataManager.shared.save(episode: episode)
+        DataManager.shared.insertIfAbsent(episode: episode)
     }
 
     private func addPodcast(podcastInfo: [String: Any], subscribe: Bool, autoDownloads: Int = 0, lastModified: String?) -> Bool {
@@ -289,7 +289,10 @@ public class ServerPodcastManager: NSObject {
 
         let episode = Episode.from(episodeJson: firstEpisode, podcastId: podcast.id, podcastUuid: podcast.uuid, isoFormatter: isoFormatter)
 
-        DataManager.shared.save(episode: episode)
+        // Another importer may have added it since the lookup above — keep that row.
+        guard DataManager.shared.insertIfAbsent(episode: episode) else {
+            return DataManager.shared.findEpisode(uuid: uuid)
+        }
 
         return episode
     }

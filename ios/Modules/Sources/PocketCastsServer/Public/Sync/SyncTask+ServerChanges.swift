@@ -377,7 +377,10 @@ extension SyncTask {
         }
 
         addedEpisodes.forEach { episode in
-            if DataManager.shared.findEpisode(uuid: episode.uuid) == nil {
+            // Not in the database yet (never saved, so no row id): a placeholder until
+            // addMissingPodcastAndEpisode below fetches the real episode.
+            let isPlaceholder = episode.id == 0
+            if isPlaceholder {
                 episode.wasDeleted = true
             }
 
@@ -389,7 +392,13 @@ extension SyncTask {
                 episode.podcast_id = DataManager.shared.findPodcast(uuid: episode.podcastUuid, includeUnsubscribed: true)?.id ?? 0
             }
 
-            DataManager.shared.save(episode: episode)
+            // Fork: playlists import concurrently, and two of them can hold the same unknown
+            // episode — a separate find-then-save let both insert a placeholder row.
+            if isPlaceholder {
+                DataManager.shared.insertIfAbsent(episode: episode)
+            } else {
+                DataManager.shared.save(episode: episode)
+            }
         }
 
         if !episodesToDelete.isEmpty {

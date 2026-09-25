@@ -116,7 +116,7 @@ class RefreshOperation: Operation, @unchecked Sendable {
         for podcast in podcasts {
             guard let podcastEpisodes = updatedPodcasts?[podcast.uuid], !podcastEpisodes.isEmpty else { continue }
 
-            let episodes: [Episode] = podcastEpisodes.reversed().compactMap({ episode in
+            let candidates: [Episode] = podcastEpisodes.reversed().compactMap({ episode in
                 guard let episodeUuid = episode.uuid else { return nil }
                 if let _ = DataManager.shared.findEpisode(uuid: episodeUuid) { return nil }
 
@@ -130,7 +130,8 @@ class RefreshOperation: Operation, @unchecked Sendable {
                 return newEpisode
             })
 
-            DataManager.shared.bulkSave(episodes: episodes)
+            // Only what was actually inserted counts as new — a concurrent sync import may have added some.
+            let episodes = DataManager.shared.bulkInsertIfAbsent(episodes: candidates)
 
             for episode in episodes {
                 if isCancelled {

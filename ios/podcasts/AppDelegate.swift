@@ -342,6 +342,20 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         }
     }
 
+    /// Fork: one-shot sweep of the duplicate episode rows that concurrent sync imports used to
+    /// write (see `DataManager.insertIfAbsent`). Versioned so it runs once per install.
+    private static func removeDuplicateEpisodesOnce() {
+        let migrationKey = "SJDuplicateEpisodeRowsCleanup"
+        let version = 1
+        guard UserDefaults.standard.integer(forKey: migrationKey) < version else { return }
+        let removed = DataManager.shared.removeDuplicateEpisodes()
+        UserDefaults.standard.set(version, forKey: migrationKey)
+        FileLog.shared.addMessage("AppDelegate: removed \(removed) duplicate episode rows")
+        if removed > 0 {
+            NotificationCenter.postOnMainThread(notification: Constants.Notifications.manyEpisodesChanged)
+        }
+    }
+
     private func updateEndOfYearRemoteValue() {
         // Update if EOY requires an account to be seen
         EndOfYear.requireAccount = Settings.endOfYearRequireAccount
@@ -370,6 +384,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         DispatchQueue.global(qos: .utility).async {
             SessionManager.shared.pruneEmptyUnsubscribedPodcastSessions()
             SessionManager.shared.deleteOrphanedStoreCopies()
+            Self.removeDuplicateEpisodesOnce()
         }
         DispatchQueue.main.async {
             ForkSettingsSync.shared.start()

@@ -206,7 +206,7 @@ extension ServerPodcastManager {
 
             episode.hlsUrl = Episode.hlsUrl(fromEpisodeJson: episodeJson)
 
-            DataManager.shared.save(episode: episode)
+            DataManager.shared.insertIfAbsent(episode: episode)
         }
 
         if !podcast.isSubscribed() {

@@ -462,6 +462,24 @@ public class DataManager {
         episodeManager.findBy(uuid: uuid, dbQueue: dbQueue)
     }
 
+    /// Fork: inserts `episode` unless a row with its uuid exists — atomic, so concurrent importers
+    /// can't duplicate it. See `EpisodeDataManager.insertIfAbsent`.
+    @discardableResult
+    public func insertIfAbsent(episode: Episode) -> Bool {
+        episodeManager.insertIfAbsent(episode: episode, dbQueue: dbQueue)
+    }
+
+    /// Fork: bulk `insertIfAbsent`; returns the episodes actually written.
+    public func bulkInsertIfAbsent(episodes: [Episode]) -> [Episode] {
+        episodeManager.bulkInsertIfAbsent(episodes: episodes, dbQueue: dbQueue)
+    }
+
+    /// Fork: one-time repair of duplicate episode rows. Returns the number of rows deleted.
+    @discardableResult
+    public func removeDuplicateEpisodes() -> Int {
+        episodeManager.removeDuplicateEpisodes(dbQueue: dbQueue)
+    }
+
     public func findBaseEpisode(uuid: String) -> BaseEpisode? {
         if let episode = userEpisodeManager.findBy(uuid: uuid, dbQueue: dbQueue) {
             return episode

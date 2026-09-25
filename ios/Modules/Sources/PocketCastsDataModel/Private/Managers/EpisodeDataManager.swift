@@ -405,6 +405,81 @@ class EpisodeDataManager {
         }
     }
 
+    /// Fork: inserts `episode` unless its uuid already has a row. The existence check and the insert
+    /// share one write transaction — sync imports run concurrently, and a separate find-then-save let
+    /// two importers both insert the same episode. A sync placeholder (a deleted-flagged stand-in the
+    /// playlist import writes for an episode it hasn't fetched yet) is replaced by real data, keeping
+    /// its row. Returns whether `episode` was written.
+    @discardableResult
+    func insertIfAbsent(episode: Episode, dbQueue: GRDBQueue) -> Bool {
+        do {
+            return try dbQueue.dbPool.write { db in
+                try Self.insertIfAbsent(episode: episode, db: db)
+            }
+        } catch {
+            FileLog.shared.addMessage("EpisodeDataManager.insertIfAbsent error: \(error)")
+            return false
+        }
+    }
+
+    /// The bulk form of `insertIfAbsent`, in one transaction. Returns the episodes actually written.
+    func bulkInsertIfAbsent(episodes: [Episode], dbQueue: GRDBQueue) -> [Episode] {
+        do {
+            return try dbQueue.dbPool.write { db in
+                try episodes.filter { try Self.insertIfAbsent(episode: $0, db: db) }
+            }
+        } catch {
+            FileLog.shared.addMessage("EpisodeDataManager.bulkInsertIfAbsent error: \(error)")
+            return []
+        }
+    }
+
+    private static func insertIfAbsent(episode: Episode, db: Database) throws -> Bool {
+        let existing = try Row.fetchOne(db, sql: "SELECT id, wasDeleted FROM \(DataManager.episodeTableName) WHERE uuid = ? ORDER BY wasDeleted ASC LIMIT 1", arguments: [episode.uuid])
+        if let existing {
+            let existingIsPlaceholder: Bool = existing["wasDeleted"]
+            guard existingIsPlaceholder, !episode.wasDeleted else { return false }
+            episode.id = existing["id"]
+        } else if episode.id == 0 {
+            episode.id = DBUtils.generateUniqueId()
+        }
+        try episode.save(db)
+        return true
+    }
+
+    /// Fork: one-time repair for the duplicates the old find-then-save race left behind. Keeps one row
+    /// per uuid — undeleted first, then the one with real play/download state, then the most recently
+    /// played — and gives leftover placeholders valid statuses (they were written with 0, which no
+    /// filter matches). Returns the number of rows deleted.
+    @discardableResult
+    func removeDuplicateEpisodes(dbQueue: GRDBQueue) -> Int {
+        let table = DataManager.episodeTableName
+        do {
+            return try dbQueue.dbPool.write { db in
+                try db.execute(sql: """
+                    DELETE FROM \(table) WHERE id IN (
+                      SELECT id FROM (
+                        SELECT id, ROW_NUMBER() OVER (
+                          PARTITION BY uuid
+                          ORDER BY wasDeleted ASC, (playingStatus > 0) DESC, (episodeStatus > 0) DESC,
+                                   lastPlaybackInteractionDate DESC, playedUpTo DESC, id ASC
+                        ) AS rn
+                        FROM \(table)
+                        WHERE uuid IN (SELECT uuid FROM \(table) GROUP BY uuid HAVING COUNT(*) > 1)
+                      ) WHERE rn > 1
+                    )
+                    """)
+                let removed = db.changesCount
+                try db.execute(sql: "UPDATE \(table) SET playingStatus = ? WHERE playingStatus = 0", arguments: [PlayingStatus.notPlayed.rawValue])
+                try db.execute(sql: "UPDATE \(table) SET episodeStatus = ? WHERE episodeStatus = 0", arguments: [DownloadStatus.notDownloaded.rawValue])
+                return removed
+            }
+        } catch {
+            FileLog.shared.addMessage("EpisodeDataManager.removeDuplicateEpisodes error: \(error)")
+            return 0
+        }
+    }
+
     func bulkSave(episodes: [Episode], dbQueue: GRDBQueue) {
         do {
             try dbQueue.dbPool.write { db in
