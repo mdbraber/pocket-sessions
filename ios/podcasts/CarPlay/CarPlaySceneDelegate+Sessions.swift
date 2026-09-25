@@ -9,8 +9,8 @@ import PocketCastsUtils
 // in one of two "worlds": the Up Next queue, or a Session that plays off to the side (see
 // PlaybackManager's startPlaybackSession / endPlaybackSession). The tab shows Up Next first,
 // the most recent session under it as a tile row, and every remaining session below that —
-// every row hands playback over on tap, and the active world carries the playing indicator
-// and a "Now Playing" subtitle.
+// every session row opens its episode list (with a "Play Session" row) rather than playing
+// straight away, and the active world carries the playing indicator and a "Now Playing" subtitle.
 extension CarPlaySceneDelegate {
 
     /// A session paired with its store playlist, in the phone chooser's order and honouring
@@ -34,7 +34,7 @@ extension CarPlaySceneDelegate {
 
     /// The one tab that carries every world: two tile rows — Up Next and the most recent
     /// session, in whichever order `worldSections` puts them — then every other session as a
-    /// plain switch row. The two tile rows are ONE image-row item each — the title line carries CarPlay's standard chevron
+    /// plain row that opens its episode list. The two tile rows are ONE image-row item each — the title line carries CarPlay's standard chevron
     /// and drills into that world's full episode list, with its episodes as artwork tiles
     /// beneath (tap a tile to play it in that world).
     var queueTabSections: [CPListSection] {
@@ -126,7 +126,8 @@ extension CarPlaySceneDelegate {
         interfaceController?.push(listTemplate)
     }
 
-    /// One session as a plain row: tap hands playback over.
+    /// One session as a plain row: tap opens its episode list, where "Play Session" or an
+    /// episode hands playback over.
     private func switchRow(for row: (session: Session, store: EpisodeFilter)) -> CPListItem {
         let isActive = sessionWorldActive && row.store.uuid == Settings.playbackSession?.uuid
         let remaining = SessionFeederEngine.storeMemberUuids(for: row.session).count
@@ -135,7 +136,7 @@ extension CarPlaySceneDelegate {
         item.isPlaying = isActive
         item.playingIndicatorLocation = .trailing
         item.handler = { [weak self] _, completion in
-            self?.switchToSession(row.session, store: row.store)
+            self?.sessionEpisodesTapped(session: row.session, store: row.store)
             completion()
         }
         return item
@@ -195,7 +196,7 @@ extension CarPlaySceneDelegate {
     // MARK: - Now Playing world switcher
 
     /// A Now Playing button that opens the same switcher the Queue tab shows — Up Next, the
-    /// current session, then the recent sessions; tap to hand playback over. Nil when no
+    /// current session, then the recent sessions; tap one to open it. Nil when no
     /// session exists, because a one-row "Up Next" picker would switch nothing.
     func worldSwitchButton() -> CPNowPlayingButton? {
         guard !sessionRows.isEmpty, let image = UIImage(systemName: "rectangle.stack") else { return nil }
