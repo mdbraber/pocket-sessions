@@ -153,7 +153,7 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
             chromeBackground.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor)
         ])
 
-        let clear = UIBarButtonItem(title: L10n.clear, style: .plain, target: self, action: #selector(clearTapped))
+        let clear = UIBarButtonItem(title: L10n.inboxMarkAllSeen, style: .plain, target: self, action: #selector(clearTapped))
         clearButton = clear
         navigationItem.leftBarButtonItem = clear
         // PCViewController manages the right slot — setting rightBarButtonItem directly
