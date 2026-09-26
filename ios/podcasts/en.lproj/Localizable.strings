@@ -2983,6 +2983,12 @@
 /* Fork: footer explaining the auto-add-to-session behavior on a podcast's settings page. '%1$@' is a placeholder for the auto add limit. */
 "settings_session_limit" = "Automatically add new episodes to this podcast's Session. New episodes will stop being added when the Session reaches %1$@ episodes.";
 
+/* Fork: podcast settings row that keeps only this podcast's newest episodes in every session. */
+"session_episode_limit_heading" = "Episodes per Session";
+
+/* Fork: podcast settings footer note explaining Episodes per Session and how it differs from Auto Archive's episode limit. */
+"session_episode_limit_footer" = "Episodes per Session keeps only this podcast's newest episodes in every session. Unlike Auto Archive's episode limit, older episodes aren't archived: they leave your sessions but stay in Up Next and the podcast's episode list.";
+
 /* Fork: footer on the global Auto Add to Session screen explaining the limit. '%1$@' is a placeholder for the auto add limit. */
 "settings_session_auto_add_limit_subtitle" = "New episodes will stop being added when a Session reaches %1$@ episodes.";
 

@@ -593,6 +593,32 @@ class Settings: NSObject {
         }
     }
 
+    static let sessionEpisodeLimitKey = "SJSessionEpisodeLimit"
+
+    /// Fork: "Episodes per session" — in every session, this podcast keeps only its newest N
+    /// episodes (0 = unlimited). Older ones leave the lineup; unlike Auto Archive's episode
+    /// limit, nothing is archived.
+    class func sessionEpisodeLimit(podcastUuid: String) -> Int {
+        UserDefaults.standard.integer(forKey: "\(sessionEpisodeLimitKey)-\(podcastUuid)")
+    }
+
+    class func setSessionEpisodeLimit(_ limit: Int, podcastUuid: String) {
+        let key = "\(sessionEpisodeLimitKey)-\(podcastUuid)"
+        if limit > 0 {
+            UserDefaults.standard.set(limit, forKey: key)
+        } else {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+    }
+
+    /// Every podcast with a limit set, so a sweep can skip the work when there are none.
+    class func podcastsWithSessionEpisodeLimit() -> [String] {
+        let prefix = "\(sessionEpisodeLimitKey)-"
+        return UserDefaults.standard.dictionaryRepresentation().keys
+            .filter { $0.hasPrefix(prefix) }
+            .map { String($0.dropFirst(prefix.count)) }
+    }
+
     // Fork: collapsed episode-group headers per podcast (keyed by group title, which
     // is stable within a grouping mode). Purely a per-podcast display preference.
     private static func collapsedGroupsKey(_ podcastUuid: String) -> String {

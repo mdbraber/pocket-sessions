@@ -620,6 +620,61 @@ class SessionManager {
                 updated.pinnedEpisodeUuids.append(contentsOf: episodeUuids.filter { !updated.pinnedEpisodeUuids.contains($0) })
             }
         }
+
+        // Every door into a lineup comes through here, so this one check holds each podcast
+        // to its "Episodes per session" limit in every session.
+        let limited = Set(episodeUuids.compactMap { DataManager.shared.findEpisode(uuid: $0)?.podcastUuid })
+            .filter { Settings.sessionEpisodeLimit(podcastUuid: $0) > 0 }
+        if !limited.isEmpty {
+            trimToEpisodeLimits(session: session, podcastUuids: limited)
+        }
+    }
+
+    // MARK: - Fork: Episodes per session
+
+    /// The limit just changed: hold every session to it at once.
+    func enforceEpisodeLimit(podcastUuid: String) {
+        guard Settings.sessionEpisodeLimit(podcastUuid: podcastUuid) > 0 else { return }
+        for session in SessionStore.shared.sessions {
+            trimToEpisodeLimits(session: session, podcastUuids: [podcastUuid])
+        }
+    }
+
+    /// Refresh-time pass for lineups that changed without going through `addToLineup`
+    /// (another device's adds arriving by sync).
+    func enforceAllEpisodeLimits() {
+        let limited = Set(Settings.podcastsWithSessionEpisodeLimit())
+        guard !limited.isEmpty else { return }
+        for session in SessionStore.shared.sessions {
+            trimToEpisodeLimits(session: session, podcastUuids: limited)
+        }
+    }
+
+    /// Keeps each given podcast's newest N episodes in this lineup and removes the rest. The
+    /// removed episodes only leave the lineup — unlike Auto Archive's episode limit, nothing is
+    /// archived. Hand-added (pinned) episodes neither count nor leave; the playing episode and
+    /// started ones count toward N but never leave.
+    private func trimToEpisodeLimits(session: Session, podcastUuids: Set<String>) {
+        guard let store = store(for: session), !SessionManager.isOptedOut(feeder: session.feeder) else { return }
+        let pinned = Set((SessionStore.shared.session(uuid: session.uuid) ?? session).pinnedEpisodeUuids)
+        let playingUuid = PlaybackManager.shared.currentEpisode?.uuid
+        let members = DataManager.shared.positionedEpisodeUuids(for: store)
+            .filter { !pinned.contains($0) }
+            .compactMap { DataManager.shared.findEpisode(uuid: $0) }
+            .filter { podcastUuids.contains($0.podcastUuid) }
+
+        var toRemove: [String] = []
+        for (podcastUuid, episodes) in Dictionary(grouping: members, by: \.podcastUuid) {
+            let limit = Settings.sessionEpisodeLimit(podcastUuid: podcastUuid)
+            guard limit > 0, episodes.count > limit else { continue }
+            let isKept: (Episode) -> Bool = { $0.uuid == playingUuid || $0.inProgress() }
+            let keptCount = episodes.filter(isKept).count
+            let newestFirst = episodes.filter { !isKept($0) }
+                .sorted { ($0.publishedDate ?? .distantPast) > ($1.publishedDate ?? .distantPast) }
+            toRemove += newestFirst.dropFirst(max(0, limit - keptCount)).map(\.uuid)
+        }
+        guard !toRemove.isEmpty else { return }
+        removeFromLineup(episodeUuids: toRemove, session: session)
     }
 
     /// Fork: the one entrance for hand-adding episodes to a manual playlist ("Add to… →
@@ -1327,9 +1382,11 @@ class SessionManager {
 
     /// Nothing to prune anymore: seen marks, dismissals and watermarks are all gone —
     /// membership of the Inbox playlist is the only state, and it is bounded by definition.
-    /// The hook survives because auto-add sessions still want to absorb new offers on refresh.
+    /// The hook survives because auto-add sessions still want to absorb new offers on refresh,
+    /// and lineups synced in from another device still need their Episodes per session limits.
     @objc func prune() {
         autoAddSweep()
+        enforceAllEpisodeLimits()
     }
 
     /// Auto-add sessions absorb their feeder's offers straight into the store.

@@ -55,6 +55,7 @@ final class ForkSettingsSync {
     private static let prefixes: [String] = [
         "\(Settings.mirrorUpNextToSessionKey)-",
         "\(Settings.mirrorSessionToUpNextKey)-",
+        "\(Settings.sessionEpisodeLimitKey)-",
         "SJTabSort-"
     ]
 

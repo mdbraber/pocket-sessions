@@ -111,6 +111,14 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
             cell.cellSecondaryLabel.text = mode.description
 
             return cell
+        case .sessionEpisodeLimit:
+            let cell = tableView.dequeueReusableCell(withIdentifier: PodcastSettingsViewController.disclosureCellId, for: indexPath) as! DisclosureCell
+            cell.cellLabel.text = L10n.sessionEpisodeLimitHeading
+            cell.setImage(imageName: nil)
+            cell.showSecondaryLabel = true
+            cell.cellSecondaryLabel.text = sessionEpisodeLimitTitle(Settings.sessionEpisodeLimit(podcastUuid: podcast.uuid))
+
+            return cell
         case .sessionAutoAdd:
             let cell = tableView.dequeueReusableCell(withIdentifier: PodcastSettingsViewController.switchCellId, for: indexPath) as! SwitchCell
             cell.cellLabel.text = L10n.settingsAutoAddToSession
@@ -284,6 +292,8 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
             navigationController?.pushViewController(globalSettings, animated: true)
         } else if row == .sessionPosition {
             showSessionPositionPicker()
+        } else if row == .sessionEpisodeLimit {
+            showSessionEpisodeLimitPicker()
         } else if row == .sessionGlobalSettings {
             navigationController?.pushViewController(AutoAddToSessionViewController(), animated: true)
         } else if row == .sessionLinking {
@@ -377,7 +387,7 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
         } else if firstRow == .globalInbox {
             return L10n.inboxPodcastFooter
         } else if firstRow == .sessionAutoAdd {
-            return L10n.settingsSessionLimit(Settings.sessionAutoAddLimit.localized())
+            return L10n.settingsSessionLimit(Settings.sessionAutoAddLimit.localized()) + "\n\n" + L10n.sessionEpisodeLimitFooter
         } else if firstRow == .feedError {
             return L10n.settingsFeedErrorMsg
         } else if firstRow == .autoArchive {
@@ -444,6 +454,29 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
                 session.insertMode = mode.rawValue
                 SessionStore.shared.upsert(session)
                 settingsTable.reloadData()
+            })
+        }
+        picker.present(from: self)
+    }
+
+    private func sessionEpisodeLimitTitle(_ limit: Int) -> String {
+        limit == 0 ? L10n.settingsEpisodeLimitNoLimit : L10n.settingsEpisodeLimitLimitFormat(limit.localized())
+    }
+
+    /// Fork: Episodes per Session — applies to every session holding this podcast's episodes,
+    /// so a new limit trims them all straight away.
+    private func showSessionEpisodeLimitPicker() {
+        let picker = OptionsPicker(title: L10n.sessionEpisodeLimitHeading.localizedUppercase)
+        let current = Settings.sessionEpisodeLimit(podcastUuid: podcast.uuid)
+        for limit in [0, 1, 2, 3, 5, 10] {
+            picker.addAction(action: OptionAction(label: sessionEpisodeLimitTitle(limit), selected: current == limit) { [weak self] in
+                guard let self else { return }
+                let podcastUuid = podcast.uuid
+                Settings.setSessionEpisodeLimit(limit, podcastUuid: podcastUuid)
+                settingsTable.reloadData()
+                DispatchQueue.global(qos: .userInitiated).async {
+                    SessionManager.shared.enforceEpisodeLimit(podcastUuid: podcastUuid)
+                }
             })
         }
         picker.present(from: self)
@@ -537,7 +570,7 @@ extension PodcastSettingsViewController: UITableViewDataSource, UITableViewDeleg
     private func tableData() -> [[TableRow]] {
         // The fork's new-episode pipeline reads top to bottom: Inbox → Up Next → Session →
         // Session Linking, each block headed, switch-first (matching the Up Next block's shape).
-        var data: [[TableRow]] = [[.autoDownload, .notifications], [.globalInbox], [.upNext], [.sessionAutoAdd, .sessionPosition], [.sessionLinking, .autoArchive], [.playbackEffects, .skipFirst, .skipLast]]
+        var data: [[TableRow]] = [[.autoDownload, .notifications], [.globalInbox], [.upNext], [.sessionAutoAdd, .sessionPosition, .sessionEpisodeLimit], [.sessionLinking, .autoArchive], [.playbackEffects, .skipFirst, .skipLast]]
 
         if podcast.refreshAvailable {
             data.insert([.feedError], at: 0)
