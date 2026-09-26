@@ -53,6 +53,7 @@
 		10A4F7672C540DC00084D783 /* KidsProfileSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10A4F7662C540DC00084D783 /* KidsProfileSheet.swift */; };
 		10A4F7692C540EBE0084D783 /* KidsProfileSheetViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10A4F7682C540EBE0084D783 /* KidsProfileSheetViewModel.swift */; };
 		10DFE9312C5A889700957D0A /* CategoryPodcastsTable.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10DFE9302C5A889700957D0A /* CategoryPodcastsTable.swift */; };
+		115EE8A0733B3B7120DB1E00 /* PocketCastsWebLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = A324CB4CBB24AACF8152CCB9 /* PocketCastsWebLink.swift */; };
 		3FC668C02F7CD3440072EBA8 /* XcodeTarget_podcasts in Frameworks */ = {isa = PBXBuildFile; productRef = 3FC668BF2F7CD3440072EBA8 /* XcodeTarget_podcasts */; };
 		3FC668C22F7CD4A60072EBA8 /* XcodeTarget_NotificationExtension in Frameworks */ = {isa = PBXBuildFile; productRef = 3FC668C12F7CD4A60072EBA8 /* XcodeTarget_NotificationExtension */; };
 		3FC668C42F7CD4F70072EBA8 /* XcodeTarget_Pocket Casts Watch App in Frameworks */ = {isa = PBXBuildFile; productRef = 3FC668C32F7CD4F70072EBA8 /* XcodeTarget_Pocket Casts Watch App */; };
@@ -6731,6 +6732,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				8BB2E58B2A8AA02E00E93088 /* SharedConstants.swift in Sources */,
+				115EE8A0733B3B7120DB1E00 /* PocketCastsWebLink.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
