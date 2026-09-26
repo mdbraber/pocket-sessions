@@ -186,4 +186,34 @@ final class SessionPodcastLimitTests: DBTestCase {
 
         XCTAssertEqual(members(session), ["new"])
     }
+
+    func testYourOwnUpNextAddCopiedIntoTheSessionCountsAsHandAdded() {
+        let mirrorWas = Settings.mirrorUpNextToSession
+        defer { Settings.mirrorUpNextToSession = mirrorWas }
+        Settings.mirrorUpNextToSession = true
+        let podcast = makePodcast(limit: 1)
+        let old = makeEpisode("queuedOld", podcast: podcast, daysAgo: 5)
+        makeEpisode("autoNew", podcast: podcast, daysAgo: 1)
+
+        SessionLinking.mirrorQueueAdd(episodes: [old])
+        let session = SessionStore.shared.session(forPodcast: podcast.uuid)!
+        add(["autoNew"], to: session)
+
+        XCTAssertEqual(members(session), ["queuedOld", "autoNew"])
+    }
+
+    func testAutoAddToUpNextCopyStillFollowsTheLimit() {
+        let mirrorWas = Settings.mirrorUpNextToSession
+        defer { Settings.mirrorUpNextToSession = mirrorWas }
+        Settings.mirrorUpNextToSession = true
+        let podcast = makePodcast(limit: 1)
+        let old = makeEpisode("autoOld", podcast: podcast, daysAgo: 5)
+        makeEpisode("autoNew", podcast: podcast, daysAgo: 1)
+
+        SessionLinking.mirrorQueueAdd(episodes: [old], automatic: true)
+        let session = SessionStore.shared.session(forPodcast: podcast.uuid)!
+        add(["autoNew"], to: session)
+
+        XCTAssertEqual(members(session), ["autoNew"])
+    }
 }

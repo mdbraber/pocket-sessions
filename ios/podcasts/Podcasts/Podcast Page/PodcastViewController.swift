@@ -1309,7 +1309,7 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, MultiSele
     private func queueGroupAsSession(_ group: [ListEpisode]) {
         guard let podcast, !group.isEmpty,
               let session = SessionManager.shared.findOrCreateSession(forPodcast: podcast) else { return }
-        SessionManager.shared.addToLineup(episodeUuids: group.map { $0.episode.uuid }, session: session)
+        SessionManager.shared.addToLineup(episodeUuids: group.map { $0.episode.uuid }, session: session, pinning: true)
         // Float it to the front of the session order, keeping every other session's relative order.
         let order = [session.uuid] + SessionStore.shared.sessions.map(\.uuid).filter { $0 != session.uuid }
         SessionStore.shared.reorderSessions(order)

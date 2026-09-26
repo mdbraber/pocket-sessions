@@ -23,7 +23,9 @@ enum SessionLinking {
             let members = Set(SessionFeederEngine.storeMemberUuids(for: session))
             let toAdd = podcastEpisodes.map(\.uuid).filter { !members.contains($0) }
             guard !toAdd.isEmpty else { continue }
-            SessionManager.shared.addToLineup(episodeUuids: toAdd, session: session, keepInInbox: automatic)
+            // Your own queue add is a hand-add in the session too (pinned: the feeder's prune and the
+            // Episodes per Session limit leave it alone); the auto-add copy stays automatic.
+            SessionManager.shared.addToLineup(episodeUuids: toAdd, session: session, pinning: !automatic, keepInInbox: automatic)
         }
     }
 
