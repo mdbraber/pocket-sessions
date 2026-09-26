@@ -171,6 +171,26 @@ final class FilterPresetStoreTests: XCTestCase {
         XCTAssertNil(loaded.archived, "a 'don't care' rule must not come back as a constraint")
     }
 
+    /// The old `groupBy` key stored 0 for both "never set" and "None"; it reads as unchanged. A
+    /// grouping it named survives, and the new key keeps an explicit None.
+    func testGroupingSeedsReadFromOldAndNewKeys() throws {
+        var legacyUnset = try json(for: FilterPreset(uuid: "legacy-unset", name: "A"))
+        legacyUnset.removeValue(forKey: "groupSeed")
+        legacyUnset["groupBy"] = 0
+        var legacyPodcast = try json(for: FilterPreset(uuid: "legacy-podcast", name: "B"))
+        legacyPodcast.removeValue(forKey: "groupSeed")
+        legacyPodcast["groupBy"] = EpisodeGroupBy.podcast.rawValue
+        let explicitNone = try json(for: FilterPreset(uuid: "none", name: "C", sortOrder: FilterPreset.manualSortOrder, groupBy: EpisodeGroupBy.none.rawValue))
+        try write(fullySeeded.merging(["presets": [legacyUnset, legacyPodcast, explicitNone]]) { $1 })
+
+        let store = FilterPresetStore(fileURL: fileURL)
+
+        XCTAssertNil(store.preset(uuid: "legacy-unset")?.groupSeed)
+        XCTAssertEqual(store.preset(uuid: "legacy-podcast")?.groupSeed, .podcast)
+        XCTAssertEqual(store.preset(uuid: "none")?.groupSeed, EpisodeGroupBy.none)
+        XCTAssertEqual(store.preset(uuid: "none")?.sortSeed, .manual)
+    }
+
     func testCorruptPresetDropsOnlyThatPreset() throws {
         let good = try json(for: FilterPreset(uuid: "good", name: "Good"))
         let corrupt: [String: Any] = ["name": "no uuid"]

@@ -78,10 +78,11 @@ extension UpNextViewController {
     func applyBrowseSeeds(of preset: FilterPreset) {
         guard let session = browsedSession else { return }
         let pageUuid = sessionBrowsePageUuid(for: session)
-        if let raw = preset.sortOrder, let order = EpisodeOrder(rawValue: raw) {
+        // A browsed list has no hand order, so Manual (like an empty sort) leaves its sort alone.
+        if case .order(let order) = preset.sortSeed {
             TriageTabSort.setOrder(order, pageUuid: pageUuid)
         }
-        if let groupBy = EpisodeGroupBy(rawValue: preset.groupBy) {
+        if let groupBy = preset.groupSeed {
             let grouping = EpisodeListGrouping(pageUuid: pageUuid)
             grouping.groupBy = groupBy
             grouping.limit = preset.groupLimit

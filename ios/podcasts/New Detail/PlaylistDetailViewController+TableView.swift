@@ -566,14 +566,12 @@ extension PlaylistDetailViewController {
             if let session = viewModel.lineupSession { LineupSort.applySeeds(of: preset, to: session) }
             return
         }
-        // A preset seeds the BROWSED list's sort only. The lineup has one saved order and a preset
-        // must never silently rewrite it — re-arranging is an explicit act (⋯ → Reorder).
-        if viewModel.selectedTriageTab == .browse, let raw = preset.sortOrder, let order = EpisodeOrder(rawValue: raw) {
+        // The browsed list: an empty sort or grouping leaves it alone, and so does Manual (a browsed
+        // list has no hand order). None ungroups.
+        if viewModel.selectedTriageTab == .browse, case .order(let order) = preset.sortSeed {
             TriageTabSort.setOrder(order, pageUuid: viewModel.playlist.uuid)
         }
-        // Group (with its limit and reverse) applies to the Episodes tab only — the Session
-        // lineup never groups.
-        if viewModel.selectedTriageTab == .browse, let group = EpisodeGroupBy(rawValue: preset.groupBy) {
+        if viewModel.selectedTriageTab == .browse, let group = preset.groupSeed {
             viewModel.groupBy = group
             viewModel.groupLimit = preset.groupLimit
             viewModel.reverseGroup = preset.groupReversed

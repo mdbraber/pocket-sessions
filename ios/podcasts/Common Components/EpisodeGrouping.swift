@@ -27,9 +27,9 @@ enum EpisodeGroupBy: Int, CaseIterable {
         }
     }
 
-    /// Menu order: the useful groupings first, None last.
+    /// Menu order: None first (as Manual leads Sort By), then the groupings.
     static var menuOrder: [EpisodeGroupBy] {
-        [.releaseDate, .season, .podcast, .folder, .playing, .downloaded, .duration, .starred, .archived, .session, .none]
+        [.none, .releaseDate, .season, .podcast, .folder, .playing, .downloaded, .duration, .starred, .archived, .session]
     }
 }
 

@@ -161,13 +161,15 @@ struct FilterPresetEditorView: View {
             }
 
             // Sort and Group are applied to the list when the preset is selected, and then the
-            // list's own controls override them. "None" leaves the list's current choice alone.
+            // list's own controls override them. Empty leaves the list's current choice alone;
+            // Manual and None are real choices (a session's hand order; no grouping).
             Section(header: Text(L10n.sortBy)) {
                 Picker(L10n.sortBy, selection: Binding(
                     get: { model.preset.sortOrder },
                     set: { model.preset.sortOrder = $0 }
                 )) {
-                    Text(L10n.none).tag(Int?.none)
+                    Text("").tag(Int?.none)
+                    Text(L10n.lineupSortManual).tag(Int?.some(FilterPreset.manualSortOrder))
                     ForEach(EpisodeOrder.menuOrder, id: \.rawValue) {
                         Text($0.title).tag(Int?.some($0.rawValue))
                     }
@@ -179,13 +181,14 @@ struct FilterPresetEditorView: View {
                     get: { model.preset.groupBy },
                     set: { model.preset.groupBy = $0 }
                 )) {
+                    Text("").tag(Int?.none)
                     ForEach(EpisodeGroupBy.menuOrder, id: \.rawValue) {
-                        Text($0.title).tag($0.rawValue)
+                        Text($0.title).tag(Int?.some($0.rawValue))
                     }
                 }
 
                 // Limit and reverse only bite once something is grouped.
-                if model.preset.groupBy != EpisodeGroupBy.none.rawValue {
+                if let groupBy = model.preset.groupSeed, groupBy != .none {
                     Picker(L10n.episodeGroupLimit, selection: Binding(
                         get: { model.preset.groupLimit },
                         set: { model.preset.groupLimit = $0 }
@@ -196,7 +199,7 @@ struct FilterPresetEditorView: View {
                         }
                     }
 
-                    Toggle(L10n.inboxGroupReverse, isOn: Binding(
+                    Toggle(L10n.groupReverseOrder, isOn: Binding(
                         get: { model.preset.groupReversed },
                         set: { model.preset.groupReversed = $0 }
                     ))

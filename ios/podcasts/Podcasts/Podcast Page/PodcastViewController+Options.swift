@@ -164,7 +164,8 @@ extension PodcastViewController {
     /// Maps the preset's `EpisodeOrder` onto the podcast page's `PodcastEpisodeSortOrder`.
     /// SortGroupParityTests guards the two enums; extend this switch when either gains a case.
     func applyPresetSortAndGroup(_ preset: FilterPreset) {
-        guard let raw = preset.sortOrder, let order = EpisodeOrder(rawValue: raw) else { return }
+        // Manual (like an empty sort) leaves the Episodes list's sort alone — it has no hand order.
+        guard case .order(let order) = preset.sortSeed else { return }
         let mapped: PodcastEpisodeSortOrder = switch order {
         case .newestToOldest: .newestToOldest
         case .oldestToNewest: .oldestToNewest

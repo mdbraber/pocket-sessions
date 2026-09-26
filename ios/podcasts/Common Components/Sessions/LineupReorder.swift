@@ -233,16 +233,18 @@ enum LineupSort {
     }
 
     /// A preset picked for a Session tab seeds the session's arrangement, as it seeds a browsed
-    /// list's sort and grouping — but only with what it actually specifies: no sort leaves the sort,
-    /// no grouping leaves the grouping. (Changing a session's order is changing what plays next, so
-    /// nothing is reset by omission.)
+    /// list's sort and grouping — but only with what it actually specifies: an empty sort or
+    /// grouping leaves the session's alone. Manual and None are real choices (Manual brings back
+    /// the saved hand order once nothing else arranges the lineup).
     static func applySeeds(of preset: FilterPreset, to session: Session) {
-        if let raw = preset.sortOrder, let order = EpisodeOrder(rawValue: raw) {
-            set(order, for: session)
+        switch preset.sortSeed {
+        case .manual: set(nil, for: session)
+        case .order(let order): set(order, for: session)
+        case nil: break
         }
-        if let groupBy = EpisodeGroupBy(rawValue: preset.groupBy), groupBy != .none {
+        if let groupBy = preset.groupSeed {
             setGrouping(groupBy, for: session)
-            setGroupsReversed(preset.groupReversed, for: session)
+            if groupBy != .none { setGroupsReversed(preset.groupReversed, for: session) }
         }
     }
 

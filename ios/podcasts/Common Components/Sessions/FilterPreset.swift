@@ -107,10 +107,13 @@ struct FilterPreset: Codable, Equatable, Identifiable {
     var filterHours: Int32
 
     /// Applied to the list when the preset is selected, then overridable by the list's own sort
-    /// control. nil = "none" (leave the list's current sort). Raw value of `EpisodeOrder`.
+    /// control. nil = unchanged (leave the list's current sort); `manualSortOrder` = Manual (a
+    /// session's hand order — browsed lists have none, so it leaves theirs alone); otherwise the
+    /// raw value of `EpisodeOrder`.
     var sortOrder: Int?
-    /// Group By, applied on selection and overridable. Raw value of `EpisodeGroupBy` (0 = none).
-    var groupBy: Int
+    /// Group By, applied on selection and overridable. nil = unchanged (leave the list's current
+    /// grouping); otherwise the raw value of `EpisodeGroupBy` — so 0 means "None", explicitly.
+    var groupBy: Int?
     /// Episodes shown per group, applied on selection and overridable. 0 = no limit.
     var groupLimit: Int
     /// Reverse the order the groups appear in, applied on selection and overridable.
@@ -139,7 +142,7 @@ struct FilterPreset: Codable, Equatable, Identifiable {
         shorterThan: Int32 = 0,
         filterHours: Int32 = 0,
         sortOrder: Int? = nil,
-        groupBy: Int = 0,
+        groupBy: Int? = nil,
         groupLimit: Int = 0,
         groupReversed: Bool = false
     ) {
@@ -171,7 +174,14 @@ struct FilterPreset: Codable, Equatable, Identifiable {
     enum CodingKeys: String, CodingKey {
         case uuid, name, iconId, enabled, playingStatus, downloadStatus, starred, mediaType
         case archived, unseen, inSession, inUpNext, inThisSession, podcastUuids, folderUuids
-        case filterDuration, longerThan, shorterThan, filterHours, sortOrder, groupBy, groupLimit, groupReversed
+        case filterDuration, longerThan, shorterThan, filterHours, sortOrder, groupLimit, groupReversed
+        // A new key: the old `groupBy` stored 0 both for "never set" and "None", which can't be told
+        // apart. Read below, it becomes unchanged (0) or the grouping it named.
+        case groupBy = "groupSeed"
+    }
+
+    private enum LegacyCodingKeys: String, CodingKey {
+        case groupBy
     }
 
     // CRITICAL: every key via decodeIfPresent. Synthesized Decodable throws keyNotFound on a
@@ -204,7 +214,12 @@ struct FilterPreset: Codable, Equatable, Identifiable {
         shorterThan = try c.decodeIfPresent(Int32.self, forKey: .shorterThan) ?? 0
         filterHours = try c.decodeIfPresent(Int32.self, forKey: .filterHours) ?? 0
         sortOrder = try c.decodeIfPresent(Int.self, forKey: .sortOrder)
-        groupBy = try c.decodeIfPresent(Int.self, forKey: .groupBy) ?? 0
+        if c.contains(.groupBy) {
+            groupBy = try c.decodeIfPresent(Int.self, forKey: .groupBy)
+        } else {
+            let legacy = try decoder.container(keyedBy: LegacyCodingKeys.self).decodeIfPresent(Int.self, forKey: .groupBy) ?? 0
+            groupBy = legacy == 0 ? nil : legacy
+        }
         groupLimit = try c.decodeIfPresent(Int.self, forKey: .groupLimit) ?? 0
         groupReversed = try c.decodeIfPresent(Bool.self, forKey: .groupReversed) ?? false
     }
@@ -213,6 +228,26 @@ struct FilterPreset: Codable, Equatable, Identifiable {
     /// but name (archived included).
     var isDefault: Bool {
         self == FilterPreset(uuid: uuid, name: name, iconId: iconId, enabled: enabled, sortOrder: sortOrder, groupBy: groupBy, groupLimit: groupLimit, groupReversed: groupReversed)
+    }
+
+    static let manualSortOrder = 0
+
+    /// What picking this preset does to a list's sort.
+    enum SortSeed: Equatable {
+        case manual
+        case order(EpisodeOrder)
+    }
+
+    /// nil = leave the sort unchanged.
+    var sortSeed: SortSeed? {
+        guard let sortOrder else { return nil }
+        if sortOrder == Self.manualSortOrder { return .manual }
+        return EpisodeOrder(rawValue: sortOrder).map(SortSeed.order)
+    }
+
+    /// nil = leave the grouping unchanged; `.none` = ungroup.
+    var groupSeed: EpisodeGroupBy? {
+        groupBy.flatMap(EpisodeGroupBy.init(rawValue:))
     }
 
     /// Whether the preset needs a session behind the list to mean anything (see `inThisSession`).
