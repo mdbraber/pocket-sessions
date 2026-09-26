@@ -21,48 +21,8 @@ extension AppDelegate {
                 JLRoutes.routeURL(url)
             }
         } else if userActivity.activityType == NSUserActivityTypeBrowsingWeb {
-            guard
-                let incomingURL = userActivity.webpageURL,
-                let components = NSURLComponents(url: incomingURL, resolvingAgainstBaseURL: true),
-                let path = components.path,
-                let controller = SceneHelper.rootViewController(),
-                path != "/get",
-                path != "/get/"
-            else { return }
-
-            //If path is just the base share URL let's return
-            if path.isEmpty || path == "/", URL(string: ServerConstants.Urls.share())?.host == incomingURL.host {
-                return
-            }
-
-            if path.startsWith(string: "/redeem") {
-                handleReferralsDeepLink(url: incomingURL)
-                return
-            }
-
-            if path == "/discover" || path.startsWith(string: "/discover/") {
-                if let url = URL(string: "pktc:/\(path)") {
-                    NavigationManager.shared.dismissPresentedViewController()
-                    JLRoutes.routeURL(url)
-                }
-                return
-            }
-
-            if path == "/pair" || path.startsWith(string: "/pair/") {
-                if let url = URL(string: "pktc:/\(path)?\(components.query ?? "")") {
-                    NavigationManager.shared.dismissPresentedViewController()
-                    JLRoutes.routeURL(url)
-                }
-                return
-            }
-
-            // Also pass any query params from the share URL to the server to allow support for episode position handling
-            // Ex: ?t=123
-            let query = components.query.map { "?\($0)" } ?? ""
-            let sharePath = "\(path)\(query)"
-
-            FileLog.shared.addMessage("Opening universal link, path: \(sharePath)")
-            openSharePath("social/share/show\(sharePath)", controller: controller, onErrorOpen: incomingURL)
+            guard let incomingURL = userActivity.webpageURL else { return }
+            handleIncomingWebLink(incomingURL)
         }
 
         guard let intent = userActivity.interaction?.intent else { return }
@@ -109,6 +69,53 @@ extension AppDelegate {
                 _ = SiriShortcutsManager.shared.extendSleepTimer(addTime: Int(truncating: minutes))
             }
         }
+    }
+
+    /// Opens a Pocket Casts web link (pca.st, pocketcasts.com). Universal links arrive here, and so do
+    /// `pktc://weblink/<url>` links from the Share and Safari extensions (fork: this app can't claim
+    /// those domains as universal links). Callers other than universal links must check the host first.
+    func handleIncomingWebLink(_ incomingURL: URL) {
+        guard
+            let components = NSURLComponents(url: incomingURL, resolvingAgainstBaseURL: true),
+            let path = components.path,
+            let controller = SceneHelper.rootViewController(),
+            path != "/get",
+            path != "/get/"
+        else { return }
+
+        //If path is just the base share URL let's return
+        if path.isEmpty || path == "/", URL(string: ServerConstants.Urls.share())?.host == incomingURL.host {
+            return
+        }
+
+        if path.startsWith(string: "/redeem") {
+            handleReferralsDeepLink(url: incomingURL)
+            return
+        }
+
+        if path == "/discover" || path.startsWith(string: "/discover/") {
+            if let url = URL(string: "pktc:/\(path)") {
+                NavigationManager.shared.dismissPresentedViewController()
+                JLRoutes.routeURL(url)
+            }
+            return
+        }
+
+        if path == "/pair" || path.startsWith(string: "/pair/") {
+            if let url = URL(string: "pktc:/\(path)?\(components.query ?? "")") {
+                NavigationManager.shared.dismissPresentedViewController()
+                JLRoutes.routeURL(url)
+            }
+            return
+        }
+
+        // Also pass any query params from the share URL to the server to allow support for episode position handling
+        // Ex: ?t=123
+        let query = components.query.map { "?\($0)" } ?? ""
+        let sharePath = "\(path)\(query)"
+
+        FileLog.shared.addMessage("Opening universal link, path: \(sharePath)")
+        openSharePath("social/share/show\(sharePath)", controller: controller, onErrorOpen: incomingURL)
     }
 
     /// This method is called when a user activity is continued via the restoration handler
