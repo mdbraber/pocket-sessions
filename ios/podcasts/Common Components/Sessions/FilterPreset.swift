@@ -85,6 +85,11 @@ struct FilterPreset: Codable, Equatable, Identifiable {
     /// Against the current Up Next queue (now-playing included). Like `inSession`, a global bit:
     /// an episode queued in Up Next reads the same from any page.
     var inUpNext: Rule
+    /// Against the session the list BELONGS TO — the one page-relative rule. nil = any, true = in
+    /// this session, false = not yet in it (what's left to add). It only means something where a
+    /// list has a session behind it (a session's Episodes tab), so a preset using it is
+    /// *contextual*: the picker offers it only there, and anywhere else it constrains nothing.
+    var inThisSession: Rule
 
     /// Scope: which podcasts the preset speaks for. Empty = all. `folderUuids` resolves to its
     /// member podcasts at query time. This is the ONE axis that is inherently about *which page you
@@ -126,6 +131,7 @@ struct FilterPreset: Codable, Equatable, Identifiable {
         unseen: Rule = nil,
         inSession: Rule = nil,
         inUpNext: Rule = nil,
+        inThisSession: Rule = nil,
         podcastUuids: Set<String> = [],
         folderUuids: Set<String> = [],
         filterDuration: Bool = false,
@@ -149,6 +155,7 @@ struct FilterPreset: Codable, Equatable, Identifiable {
         self.unseen = unseen
         self.inSession = inSession
         self.inUpNext = inUpNext
+        self.inThisSession = inThisSession
         self.podcastUuids = podcastUuids
         self.folderUuids = folderUuids
         self.filterDuration = filterDuration
@@ -163,7 +170,7 @@ struct FilterPreset: Codable, Equatable, Identifiable {
 
     enum CodingKeys: String, CodingKey {
         case uuid, name, iconId, enabled, playingStatus, downloadStatus, starred, mediaType
-        case archived, unseen, inSession, inUpNext, podcastUuids, folderUuids
+        case archived, unseen, inSession, inUpNext, inThisSession, podcastUuids, folderUuids
         case filterDuration, longerThan, shorterThan, filterHours, sortOrder, groupBy, groupLimit, groupReversed
     }
 
@@ -189,6 +196,7 @@ struct FilterPreset: Codable, Equatable, Identifiable {
         unseen = try c.decodeIfPresent(Bool.self, forKey: .unseen)
         inSession = try c.decodeIfPresent(Bool.self, forKey: .inSession)
         inUpNext = try c.decodeIfPresent(Bool.self, forKey: .inUpNext)
+        inThisSession = try c.decodeIfPresent(Bool.self, forKey: .inThisSession)
         podcastUuids = try c.decodeIfPresent(Set<String>.self, forKey: .podcastUuids) ?? []
         folderUuids = try c.decodeIfPresent(Set<String>.self, forKey: .folderUuids) ?? []
         filterDuration = try c.decodeIfPresent(Bool.self, forKey: .filterDuration) ?? false
@@ -205,6 +213,11 @@ struct FilterPreset: Codable, Equatable, Identifiable {
     /// but name (archived included).
     var isDefault: Bool {
         self == FilterPreset(uuid: uuid, name: name, iconId: iconId, enabled: enabled, sortOrder: sortOrder, groupBy: groupBy, groupLimit: groupLimit, groupReversed: groupReversed)
+    }
+
+    /// Whether the preset needs a session behind the list to mean anything (see `inThisSession`).
+    var isContextual: Bool {
+        inThisSession != nil
     }
 
     /// Whether a podcast/folder scope is set.
@@ -224,10 +237,17 @@ extension FilterPreset {
             FilterPreset(uuid: "preset-unseen", name: L10n.filterPresetUnseen, unseen: true),
             FilterPreset(uuid: "preset-downloaded", name: L10n.filterPresetDownloaded, downloadStatus: [.downloaded]),
             FilterPreset(uuid: "preset-in-progress", name: L10n.filterPresetInProgress, playingStatus: [.inProgress]),
-            FilterPreset(uuid: "preset-starred", name: L10n.filterPresetStarred, starred: true)
+            FilterPreset(uuid: "preset-starred", name: L10n.filterPresetStarred, starred: true),
+            notInThisSession
         ]
     }
 
     /// The default selection — everything, unfiltered.
     static var allEpisodes: FilterPreset { builtIns[0] }
+
+    /// The default on a session's Episodes tab: what could still be added to it. Contextual, so it
+    /// only shows where the list has a session behind it.
+    static var notInThisSession: FilterPreset {
+        FilterPreset(uuid: "preset-not-in-session", name: L10n.filterPresetNotInThisSession, inThisSession: false)
+    }
 }

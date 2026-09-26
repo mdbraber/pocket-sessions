@@ -63,10 +63,15 @@ struct FilterPresetEditorView: View {
     var body: some View {
         Form {
             // Name leads the form — it's the one thing every preset has.
-            Section {
+            Section(footer: Text(L10n.filterPresetShowInMenuFooter)) {
                 TextField(L10n.filterPresetNamePlaceholder, text: Binding(
                     get: { model.preset.name },
                     set: { model.preset.name = $0 }
+                ))
+                // A preset that's off stays in the list (dimmed) but drops out of the Filters menu.
+                Toggle(L10n.filterPresetShowInMenu, isOn: Binding(
+                    get: { model.preset.enabled },
+                    set: { model.preset.enabled = $0 }
                 ))
             }
 
@@ -102,6 +107,11 @@ struct FilterPresetEditorView: View {
             Section(header: Text(L10n.filterPresetSectionLists)) {
                 triStateRow(L10n.filterPresetRuleSession, positive: L10n.filterPresetInSession, negative: L10n.filterPresetNotInSession, keyPath: \.inSession)
                 triStateRow(L10n.upNext, positive: L10n.filterPresetInUpNext, negative: L10n.filterPresetNotInUpNext, keyPath: \.inUpNext)
+            }
+
+            // The one page-relative rule: its own section, so the footer can say where it applies.
+            Section(footer: Text(L10n.filterPresetThisSessionFooter)) {
+                triStateRow(L10n.filterPresetRuleThisSession, positive: L10n.filterPresetInThisSession, negative: L10n.filterPresetNotInThisSession, keyPath: \.inThisSession)
             }
 
             // Multi-value axes: a toggle per option. All-on or all-off = "any".

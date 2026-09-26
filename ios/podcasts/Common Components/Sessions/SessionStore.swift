@@ -78,8 +78,25 @@ struct Session: Codable, Equatable, Identifiable {
     /// Fork: the user's manual position in the "recent/planned" session list. Synced (it rides
     /// the CloudKit Session record). `Int.max` = never placed → falls to the end, in creation order.
     var sortIndex = Int.max
+    /// Fork: the lineup's Sort By — an `EpisodeOrder` raw value, nil = Manual (hand-ordered). Synced
+    /// with the rest of the session, so every device and every surface shows one order. The order
+    /// itself still lives in the store's positions; `LineupSort` keeps them sorted while this is set.
+    var lineupSort: Int?
+    /// Fork: the lineup's Group By — an `EpisodeGroupBy` raw value, nil = ungrouped. Like the sort it
+    /// sets the PLAY order (the session plays group by group), not just the display.
+    var lineupGroupBy: Int?
+    /// Plays the groups in reverse order.
+    var lineupGroupReversed = false
+    /// The hand-made order, saved when the lineup leaves Manual, and restored when it returns (via
+    /// the menu). Empty while Manual.
+    var manualLineupOrder: [String] = []
 
     var id: String { uuid }
+
+    var lineupSortOrder: EpisodeOrder? { lineupSort.flatMap(EpisodeOrder.init(rawValue:)) }
+    var lineupGrouping: EpisodeGroupBy { lineupGroupBy.flatMap(EpisodeGroupBy.init(rawValue:)) ?? .none }
+    /// Neither sorted nor grouped: the lineup is in the order the user made.
+    var lineupIsManual: Bool { lineupSortOrder == nil && lineupGrouping == .none }
 
     init(
         uuid: String,
@@ -91,7 +108,11 @@ struct Session: Codable, Equatable, Identifiable {
         lastInsertedUuid: String = "",
         lastUsed: Date? = nil,
         pinnedEpisodeUuids: [String] = [],
-        sortIndex: Int = Int.max
+        sortIndex: Int = Int.max,
+        lineupSort: Int? = nil,
+        lineupGroupBy: Int? = nil,
+        lineupGroupReversed: Bool = false,
+        manualLineupOrder: [String] = []
     ) {
         self.uuid = uuid
         self.storePlaylistUuid = storePlaylistUuid
@@ -103,10 +124,15 @@ struct Session: Codable, Equatable, Identifiable {
         self.lastUsed = lastUsed
         self.pinnedEpisodeUuids = pinnedEpisodeUuids
         self.sortIndex = sortIndex
+        self.lineupSort = lineupSort
+        self.lineupGroupBy = lineupGroupBy
+        self.lineupGroupReversed = lineupGroupReversed
+        self.manualLineupOrder = manualLineupOrder
     }
 
     enum CodingKeys: String, CodingKey {
-        case uuid, storePlaylistUuid, feeder, autoAdd, autoFill, insertMode, lastInsertedUuid, lastUsed, pinnedEpisodeUuids, sortIndex
+        case uuid, storePlaylistUuid, feeder, autoAdd, autoFill, insertMode, lastInsertedUuid, lastUsed, pinnedEpisodeUuids, sortIndex, lineupSort
+        case lineupGroupBy, lineupGroupReversed, manualLineupOrder
     }
 
     // CRITICAL: same rule as Document.init(from:) — decode every defaulted key with
@@ -128,6 +154,10 @@ struct Session: Codable, Equatable, Identifiable {
         lastUsed = try c.decodeIfPresent(Date.self, forKey: .lastUsed)
         pinnedEpisodeUuids = try c.decodeIfPresent([String].self, forKey: .pinnedEpisodeUuids) ?? []
         sortIndex = try c.decodeIfPresent(Int.self, forKey: .sortIndex) ?? Int.max
+        lineupSort = try c.decodeIfPresent(Int.self, forKey: .lineupSort)
+        lineupGroupBy = try c.decodeIfPresent(Int.self, forKey: .lineupGroupBy)
+        lineupGroupReversed = try c.decodeIfPresent(Bool.self, forKey: .lineupGroupReversed) ?? false
+        manualLineupOrder = try c.decodeIfPresent([String].self, forKey: .manualLineupOrder) ?? []
     }
 }
 

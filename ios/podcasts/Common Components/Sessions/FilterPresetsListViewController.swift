@@ -33,20 +33,24 @@ struct FilterPresetsListView: View {
     var body: some View {
         List {
             ForEach(presets) { preset in
-                HStack(spacing: 12) {
-                    Button {
-                        model.edit(preset)
-                    } label: {
+                // The whole row opens the preset — a chevron says so. Whether it shows in the
+                // Filters menu is set inside; a preset that's off stays here, dimmed.
+                Button {
+                    model.edit(preset)
+                } label: {
+                    HStack(spacing: 12) {
                         Text(preset.name)
                             .foregroundStyle(preset.enabled ? theme.primaryText01 : theme.primaryText02)
                         Spacer()
+                        if !preset.enabled {
+                            Text(L10n.off).foregroundStyle(theme.primaryText02)
+                        }
+                        Image("cs-chevron").renderingMode(.template).foregroundStyle(theme.primaryIcon02)
                     }
-                    .buttonStyle(.plain)
-
-                    // A disabled preset stays here but drops out of the quick picker.
-                    Toggle("", isOn: enabledBinding(for: preset))
-                        .labelsHidden()
+                    .contentShape(Rectangle())
+                    .opacity(preset.enabled ? 1 : 0.6)
                 }
+                .buttonStyle(.plain)
             }
             .onMove { from, to in
                 FilterPresetStore.shared.move(fromOffsets: from, toOffset: to)
@@ -71,17 +75,6 @@ struct FilterPresetsListView: View {
         .onReceive(NotificationCenter.default.publisher(for: FilterPresetStore.changed)) { _ in
             reload()
         }
-    }
-
-    private func enabledBinding(for preset: FilterPreset) -> Binding<Bool> {
-        Binding(
-            get: { preset.enabled },
-            set: { on in
-                var updated = preset
-                updated.enabled = on
-                FilterPresetStore.shared.upsert(updated)
-            }
-        )
     }
 
     private func reload() {
@@ -139,8 +132,10 @@ final class FilterPresetsListViewController: PCHostingController<AnyView> {
         })
         // "Reset all filters" — the same clear the picker offers, reachable from management too.
         picker.addAction(action: OptionAction(label: L10n.filterPresetReset, icon: "close") {
-            FilterPresetStore.shared.setActivePresetUuid(nil, for: .episodes)
-            FilterPresetStore.shared.setActivePresetUuid(nil, for: .session)
+            // Each scope back to its own default (a session's Episodes list: "Not in Session").
+            for scope in FilterScope.allCases {
+                FilterPresetStore.shared.setActivePresetUuid(nil, for: scope)
+            }
             NotificationCenter.postOnMainThread(notification: FilterPresets.resetAll)
         })
         picker.present(from: self)

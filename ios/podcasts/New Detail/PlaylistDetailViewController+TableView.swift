@@ -445,6 +445,8 @@ extension PlaylistDetailViewController: UITableViewDragDelegate, UITableViewDrop
         // make dragging write the wrong thing — reorder is live whenever a lineup is on screen.
         // (In "Reorder Episodes" mode the grips own the drag instead, so long-press stands down.)
         guard !isMultiSelectEnabled, !viewModel.isSearching, !lineupReorderMode else { return false }
+        // A grouped lineup has headings between its rows; reordering goes through "Reorder Episodes".
+        if viewModel.usesTriageTabs, viewModel.selectedTriageTab == .lineup, viewModel.lineupIsGrouped || viewModel.lineupPresetNarrowing { return false }
         if viewModel.playlist.sortType == PlaylistSort.dragAndDrop.rawValue { return true }
         // Fork: lens pages reorder their fed session's lineup on the Session tab.
         return viewModel.isLensPage && viewModel.selectedTriageTab == .lineup && viewModel.lensSession != nil
@@ -559,6 +561,11 @@ extension PlaylistDetailViewController {
         // Fork: a plain manual playlist is hand-ordered — a preset filters it, but must not impose
         // the preset's sort or grouping. (Session stores are also manual, but sort/group via tabs.)
         guard !(viewModel.isManualPlaylist && viewModel.session == nil) else { return }
+        // On the Session tab a preset seeds the SESSION's arrangement (saved on it; sets play order).
+        if viewModel.selectedTriageTab == .lineup {
+            if let session = viewModel.lineupSession { LineupSort.applySeeds(of: preset, to: session) }
+            return
+        }
         // A preset seeds the BROWSED list's sort only. The lineup has one saved order and a preset
         // must never silently rewrite it — re-arranging is an explicit act (⋯ → Reorder).
         if viewModel.selectedTriageTab == .browse, let raw = preset.sortOrder, let order = EpisodeOrder(rawValue: raw) {
@@ -652,16 +659,15 @@ private extension PlaylistDetailViewController {
             countsLabel.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -16)
         ]
 
-        // Fork: the Filter Preset control belongs on every episode list EXCEPT a session
-        // lineup — matching the podcast page's Session tab: the lineup is a hand-made list
-        // presets never narrow, so the funnel hides there and shapes the Episodes/Browse
-        // views only. Plain manual playlists keep it (filter-only, order untouched).
+        // Fork: the Filter Preset control belongs on every episode list. On a Session tab it has its
+        // own scope and narrows what the lineup shows (never what plays); plain manual playlists
+        // keep it filter-only, order untouched.
         var funnelButton: UIButton?
-        let onLineupTab = viewModel.usesTriageTabs && viewModel.selectedTriageTab == .lineup
-        if !onLineupTab, viewModel.usesTriageTabs || viewModel.isManualPlaylist {
+        if viewModel.usesTriageTabs || viewModel.isManualPlaylist {
             let funnel = FilterPresetPicker.makeButton(
                 target: self,
                 scope: viewModel.filterScope,
+                singlePodcast: { [weak self] in self?.viewModel.presetListIsSinglePodcast ?? false },
                 searchActive: { [weak self] in self?.viewModel.isSearching ?? false },
                 onSelect: { [weak self] preset in self?.applyPresetSortAndGroup(preset) }
             ) { [weak self] in

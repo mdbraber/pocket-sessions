@@ -38,16 +38,53 @@ class PlaylistDetailViewModel: ObservableObject {
     private(set) var triageBrowseCount = 0
     private(set) var triageBrowseDuration: TimeInterval = 0
 
-    /// The preset scope for this page — always the Episodes scope. The Session lineup is a
-    /// hand-made list that presets never narrow (matching the podcast page's Session tab),
-    /// so the funnel only ever shows on, and edits, the Episodes/Browse views.
-    var filterScope: FilterScope { .episodes }
+    /// The preset scope for this page's Episodes/Browse view. The Session lineup is a hand-made
+    /// list that presets never narrow (matching the podcast page's Session tab), so the funnel only
+    /// ever shows on, and edits, the Episodes/Browse views. A page with a session behind it (a
+    /// session store or a smart playlist lens) browses in the session-Episodes scope, which offers
+    /// contextual presets and opens on "Not in Session"; a plain playlist uses the Episodes scope.
+    var browsePresetScope: FilterScope { usesTriageTabs ? .sessionEpisodes : .episodes }
+
+    /// The scope of the filter control on screen: the Session tab has its own (presets narrow what
+    /// the lineup shows, never what plays), the Episodes/Browse views theirs.
+    var filterScope: FilterScope {
+        usesTriageTabs && selectedTriageTab == .lineup ? .session : browsePresetScope
+    }
+
+    /// The preset narrowing the Episodes/Browse list, whichever tab is showing.
+    var browsePreset: FilterPreset { FilterPresets.active(browsePresetScope, singlePodcast: presetListIsSinglePodcast) }
+
+    /// The preset the page's own fetch applies. A session store's fetch IS the lineup — narrowed for
+    /// display in `makeSections` — and the Episodes tab is built from the feeder's domain instead.
+    var fetchPreset: FilterPreset? { session == nil ? browsePreset : nil }
+
+    /// Whether the Session tab's preset hides part of the lineup (drag then stands down: the rows
+    /// are a subset).
+    var lineupPresetNarrowing: Bool {
+        usesTriageTabs && FilterPresets.isNarrowing(.session, singlePodcast: presetListIsSinglePodcast)
+    }
+
+    /// The lineup as the Session tab shows it: narrowed by its preset, in its saved order.
+    private func lineupFiltered(_ lineup: [ListEpisode]) -> [ListEpisode] {
+        guard lineupPresetNarrowing else { return lineup }
+        let preset = FilterPresets.active(.session, singlePodcast: presetListIsSinglePodcast)
+        return FilterPresets.filter(lineup, by: preset, thisSessionStoreUuid: thisSessionStoreUuid, singlePodcast: presetListIsSinglePodcast) { $0.episode }
+    }
+
+    /// The session this page belongs to, as a store uuid — what a contextual preset resolves against.
+    var thisSessionStoreUuid: String? { (session ?? lensSession)?.storePlaylistUuid }
 
     /// Fork: the active Filter Preset for the current tab.
-    var activePreset: FilterPreset { FilterPresets.active(filterScope) }
+    var activePreset: FilterPreset { FilterPresets.active(filterScope, singlePodcast: presetListIsSinglePodcast) }
+
+    /// A podcast's session browses that one podcast, so podcast/folder-limited presets don't apply.
+    var presetListIsSinglePodcast: Bool {
+        if case .podcast = session?.feeder { return true }
+        return false
+    }
 
     /// True when the current tab's preset genuinely narrows — drives the control's accent.
-    var isPresetNarrowing: Bool { FilterPresets.isNarrowing(filterScope) }
+    var isPresetNarrowing: Bool { FilterPresets.isNarrowing(filterScope, singlePodcast: presetListIsSinglePodcast) }
 
     /// The full fetched list, regardless of the selected tab - the header artwork
     /// always reflects the whole playlist.
@@ -186,8 +223,14 @@ class PlaylistDetailViewModel: ObservableObject {
     /// Fork: persists the lineup exactly as currently displayed (after a cross-section
     /// drag), then reloads so sections rebuild (e.g. an emptied inbox disappears).
     func commitLineupOrder() {
-        let order = lineupEpisodes.map { $0.episode.uuid }
+        var order = lineupEpisodes.map { $0.episode.uuid }
         if let session = session ?? lensSession {
+            // A hand placement: the lineup is Manual from here (before the write, so it isn't re-sorted).
+            LineupSort.switchToManual(session)
+            // A filtered Session tab shows a subset: keep what the filter hid where it was.
+            if lineupPresetNarrowing {
+                order = LineupReorder.mergingVisibleOrder(order, into: LineupReorder.storedOrder(of: session))
+            }
             // Store pages write their own session; lens pages write the fed one.
             SessionManager.shared.setLineupOrder(episodeUuids: order, session: session)
         } else {
@@ -202,6 +245,11 @@ class PlaylistDetailViewModel: ObservableObject {
     /// hand-ordered again the moment this returns. The playing episode keeps position 0 — a
     /// lineup's head is what's playing, and re-arranging the rest never displaces it.
     func reorderLineup(_ order: EpisodeOrder) {
+        // A session's lineup keeps a sticky sort instead (see `LineupSort`).
+        if let session = lineupSession {
+            setLineupSort(order, for: session)
+            return
+        }
         guard let index = dataSource.firstIndex(where: { $0.model == .episodes }) else { return }
 
         let episodes = dataSource[index].elements.compactMap { $0 as? ListEpisode }
@@ -217,6 +265,17 @@ class PlaylistDetailViewModel: ObservableObject {
         commitLineupOrder()
     }
 
+    /// The session whose lineup this page shows — its own, or a lens page's fed one.
+    var lineupSession: Session? { session ?? lensSession }
+
+    /// The session lineup's Sort By (nil = Manual).
+    var lineupSort: EpisodeOrder? { lineupSession.flatMap(LineupSort.order(of:)) }
+
+    func setLineupSort(_ order: EpisodeOrder?, for session: Session) {
+        LineupSort.set(order, for: session)
+        reloadEpisodeList(animated: false)
+    }
+
     /// The playlist whose lineup this page shows — a lens page renders its fed session's store,
     /// not the smart playlist itself, so the "what's playing" pin has to be checked against that.
     private var pinnedLineupPlaylistUuid: String {
@@ -230,36 +289,47 @@ class PlaylistDetailViewModel: ObservableObject {
     // Fork: Group By — a per-playlist display preference for the Episodes tab. It is no longer
     // session-backed: the Session tab renders its lineup in play order and never groups, so the
     // Session model dropped groupBy/groupLimit entirely.
+    /// This page's Group By settings (shared with the Queue screen's view of the same session).
+    var grouping: EpisodeListGrouping { EpisodeListGrouping(pageUuid: playlist.uuid) }
+
     var groupBy: EpisodeGroupBy {
-        get {
-            EpisodeGroupBy(rawValue: UserDefaults.standard.integer(forKey: "SJPlaylistGroupBy-\(playlist.uuid)")) ?? .none
-        }
+        get { grouping.groupBy }
         set {
-            UserDefaults.standard.set(newValue.rawValue, forKey: "SJPlaylistGroupBy-\(playlist.uuid)")
+            grouping.groupBy = newValue
             reloadEpisodeList(animated: false)
         }
     }
 
     /// Episodes per group; 0 means no limit.
     var groupLimit: Int {
-        get {
-            UserDefaults.standard.integer(forKey: "SJPlaylistGroupLimit-\(playlist.uuid)")
-        }
+        get { grouping.limit }
         set {
-            UserDefaults.standard.set(newValue, forKey: "SJPlaylistGroupLimit-\(playlist.uuid)")
+            grouping.limit = newValue
             reloadEpisodeList(animated: false)
         }
     }
 
     /// Reverses the order the groups appear in (items inside each group keep their sort).
     var reverseGroup: Bool {
-        get {
-            UserDefaults.standard.bool(forKey: "SJPlaylistReverseGroup-\(playlist.uuid)")
-        }
+        get { grouping.reversed }
         set {
-            UserDefaults.standard.set(newValue, forKey: "SJPlaylistReverseGroup-\(playlist.uuid)")
+            grouping.reversed = newValue
             reloadEpisodeList(animated: false)
         }
+    }
+
+    /// The Session lineup with its Group By headings, if the session is grouped. The lineup is already
+    /// in group order (`LineupSort` keeps the positions arranged), so this only labels the runs.
+    private func lineupGroupedElements(_ lineup: [ListEpisode]) -> [ListItem] {
+        guard let session = lineupSession, case let groupBy = LineupSort.grouping(of: session), groupBy != .none else { return lineup }
+        return EpisodeGrouper.runs(lineup, by: groupBy) { $0.episode }
+            .flatMap { run -> [ListItem] in [PlaylistGroupHeaderPlaceholder(title: run.title)] + run.items }
+    }
+
+    /// Whether the Session lineup is grouped — grouped rows can't be dragged (a drag makes it Manual,
+    /// so it goes through "Reorder Episodes" instead).
+    var lineupIsGrouped: Bool {
+        lineupSession.map { LineupSort.grouping(of: $0) != .none } ?? false
     }
 
     /// Interleaves Group By heading rows (and applies the group limit) in display order.
@@ -440,7 +510,9 @@ class PlaylistDetailViewModel: ObservableObject {
         let refreshOperation = PlaylistDetailFetchOperation(
             dataManager: dataManager,
             episodesDataManager: episodesDataManager,
-            playlist: playlist
+            playlist: playlist,
+            preset: fetchPreset,
+            thisSessionStoreUuid: thisSessionStoreUuid
         ) { [weak self] newData, archivedEpisodeCount in
             self?.handleFetchCompletion(newData: newData, archivedEpisodeCount: archivedEpisodeCount, animated: animated)
         }
@@ -618,12 +690,11 @@ class PlaylistDetailViewModel: ObservableObject {
             let model: Section
             switch selectedTriageTab {
             case .lineup:
-                // The lineup is a hand-made list — presets never narrow it (matching the
-                // podcast page's Session tab); they shape the Browse view only.
-                shown = lineup
+                // The Session tab's own preset narrows what it shows; the session still plays in full.
+                shown = lineupFiltered(lineup)
                 model = .episodes
             case .browse:
-                shown = SessionFeederEngine.domainEpisodes(for: session, preset: activePreset)
+                shown = SessionFeederEngine.domainEpisodes(for: session, preset: browsePreset)
                     .map { ListEpisode(episode: $0, tintColor: tint) }
                 model = .browse
             }
@@ -642,7 +713,7 @@ class PlaylistDetailViewModel: ObservableObject {
             if shown.isEmpty {
                 elements = [PlaylistTabEmptyPlaceholder()]
             } else if selectedTriageTab == .lineup {
-                elements = shown
+                elements = lineupGroupedElements(shown)
             } else {
                 elements = groupedElements(shown)
             }
@@ -684,8 +755,8 @@ class PlaylistDetailViewModel: ObservableObject {
             let model: Section
             switch selectedTriageTab {
             case .lineup:
-                // Same rule as the session-store page: the lineup is never preset-filtered.
-                shown = lineup
+                // Same rule as the session-store page: the Session tab's preset narrows the display.
+                shown = lineupFiltered(lineup)
                 model = .episodes
             case .browse:
                 shown = browse
@@ -700,7 +771,7 @@ class PlaylistDetailViewModel: ObservableObject {
             if shown.isEmpty {
                 elements = [PlaylistTabEmptyPlaceholder()]
             } else if selectedTriageTab == .lineup {
-                elements = shown
+                elements = lineupGroupedElements(shown)
             } else {
                 elements = groupedElements(shown)
             }
@@ -824,9 +895,8 @@ extension PlaylistDetailViewModel {
         }
         self.searchTerm = searchTerm
         let escapedSearch = searchTerm.escapeLike(escapeChar: "\\")
-        // Session store pages: no Episodes-scope preset on the store query (see
-        // PlaylistDetailFetchOperation — same cross-scope reasoning).
-        let newData = episodesDataManager.playlistEpisodes(for: playlist, limit: 0, search: escapedSearch, preset: session == nil ? FilterPresets.active() : nil)
+        // Session store pages: no preset on the store query (see `fetchPreset`).
+        let newData = episodesDataManager.playlistEpisodes(for: playlist, limit: 0, search: escapedSearch, preset: fetchPreset, thisSessionStoreUuid: thisSessionStoreUuid)
         let changeSetTuple = buildChangeSet(source: episodes, newData: newData)
         DispatchQueue.main.async { [weak self] in
             // Avoid animation as long we use the current diffable framework

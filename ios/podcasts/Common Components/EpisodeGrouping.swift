@@ -36,6 +36,27 @@ enum EpisodeGroupBy: Int, CaseIterable {
 enum EpisodeGrouper {
     static let limitOptions = [5, 10, 20, 50]
 
+    /// Labels a list that is ALREADY in group order (a session lineup `LineupSort` keeps arranged)
+    /// without reordering it: consecutive items sharing a group become one run under its title. The
+    /// playing episode, pinned first, can form a short run of its own.
+    static func runs<T>(_ items: [T], by groupBy: EpisodeGroupBy, episode: (T) -> BaseEpisode) -> [(title: String, items: [T])] {
+        guard groupBy != .none else { return [] }
+        var titleByUuid = [String: String]()
+        for group in group(items, by: groupBy, limit: 0, episode: episode) {
+            for item in group.items { titleByUuid[episode(item).uuid] = group.title ?? "" }
+        }
+        var runs = [(title: String, items: [T])]()
+        for item in items {
+            let title = titleByUuid[episode(item).uuid] ?? ""
+            if runs.last?.title == title {
+                runs[runs.count - 1].items.append(item)
+            } else {
+                runs.append((title, [item]))
+            }
+        }
+        return runs
+    }
+
     /// Groups items in display order; a limit > 0 caps every group (and the ungrouped
     /// list) to its first N items. `reversed` flips the order the groups appear in (the
     /// items inside each group keep the list's sort order).

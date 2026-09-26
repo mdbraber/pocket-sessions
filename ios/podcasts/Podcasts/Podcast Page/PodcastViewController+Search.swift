@@ -59,9 +59,15 @@ extension PodcastViewController {
         }
 
         searchController.info = info
-        searchController.actionTitle = FilterPresets.active().name
-        searchController.styleActionButton { FilterPresetPicker.style($0) }
+        // A podcast page shows one podcast, so podcast/folder-limited presets don't apply here. The
+        // Session tab keeps its own preset (it narrows what the lineup shows, never what plays).
+        let scope = presetScope
+        searchController.actionTitle = FilterPresets.active(scope, singlePodcast: true).name
+        searchController.styleActionButton { FilterPresetPicker.style($0, scope: scope, singlePodcast: true) }
     }
+
+    /// The preset scope of the tab on screen: the Session tab keeps its own selection.
+    var presetScope: FilterScope { showingSession ? .session : .episodes }
 
     @objc func filterPresetChanged() {
         updateSearchHeader()
@@ -116,10 +122,20 @@ extension PodcastViewController: EpisodeListSearchControllerDelegate {
     }
 
     func episodeListSearchControllerDidTapAction(_ controller: EpisodeListSearchController) {
+        let onSessionTab = showingSession
         FilterPresetPicker.present(
             from: self,
+            scope: presetScope,
+            singlePodcast: true,
             searchActive: !controller.searchText.isEmpty,
-            onSelect: { [weak self] preset in self?.applyPresetSortAndGroup(preset) }
+            onSelect: { [weak self] preset in
+                // On the Session tab a preset seeds the session's arrangement (it sets play order).
+                if onSessionTab {
+                    if let session = self?.lineupSession { LineupSort.applySeeds(of: preset, to: session) }
+                } else {
+                    self?.applyPresetSortAndGroup(preset)
+                }
+            }
         ) { [weak self] in
             self?.episodesDidChange()
         }

@@ -125,7 +125,12 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     /// and it never touches playback: browsing a session is navigation, nothing more. Holds
     /// the session's store-playlist uuid, i.e. the same uuid a `PlaybackSession` carries, so
     /// it compares directly against `Settings.playbackSession`.
-    var browsedSessionUuid: String?
+    var browsedSessionUuid: String? {
+        didSet {
+            // Every session opens on its lineup — the Episodes tab is a detour, not a place to stay.
+            if oldValue != browsedSessionUuid { lineupTab = .session }
+        }
+    }
 
     /// The session the lineup renders: whatever is being browsed, falling back to the
     /// active one (entering the Session world mid-session lands on it). Every lineup-level
@@ -230,6 +235,84 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     /// Fork: "Reorder Episodes" mode on a session LINEUP — every tail row grows a grip and
     /// long-press drag, tap-to-play and swipes stand down until Done.
     var lineupReorderMode = false
+
+    /// Fork: which tab of a session lineup is showing — the lineup itself, or the Episodes the
+    /// session's feeder could add (see `UpNextViewController+LineupTabs`). View state only: every
+    /// lineup opens on Session.
+    var lineupTab: LineupTab = .session
+
+    /// Fork: the Episodes tab's list — the browsed session's feeder domain narrowed by the
+    /// session-Episodes preset, in the session page's chosen order. Rebuilt in `refreshSessionState`.
+    var sessionBrowseEpisodes: [BaseEpisode] = []
+
+    /// Fork: the browsed session's store members (played ones included) — the Episodes tab's
+    /// "already in this session" badge and swipe choice.
+    var sessionBrowseMemberUuids: Set<String> = []
+
+    /// Fork: the Session tab's lineup narrowed by its preset (nil when the preset lets everything
+    /// through). `sessionEpisodes` stays the whole tail — moves index into it.
+    var sessionLineupFilteredEpisodes: [BaseEpisode]?
+
+    /// Fork: the Session tab's filter control — presets narrow what the lineup SHOWS (the session
+    /// still plays in full), in the Session scope, which keeps its own selection.
+    lazy var sessionLineupPresetButton: UIButton = FilterPresetPicker.makeButton(
+        target: self,
+        scope: .session,
+        singlePodcast: { [weak self] in self?.sessionBrowseIsSinglePodcast ?? false },
+        searchActive: { [weak self] in self?.lineupSearchActive ?? false },
+        onSelect: { [weak self] preset in
+            if let session = self?.browsedSession { LineupSort.applySeeds(of: preset, to: session) }
+        },
+        onChange: { [weak self] in self?.reloadTable() }
+    )
+
+    /// Fork: `sessionSectionRows`, built once per list/search change (see its doc).
+    var sessionSectionRowsCache: [SessionBrowseRow]?
+
+    /// Fork: the ⋯ beside a session lineup's search field — the playlist page's options menu. Up Next
+    /// details keeps its menu in the nav bar, so there the field runs full width instead.
+    lazy var lineupMoreButton: UIButton = {
+        let button = UIButton(type: .custom)
+        button.setImage(UIImage(named: "podcast-more-options")?.withRenderingMode(.alwaysTemplate), for: .normal)
+        button.accessibilityLabel = L10n.accessibilityMoreActions
+        button.addTarget(self, action: #selector(lineupMoreTapped), for: .touchUpInside)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }()
+
+    /// The search field's trailing edge: against the ⋯ (session lineups) or the row's edge (Up Next).
+    var lineupSearchBesideMoreConstraint: NSLayoutConstraint?
+    var lineupSearchFullWidthConstraint: NSLayoutConstraint?
+
+    lazy var lineupTabsView = LineupTabsView { [weak self] tab in self?.selectLineupTab(tab) }
+
+    /// The Episodes tab's filter control — the labelled preset button every episode list carries,
+    /// in the session-Episodes scope (so "Not in Session" is offered, and is where it opens).
+    lazy var sessionBrowsePresetButton: UIButton = FilterPresetPicker.makeButton(
+        target: self,
+        scope: .sessionEpisodes,
+        singlePodcast: { [weak self] in self?.sessionBrowseIsSinglePodcast ?? false },
+        searchActive: { [weak self] in self?.lineupSearchActive ?? false },
+        onSelect: { [weak self] preset in self?.applyBrowseSeeds(of: preset) },
+        onChange: { [weak self] in self?.reloadTable() }
+    )
+
+    /// A single, persistent cell hosting the tab strip (same reasoning as `lineupSearchCell`).
+    lazy var lineupTabsCell: UITableViewCell = {
+        let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+        cell.selectionStyle = .none
+        cell.backgroundColor = .clear
+        cell.contentView.backgroundColor = .clear
+        lineupTabsView.translatesAutoresizingMaskIntoConstraints = false
+        cell.contentView.addSubview(lineupTabsView)
+        NSLayoutConstraint.activate([
+            lineupTabsView.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor, constant: 16),
+            lineupTabsView.trailingAnchor.constraint(lessThanOrEqualTo: cell.contentView.trailingAnchor, constant: -16),
+            lineupTabsView.topAnchor.constraint(equalTo: cell.contentView.topAnchor, constant: 8),
+            lineupTabsView.bottomAnchor.constraint(equalTo: cell.contentView.bottomAnchor, constant: -4)
+        ])
+        return cell
+    }()
 
     /// The current search term filtering the pool (Up Next + current session always stay).
     var sessionSearchText = ""
@@ -378,11 +461,20 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         let search = lineupSearchController.view!
         search.translatesAutoresizingMaskIntoConstraints = false
         cell.contentView.addSubview(search)
+        cell.contentView.addSubview(lineupMoreButton)
+        // Same geometry as the playlist page's search row: the search view pads its field by 16
+        // internally, so overlap the button's slot for a 12pt field-to-dots gap.
+        lineupSearchBesideMoreConstraint = search.trailingAnchor.constraint(equalTo: lineupMoreButton.leadingAnchor, constant: 4)
+        lineupSearchFullWidthConstraint = search.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor)
+        lineupSearchFullWidthConstraint?.isActive = true
         NSLayoutConstraint.activate([
+            lineupMoreButton.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor, constant: -13),
+            lineupMoreButton.centerYAnchor.constraint(equalTo: lineupSearchController.searchTextField.centerYAnchor),
+            lineupMoreButton.widthAnchor.constraint(equalToConstant: 36),
+            lineupMoreButton.heightAnchor.constraint(equalToConstant: 36),
             // Full width — the search view's own XIB carries the 16pt side margins (matching the row
             // artwork inset), so pin flush to the cell edges rather than adding a second inset.
             search.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor),
-            search.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor),
             // More breathing room above (below the card), tight to the info line below it.
             search.topAnchor.constraint(equalTo: cell.contentView.topAnchor, constant: 18),
             search.bottomAnchor.constraint(equalTo: cell.contentView.bottomAnchor, constant: 0),
@@ -449,6 +541,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
             showsHeader = false
         }
 
+        updateSessionBrowseControls()
         sessionHeaderView.isHidden = !showsHeader
         let headerHeight = showsHeader ? metrics.scaledValue(for: sessionHeaderHeight) : 0
         sessionHeaderHeightConstraint?.constant = headerHeight
@@ -549,7 +642,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         // A stack, not individual anchors: hidden arranged subviews collapse, so the
         // chooser's controls can come and go (progressive disclosure) without leaving a
         // gap at the trailing edge or nudging the counts label.
-        let buttons = UIStackView(arrangedSubviews: [sessionSortButton, sessionListSortButton, sessionListMoreButton])
+        let buttons = UIStackView(arrangedSubviews: [sessionSortButton, sessionListSortButton, sessionListMoreButton, sessionBrowsePresetButton, sessionLineupPresetButton])
         buttons.axis = .horizontal
         buttons.alignment = .center
         buttons.spacing = 16
@@ -635,6 +728,8 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     func enterLineupReorderMode() {
         guard !showingSessionList, browsedPlaybackSession != nil, !lineupReorderMode else { return }
         if isMultiSelectEnabled { isMultiSelectEnabled = false }
+        // Grips need a flat list: hand-ordering a grouped lineup makes it Manual as it stands.
+        if sessionLineupIsGrouped { LineupSort.switchToManual(browsedSession) }
         clearLineupSearch()
         lineupReorderMode = true
         reloadTable()
@@ -796,8 +891,12 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         }
         guard !showingSessionList else { return [] }
         if browsedPlaybackSession == nil { return ["placeholder"] }
-        if tail.isEmpty, lineupSearchActive || sessionCurrentEpisode == nil { return ["placeholder"] }
-        return episodes
+        if showingSessionBrowse {
+            let rows = sessionSectionRows
+            return rows.isEmpty ? ["placeholder"] : rows.map(\.identity)
+        }
+        if tail.isEmpty, lineupIsNarrowed || sessionCurrentEpisode == nil { return ["placeholder"] }
+        return sessionLineupIsGrouped ? sessionSectionRows.map(\.identity) : episodes
     }
 
     /// Applies the row changes between two identity lists as inserts and deletes, falling back to a
@@ -977,7 +1076,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
 
     /// Reset the lineup's scroll so its first row sits just below the nav bar, after forcing any pending
     /// layout so `adjustedContentInset` reflects the (now transparent) nav bar's safe area.
-    private func resetLineupScrollToTop() {
+    func resetLineupScrollToTop() {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.view.layoutIfNeeded()
@@ -1037,6 +1136,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     /// "N episodes · X left" for what's still to come in the session — the playing
     /// episode isn't counted, so the line stays put during playback.
     func sessionMetaText() -> String? {
+        if showingSessionBrowse { return sessionBrowseMetaText() }
         guard let session = browsedPlaybackSession else { return nil }
         // The info line always covers the FULL session (including the currently-playing episode), so
         // the current session's line reads the same "N episodes · time left" as every other session's
@@ -1104,7 +1204,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         let sortTint = AppTheme.colorForStyle(.primaryIcon02, themeOverride: themeOverride)
         let sortImage = UIImage(named: "podcast-sort")?.withTintColor(sortTint, renderingMode: .alwaysOriginal)
         sessionSortButton.setImage(sortImage, for: .normal)
-        sessionSortButton.accessibilityLabel = L10n.lineupReorder
+        sessionSortButton.accessibilityLabel = browsedSession != nil ? L10n.sortBy : L10n.lineupReorder
     }
 
     /// Ticks the under-card "… left" line while a session episode plays.
@@ -1172,13 +1272,17 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     /// The pinned head episode of the current lineup — the session's current (Session details) or the
     /// queue's own head (Up Next details). Rendered as the top-block card; the tail never moves it.
     var lineupHeadEpisode: BaseEpisode? {
-        displayedWorld == .session ? sessionCurrentEpisode : upNextCardEpisode
+        // The Episodes tab is a browse list: no pinned head.
+        if showingSessionBrowse { return nil }
+        return displayedWorld == .session ? sessionCurrentEpisode : upNextCardEpisode
     }
 
     /// The reorderable tail below the head — one shape in both worlds. Session details reads its
     /// populated `sessionEpisodes`; Up Next details reads the queue's own episodes below the head.
     var lineupTail: [BaseEpisode] {
-        if displayedWorld == .session { return sessionEpisodes ?? [] }
+        // On the Episodes tab the "tail" is the browse list, so the lineup search filters it too.
+        if showingSessionBrowse { return sessionBrowseEpisodes }
+        if displayedWorld == .session { return sessionLineupFilteredEpisodes ?? sessionEpisodes ?? [] }
         return Array(PlaybackManager.shared.queue.allEpisodes(includeNowPlaying: false).dropFirst(upNextListOffset))
     }
 
@@ -1186,6 +1290,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     /// title; the pinned head and the info line stay put.
     var lineupSearchText = "" {
         didSet {
+            sessionSectionRowsCache = nil
             guard oldValue != lineupSearchText, !diffingLineupSearch else { return }
             reloadTable()
         }
@@ -1399,6 +1504,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
             upNextTable.register(EmptyStateCell.self, forCellReuseIdentifier: UpNextViewController.emptyStateCell)
             upNextTable.register(SessionPausedBannerCell.self, forCellReuseIdentifier: UpNextViewController.sessionPausedBannerCell)
             upNextTable.register(SessionListCell.self, forCellReuseIdentifier: SessionListCell.reuseIdentifier)
+            upNextTable.register(UINib(nibName: "HeadingCell", bundle: nil), forCellReuseIdentifier: UpNextViewController.groupHeadingCell)
             upNextTable.estimatedRowHeight = 72
             upNextTable.backgroundView = nil
             upNextTable.isEditing = true
@@ -1751,6 +1857,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         // on the playlist's own screens.
         NotificationCenter.default.addObserver(self, selector: #selector(sessionStateDidChange), name: Constants.Notifications.playlistChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(sessionPlaybackProgressed), name: Constants.Notifications.playbackProgress, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(sessionBrowsePresetsChanged), name: FilterPresetStore.changed, object: nil)
     }
 
     // MARK: - Session chooser controls (fork)
@@ -1872,6 +1979,8 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         guard let sessionEpisodes,
               fromRow < sessionEpisodes.count, toRow < sessionEpisodes.count,
               let (session, playlist) = sessionPlaylistPreparedForReorder() else { return }
+        // A hand placement: the lineup is Manual from here (before the write, so it isn't re-sorted).
+        LineupSort.switchToManual(browsedSession)
 
         let moved = sessionEpisodes[fromRow]
         let target = sessionEpisodes[toRow]
@@ -1900,6 +2009,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         guard let currentUuid = PlaybackManager.shared.currentEpisode?.uuid,
               let sessionEpisodes,
               let (session, playlist) = sessionPlaylistPreparedForReorder() else { return }
+        LineupSort.switchToManual(browsedSession)
 
         // Map the drop row (an index among the card-excluded list rows) onto the playlist's full
         // order. Past the last row → the end of the lineup.
@@ -2042,19 +2152,20 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     private func presentLineupReorderPicker(for session: PlaybackSession) {
         guard let playlist = DataManager.shared.findPlaylist(uuid: session.uuid) else { return }
 
-        let picker = OptionsPicker(title: L10n.lineupReorder.localizedUppercase, themeOverride: themeOverride)
-        picker.addAction(action: OptionAction(label: L10n.lineupReorderEpisodes, icon: "line.3.horizontal") { [weak self] in
-            guard let self else { return }
-            self.enterLineupReorderMode()
-        })
-        for option in LineupReorder.options {
-            picker.addAction(action: OptionAction(label: option.title) { [weak self] in
-                guard let self else { return }
-                LineupReorder.apply(option, to: playlist, episodes: session.orderedEpisodes())
-                self.reloadTable()
-            })
+        // A session's lineup carries a sticky Sort By; a bare playlist lineup re-arranges once.
+        if let storeSession = browsedSession {
+            EpisodeListMenu.lineupSortPicker(current: LineupSort.order(of: storeSession), themeOverride: themeOverride) { [weak self] order in
+                LineupSort.set(order, for: storeSession)
+                self?.reloadTable()
+            }.present(from: self)
+            return
         }
-        picker.present(from: self)
+        EpisodeListMenu.lineupReorderPicker(themeOverride: themeOverride, onReorderEpisodes: { [weak self] in
+            self?.enterLineupReorderMode()
+        }, onReorder: { [weak self] option in
+            LineupReorder.apply(option, to: playlist, episodes: session.orderedEpisodes())
+            self?.reloadTable()
+        }).present(from: self)
     }
 
     @objc private func sessionStateDidChange() {
@@ -2127,6 +2238,8 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
             // Nothing browsed and nothing active — the Session world is the chooser.
             sessionLevel = .list
         }
+        refreshSessionBrowse()
+        refreshSessionLineupFilter()
     }
 
     static let upNextListRowUuid = "fork-up-next-list-row"
@@ -2349,7 +2462,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
             bulkSelecting = true
             // Fork: Select All includes the pinned current CARD (the session's now-playing episode),
             // which lives in the top block rather than the tail — the tail-only selectAllBelow missed it.
-            if let card = sessionCurrentEpisode, !selectedEpisodesContains(uuid: card.uuid) {
+            if let card = lineupHeadEpisode, !selectedEpisodesContains(uuid: card.uuid) {
                 selectedSessionEpisodes.append(card)
                 if let npSection = tableData.firstIndex(of: .nowPlayingSection), let cardRow = topBlockCardRow,
                    let cardCell = upNextTable.cellForRow(at: IndexPath(row: cardRow, section: npSection)) as? EpisodeCell {
@@ -2398,7 +2511,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         let selectedCount = inSession ? selectedSessionEpisodes.count : selectedPlayListEpisodes.count
         // The chooser lists sessions, not episodes — nothing there to multi-select.
         let worldCount = inSession
-            ? (showingSessionList ? 0 : (sessionEpisodes?.count ?? 0))
+            ? (showingSessionList ? 0 : (showingSessionBrowse ? lineupEpisodesOnScreen.count : (sessionEpisodes?.count ?? 0)))
             : PlaybackManager.shared.queue.upNextCount()
 
         // A session lineup is a level down from the chooser — the top-left carries a native
@@ -2412,7 +2525,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         let signature = [
             String(isMultiSelectEnabled), String(selectedCount), String(worldCount),
             String(inSession), String(sessionLevel == .lineup), String(inSessionLineup),
-            String(lineupReorderMode), String(sessionListReorderMode), String(showingInTab)
+            String(lineupReorderMode), String(sessionListReorderMode), String(showingInTab), String(showingSessionBrowse)
         ].joined(separator: "|")
         if signature == lastNavBarSignature { return }
         lastNavBarSignature = signature

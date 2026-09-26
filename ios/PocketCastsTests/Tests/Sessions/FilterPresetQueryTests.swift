@@ -150,6 +150,23 @@ final class FilterPresetQueryTests: XCTestCase {
         XCTAssertNil(notInClause, "everything is 'not in a session' when there are none — no clause needed")
     }
 
+    /// "This session" resolves against the list's own session store — one membership subquery.
+    func testThisSessionRuleChecksTheListsOwnSession() throws {
+        let preset = FilterPreset(name: "x", archived: nil, inThisSession: false)
+
+        let result = try XCTUnwrap(FilterPresetQuery.predicate(for: preset, sessionStoreUuids: stores, thisSessionStoreUuid: "store-2", inboxPlaylistUuid: inbox))
+
+        XCTAssertTrue(result.sql.hasPrefix("NOT EXISTS ("), result.sql)
+        XCTAssertTrue(result.sql.contains("pe.playlist_uuid IN (?)"), result.sql)
+        XCTAssertEqual(result.arguments as? [String], ["store-2"])
+    }
+
+    /// Off a session page there is no "this session" — the rule is inert rather than emptying the list.
+    func testThisSessionRuleConstrainsNothingWithoutASession() {
+        XCTAssertNil(sql(FilterPreset(name: "x", archived: nil, inThisSession: false)))
+        XCTAssertNil(sql(FilterPreset(name: "x", archived: nil, inThisSession: true)))
+    }
+
     // MARK: - Podcast/folder scope
 
     /// Scope is passed in resolved (folders already expanded), because the builder is pure. A

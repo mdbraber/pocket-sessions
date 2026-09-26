@@ -21,6 +21,7 @@ enum FilterPresetPicker {
     static func makeButton(
         target: UIViewController,
         scope: FilterScope = .episodes,
+        singlePodcast: @escaping () -> Bool = { false },
         searchActive: @escaping () -> Bool = { false },
         onSelect: @escaping (FilterPreset) -> Void = { _ in },
         onChange: @escaping () -> Void
@@ -33,15 +34,15 @@ enum FilterPresetPicker {
         button.setContentCompressionResistancePriority(.required, for: .horizontal)
         button.addAction(UIAction { [weak target] _ in
             guard let target else { return }
-            present(from: target, scope: scope, searchActive: searchActive(), onSelect: onSelect, onChange: onChange)
+            present(from: target, scope: scope, singlePodcast: singlePodcast(), searchActive: searchActive(), onSelect: onSelect, onChange: onChange)
         }, for: .touchUpInside)
-        style(button, scope: scope)
+        style(button, scope: scope, singlePodcast: singlePodcast())
         return button
     }
 
     /// Re-applies the label and the cue. Call whenever the preset (or the theme) may have changed.
-    static func style(_ button: UIButton, scope: FilterScope = .episodes) {
-        let preset = FilterPresets.active(scope)
+    static func style(_ button: UIButton, scope: FilterScope = .episodes, singlePodcast: Bool = false) {
+        let preset = FilterPresets.active(scope, singlePodcast: singlePodcast)
         button.setTitle(preset.name, for: .normal)
         // No glyph beside the name — the label alone is the control. (Any XIB image is cleared.)
         button.setImage(nil, for: .normal)
@@ -51,17 +52,19 @@ enum FilterPresetPicker {
         button.contentHorizontalAlignment = .trailing
 
         // The cue is a bonus, not the mechanism — the label already says what is happening.
-        let narrowing = FilterPresets.isNarrowing(scope)
+        let narrowing = FilterPresets.isNarrowing(scope, singlePodcast: singlePodcast)
         button.tintColor = AppTheme.colorForStyle(narrowing ? .primaryInteractive01 : .primaryIcon02)
         button.setTitleColor(AppTheme.colorForStyle(narrowing ? .primaryInteractive01 : .primaryText02), for: .normal)
         button.accessibilityLabel = L10n.filterPresetAccessibility(preset.name)
     }
 
-    static func present(from controller: UIViewController, scope: FilterScope = .episodes, searchActive: Bool = false, onSelect: @escaping (FilterPreset) -> Void = { _ in }, onChange: @escaping () -> Void) {
+    static func present(from controller: UIViewController, scope: FilterScope = .episodes, singlePodcast: Bool = false, searchActive: Bool = false, onSelect: @escaping (FilterPreset) -> Void = { _ in }, onChange: @escaping () -> Void) {
         let picker = OptionsPicker(title: L10n.filters.localizedUppercase)
-        let active = FilterPresets.active(scope)
+        let active = FilterPresets.active(scope, singlePodcast: singlePodcast)
 
-        for preset in FilterPresetStore.shared.enabledPresets {
+        // Only presets this list can use: contextual ones ("Not in Session") where there's a session
+        // behind it, podcast/folder-limited ones where it mixes podcasts.
+        for preset in FilterPresetStore.shared.pickerPresets(for: scope, singlePodcast: singlePodcast) {
             picker.addAction(action: OptionAction(label: preset.name, icon: nil, selected: preset.uuid == active.uuid) {
                 FilterPresetStore.shared.setActivePresetUuid(preset.uuid, for: scope)
                 onSelect(preset) // apply the preset's sort/group to the list (then overridable)

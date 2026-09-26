@@ -92,6 +92,7 @@ class SessionManager {
         NotificationCenter.default.addObserver(self, selector: #selector(smartFeederRulesMayHaveChanged), name: ServerNotifications.syncCompleted, object: nil)
         smartFeederRulesMayHaveChanged()
         syncFolderScopedPodcastSessions()
+        LineupSort.start()
     }
 
     private let eagerReconcileDebounce = Debounce(delay: 1.5)
@@ -458,7 +459,11 @@ class SessionManager {
                 lastInsertedUuid: session.lastInsertedUuid,
                 lastUsed: session.lastUsed,
                 pinnedEpisodeUuids: session.pinnedEpisodeUuids,
-                sortIndex: session.sortIndex
+                sortIndex: session.sortIndex,
+                lineupSort: session.lineupSort,
+                lineupGroupBy: session.lineupGroupBy,
+                lineupGroupReversed: session.lineupGroupReversed,
+                manualLineupOrder: session.manualLineupOrder
             )
             SessionStore.shared.upsert(rekeyed)
             SessionStore.shared.delete(sessionUuid: session.uuid)
@@ -639,6 +644,8 @@ class SessionManager {
     /// pins the new lineup (an explicit USER choice, e.g. "Make This the Session").
     func replaceLineup(episodeUuids: [String], session: Session, pinning: Bool = false) {
         guard let store = store(for: session), !episodeUuids.isEmpty else { return }
+        // The caller chose this exact order.
+        LineupSort.switchToManual(session)
         let current = DataManager.shared.positionedEpisodeUuids(for: store).filter { !episodeUuids.contains($0) }
         if !current.isEmpty {
             DataManager.shared.deleteEpisodes(current, from: store)

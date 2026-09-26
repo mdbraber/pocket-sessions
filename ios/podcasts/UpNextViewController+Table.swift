@@ -95,6 +95,8 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         if showingSessionList { return false }
         if displayedWorld == .session {
             guard browsedPlaybackSession != nil else { return false }
+            // The Episodes tab always offers search, even while the preset leaves it empty.
+            if showingSessionBrowse { return true }
             return (sessionEpisodes?.isEmpty == false) || lineupSearchActive
         }
         // Up Next details.
@@ -112,6 +114,8 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
     var topBlockHasControls: Bool {
         // Fork: the session list carries no counts/controls line — the rows speak for themselves.
         if showingSessionList { return false }
+        // The Episodes tab's line carries the filter, which must stay reachable when it empties the list.
+        if showingSessionBrowse { return true }
         // A world with a single episode (just the one on the card) has nothing to count,
         // sort or shuffle — the info row is noise, so drop it.
         guard topBlockEpisodeCount > 1 else { return false }
@@ -128,20 +132,33 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         return (topBlockHasCard ? 1 : 0) + PlaybackManager.shared.queue.upNextCount()
     }
 
-    /// Fork: the top block is laid out as [pinned card] → [lineup search] → [info line], in that
-    /// order, for both the Session details and Up Next details screens.
+    /// Fork: the Episodes | Session tabs head a session lineup whose feeder can be browsed.
+    var topBlockHasTabs: Bool {
+        showsLineupTabs
+    }
+
+    /// Fork: the top block is laid out as [tabs] → [pinned card] → [lineup search] → [info line], in
+    /// that order, for both the Session details and Up Next details screens (Up Next has no tabs).
+    var topBlockTabsRow: Int? {
+        topBlockHasTabs ? 0 : nil
+    }
+
     var topBlockCardRow: Int? {
-        topBlockHasCard ? 0 : nil
+        topBlockHasCard ? (topBlockHasTabs ? 1 : 0) : nil
     }
 
     var topBlockLineupSearchRow: Int? {
         guard topBlockHasLineupSearch else { return nil }
-        return topBlockHasCard ? 1 : 0
+        return (topBlockHasTabs ? 1 : 0) + (topBlockHasCard ? 1 : 0)
     }
 
     var topBlockControlsRow: Int? {
         guard topBlockHasControls else { return nil }
-        return (topBlockHasCard ? 1 : 0) + (topBlockHasLineupSearch ? 1 : 0)
+        return (topBlockHasTabs ? 1 : 0) + (topBlockHasCard ? 1 : 0) + (topBlockHasLineupSearch ? 1 : 0)
+    }
+
+    func isTopBlockTabsRow(_ indexPath: IndexPath) -> Bool {
+        tableData[indexPath.section] == .nowPlayingSection && topBlockTabsRow != nil && indexPath.row == topBlockTabsRow
     }
 
     func isTopBlockCardRow(_ indexPath: IndexPath) -> Bool {
@@ -156,7 +173,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         let section = tableData[section]
         switch section {
         case .nowPlayingSection:
-            return (topBlockHasCard ? 1 : 0) + (topBlockHasLineupSearch ? 1 : 0) + (topBlockHasControls ? 1 : 0)
+            return (topBlockHasTabs ? 1 : 0) + (topBlockHasCard ? 1 : 0) + (topBlockHasLineupSearch ? 1 : 0) + (topBlockHasControls ? 1 : 0)
         case .sessionSection:
             if showingSessionList {
                 // Fork: a search that matched nothing still gets a row — "No sessions found" (see
@@ -164,15 +181,17 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
                 return max(sessionListRows.count, 1) + (showSessionSearchRow ? 1 : 0) + (sessionSearchHasNoResults ? 1 : 0)
             }
             if browsedPlaybackSession == nil { return 1 } // empty state cell
+            // The Episodes tab: its (searched) browse list, or one row saying why it's empty.
+            if showingSessionBrowse { return max(sessionSectionRows.count, 1) }
             // A browsed session with no current episode (no card) and no tail is truly empty —
             // same world-level rule as Up Next: the card counts, so only card-less emptiness
             // shows the empty state.
-            if !lineupSearchActive, filteredLineupTail.isEmpty, sessionCurrentEpisode == nil { return 1 } // empty state cell
-            // A search with no matches says so, rather than rendering nothing at all.
-            if lineupSearchActive, filteredLineupTail.isEmpty { return 1 }
+            if !lineupIsNarrowed, filteredLineupTail.isEmpty, sessionCurrentEpisode == nil { return 1 } // empty state cell
+            // A search or filter with no matches says so, rather than rendering nothing at all.
+            if lineupIsNarrowed, filteredLineupTail.isEmpty { return 1 }
             // The pinned current is the top-block card; this section is the reorderable tail
-            // (filtered by the lineup search when a query is active).
-            return filteredLineupTail.count
+            // (filtered by the lineup search when a query is active) — with headings when grouped.
+            return sessionLineupIsGrouped ? sessionSectionRows.count : filteredLineupTail.count
         case .upNextSection:
             // Same shape as the session tail: the reorderable tail below the pinned head (the queue's
             // own head sits on the card while a session plays), filtered by the lineup search.
@@ -244,6 +263,9 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
             // Fork: the lineup episode search — a row between the pinned card and the info line.
             if isTopBlockLineupSearchRow(indexPath) {
                 return lineupSearchCell
+            }
+            if isTopBlockTabsRow(indexPath) {
+                return lineupTabsCell
             }
             if !isTopBlockCardRow(indexPath) {
                 // The counts/controls line as a scrolling row.
@@ -333,16 +355,32 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
                                     icon: { Image(systemName: "rectangle.stack") })
                 return emptyCell
             }
+            if showingSessionBrowse {
+                switch sessionSectionRows[safe: indexPath.row] {
+                case .header(let title): return sessionBrowseHeaderCell(title: title, at: indexPath)
+                case .episode(let episode): return sessionBrowseEpisodeCell(for: episode, at: indexPath)
+                case nil: return sessionBrowseEmptyCell(at: indexPath)
+                }
+            }
+            // A grouped lineup's headings.
+            if sessionLineupIsGrouped, case .header(let title) = sessionSectionRows[safe: indexPath.row] {
+                return sessionBrowseHeaderCell(title: title, at: indexPath)
+            }
             // Fork: the session lineup tail — the reorderable episodes below the pinned current.
             // The pinned current is the top-block card (see nowPlayingSection), so no tail row is
             // ever "active"; the accent box lives on the card.
-            guard let episode = filteredLineupTail[safe: indexPath.row] else {
+            guard let episode = sessionRowEpisode(at: indexPath.row) else {
                 // The truly-empty session (no card, no tail) renders its empty state here; any
                 // other out-of-range ask (mid-animation) keeps the harmless blank episode cell.
-                if lineupSearchActive, filteredLineupTail.isEmpty {
+                if lineupIsNarrowed, filteredLineupTail.isEmpty {
                     let emptyCell = tableView.dequeueReusableCell(withIdentifier: UpNextViewController.emptyStateCell, for: indexPath) as! EmptyStateCell
-                    emptyCell.configure(title: L10n.discoverNoEpisodesFound,
-                                        icon: { Image(systemName: "magnifyingglass") })
+                    if lineupSearchActive {
+                        emptyCell.configure(title: L10n.discoverNoEpisodesFound,
+                                            icon: { Image(systemName: "magnifyingglass") })
+                    } else {
+                        emptyCell.configure(title: L10n.playlistNoEpisodesMatchFilter.sentenceCased,
+                                            icon: { Image(systemName: "line.3.horizontal.decrease") })
+                    }
                     return emptyCell
                 }
                 if filteredLineupTail.isEmpty, sessionCurrentEpisode == nil {
@@ -536,8 +574,10 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
             }
             // The empty state is inert when there's no session to show a lineup for.
             if browsedPlaybackSession == nil { return nil }
+            // Episodes-tab headings and its empty row aren't episodes.
+            if usesSessionSectionRows, sessionRowEpisode(at: indexPath.row) == nil { return nil }
             if isMultiSelectEnabled, !multiSelectGestureInProgress,
-               let episode = filteredLineupTail[safe: indexPath.row], selectedEpisodesContains(uuid: episode.uuid) {
+               let episode = sessionRowEpisode(at: indexPath.row), selectedEpisodesContains(uuid: episode.uuid) {
                 tableView.delegate?.tableView?(tableView, didDeselectRowAt: indexPath)
                 return nil
             }
@@ -575,6 +615,15 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
             return
         }
 
+        // The Episodes tab is for reviewing: a tap opens the episode (where it can be added or played).
+        if showingSessionBrowse, !isMultiSelectEnabled, tableData[indexPath.section] == .sessionSection {
+            tableView.deselectRow(at: indexPath, animated: false)
+            if let episode = sessionRowEpisode(at: indexPath.row) {
+                showEpisodeDetailViewController(for: episode)
+            }
+            return
+        }
+
         // Reorder mode owns the touch: a tap here would start playback mid-drag.
         if lineupReorderMode, tableData[indexPath.section] == .sessionSection {
             tableView.deselectRow(at: indexPath, animated: false)
@@ -582,7 +631,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         }
 
         if isMultiSelectEnabled, tableData[indexPath.section] == .sessionSection {
-            guard let episode = filteredLineupTail[safe: indexPath.row] else { return }
+            guard let episode = sessionRowEpisode(at: indexPath.row) else { return }
             if !multiSelectGestureInProgress {
                 selectedEpisodesRemove(uuid: episode.uuid)
             }
@@ -658,7 +707,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
                 // Clear the selection immediately — in this always-editing table a left-behind
                 // selection draws the leading multi-select control beside the artwork.
                 upNextTable.deselectRow(at: indexPath, animated: false)
-                if let episode = filteredLineupTail[safe: indexPath.row] {
+                if let episode = sessionRowEpisode(at: indexPath.row) {
                     // Browsing another session is pure navigation — playing from it is
                     // what makes it the active one.
                     if !browsingActiveSession {
@@ -713,7 +762,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
     func tableView(_ tableView: UITableView, didDeselectRowAt indexPath: IndexPath) {
         if showingSessionList { return }
         if tableData[indexPath.section] == .sessionSection {
-            guard let episode = filteredLineupTail[safe: indexPath.row] else { return }
+            guard let episode = sessionRowEpisode(at: indexPath.row) else { return }
             selectedEpisodesRemove(uuid: episode.uuid)
             if let cell = upNextTable.cellForRow(at: indexPath) as? EpisodeCell {
                 cell.showTick = false
@@ -749,7 +798,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         guard showingSessionList else {
             // A session lineup in "Reorder Episodes" mode: every tail row has a grip. The pinned
             // current is the card above, not a row here, so it can't be dragged out of place.
-            return lineupReorderMode && indexPath.row < (sessionEpisodes?.count ?? 0)
+            return lineupReorderMode && !usesSessionSectionRows && indexPath.row < (sessionEpisodes?.count ?? 0)
         }
 
         guard sessionListReorderMode, let listIndex = sessionListIndex(forTableRow: indexPath.row) else { return false }
@@ -870,6 +919,8 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
                 guard let listIndex = sessionListIndex(forTableRow: indexPath.row) else { return false } // search row
                 return sessionPlacement(at: listIndex) == .pool
             }
+            // Episodes-tab rows only swipe (Add to / Remove from this session, archive, played).
+            if usesSessionSectionRows { return sessionRowEpisode(at: indexPath.row) != nil }
             // A row must be editable for its reorder control to show; playlist and smart
             // playlist sessions are drag-reorderable.
             guard indexPath.row < (sessionEpisodes?.count ?? 0) else { return false }
@@ -889,6 +940,10 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
             // gap below the card) + 36 field + 0 bottom, so it sits tight above the info line.
             if isTopBlockLineupSearchRow(indexPath) {
                 return 54
+            }
+            // The tab strip: 8 above + the pill (8 + subheadline line + 8) + 4 below.
+            if isTopBlockTabsRow(indexPath) {
+                return UIFontMetrics(forTextStyle: .subheadline).scaledValue(for: 20) + 28
             }
             if !isTopBlockCardRow(indexPath) {
                 let metrics = UIFontMetrics(forTextStyle: .footnote)
@@ -1064,9 +1119,9 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         // Fork: a long-press on the row body NEVER makes the episode active/playing — activation is a
         // play-button gesture (tap = play, long-press = switch inheriting state). The row long-press
         // just opens the episode's options.
-        if section == .sessionSection, !showingSessionList, let episode = filteredLineupTail[safe: indexPath.row] {
+        if section == .sessionSection, !showingSessionList, let episode = sessionRowEpisode(at: indexPath.row) {
             guard !isMultiSelectEnabled else { return }
-            showEpisodeDetailViewController(for: episode, fromSession: true)
+            showEpisodeDetailViewController(for: episode, fromSession: !showingSessionBrowse)
             return
         }
 
@@ -1110,7 +1165,8 @@ extension UpNextViewController: UITableViewDragDelegate, UITableViewDropDelegate
             // dragging write the wrong thing — reorder is always live. (In "Reorder Episodes" mode
             // the grips own the drag instead, so long-press stands down.) A live title filter can't
             // be reordered either, since the tail on screen is only a subset.
-            guard browsedPlaybackSession != nil, !lineupSearchActive, !lineupReorderMode,
+            // A grouped lineup has headings between its rows; it reorders via "Reorder Episodes".
+            guard browsedPlaybackSession != nil, !usesSessionSectionRows, !lineupIsNarrowed, !lineupReorderMode,
                   indexPath.row < (sessionEpisodes?.count ?? 0) else { return false }
             let type = browsedPlaybackSession?.type
             return type == .playlist || type == .smartPlaylist

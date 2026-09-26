@@ -1,47 +1,28 @@
 import UIKit
 import PocketCastsDataModel
 
-/// Fork: re-arranging the podcast page's Session lineup.
+/// Fork: ordering the podcast page's Session lineup.
 ///
-/// The lineup has one saved order — it is never sorted over. Two ways to change it: drag the rows
-/// (long-press normally, or with real grips in "Reorder Episodes" mode), or arrange the whole thing
-/// at once into a date/duration/title order. Both write the same positions.
+/// The lineup has one saved order, which is also its play order. Two ways to change it: drag the
+/// rows (long-press normally, or with real grips in "Reorder Episodes" mode), which makes it Manual;
+/// or give the session a Sort By / Group By (saved on the session — see `LineupSort`).
 extension PodcastViewController {
-    // MARK: - One-shot re-arrangement
+    // MARK: - Arrangement
 
-    func reorderSessionLineup(order: EpisodeOrder) {
-        guard let podcast,
-              let session = SessionStore.shared.session(forPodcast: podcast.uuid),
-              let index = episodeInfo.firstIndex(where: { $0.model == "episodes" }) else { return }
+    /// The podcast's session, whose lineup the Session tab shows.
+    var lineupSession: Session? {
+        podcast.flatMap { SessionStore.shared.session(forPodcast: $0.uuid) }
+    }
 
-        let episodes = episodeInfo[index].elements.compactMap { $0 as? ListEpisode }
-        guard episodes.count > 1 else { return }
-
-        var sorted = order.sorted(episodes) { $0.episode }
-        // The lineup's head is what's playing; re-arranging the rest never displaces it.
-        if let storeUuid = session.storePlaylistUuid,
-           let pinned = LineupReorder.pinnedEpisodeUuid(forPlaylistUuid: storeUuid),
-           let current = sorted.firstIndex(where: { $0.episode.uuid == pinned }) {
-            sorted.insert(sorted.remove(at: current), at: 0)
-        }
-
-        SessionManager.shared.setLineupOrder(episodeUuids: sorted.map { $0.episode.uuid }, session: session)
+    /// Sets the lineup's sticky Sort By (nil = Manual) — see `LineupSort`.
+    func setSessionLineupSort(_ order: EpisodeOrder?) {
+        guard let session = lineupSession else { return }
+        LineupSort.set(order, for: session)
         episodesDidChange()
     }
 
-    /// Hand-ordering first, since it's the base state everything falls back to, then the
-    /// one-shot arrangements. Nothing is checked: none of them is a mode you stay in.
-    func makeLineupReorderPicker() -> OptionsPicker {
-        let picker = OptionsPicker(title: L10n.lineupReorder.localizedUppercase)
-        picker.addAction(action: OptionAction(label: L10n.lineupReorderEpisodes, icon: "line.3.horizontal") { [weak self] in
-            self?.enterLineupReorderMode()
-        })
-        for option in LineupReorder.options {
-            picker.addAction(action: OptionAction(label: option.title) { [weak self] in
-                self?.reorderSessionLineup(order: option)
-            })
-        }
-        return picker
+    func reorderSessionLineup(order: EpisodeOrder) {
+        setSessionLineupSort(order)
     }
 
     // MARK: - Reorder Episodes mode
@@ -51,6 +32,11 @@ extension PodcastViewController {
     func enterLineupReorderMode() {
         guard showingSession, !lineupReorderMode else { return }
         if isMultiSelectEnabled { isMultiSelectEnabled = false }
+        // Grips need a flat list: hand-ordering a grouped lineup makes it Manual as it stands.
+        if let session = lineupSession, LineupSort.grouping(of: session) != .none {
+            LineupSort.switchToManual(session)
+            episodesDidChange()
+        }
 
         lineupReorderMode = true
         // Editing mode otherwise draws the multi-select circles beside the grips.
@@ -103,7 +89,12 @@ extension PodcastViewController {
         elements.insert(moved, at: min(destination.row, elements.count))
         episodeInfo[source.section].elements = elements
 
-        let order = elements.compactMap { ($0 as? ListEpisode)?.episode.uuid }
+        var order = elements.compactMap { ($0 as? ListEpisode)?.episode.uuid }
+        LineupSort.switchToManual(session)
+        // A filtered Session tab shows a subset: keep what the filter hid where it was.
+        if FilterPresets.isNarrowing(.session, singlePodcast: true) {
+            order = LineupReorder.mergingVisibleOrder(order, into: LineupReorder.storedOrder(of: session))
+        }
         SessionManager.shared.setLineupOrder(episodeUuids: order, session: session)
     }
 

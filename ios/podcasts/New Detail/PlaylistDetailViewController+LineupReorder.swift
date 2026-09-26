@@ -13,6 +13,11 @@ extension PlaylistDetailViewController {
         guard showsLineupReorder, !lineupReorderMode else { return }
         if isMultiSelectEnabled { isMultiSelectEnabled = false }
         if viewModel.isSearching { searchController.searchTextField.resignFirstResponder() }
+        // Grips need a flat list: hand-ordering a grouped lineup makes it Manual as it stands.
+        if viewModel.lineupIsGrouped, let session = viewModel.lineupSession {
+            LineupSort.switchToManual(session)
+            viewModel.reloadEpisodeList(animated: false)
+        }
 
         lineupReorderMode = true
         // Editing mode otherwise draws the multi-select circles alongside the grips; reorder is the

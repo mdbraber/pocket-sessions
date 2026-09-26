@@ -913,6 +913,7 @@
 		BDDA72D31C9B898C003A3BEB /* StorageAndDataUseViewController.xib in Resources */ = {isa = PBXBuildFile; fileRef = BDDA72D11C9B898C003A3BEB /* StorageAndDataUseViewController.xib */; };
 		BDDA72D61C9BA7E2003A3BEB /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDDA72D51C9BA7E2003A3BEB /* Theme.swift */; };
 		BDDC1C652394B7F800F2D723 /* UpNextViewController+Swipe.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDDC1C642394B7F800F2D723 /* UpNextViewController+Swipe.swift */; };
+		2E9351AB6F9ECFB575BA3988 /* UpNextViewController+LineupTabs.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBB2CD6702B82D1503F1E813 /* UpNextViewController+LineupTabs.swift */; };
 		BDDF8AA8240CEBF9009BA263 /* DownloadsViewController+Swipe.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDDF8AA7240CEBF9009BA263 /* DownloadsViewController+Swipe.swift */; };
 		BDE292E423680D6100A4EEAE /* EffectsViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDE292E223680D6100A4EEAE /* EffectsViewController.swift */; };
 		BDE292E523680D6100A4EEAE /* EffectsViewController.xib in Resources */ = {isa = PBXBuildFile; fileRef = BDE292E323680D6100A4EEAE /* EffectsViewController.xib */; };
@@ -2488,6 +2489,7 @@
 		BDDA72D11C9B898C003A3BEB /* StorageAndDataUseViewController.xib */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.xib; path = StorageAndDataUseViewController.xib; sourceTree = "<group>"; };
 		BDDA72D51C9BA7E2003A3BEB /* Theme.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		BDDC1C642394B7F800F2D723 /* UpNextViewController+Swipe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UpNextViewController+Swipe.swift"; sourceTree = "<group>"; };
+		CBB2CD6702B82D1503F1E813 /* UpNextViewController+LineupTabs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UpNextViewController+LineupTabs.swift"; sourceTree = "<group>"; };
 		BDDF8AA7240CEBF9009BA263 /* DownloadsViewController+Swipe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DownloadsViewController+Swipe.swift"; sourceTree = "<group>"; };
 		BDDF8AA9240CECD8009BA263 /* StarredViewController+Swipe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "StarredViewController+Swipe.swift"; sourceTree = "<group>"; };
 		BDE292E223680D6100A4EEAE /* EffectsViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EffectsViewController.swift; sourceTree = "<group>"; };
@@ -4931,6 +4933,7 @@
 				403086CF2378EB1F009EF821 /* UpNextViewController+UserEpisode.swift */,
 				407B9B71238B5D91008E7CA8 /* UpNextViewController+MultiSelectActions.swift */,
 				BDDC1C642394B7F800F2D723 /* UpNextViewController+Swipe.swift */,
+				CBB2CD6702B82D1503F1E813 /* UpNextViewController+LineupTabs.swift */,
 				BDFB53CA2362B9080001806E /* UpNextViewController.xib */,
 			);
 			name = "Up Next";
@@ -7090,6 +7093,7 @@
 				BD51481F1B9FE81F0029C6D9 /* StatsViewController.swift in Sources */,
 				BD1E000E1F6BA44D0024542F /* RegionCancellingScrollView.swift in Sources */,
 				BDDC1C652394B7F800F2D723 /* UpNextViewController+Swipe.swift in Sources */,
+				2E9351AB6F9ECFB575BA3988 /* UpNextViewController+LineupTabs.swift in Sources */,
 				0CB804A62FB50B31007D0402 /* PlayerZoomAnimator.swift in Sources */,
 				8BD5A4E42A1E844D00F473C6 /* StatusPageView.swift in Sources */,
 				40164A6E23E19C9A0043907B /* ProfileViewController+Promotion.swift in Sources */,

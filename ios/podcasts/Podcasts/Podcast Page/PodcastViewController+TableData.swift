@@ -208,6 +208,14 @@ extension PodcastViewController: UITableViewDataSource, UITableViewDelegate {
                 let next = elements?[safe: indexPath.row + 1]
                 let isLast = next == nil || next is PodcastPlaylistsGroupHeaderItem
                 return podcastPlaylistCell(for: playlistItem, isLastRow: isLast, at: indexPath)
+            } else if let heading = itemAtRow as? PlaylistGroupHeaderPlaceholder {
+                // A grouped session's heading: just its title — nothing folds or acts in bulk here.
+                let cell = tableView.dequeueReusableCell(withIdentifier: PodcastViewController.groupHeadingCellId, for: indexPath) as! HeadingCell
+                cell.button.isHidden = true
+                cell.action = nil
+                cell.heading.attributedText = nil
+                cell.heading.text = heading.title
+                return cell
             } else if let groupHeader = itemAtRow as? PodcastPlaylistsGroupHeaderItem {
                 let cell = tableView.dequeueReusableCell(withIdentifier: PodcastViewController.groupHeadingCellId, for: indexPath) as! HeadingCell
                 // Same heading UI as an episode group: leading chevron, tap the row to fold it away.
@@ -668,8 +676,10 @@ extension PodcastViewController: UITableViewDragDelegate, UITableViewDropDelegat
     /// (In "Reorder Episodes" mode the grips own the drag instead, so long-press stands down.)
     var canReorderSessionLineup: Bool {
         guard showingSession, !isMultiSelectEnabled, !lineupReorderMode, let podcast,
-              SessionStore.shared.session(forPodcast: podcast.uuid) != nil else { return false }
-        return true
+              let session = SessionStore.shared.session(forPodcast: podcast.uuid) else { return false }
+        // A grouped lineup has headings between its rows, and a filtered one is a subset: both
+        // reorder via "Reorder Episodes" instead.
+        return LineupSort.grouping(of: session) == .none && !FilterPresets.isNarrowing(.session, singlePodcast: true)
     }
 
     func registerSessionReorder() {
@@ -713,7 +723,12 @@ extension PodcastViewController: UITableViewDragDelegate, UITableViewDropDelegat
         }
         coordinator.drop(item.dragItem, toRowAt: destination)
 
-        let order = elements.compactMap { ($0 as? ListEpisode)?.episode.uuid }
+        var order = elements.compactMap { ($0 as? ListEpisode)?.episode.uuid }
+        // A hand placement: the lineup is Manual from here (before the write, so it isn't re-sorted).
+        LineupSort.switchToManual(session)
+        if FilterPresets.isNarrowing(.session, singlePodcast: true) {
+            order = LineupReorder.mergingVisibleOrder(order, into: LineupReorder.storedOrder(of: session))
+        }
         SessionManager.shared.setLineupOrder(episodeUuids: order, session: session)
     }
 }

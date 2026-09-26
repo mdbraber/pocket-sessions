@@ -101,4 +101,64 @@ final class LineupReorderTests: XCTestCase {
         let twice = EpisodeOrder.shortestToLongest.sorted(once)
         XCTAssertEqual(once.map(\.uuid), twice.map(\.uuid))
     }
+
+    // MARK: - Arranging with the playing episode pinned
+
+    /// A sorted lineup keeps what's playing first; everything else follows the sort.
+    func testArrangedKeepsThePlayingEpisodeFirst() {
+        let items = [episode("a", published: date(1)), episode("b", published: date(3)), episode("c", published: date(2))]
+        XCTAssertEqual(LineupReorder.arranged(items, in: .newestToOldest, pinning: "a"), ["a", "b", "c"])
+    }
+
+    func testArrangedIgnoresAPinThatIsNotInTheLineup() {
+        let items = [episode("a", published: date(1)), episode("b", published: date(3))]
+        XCTAssertEqual(LineupReorder.arranged(items, in: .newestToOldest, pinning: "elsewhere"), ["b", "a"])
+        XCTAssertEqual(LineupReorder.arranged(items, in: .newestToOldest, pinning: nil), ["b", "a"])
+    }
+
+    // MARK: - Session arrangement (sticky sort + group)
+
+    /// Grouping sets the play order: groups in their fixed order, each sorted, playing episode first.
+    func testArrangementGroupsThenSortsWithinEachGroup() {
+        let items = [episode("long-old", duration: 7200, published: date(1)),
+                     episode("short-new", duration: 300, published: date(3)),
+                     episode("long-new", duration: 7200, published: date(4)),
+                     episode("short-old", duration: 300, published: date(2))]
+        let ordered = LineupSort.arranged(items, sort: .newestToOldest, groupBy: .duration, groupsReversed: false, pinning: nil)
+        XCTAssertEqual(ordered, ["short-new", "short-old", "long-new", "long-old"])
+
+        let reversed = LineupSort.arranged(items, sort: .newestToOldest, groupBy: .duration, groupsReversed: true, pinning: "short-old")
+        XCTAssertEqual(reversed, ["short-old", "long-new", "long-old", "short-new"])
+    }
+
+    /// Grouped with no sort: each group keeps the lineup's current order.
+    func testArrangementWithoutASortKeepsTheCurrentOrderInsideGroups() {
+        let items = [episode("a", duration: 7200), episode("b", duration: 300), episode("c", duration: 7200), episode("d", duration: 300)]
+        XCTAssertEqual(LineupSort.arranged(items, sort: nil, groupBy: .duration, groupsReversed: false, pinning: nil), ["b", "d", "a", "c"])
+    }
+
+    /// Back to Manual: the saved hand order returns; episodes that left are dropped, ones that joined
+    /// go where the insert mode says, and the playing episode stays first.
+    func testRestoringTheHandOrder() {
+        let saved = ["c", "a", "gone", "b"]
+        let current = ["new", "a", "b", "c"]
+        XCTAssertEqual(LineupSort.restoredOrder(saved: saved, current: current, insertMode: PlaylistInsertMode.top.rawValue, pinning: nil),
+                       ["new", "c", "a", "b"])
+        XCTAssertEqual(LineupSort.restoredOrder(saved: saved, current: current, insertMode: PlaylistInsertMode.bottom.rawValue, pinning: "b"),
+                       ["b", "c", "a", "new"])
+    }
+
+    /// Headings label a list already in group order, without moving anything.
+    func testRunsLabelAnOrderedListInPlace() {
+        let items = [episode("pinned", duration: 7200), episode("s1", duration: 300), episode("s2", duration: 300), episode("l1", duration: 7200)]
+        let runs = EpisodeGrouper.runs(items, by: .duration) { $0 }
+        XCTAssertEqual(runs.map { $0.items.map(\.uuid) }, [["pinned"], ["s1", "s2"], ["l1"]])
+        XCTAssertEqual(runs[0].title, runs[2].title)
+    }
+
+    /// A hand reorder of a filtered lineup keeps the hidden episodes where they were.
+    func testMergingAVisibleReorderKeepsHiddenEpisodesInPlace() {
+        let full = ["a", "hidden1", "b", "c", "hidden2"]
+        XCTAssertEqual(LineupReorder.mergingVisibleOrder(["c", "a", "b"], into: full), ["c", "hidden1", "a", "b", "hidden2"])
+    }
 }

@@ -96,7 +96,20 @@ extension UpNextViewController: SwipeTableViewCellDelegate, SwipeHandler {
         // Session rows aren't queue rows — moves reorder the mirrored playlist on the
         // left; archive / mark played on the right.
         if tableData[indexPath.section] == .sessionSection {
-            guard let episode = filteredLineupTail[safe: indexPath.row] else { return nil }
+            guard let episode = sessionRowEpisode(at: indexPath.row) else { return nil }
+            // Episodes tab: add what isn't in this session yet (or take out what is); no moves —
+            // these rows aren't in the lineup's order.
+            if showingSessionBrowse {
+                let inThisSession = sessionBrowseMemberUuids.contains(episode.uuid)
+                switch orientation {
+                case .left:
+                    return [addToSessionSwipeAction(for: episode, inLocalSession: inThisSession),
+                            addToSwipeAction(for: episode, at: indexPath)].compactMap { $0 }
+                case .right:
+                    // `episodeSwipeActions` leads with Remove from this session — only for members.
+                    return Array(episodeSwipeActions(for: episode).dropFirst(inThisSession ? 0 : 1))
+                }
+            }
             switch orientation {
             case .left:
                 // Same left swipe as every other row: Add to Session (only when this
@@ -104,7 +117,8 @@ extension UpNextViewController: SwipeTableViewCellDelegate, SwipeHandler {
                 // destinations), then reorder within the session.
                 let adds = [addToSessionSwipeAction(for: episode, inLocalSession: browsedSession != nil),
                             addToSwipeAction(for: episode, at: indexPath)].compactMap { $0 }
-                return adds + (sessionMoveSwipeActions(at: indexPath) ?? [])
+                // Moves index the plain tail; a grouped lineup has headings between its rows.
+                return adds + (sessionLineupIsGrouped || lineupIsNarrowed ? [] : (sessionMoveSwipeActions(at: indexPath) ?? []))
             case .right:
                 return episodeSwipeActions(for: episode)
             }

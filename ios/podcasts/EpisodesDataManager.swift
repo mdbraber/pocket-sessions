@@ -84,7 +84,7 @@ class EpisodesDataManager: PlaybackSessionEpisodeSource {
         let episodeSortOrder = podcast.podcastSortOrder
 
         let sortOrder = episodeSortOrder ?? .newestToOldest
-        let episodesQuery = createEpisodesQuery(podcast, uuidsToFilter: uuidsToFilter, preset: FilterPresets.active())
+        let episodesQuery = createEpisodesQuery(podcast, uuidsToFilter: uuidsToFilter, preset: FilterPresets.active(singlePodcast: true))
 
         switch podcast.podcastGrouping() {
         case .none:
@@ -218,16 +218,21 @@ class EpisodesDataManager: PlaybackSessionEpisodeSource {
     /// `preset` narrows a playlist's own rules — the Filter Preset hook. It also owns archived
     /// visibility now (as an ordinary rule), which is why the old `shouldShowArchived` is gone:
     /// the query always loads archived, and the preset decides whether they show.
+    ///
+    /// `thisSessionStoreUuid` is the store of the session this list belongs to (a smart playlist's
+    /// own session), which a contextual preset's `inThisSession` resolves against. Nil off session pages.
     func playlistEpisodes(
         for playlist: EpisodeFilter,
         limit: Int = Constants.Limits.maxFilterItems,
         search: String? = nil,
-        preset: FilterPreset? = nil
+        preset: FilterPreset? = nil,
+        thisSessionStoreUuid: String? = nil
     ) -> [ListEpisode] {
         let predicate = preset.flatMap {
             FilterPresetQuery.predicate(
                 for: $0,
                 sessionStoreUuids: SessionStore.shared.sessions.compactMap(\.storePlaylistUuid),
+                thisSessionStoreUuid: thisSessionStoreUuid,
                 upNextEpisodeUuids: FilterPresets.upNextEpisodeUuids(for: $0),
                 scopePodcastUuids: FilterPresets.scopePodcastUuids(for: $0),
                 columns: .episodeAlias

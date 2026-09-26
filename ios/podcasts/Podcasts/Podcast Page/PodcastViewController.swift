@@ -54,8 +54,8 @@ protocol PodcastActionsDelegate: AnyObject {
     func isShowingPodcastPlaylists() -> Bool
     func podcastPlaylistsMenuOptions() -> [OptionAction]
 
-    /// Fork: the Session lineup's two reorder affordances — drag grips, and a one-shot
-    /// re-arrangement of the saved order.
+    /// Fork: the Session lineup's two ordering affordances — drag grips, and a sticky Sort By
+    /// saved on the session (see `LineupSort`).
     func enterLineupReorderMode()
     func reorderSessionLineup(order: EpisodeOrder)
     func showYouMightLike()
@@ -819,7 +819,7 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, MultiSele
                 .map { ListEpisode(episode: $0, tintColor: tintColor) }
         }
         // Fork: the lineup renders in its one saved order — no display sort on top of it. Changing
-        // that order is an explicit re-arrangement (see `reorderSessionLineup`).
+        // that order is the session's Sort By, kept in the positions by `LineupSort`.
         var listEpisodes = episodes.compactMap { $0 as? ListEpisode }
 
         // Fork: if you're listening to an episode of this podcast AS PART OF A SESSION,
@@ -833,7 +833,20 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, MultiSele
            !listEpisodes.contains(where: { $0.episode.uuid == current.uuid }) {
             listEpisodes.insert(ListEpisode(episode: current, tintColor: AppTheme.appTintColor), at: 0)
         }
+        // The Session tab's preset narrows what it shows (the session still plays in full).
+        if let session = SessionStore.shared.session(forPodcast: podcast.uuid),
+           FilterPresets.isNarrowing(.session, singlePodcast: true) {
+            listEpisodes = FilterPresets.filter(listEpisodes, by: FilterPresets.active(.session, singlePodcast: true),
+                                                thisSessionStoreUuid: session.storePlaylistUuid, singlePodcast: true) { $0.episode }
+        }
         episodes = listEpisodes
+        // A grouped session: label its runs (the lineup is already in group order — `LineupSort`
+        // keeps it arranged). Not while searching, where the matches are a scattered subset.
+        if !isSearching, let session = SessionStore.shared.session(forPodcast: podcast.uuid),
+           case let groupBy = LineupSort.grouping(of: session), groupBy != .none {
+            episodes = EpisodeGrouper.runs(listEpisodes, by: groupBy) { $0.episode }
+                .flatMap { run -> [ListItem] in [PlaylistGroupHeaderPlaceholder(title: run.title)] + run.items }
+        }
         if episodes.isEmpty, !searchTerm.isEmpty {
             episodes = [NoSearchResultsPlaceholder()]
         }
@@ -1134,7 +1147,7 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, MultiSele
     /// stays only to satisfy the delegate protocol.
     func toggleShowArchived() {
         guard let podcast else { return }
-        var preset = FilterPresets.active()
+        var preset = FilterPresets.active(singlePodcast: true)
         preset.archived = (preset.archived == false) ? nil : false
         FilterPresetStore.shared.upsert(preset)
         loadLocalEpisodes(podcast: podcast, animated: true)
@@ -1144,7 +1157,7 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, MultiSele
     /// placeholder. nil ("don't care") and true ("archived only") both surface them; only an
     /// explicit false hides them.
     func showingArchived() -> Bool {
-        FilterPresets.active().archived != false
+        FilterPresets.active(singlePodcast: true).archived != false
     }
 
     /// Fork: display filters (played/seen) changed — rebuild the episode list.

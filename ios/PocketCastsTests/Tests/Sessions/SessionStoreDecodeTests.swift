@@ -88,6 +88,30 @@ final class SessionStoreDecodeTests: XCTestCase {
         XCTAssertEqual(loaded.feeder, .podcast(uuid: "p1"))
     }
 
+    /// A session written before Sort By existed reads as Manual; a set sort survives a reload.
+    func testLineupSortDefaultsToManualAndRoundTrips() throws {
+        try write(["sessions": [try json(for: Session(uuid: "manual", feeder: .allPodcasts)),
+                                try json(for: Session(uuid: "sorted", feeder: .allPodcasts, lineupSort: EpisodeOrder.oldestToNewest.rawValue))]])
+
+        let store = SessionStore(fileURL: fileURL)
+
+        XCTAssertNil(store.session(uuid: "manual")?.lineupSortOrder)
+        XCTAssertEqual(store.session(uuid: "sorted")?.lineupSortOrder, .oldestToNewest)
+        XCTAssertEqual(store.session(uuid: "manual")?.lineupIsManual, true)
+    }
+
+    func testLineupGroupingAndSavedHandOrderRoundTrip() throws {
+        let session = Session(uuid: "g", feeder: .allPodcasts, lineupGroupBy: EpisodeGroupBy.podcast.rawValue,
+                              lineupGroupReversed: true, manualLineupOrder: ["b", "a"])
+        try write(["sessions": [try json(for: session)]])
+
+        let loaded = try XCTUnwrap(SessionStore(fileURL: fileURL).session(uuid: "g"))
+        XCTAssertEqual(loaded.lineupGrouping, .podcast)
+        XCTAssertTrue(loaded.lineupGroupReversed)
+        XCTAssertEqual(loaded.manualLineupOrder, ["b", "a"])
+        XCTAssertFalse(loaded.lineupIsManual)
+    }
+
     /// A document written by a *newer* build carries keys this one has never heard of.
     func testUnknownSessionKeyIsIgnored() throws {
         var session = try json(for: Session(uuid: "s1", feeder: .allPodcasts))

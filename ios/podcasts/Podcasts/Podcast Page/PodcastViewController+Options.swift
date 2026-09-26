@@ -22,21 +22,25 @@ extension PodcastViewController {
         }
         optionPicker.addAction(action: multiSelectAction)
 
-        if showingSession {
-            let reorderAction = OptionAction(label: L10n.lineupReorder, icon: "podcastlist_sort") {}
-            reorderAction.submenu = { [weak self] in self?.makeLineupReorderPicker() }
-            optionPicker.addAction(action: reorderAction)
+        if showingSession, let session = lineupSession {
+            // The Session tab arranges the SESSION (saved on it, setting its play order) — the
+            // podcast's own sort and grouping belong to the Episodes list.
+            EpisodeListMenu.addLineupArrangementActions(to: optionPicker, session: session, onChange: { [weak self] in
+                self?.episodesDidChange()
+            }, onReorderEpisodes: { [weak self] in
+                self?.enterLineupReorderMode()
+            })
+        } else {
+            let currentSort = podcast.podcastSortOrder?.description ?? ""
+            let sortAction = OptionAction(label: L10n.sortEpisodes, secondaryLabel: currentSort, icon: "podcastlist_sort") {}
+            sortAction.submenu = { [weak self] in self?.makeSortOptionsPicker() }
+            optionPicker.addAction(action: sortAction)
+
+            let currentGroup = podcast.podcastGrouping().description
+            let groupAction = OptionAction(label: L10n.groupEpisodes, secondaryLabel: currentGroup, icon: "option-group") {}
+            groupAction.submenu = { [weak self] in self?.makeGroupOptionsPicker() }
+            optionPicker.addAction(action: groupAction)
         }
-
-        let currentSort = podcast.podcastSortOrder?.description ?? ""
-        let sortAction = OptionAction(label: L10n.sortEpisodes, secondaryLabel: currentSort, icon: "podcastlist_sort") {}
-        sortAction.submenu = { [weak self] in self?.makeSortOptionsPicker() }
-        optionPicker.addAction(action: sortAction)
-
-        let currentGroup = podcast.podcastGrouping().description
-        let groupAction = OptionAction(label: L10n.groupEpisodes, secondaryLabel: currentGroup, icon: "option-group") {}
-        groupAction.submenu = { [weak self] in self?.makeGroupOptionsPicker() }
-        optionPicker.addAction(action: groupAction)
 
         let downloadAllAction = OptionAction(label: L10n.downloadAll, icon: "filter_downloaded") {}
         downloadAllAction.submenu = { [weak self] in self?.makeDownloadAllPicker() }

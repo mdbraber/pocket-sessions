@@ -117,6 +117,7 @@ enum SessionFeederEngine {
     // MARK: - Domains
 
     /// Every episode the feeder could ever speak for, narrowed by a Filter Preset. Newest first.
+    /// A contextual preset ("Not in Session") resolves against this session's own store.
     ///
     /// The preset owns archived visibility now (it is an ordinary rule), so there is no separate
     /// archived flag: pass nil to get the whole domain.
@@ -129,6 +130,7 @@ enum SessionFeederEngine {
             FilterPresetQuery.predicate(
                 for: $0,
                 sessionStoreUuids: SessionStore.shared.sessions.compactMap(\.storePlaylistUuid),
+                thisSessionStoreUuid: session.storePlaylistUuid,
                 upNextEpisodeUuids: FilterPresets.upNextEpisodeUuids(for: $0),
                 scopePodcastUuids: applyScope ? FilterPresets.scopePodcastUuids(for: $0) : nil
             )
@@ -145,7 +147,7 @@ enum SessionFeederEngine {
             )
         case .smartPlaylist(let uuid):
             guard let playlist = DataManager.shared.findPlaylist(uuid: uuid) else { return [] }
-            return EpisodesDataManager().playlistEpisodes(for: playlist, limit: 0, preset: preset)
+            return EpisodesDataManager().playlistEpisodes(for: playlist, limit: 0, preset: preset, thisSessionStoreUuid: session.storePlaylistUuid)
                 .compactMap { $0.episode as? Episode }
         case .allPodcasts:
             let optedOut = optOutPodcastUuids()

@@ -34,9 +34,13 @@ enum FilterPresetQuery {
     ///   **nil = don't apply scope**: either the preset has no scope, or this is a single-podcast
     ///   surface that ignores it. A non-nil but *empty* set means "scope is set but resolves to no
     ///   podcasts" (e.g. an empty folder) → matches nothing.
+    /// - Parameter thisSessionStoreUuid: the store playlist of the session the list belongs to — what
+    ///   `inThisSession` resolves against. **nil = no session context**, and the rule then constrains
+    ///   nothing: a contextual preset off a session page is inert rather than empty.
     static func predicate(
         for preset: FilterPreset,
         sessionStoreUuids: [String],
+        thisSessionStoreUuid: String? = nil,
         upNextEpisodeUuids: [String] = [],
         scopePodcastUuids: [String]? = nil,
         inboxPlaylistUuid: String = DataManager.inboxPlaylistUuid,
@@ -109,7 +113,7 @@ enum FilterPresetQuery {
             arguments.append(now.addingTimeInterval(-TimeInterval(preset.filterHours) * 3600))
         }
 
-        // --- The two membership rules ---
+        // --- The membership rules ---
         //
         // Correlated EXISTS / NOT EXISTS, never `IN` / `NOT IN`. The composite index
         // (playlist_uuid, episodeUuid) makes these index seeks; `NOT IN` would materialise the
@@ -119,6 +123,10 @@ enum FilterPresetQuery {
             blocks.append(clause)
         }
         if let clause = membership(preset.inSession, in: sessionStoreUuids, episodeUuid: "\(e)uuid", arguments: &arguments) {
+            blocks.append(clause)
+        }
+        if let thisSessionStoreUuid,
+           let clause = membership(preset.inThisSession, in: [thisSessionStoreUuid], episodeUuid: "\(e)uuid", arguments: &arguments) {
             blocks.append(clause)
         }
         // Up Next isn't a playlist_uuid row, so it comes in as an explicit uuid snapshot (bounded by

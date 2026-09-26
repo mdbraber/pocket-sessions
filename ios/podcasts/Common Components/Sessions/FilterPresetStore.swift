@@ -31,12 +31,19 @@ final class FilterPresetStore {
         /// Seeded once. Without this, deleting a built-in would just resurrect it on next launch —
         /// and built-ins are seeds, not fixtures.
         var seeded: Bool = false
+        /// Which built-ins have been seeded, so one added in a later build still arrives for
+        /// existing users — once — without resurrecting any they deleted.
+        var seededBuiltInUuids: [String] = []
 
         init() {}
 
         enum CodingKeys: String, CodingKey {
-            case presets, seeded
+            case presets, seeded, seededBuiltInUuids
         }
+
+        /// The built-ins that shipped before `seededBuiltInUuids` existed. A document seeded by an
+        /// older build has had exactly these.
+        static let originalBuiltInUuids = ["preset-all", "preset-unseen", "preset-downloaded", "preset-in-progress", "preset-starred"]
 
         // CRITICAL: decodeIfPresent for every key, and element-wise leniency for the array, so one
         // unreadable preset costs one preset rather than the document. See SessionStoreDecodeTests.
@@ -45,6 +52,8 @@ final class FilterPresetStore {
             presets = (try c.decodeIfPresent([LenientlyDecoded<FilterPreset>].self, forKey: .presets) ?? [])
                 .compactMap(\.value)
             seeded = try c.decodeIfPresent(Bool.self, forKey: .seeded) ?? false
+            seededBuiltInUuids = try c.decodeIfPresent([String].self, forKey: .seededBuiltInUuids)
+                ?? (seeded ? Self.originalBuiltInUuids : [])
         }
     }
 
@@ -97,18 +106,28 @@ final class FilterPresetStore {
     func delete(uuid: String) {
         mutate { $0.presets.removeAll { $0.uuid == uuid } }
         // Clear it from whichever scope was pointing at it.
-        for scope in [FilterScope.episodes, .session] where activePresetUuid(for: scope) == uuid {
+        for scope in FilterScope.allCases where activePresetUuid(for: scope) == uuid {
             setActivePresetUuid(nil, for: scope)
         }
     }
 
-    /// Built-ins are seeds, not fixtures: they seed once, and after that they are the user's — as
-    /// editable and deletable as any preset they made themselves.
+    /// Built-ins are seeds, not fixtures: each seeds once, and after that it is the user's — as
+    /// editable and deletable as any preset they made themselves. A built-in added in a later build
+    /// seeds on its first launch, right after the built-in it follows.
     private func seedIfNeeded() {
-        guard !queue.sync(execute: { document.seeded }) else { return }
+        let seeded = queue.sync { Set(document.seededBuiltInUuids) }
+        let builtIns = FilterPreset.builtIns
+        guard builtIns.contains(where: { !seeded.contains($0.uuid) }) else { return }
         mutate { document in
-            document.presets = FilterPreset.builtIns + document.presets
+            for (index, builtIn) in builtIns.enumerated() where !seeded.contains(builtIn.uuid) {
+                if document.presets.contains(where: { $0.uuid == builtIn.uuid }) { continue }
+                let predecessor = builtIns[..<index].last { previous in document.presets.contains { $0.uuid == previous.uuid } }
+                let position = predecessor.flatMap { previous in document.presets.firstIndex { $0.uuid == previous.uuid } }
+                    .map { $0 + 1 } ?? min(index, document.presets.count)
+                document.presets.insert(builtIn, at: position)
+            }
             document.seeded = true
+            document.seededBuiltInUuids = builtIns.map(\.uuid)
         }
     }
 
@@ -130,12 +149,29 @@ final class FilterPresetStore {
         NotificationCenter.postChangedWithoutBlocking(Self.changed)
     }
 
-    /// The preset in force for a scope right now. Falls back to All Episodes if it was deleted.
-    func activePreset(for scope: FilterScope) -> FilterPreset {
-        guard let uuid = activePresetUuid(for: scope), let preset = preset(uuid: uuid) else {
-            return preset(uuid: FilterPreset.allEpisodes.uuid) ?? FilterPreset.allEpisodes
+    /// The preset in force for a scope right now: the chosen one, else the scope's default, else All
+    /// Episodes (the default may have been deleted). A preset the list can't use is never in force
+    /// there — it is offered nowhere on that list, so it can't be the label: a contextual preset
+    /// needs a session behind the list, and a podcast/folder-limited one needs a list that mixes
+    /// podcasts (`singlePodcast` lists show one podcast, so the limit could only no-op or empty it).
+    func activePreset(for scope: FilterScope, singlePodcast: Bool = false) -> FilterPreset {
+        let usable = { (preset: FilterPreset) in Self.isUsable(preset, in: scope, singlePodcast: singlePodcast) }
+        if let uuid = activePresetUuid(for: scope), let preset = preset(uuid: uuid), usable(preset) {
+            return preset
         }
-        return preset
+        if let preset = preset(uuid: scope.defaultPresetUuid), usable(preset) {
+            return preset
+        }
+        return preset(uuid: FilterPreset.allEpisodes.uuid) ?? FilterPreset.allEpisodes
+    }
+
+    /// The presets the quick picker offers for a list — only the ones it can use (see `activePreset`).
+    func pickerPresets(for scope: FilterScope, singlePodcast: Bool = false) -> [FilterPreset] {
+        enabledPresets.filter { Self.isUsable($0, in: scope, singlePodcast: singlePodcast) }
+    }
+
+    static func isUsable(_ preset: FilterPreset, in scope: FilterScope, singlePodcast: Bool) -> Bool {
+        (scope.hasSessionContext || !preset.isContextual) && (!singlePodcast || !preset.isScoped)
     }
 
     // MARK: - Cloud

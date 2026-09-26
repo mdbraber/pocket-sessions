@@ -1933,6 +1933,14 @@
 "filter_preset_in_progress" = "In Progress";
 /* Fork: built-in Filter Preset — starred episodes only. */
 "filter_preset_starred" = "Starred";
+/* Fork: built-in Filter Preset, and a rule value in the preset editor — episodes not yet in the session whose Episodes list is showing. */
+"filter_preset_not_in_this_session" = "Not in Session";
+/* Fork: preset editor rule value — episodes already in the session whose Episodes list is showing. */
+"filter_preset_in_this_session" = "In Session";
+/* Fork: the preset editor row for the rule that checks the session whose Episodes list is showing. */
+"filter_preset_rule_this_session" = "This Session";
+/* Fork: footer under the This Session rule in the preset editor. */
+"filter_preset_this_session_footer" = "Only applies to a session's Episodes list. Presets that use it are only offered there.";
 
 /* Fork: the one-tap way back — clears the active Filter Preset and the search term. */
 "filter_preset_reset" = "Reset all filters";
@@ -7221,6 +7229,14 @@
 
 /* Fork: lineup reorder picker — enters drag-handle mode so episodes can be dragged into a new order. */
 "lineup_reorder_episodes" = "Reorder Episodes";
+/* Fork: preset editor toggle — whether the preset is offered in the Filters menu. */
+"filter_preset_show_in_menu" = "Show in Filters Menu";
+/* Fork: footer under the preset name and Show in Filters Menu toggle. */
+"filter_preset_show_in_menu_footer" = "A preset that's off stays in your list but isn't offered when filtering.";
+/* Fork: the Sort By choice for a session lineup that is hand-ordered (no automatic sort). */
+"lineup_sort_manual" = "Manual";
+/* Fork: toggle in the Group By menu — shows (and, for a session, plays) the groups in reverse order; episodes inside each group keep their order. */
+"group_reverse_order" = "Reverse Groups Order";
 
 /* Fork: lineup reorder picker — heading above the one-shot orders (Newest to oldest, Title A–Z, …). */
 "lineup_reorder_arrange_by" = "Arrange By";

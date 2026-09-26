@@ -507,7 +507,7 @@ class PlaylistDetailViewController: PCViewController, UIScrollViewDelegate {
     @objc func presetStoreChanged(notification: Notification) {
         if let button = presetFunnelButton {
             UIView.performWithoutAnimation {
-                FilterPresetPicker.style(button, scope: viewModel.filterScope)
+                FilterPresetPicker.style(button, scope: viewModel.filterScope, singlePodcast: viewModel.presetListIsSinglePodcast)
                 button.layoutIfNeeded()
             }
         }
