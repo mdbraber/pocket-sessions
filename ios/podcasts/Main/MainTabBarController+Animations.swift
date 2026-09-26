@@ -12,18 +12,19 @@ extension MainTabBarController {
     /// are punched out as transparent cutouts so the count reads light against
     /// the tinted pill — the "active tab" counterpart to the resting badge.
     static func composeUpNextTabImage(count: Int, isSelected: Bool = false) -> UIImage? {
-        let clamped = min(99, max(1, count))
+        // Past 99 the badge reads "99+" so a capped count doesn't look stuck.
+        let text = count > 99 ? "99+" : "\(max(1, count))"
 
-        // Fixed at the widest (3-digit) size so the tab image never resizes.
+        // Fixed at the widest ("99+") size so the tab image never resizes.
         let canvasSize = CGSize(
-            width: ceil(upNextBadgeLayout(count: 99, origin: .zero).size.width),
+            width: ceil(upNextBadgeLayout(text: "99+", origin: .zero).size.width),
             height: 26)
-        let content = upNextBadgeLayout(count: clamped, origin: .zero).size
+        let content = upNextBadgeLayout(text: text, origin: .zero).size
         let origin = CGPoint(
             x: ((canvasSize.width - content.width) / 2).rounded(),
             y: ((canvasSize.height - content.height) / 2).rounded()
         )
-        let layout = upNextBadgeLayout(count: clamped, origin: origin)
+        let layout = upNextBadgeLayout(text: text, origin: origin)
         let secondaryShadeAlpha: CGFloat = isSelected ? 0.45 : 0.9
         let capsuleFillAlpha: CGFloat = isSelected ? 0.93 : 0.08
 
@@ -31,7 +32,7 @@ extension MainTabBarController {
             UIColor.black.withAlphaComponent(capsuleFillAlpha).setFill()
             UIBezierPath(roundedRect: layout.capsule, cornerRadius: layout.capsule.height / 2).fill()
 
-            let countAsStr = "\(clamped)" as NSString
+            let countAsStr = text as NSString
             let textAttributes: [NSAttributedString.Key: Any] = [.font: layout.font, .foregroundColor: UIColor.black]
             let textSize = countAsStr.size(withAttributes: textAttributes)
             let textOrigin = CGPoint(
@@ -63,7 +64,7 @@ extension MainTabBarController {
         let size: CGSize
     }
 
-    private static func upNextBadgeLayout(count: Int, origin: CGPoint) -> UpNextBadgeLayout {
+    private static func upNextBadgeLayout(text: String, origin: CGPoint) -> UpNextBadgeLayout {
         let height: CGFloat = 20
         let horizontalPadding: CGFloat = 5
         let gap: CGFloat = 2
@@ -75,9 +76,9 @@ extension MainTabBarController {
         let lineSpacing: CGFloat = 4
 
         // Matches the full player's Up Next button (UpNextButton): 13pt for
-        // 1–2 digits, 11pt once it spills to 3.
-        let font = UIFont.monospacedDigitSystemFont(ofSize: count > 99 ? 11 : 13, weight: .bold)
-        let textWidth = ("\(count)" as NSString).size(withAttributes: [.font: font]).width
+        // 1–2 digits, 11pt once it spills to 3 characters ("99+").
+        let font = UIFont.monospacedDigitSystemFont(ofSize: text.count > 2 ? 11 : 13, weight: .bold)
+        let textWidth = (text as NSString).size(withAttributes: [.font: font]).width
         // A stadium shape: floor at a circle for a single digit, but let two or
         // more digits stretch into the oblong pill the design calls for.
         let capsuleWidth = max(height, (textWidth + horizontalPadding * 2).rounded())
