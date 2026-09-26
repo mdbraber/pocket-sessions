@@ -493,13 +493,8 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         return cell
     }
 
-    /// The played fraction of an episode (live time for the now-playing one, else its saved position).
     func episodeProgressFraction(_ episode: BaseEpisode) -> CGFloat {
-        guard episode.duration > 0 else { return 0 }
-        let time = PlaybackManager.shared.isCurrentEpisode(uuid: episode.uuid)
-            ? PlaybackManager.shared.currentTime()
-            : episode.playedUpTo
-        return CGFloat(min(1, max(0, time / episode.duration)))
+        episode.playedFraction
     }
 
     /// Fork: the session lineup's play button plays the episode AND makes it the top / now-playing row

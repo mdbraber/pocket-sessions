@@ -5,12 +5,9 @@ import PocketCastsUtils
 
 extension PlaylistDetailViewController: UITableViewDataSource {
     private static let cellIdentifier = "EpisodeCell"
-    // Fork: the now-playing episode in the Session (lineup) tab borrows the exact Up Next card.
-    private static let sessionNowPlayingCardId = "SessionNowPlayingCard"
 
     func registerCells() {
         tableView.register(UINib(nibName: "EpisodeCell", bundle: nil), forCellReuseIdentifier: Self.cellIdentifier)
-        tableView.register(UINib(nibName: "UpNextNowPlayingCell", bundle: nil), forCellReuseIdentifier: Self.sessionNowPlayingCardId)
         tableView.register(EmptyStateCell.self, forCellReuseIdentifier: EmptyStateCell.reuseIdentifier)
         tableView.register(DummyEmptyCell.self, forCellReuseIdentifier: DummyEmptyCell.reuseIdentifier)
         tableView.register(PlaylistHeaderViewCell.self, forCellReuseIdentifier: PlaylistHeaderViewCell.reuseIdentifier)
@@ -173,18 +170,6 @@ extension PlaylistDetailViewController: UITableViewDataSource {
                 )
             }
 
-            // Fork: on the Session (lineup) tab, the now-playing episode (playing OR paused) renders
-            // as the exact Up Next now-playing card; other rows keep the normal layout below.
-            if viewModel.usesTriageTabs, viewModel.selectedTriageTab == .lineup, !isMultiSelectEnabled,
-               let listEpisode = itemAtRow as? ListEpisode,
-               PlaybackManager.shared.isCurrentEpisode(uuid: listEpisode.episode.uuid) {
-                let card = tableView.dequeueReusableCell(withIdentifier: Self.sessionNowPlayingCardId, for: indexPath) as! UpNextNowPlayingCell
-                card.themeOverride = nil
-                card.populateFrom(episode: listEpisode.episode)
-                card.setSessionInfoLine(listEpisode.episode.displayableInfo(includeSize: false))
-                return card
-            }
-
             let cell = tableView.dequeueReusableCell(withIdentifier: Self.cellIdentifier, for: indexPath) as! EpisodeCell
             // Fork: the grip only appears in "Reorder Episodes" mode — otherwise reorder is a
             // long-press drag and a permanent grip would just be clutter.
@@ -201,6 +186,13 @@ extension PlaylistDetailViewController: UITableViewDataSource {
                 // Session (lineup) tab every row is a member, so the badge is redundant.
                 let onSessionLineup = viewModel.usesTriageTabs && viewModel.selectedTriageTab == .lineup
                 cell.setSessionIndicator(onSessionLineup ? .none : viewModel.sessionIndicatorState(for: listEpisode.episode.uuid))
+                // Fork: on the Session tab the now-playing episode (playing OR paused) is the same row,
+                // marked like the Queue's session lineup: green surface, progress band, green button.
+                let isCurrent = onSessionLineup && !isMultiSelectEnabled
+                    && PlaybackManager.shared.isCurrentEpisode(uuid: listEpisode.episode.uuid)
+                cell.playButtonTintOverride = isCurrent ? ThemeColor.support02() : nil
+                cell.setActiveSurface(accent: isCurrent ? ThemeColor.support02() : nil,
+                                      progress: isCurrent ? listEpisode.episode.playedFraction : 0)
                 // The unread dot: this episode is still in the Inbox.
                 cell.setUnseenIndicator(visible: viewModel.unseenUuidsForDisplay.contains(listEpisode.episode.uuid))
                 cell.shouldShowSelect = isMultiSelectEnabled

@@ -1032,3 +1032,15 @@ class EpisodeCell: ThemeableSwipeCell, MainEpisodeActionViewDelegate {
         informationLabel.updateNumberOfLines(regular: 1, accessibility: 3)
     }
 }
+
+extension BaseEpisode {
+    /// Fork: the played fraction (live time for the now-playing episode, else its saved position) —
+    /// the progress band of an active lineup row.
+    var playedFraction: CGFloat {
+        guard duration > 0 else { return 0 }
+        let time = PlaybackManager.shared.isCurrentEpisode(uuid: uuid)
+            ? PlaybackManager.shared.currentTime()
+            : playedUpTo
+        return CGFloat(min(1, max(0, time / duration)))
+    }
+}
