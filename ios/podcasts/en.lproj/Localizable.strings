@@ -7233,6 +7233,8 @@
 "filter_preset_show_in_menu" = "Show in Filters Menu";
 /* Fork: footer under the preset name and Show in Filters Menu toggle. */
 "filter_preset_show_in_menu_footer" = "A preset that's off stays in your list but isn't offered when filtering.";
+/* Fork: toast shown when moving an episode by hand turns a session's sort or grouping off. */
+"lineup_switched_to_manual" = "Session order is now Manual";
 /* Fork: the Sort By choice for a session lineup that is hand-ordered (no automatic sort). */
 "lineup_sort_manual" = "Manual";
 /* Fork: toggle in the Group By menu — shows (and, for a session, plays) the groups in reverse order; episodes inside each group keep their order. */

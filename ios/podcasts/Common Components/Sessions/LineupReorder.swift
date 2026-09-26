@@ -167,6 +167,9 @@ enum LineupSort {
             $0.lineupGroupBy = nil
             $0.manualLineupOrder = []
         }
+        // The sort or grouping the user picked just went away as a side effect of a drag — say so,
+        // or the menu silently reads Manual next time with no hint why.
+        DispatchQueue.main.async { Toast.show(L10n.lineupSwitchedToManual) }
     }
 
     /// A menu change: saves the hand order on leaving Manual, restores it on returning, and lays the
