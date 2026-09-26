@@ -262,6 +262,30 @@ final class InboxManager {
         UserDefaults.standard.set(Array(remaining), forKey: Self.manualUnseenKey)
     }
 
+    // MARK: - Delivered by auto-add
+
+    /// Episodes auto-add already put into a session, as "sessionUuid|episodeUuid". Auto-add picks
+    /// from what's in the Inbox and auto-added episodes stay there, so without this a removal from
+    /// the lineup would be undone on the next refresh. Entries only live while the episode is
+    /// still in the Inbox, which keeps the list small.
+    static let deliveredToSessionKey = "SJInboxDeliveredToSession"
+
+    func deliveredToSession(sessionUuid: String) -> Set<String> {
+        let prefix = "\(sessionUuid)|"
+        return Set((UserDefaults.standard.stringArray(forKey: Self.deliveredToSessionKey) ?? [])
+            .filter { $0.hasPrefix(prefix) }
+            .map { String($0.dropFirst(prefix.count)) })
+    }
+
+    func recordDeliveredToSession(episodeUuids: [String], sessionUuid: String) {
+        guard !episodeUuids.isEmpty else { return }
+        let inInbox = unseenUuids()
+        let existing = UserDefaults.standard.stringArray(forKey: Self.deliveredToSessionKey) ?? []
+        let entries = Set(existing + episodeUuids.map { "\(sessionUuid)|\($0)" })
+            .filter { entry in entry.split(separator: "|").last.map { inInbox.contains(String($0)) } ?? false }
+        UserDefaults.standard.set(entries.sorted(), forKey: Self.deliveredToSessionKey)
+    }
+
     // MARK: - Verbs
 
     /// Adds episodes to the Inbox, respecting the cap. One write, one notification.

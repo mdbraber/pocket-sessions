@@ -234,7 +234,7 @@ class SessionManager {
         // Manual fill: prune-only. Gathering shelved episodes here would grow a
         // hand-curated lineup behind the user's back.
         if session.autoFill, !toAdd.isEmpty {
-            addToLineup(episodeUuids: toAdd, session: session)
+            addToLineup(episodeUuids: toAdd, session: session, keepInInbox: true)
         }
     }
 
@@ -395,7 +395,7 @@ class SessionManager {
                 if let loserStore = store(for: loser) {
                     let winnerMembers = Set(SessionFeederEngine.storeMemberUuids(for: winner))
                     let toMove = DataManager.shared.positionedEpisodeUuids(for: loserStore).filter { !winnerMembers.contains($0) }
-                    if !toMove.isEmpty { addToLineup(episodeUuids: toMove, session: winner) }
+                    if !toMove.isEmpty { addToLineup(episodeUuids: toMove, session: winner, keepInInbox: true) }
                 }
                 if !loser.pinnedEpisodeUuids.isEmpty {
                     SessionStore.shared.mutateSession(winner) { updated in
@@ -591,7 +591,10 @@ class SessionManager {
     /// session, so the feeder's prune (`reconcileStoreToFeeder`) never removes them.
     /// Automatic paths (feeder gathers, backfills, auto-add ingest, queue mirrors,
     /// seeding) leave it false — what was gathered stays prunable.
-    func addToLineup(episodeUuids: [String], session: Session, pinning: Bool = false) {
+    ///
+    /// `keepInInbox` marks an automatic add: it isn't a decision about the episode, so the
+    /// episode stays in the Inbox (showing the session marker) and you still see it arrived.
+    func addToLineup(episodeUuids: [String], session: Session, pinning: Bool = false, keepInInbox: Bool = false) {
         guard let store = store(for: session), !episodeUuids.isEmpty else { return }
         unarchiveIfNeeded(episodeUuids: episodeUuids)
         unplayIfNeeded(episodeUuids: episodeUuids)
@@ -610,7 +613,16 @@ class SessionManager {
         // This is a PRIMITIVE call, not a verb — nothing mirrors from an Inbox removal, so
         // the Up Next <-> Session mirroring stays a two-party relationship with the Inbox as
         // a leaf. Calling a verb here is what would make recursion possible.
-        InboxManager.shared.markSeen(episodeUuids: episodeUuids)
+        //
+        // An automatic add only leaves the Inbox when its podcast's Inbox setting is "When not
+        // in Session or Up Next" — which is exactly what that setting asks for.
+        let leavingInbox = keepInInbox
+            ? episodeUuids.filter { uuid in
+                DataManager.shared.findEpisode(uuid: uuid)
+                    .map { SessionFeederEngine.inboxAddPolicy(forPodcast: $0.podcastUuid) == .whenNotInSessionOrUpNext } ?? false
+            }
+            : episodeUuids
+        InboxManager.shared.markSeen(episodeUuids: leavingInbox)
 
         // One transaction, re-reading the live row: sets lastInserted and (optionally) the pins
         // together — no stale-copy clobber, and one save + cloud diff instead of upsert-then-pin.
@@ -1400,7 +1412,10 @@ class SessionManager {
         // Manual fill wins over the auto-add toggle: a hand-curated lineup absorbs nothing
         // automatically — offers stay in the inbox until the user adds them explicitly.
         guard session.autoFill, !SessionManager.isOptedOut(feeder: session.feeder) else { return }
-        var offers = SessionFeederEngine.inboxEpisodes(for: session).map(\.uuid)
+        // Auto-added episodes stay in the Inbox, so skip the ones already delivered to this
+        // session — otherwise removing one from the lineup (or a trim) would be undone next time.
+        let delivered = InboxManager.shared.deliveredToSession(sessionUuid: session.uuid)
+        var offers = SessionFeederEngine.inboxEpisodes(for: session).map(\.uuid).filter { !delivered.contains($0) }
         guard !offers.isEmpty else { return }
         // The global limit caps auto-adds only: once the lineup is full, new arrivals
         // stay in the inbox. Manual adds are never capped.
@@ -1409,7 +1424,8 @@ class SessionManager {
             guard capacity > 0 else { return }
             offers = Array(offers.prefix(capacity))
         }
-        addToLineup(episodeUuids: offers, session: session)
+        addToLineup(episodeUuids: offers, session: session, keepInInbox: true)
+        InboxManager.shared.recordDeliveredToSession(episodeUuids: offers, sessionUuid: session.uuid)
         // Fork: auto-add to a Session honors the Session -> Up Next link, so an auto-added episode
         // also lands in Up Next when linking is on. mirrorSessionAdd honors the per-podcast setting,
         // skips episodes already queued, and calls the queue primitive directly (no cascade).

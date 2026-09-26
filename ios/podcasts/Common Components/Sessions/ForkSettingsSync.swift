@@ -16,6 +16,7 @@ final class ForkSettingsSync {
         Settings.mirrorUpNextToSessionKey,
         Settings.mirrorSessionToUpNextKey,
         Settings.sessionAutoAddLimitKey,
+        InboxManager.deliveredToSessionKey,
         Settings.playlistsBadgeKey,
         Settings.badgeKey,
         "SJInboxAddToSessionMode",

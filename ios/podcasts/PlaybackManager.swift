@@ -713,7 +713,7 @@ class PlaybackManager: ServerPlaybackDelegate {
         // (mirrorQueueAdd only touches Episodes, checks membership, and honors the per-podcast
         // setting, so uploaded files and unlinked podcasts are skipped — and it never cascades.)
         #if !os(watchOS)
-        SessionLinking.mirrorQueueAdd(episodes: [episode])
+        SessionLinking.mirrorQueueAdd(episodes: [episode], automatic: true)
         #endif
         #endif
     }

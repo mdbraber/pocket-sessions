@@ -10,8 +10,9 @@ import PocketCastsUtils
 /// are never mirrored.
 enum SessionLinking {
     /// After a user-initiated Up Next add: mirror the episodes into their podcasts'
-    /// sessions (created on demand), at each session's insert position.
-    static func mirrorQueueAdd(episodes: [BaseEpisode]) {
+    /// sessions (created on demand), at each session's insert position. `automatic` is the
+    /// auto-add-to-Up-Next copy, which keeps the episodes in the Inbox like auto-add does.
+    static func mirrorQueueAdd(episodes: [BaseEpisode], automatic: Bool = false) {
         let grouped = Dictionary(grouping: episodes.compactMap { $0 as? Episode }, by: \.podcastUuid)
         for (podcastUuid, podcastEpisodes) in grouped {
             guard Settings.resolvedMirrorUpNextToSession(podcastUuid: podcastUuid),
@@ -22,7 +23,7 @@ enum SessionLinking {
             let members = Set(SessionFeederEngine.storeMemberUuids(for: session))
             let toAdd = podcastEpisodes.map(\.uuid).filter { !members.contains($0) }
             guard !toAdd.isEmpty else { continue }
-            SessionManager.shared.addToLineup(episodeUuids: toAdd, session: session)
+            SessionManager.shared.addToLineup(episodeUuids: toAdd, session: session, keepInInbox: automatic)
         }
     }
 
