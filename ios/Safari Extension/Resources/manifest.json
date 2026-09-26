@@ -18,8 +18,7 @@
         "matches": [
             "https://pca.st/*",
             "https://pocketcasts.com/*",
-            "https://www.pocketcasts.com/*",
-            "https://play.pocketcasts.com/*"
+            "https://www.pocketcasts.com/*"
         ],
         "run_at": "document_start"
     }]
