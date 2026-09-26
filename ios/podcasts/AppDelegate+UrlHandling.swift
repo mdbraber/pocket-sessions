@@ -230,6 +230,35 @@ extension AppDelegate {
             return true
         }
 
+        // Fork: a Pocket Casts web link handed over by the Share or Safari extension, as
+        // pktc://weblink/<https URL> (raw or percent-encoded). Only Pocket Casts hosts are opened.
+        JLRoutes.global().addRoute("/weblink/*") { [weak self] parameters -> Bool in
+            guard let self, let url = parameters[JLRouteURLKey] as? URL else { return false }
+
+            let shareHost = URL(string: ServerConstants.Urls.share())?.host
+            guard let webURL = PocketCastsWebLink.webURL(fromPktcWeblink: url, extraHosts: [shareHost].compactMap { $0 }) else {
+                FileLog.shared.addMessage("Ignoring weblink that isn't a Pocket Casts https URL")
+                return true
+            }
+
+            self.handleIncomingWebLink(webURL)
+            return true
+        }
+
+        // Fork: open a podcast page by UUID, pktc://podcast/<uuid>
+        JLRoutes.global().addRoute("/podcast/*") { [weak self] parameters -> Bool in
+            guard
+                let self,
+                let url = parameters[JLRouteURLKey] as? URL,
+                let controller = SceneHelper.rootViewController()
+            else { return false }
+
+            guard let uuid = PocketCastsWebLink.podcastUuid(fromPktcPodcast: url) else { return true }
+
+            self.openSharePath("social/share/show/podcast/\(uuid)", controller: controller, onErrorOpen: nil)
+            return true
+        }
+
         // Today Centre Widget thingy
         JLRoutes.global().addRoute("/widget/*") { [weak self] parameters -> Bool in
             guard let strongSelf = self, let pathComponents = parameters[JLRouteWildcardComponentsKey] as? [String], let episodeUuid = pathComponents[safe: 0] else { return false }
