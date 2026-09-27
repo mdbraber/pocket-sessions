@@ -2,14 +2,14 @@ import UIKit
 
 /// Fork: the three states of the "in a session" mini-badge on an episode row.
 ///
-/// Membership is per-session (sessions are independent), so the badge distinguishes whether an
-/// episode is in *this* page's session or in some *other* session — same glyph, two brightnesses.
+/// Membership is per-session (sessions are independent). The badge looks the same either way —
+/// a filled green stack — and only VoiceOver says whether it is *this* page's session or another.
 enum SessionIndicatorState {
     /// Not in any session — no badge.
     case none
-    /// In the session this page represents — full-brightness green.
+    /// In the session this page represents.
     case thisSession
-    /// In a session, but not this page's — the same green at half brightness.
+    /// In a session, but not this page's.
     case otherSession
 
     /// Resolves the state for an episode: in this page's session, else in any session, else none.
@@ -22,26 +22,15 @@ enum SessionIndicatorState {
 
     var isVisible: Bool { self != .none }
 
-    /// The badge tint, or nil when hidden. "Other session" is the session green at 50% brightness.
+    /// The badge tint, or nil when hidden.
     var tint: UIColor? {
-        switch self {
-        case .none: return nil
-        case .thisSession: return ThemeColor.support02()
-        case .otherSession: return ThemeColor.support02().sessionDimmed()
-        }
+        isVisible ? ThemeColor.support02() : nil
     }
 
     /// The badge glyph at the mini-indicator's standard size, or nil when hidden.
-    /// "This session" is the filled stack, "other session" the outlined one — a shape
-    /// cue on top of the brightness difference, so the two don't rely on color alone.
     var indicatorImage: UIImage? {
-        let symbolName: String
-        switch self {
-        case .none: return nil
-        case .thisSession: symbolName = "rectangle.stack.fill"
-        case .otherSession: symbolName = "rectangle.stack"
-        }
-        return UIImage(systemName: symbolName, withConfiguration: UIImage.SymbolConfiguration(pointSize: 11, weight: .semibold))
+        guard isVisible else { return nil }
+        return UIImage(systemName: "rectangle.stack.fill", withConfiguration: UIImage.SymbolConfiguration(pointSize: 11, weight: .semibold))
     }
 
     /// VoiceOver description of the badge, or nil when hidden.
@@ -51,14 +40,5 @@ enum SessionIndicatorState {
         case .thisSession: return L10n.accessibilityInThisLineup
         case .otherSession: return L10n.accessibilityInOtherLineup
         }
-    }
-}
-
-extension UIColor {
-    /// Halves the colour's brightness (HSB) — used for the "in another session" badge.
-    func sessionDimmed(_ factor: CGFloat = 0.5) -> UIColor {
-        var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-        guard getHue(&h, saturation: &s, brightness: &b, alpha: &a) else { return self }
-        return UIColor(hue: h, saturation: s, brightness: b * factor, alpha: a)
     }
 }
