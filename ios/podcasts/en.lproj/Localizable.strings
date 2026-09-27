@@ -5526,6 +5526,24 @@
 /* Inbox action removing an episode from every session and from Up Next */
 "session_remove_from_both" = "Remove from Both";
 
+/* Episode row info line prefix: the episode is already in a session */
+"inbox_placement_session" = "In Session";
+
+/* Episode row info line prefix: the episode is already in Up Next */
+"inbox_placement_up_next" = "In Up Next";
+
+/* Episode row info line prefix: the episode is in a session and in Up Next */
+"inbox_placement_both" = "In Session & Up Next";
+
+/* Inbox group heading for episodes already in a session or Up Next */
+"inbox_group_added" = "In Session or Up Next";
+
+/* Inbox group heading for the episodes not yet in a session or Up Next */
+"inbox_group_not_added" = "Not Added Yet";
+
+/* Inbox menu toggle: show episodes already in a session or Up Next as a group at the top */
+"inbox_group_added_on_top" = "Group Added Episodes on Top";
+
 /* Title shown on the Session tab when the session has no episodes yet */
 "session_empty_title" = "Session is empty";
 

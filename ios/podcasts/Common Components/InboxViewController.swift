@@ -16,6 +16,7 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
     private static let groupByKey = "SJInboxGroupBy"
     private static let groupLimitKey = "SJInboxGroupLimit"
     private static let reverseGroupKey = "SJInboxReverseGroup"
+    private static let groupAddedOnTopKey = "SJInboxGroupAddedOnTop"
 
     private struct Group {
         let title: String?
@@ -87,6 +88,15 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
         get { UserDefaults.standard.integer(forKey: Self.groupLimitKey) }
         set {
             UserDefaults.standard.set(newValue, forKey: Self.groupLimitKey)
+            reloadData()
+        }
+    }
+
+    /// Fork: episodes already in a session or Up Next gather in their own group at the top. On by default.
+    private var groupAddedOnTop: Bool {
+        get { UserDefaults.standard.object(forKey: Self.groupAddedOnTopKey) as? Bool ?? true }
+        set {
+            UserDefaults.standard.set(newValue, forKey: Self.groupAddedOnTopKey)
             reloadData()
         }
     }
@@ -171,7 +181,7 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
         // Membership of the Inbox playlist IS the list, so playlistChanged is the primary signal.
         NotificationCenter.default.addObserver(self, selector: #selector(reloadData), name: Constants.Notifications.playlistChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(reloadData), name: SessionStore.changed, object: nil)
-        // Rows in Up Next are dimmed, so queue changes redraw the list too.
+        // Rows show whether they're in Up Next (and may group by it), so queue changes redraw the list too.
         NotificationCenter.default.addObserver(self, selector: #selector(reloadData), name: Constants.Notifications.upNextQueueChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(reloadData), name: Constants.Notifications.upNextEpisodeAdded, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(reloadData), name: Constants.Notifications.upNextEpisodeRemoved, object: nil)
@@ -277,8 +287,24 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
     }
 
     private func rebuildGroups() {
-        groups = EpisodeGrouper.group(visibleEpisodes, by: groupBy, limit: groupLimit, reversed: reverseGroup) { $0 }
+        var remaining = visibleEpisodes
+        var addedGroup: Group?
+        if groupAddedOnTop {
+            let added = remaining.filter(isAdded)
+            if !added.isEmpty {
+                addedGroup = Group(title: L10n.inboxGroupAdded, episodes: added)
+                remaining.removeAll(where: isAdded)
+            }
+        }
+        groups = EpisodeGrouper.group(remaining, by: groupBy, limit: groupLimit, reversed: reverseGroup) { $0 }
             .map { Group(title: $0.title, episodes: $0.items) }
+        if let addedGroup {
+            // Without Group By the rest has no heading, and would read as part of the group above.
+            if groups.count == 1, groups[0].title == nil {
+                groups = [Group(title: L10n.inboxGroupNotAdded, episodes: groups[0].episodes)]
+            }
+            groups.insert(addedGroup, at: 0)
+        }
         if groups.isEmpty {
             groups = [Group(title: nil, episodes: [])]
         }
@@ -319,6 +345,11 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
 
     private func isInAnySession(_ episode: BaseEpisode) -> Bool {
         SessionMembership.shared.inAnySession.contains(episode.uuid)
+    }
+
+    /// Already in a session or Up Next.
+    private func isAdded(_ episode: BaseEpisode) -> Bool {
+        isInAnySession(episode) || PlaybackManager.shared.inUpNext(episode: episode)
     }
 
     /// The red remove choices for a row, as menu items: from every session, from Up Next, and
@@ -436,6 +467,11 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
             }
             optionsPicker.addAction(action: reverseAction)
         }
+
+        let addedOnTopAction = OptionAction(label: L10n.inboxGroupAddedOnTop, selected: groupAddedOnTop) { [weak self] in
+            self?.groupAddedOnTop.toggle()
+        }
+        optionsPicker.addAction(action: addedOnTopAction)
 
         let limitAction = OptionAction(label: L10n.episodeGroupLimit, secondaryLabel: groupLimit > 0 ? "\(groupLimit)" : L10n.off, icon: "option-group") {}
         limitAction.submenu = { [weak self] in
@@ -572,8 +608,8 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
         cell.setSessionIndicator(SessionIndicatorState.resolve(episode.uuid, thisSession: []))
         // Every row here is in the Inbox by construction, so every row carries the unread dot.
         cell.setUnseenIndicator(visible: true)
-        // Already in a session or Up Next: dimmed, like a played row.
-        cell.setShelvedDimmed(isInAnySession(episode) || PlaybackManager.shared.inUpNext(episode: episode))
+        // Already in a session or Up Next: the info line says where.
+        cell.placement = (isInAnySession(episode), PlaybackManager.shared.inUpNext(episode: episode))
         cell.shouldShowSelect = isMultiSelectEnabled
         if isMultiSelectEnabled {
             cell.showTick = selectedEpisodesContains(uuid: episode.uuid)

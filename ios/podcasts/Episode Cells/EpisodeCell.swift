@@ -516,6 +516,8 @@ class EpisodeCell: ThemeableSwipeCell, MainEpisodeActionViewDelegate {
         } else {
             informationLabel.text = episode.displayableInfo(includeSize: Settings.primaryRowAction == .download)
         }
+        plainInformationText = informationLabel.text
+        applyPlacementPrefix()
 
         if episode.downloading(), !downloadingIndicator.isAnimating {
             downloadingIndicator.startAnimating()
@@ -903,12 +905,31 @@ class EpisodeCell: ThemeableSwipeCell, MainEpisodeActionViewDelegate {
 
     /// Membership of the Inbox playlist is what this reflects — so callers must pass a value
     /// read from a Set fetched ONCE per list load. Never query membership per row.
-    /// Fork: dims the row like a played one — the Inbox's "already in a session or Up Next".
-    /// Call after `populateFrom`, which resets the dimming.
-    func setShelvedDimmed(_ dimmed: Bool) {
-        guard dimmed else { return }
-        episodeImage.alpha = EpisodeCell.playedAlpha
-        contentStackView.alpha = EpisodeCell.playedAlpha
+    /// Fork: where the episode already is, shown at the start of the info line ("In Session • 45m")
+    /// — green for a session, blue for Up Next. Kept on the cell so the cell's own re-populates
+    /// (download progress and so on) keep it.
+    var placement: (inSession: Bool, inUpNext: Bool) = (false, false) {
+        didSet { applyPlacementPrefix() }
+    }
+
+    /// The info line as `populate` wrote it, before any placement prefix.
+    private var plainInformationText: String?
+
+    private func applyPlacementPrefix() {
+        guard let base = plainInformationText, !base.isEmpty else { return }
+        let prefix: String
+        let color: UIColor
+        switch placement {
+        case (true, true): prefix = L10n.inboxPlacementBoth; color = ThemeColor.support02()
+        case (true, false): prefix = L10n.inboxPlacementSession; color = ThemeColor.support02()
+        case (false, true): prefix = L10n.inboxPlacementUpNext; color = ThemeColor.support01()
+        case (false, false):
+            informationLabel.text = base
+            return
+        }
+        let attributed = NSMutableAttributedString(string: prefix, attributes: [.foregroundColor: color, .font: informationLabel.font as Any])
+        attributed.append(NSAttributedString(string: " • " + base, attributes: [.foregroundColor: informationLabel.textColor as Any, .font: informationLabel.font as Any]))
+        informationLabel.attributedText = attributed
     }
 
     func setUnseenIndicator(visible: Bool) {
@@ -938,6 +959,7 @@ class EpisodeCell: ThemeableSwipeCell, MainEpisodeActionViewDelegate {
         onLineupLongPressPlay = nil
         addsLineupTrailingInset = false
         playButtonTintOverride = nil
+        placement = (false, false)
 
         unseenIndicator.isHidden = true
         unseenIndicatorVisible = false
