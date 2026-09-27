@@ -403,6 +403,12 @@
 /* Fork: video player — shown over the (necessarily black) local video surface while casting. '%1$@' is the Chromecast device's name. */
 "video_playing_on_device" = "Playing on %1$@";
 
+/* Fork: video player — title of the captions menu and accessibility label of the button that opens it. */
+"video_captions" = "Captions";
+
+/* Fork: video player — captions menu item that shows the episode transcript as captions over the video. */
+"video_captions_from_transcript" = "From Transcript";
+
 /* A common string used throughout the app. Prompt to perform a clean up operation on the selected items. */
 "clean_up" = "Clean Up";
 

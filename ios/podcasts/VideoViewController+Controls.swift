@@ -54,15 +54,19 @@ extension VideoViewController {
 
     private func hideVideoControls() {
         controlsShowing = false
+        positionTranscriptCaption()
         UIView.animate(withDuration: Constants.Animation.defaultAnimationTime) { [weak self] in
             self?.controlsOverlay.alpha = 0
+            self?.view.layoutIfNeeded()
         }
     }
 
     private func showVideoControls() {
         controlsShowing = true
+        positionTranscriptCaption()
         UIView.animate(withDuration: Constants.Animation.defaultAnimationTime) { [weak self] in
             self?.controlsOverlay.alpha = 1
+            self?.view.layoutIfNeeded()
         }
     }
 }

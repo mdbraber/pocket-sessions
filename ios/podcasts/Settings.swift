@@ -14,6 +14,37 @@ enum MirrorOverride: Int, CaseIterable {
     case off = 2
 }
 
+/// Fork: what the video player shows as captions. Stored as a string so an embedded track can
+/// remember its language.
+enum VideoCaptionChoice: Equatable, RawRepresentable {
+    case off
+    /// A caption track carried by the video itself. `languageTag` is the track the user last picked
+    /// (a BCP 47 tag such as "en" or "nl-NL"); `nil` means "the best match for my languages".
+    case embedded(languageTag: String?)
+    /// The episode transcript, drawn over the video by the video player.
+    case transcript
+
+    init?(rawValue: String) {
+        switch rawValue {
+        case "off": self = .off
+        case "transcript": self = .transcript
+        case "embedded": self = .embedded(languageTag: nil)
+        default:
+            guard rawValue.hasPrefix("embedded:") else { return nil }
+            self = .embedded(languageTag: String(rawValue.dropFirst("embedded:".count)))
+        }
+    }
+
+    var rawValue: String {
+        switch self {
+        case .off: return "off"
+        case .transcript: return "transcript"
+        case .embedded(let languageTag?): return "embedded:\(languageTag)"
+        case .embedded(nil): return "embedded"
+        }
+    }
+}
+
 class Settings: NSObject {
 
 #if !os(watchOS)
@@ -28,6 +59,27 @@ class Settings: NSObject {
         get {
             return UserDefaults.standard.bool(forKey: Constants.UserDefaults.isLockScreenScrubbingDisabled)
         }
+    }
+
+    /// Fork: the caption choice made in the video player, `nil` until the user makes one.
+    static var videoCaptionChoice: VideoCaptionChoice? {
+        set {
+            UserDefaults.standard.set(newValue?.rawValue, forKey: Constants.UserDefaults.videoCaptionChoice)
+        }
+        get {
+            UserDefaults.standard.string(forKey: Constants.UserDefaults.videoCaptionChoice).flatMap(VideoCaptionChoice.init(rawValue:))
+        }
+    }
+
+    /// The caption choice to apply. Until the user picks one in the video player, the system
+    /// "Closed Captions + SDH" accessibility setting decides whether captions start on.
+    static var effectiveVideoCaptionChoice: VideoCaptionChoice {
+        if let videoCaptionChoice { return videoCaptionChoice }
+        #if os(watchOS)
+        return .off
+        #else
+        return UIAccessibility.isClosedCaptioningEnabled ? .embedded(languageTag: nil) : .off
+        #endif
     }
 
     static var openLinks: Bool {

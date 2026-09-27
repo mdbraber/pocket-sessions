@@ -145,22 +145,49 @@ class DefaultPlayer: PlaybackProtocol, Hashable {
 
         configurePlayer(videoPodcast: episode.videoPodcast())
 
-        disableSubtitles(for: playerItem)
+        applyCaptionChoice(to: playerItem)
 
         detectVideoTracksIfNeeded(for: episode, playerItem: playerItem)
     }
 
-    /// We don't offer a subtitle/caption UI, but AVPlayer will otherwise turn subtitles on by default
-    /// when a stream has a `DEFAULT=YES` legible rendition or when the system "Closed Captions + SDH"
-    /// accessibility setting is enabled. Prevent automatic selection and deselect any legible track.
-    private func disableSubtitles(for playerItem: AVPlayerItem) {
+    /// Fork: AVPlayer would otherwise pick captions on its own, from a `DEFAULT=YES` legible rendition
+    /// or the system "Closed Captions + SDH" setting. Automatic selection stays off and the choice
+    /// made in the video player is applied instead. The transcript choice is drawn by the video
+    /// player itself, so it selects no track here.
+    private func applyCaptionChoice(to playerItem: AVPlayerItem) {
         player?.appliesMediaSelectionCriteriaAutomatically = false
 
+        let choice = Settings.effectiveVideoCaptionChoice
         Task { @MainActor in
             if let group = try? await playerItem.asset.loadMediaSelectionGroup(for: .legible) {
-                playerItem.select(nil, in: group)
+                playerItem.select(Self.captionOption(for: choice, in: group), in: group)
             }
         }
+    }
+
+    /// The caption tracks worth offering. Forced-only subtitles (translations of on-screen text)
+    /// aren't a caption choice.
+    static func captionOptions(in group: AVMediaSelectionGroup) -> [AVMediaSelectionOption] {
+        AVMediaSelectionGroup.mediaSelectionOptions(from: group.options, withoutMediaCharacteristics: [.containsOnlyForcedSubtitles])
+    }
+
+    /// The track `choice` stands for: the remembered language if the video has it, else the one
+    /// matching the same base language, else the best match for the user's preferred languages.
+    static func captionOption(for choice: VideoCaptionChoice, in group: AVMediaSelectionGroup) -> AVMediaSelectionOption? {
+        guard case .embedded(let languageTag) = choice else { return nil }
+
+        let options = captionOptions(in: group)
+        if let languageTag {
+            if let exact = options.first(where: { $0.extendedLanguageTag == languageTag }) {
+                return exact
+            }
+            let language = Locale(identifier: languageTag).language.languageCode
+            if let language, let sameLanguage = options.first(where: { $0.locale?.language.languageCode == language }) {
+                return sameLanguage
+            }
+        }
+        let preferred = AVMediaSelectionGroup.mediaSelectionOptions(from: options, filteredAndSortedAccordingToPreferredLanguages: Locale.preferredLanguages)
+        return preferred.first ?? options.first
     }
 
     /// An HLS stream can carry video that isn't reflected in the episode's file type. HLS doesn't

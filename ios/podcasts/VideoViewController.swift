@@ -222,6 +222,128 @@ class VideoViewController: SimpleNotificationsViewController, AVPictureInPicture
         return button
     }
 
+    // MARK: - Captions and speed
+
+    /// Fork: caption tracks and transcript captions. See `VideoCaptions`.
+    private lazy var captions: VideoCaptions = {
+        let captions = VideoCaptions(playerView: videoPlayerView)
+        captions.stateChanged = { [weak self] in
+            self?.updateCaptionsButton()
+        }
+        return captions
+    }()
+
+    private lazy var captionsButton: UIButton = {
+        let button = makeTopControlButton()
+        button.accessibilityLabel = L10n.videoCaptions
+        button.showsMenuAsPrimaryAction = true
+        return button
+    }()
+
+    /// Fork: the current playback speed, opening a menu of common speeds. It edits the same
+    /// setting as the Now Playing effects panel, so the two always agree.
+    private lazy var speedButton: UIButton = {
+        let button = makeTopControlButton()
+        button.titleLabel?.font = UIFont.monospacedDigitSystemFont(ofSize: 15, weight: .semibold)
+        button.showsMenuAsPrimaryAction = true
+        return button
+    }()
+
+    private static let menuSpeeds: [Double] = [0.5, 0.8, 1, 1.2, 1.5, 1.8, 2, 2.5, 3]
+
+    /// The transcript caption sits just above the scrubber (and the chapter bar, when shown) while
+    /// the controls are visible, and drops to the bottom of the screen once they fade.
+    private var transcriptCaptionBottomConstraint: NSLayoutConstraint?
+    private var transcriptCaptionAboveSliderConstraint: NSLayoutConstraint?
+    private var transcriptCaptionAboveChaptersConstraint: NSLayoutConstraint?
+
+    private func makeTopControlButton() -> UIButton {
+        let button = UIButton(type: .system)
+        button.tintColor = controlsTintColor
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.widthAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
+        button.heightAnchor.constraint(equalToConstant: 44).isActive = true
+        return button
+    }
+
+    /// The buttons go in front of the Picture in Picture, Cast and AirPlay buttons.
+    private func setupCaptionsAndSpeed() {
+        if let topControls = pipButton.superview as? UIStackView {
+            topControls.insertArrangedSubview(speedButton, at: 0)
+            topControls.insertArrangedSubview(captionsButton, at: 0)
+        }
+
+        let captionView = captions.transcriptCaptionView
+        view.insertSubview(captionView, aboveSubview: videoPlayerView)
+        let bottom = captionView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -24)
+        transcriptCaptionBottomConstraint = bottom
+        transcriptCaptionAboveSliderConstraint = captionView.bottomAnchor.constraint(equalTo: timeSlider.topAnchor, constant: -8)
+        transcriptCaptionAboveChaptersConstraint = captionView.bottomAnchor.constraint(equalTo: chapterBar.topAnchor, constant: -8)
+        NSLayoutConstraint.activate([
+            captionView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            captionView.leadingAnchor.constraint(greaterThanOrEqualTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 24),
+            captionView.trailingAnchor.constraint(lessThanOrEqualTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -24),
+            bottom
+        ])
+
+        updateCaptionsButton()
+        updateSpeedButton()
+    }
+
+    /// Called from the controls' show/hide animations, and when the chapter bar appears or goes.
+    func positionTranscriptCaption() {
+        let aboveControls = controlsShowing && !controlsDisabled
+        transcriptCaptionBottomConstraint?.isActive = !aboveControls
+        transcriptCaptionAboveSliderConstraint?.isActive = aboveControls && chapterBar.isHidden
+        transcriptCaptionAboveChaptersConstraint?.isActive = aboveControls && !chapterBar.isHidden
+    }
+
+    /// Hidden while casting: the cast device plays the stream and shows no captions from here.
+    private func updateCaptionsButton() {
+        let casting = GoogleCastManager.shared.connectedOrConnectingToDevice()
+        captionsButton.isHidden = casting || !captions.hasCaptions
+        let symbol = captions.isShowingCaptions ? "captions.bubble.fill" : "captions.bubble"
+        captionsButton.setImage(UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 20)), for: .normal)
+        captionsButton.accessibilityValue = captions.isShowingCaptions ? nil : L10n.off
+        captionsButton.menu = captions.makeMenu()
+    }
+
+    private func updateSpeedButton() {
+        let speed = displayedPlaybackSpeed
+        speedButton.setTitle(L10n.playbackSpeed(speed.localized()), for: .normal)
+        speedButton.accessibilityLabel = L10n.accessibilityPlayerEffectsPlaybackSpeed(speed.localized(.spellOut))
+
+        var speeds = Self.menuSpeeds.filter { $0 <= maximumPlaybackSpeed }
+        if !speeds.contains(speed) {
+            speeds.append(speed)
+            speeds.sort()
+        }
+        let actions = speeds.map { menuSpeed in
+            UIAction(title: L10n.playbackSpeed(menuSpeed.localized()), state: menuSpeed == speed ? .on : .off) { [weak self] _ in
+                self?.changePlaybackSpeed(to: menuSpeed)
+            }
+        }
+        speedButton.menu = UIMenu(title: L10n.speed, options: .singleSelection, children: actions)
+    }
+
+    /// HLS streams can't play above 2x, and the player caps them there, so neither the button nor
+    /// the menu claims more. Mirrors the Now Playing effects panel.
+    private var maximumPlaybackSpeed: Double {
+        guard let episode = PlaybackManager.shared.currentEpisode, EpisodeManager.willPlayViaHLS(episode) else { return .infinity }
+        return SharedConstants.PlaybackEffects.maximumHlsPlaybackSpeed
+    }
+
+    private var displayedPlaybackSpeed: Double {
+        min(PlaybackManager.shared.effects.playbackSpeed, maximumPlaybackSpeed)
+    }
+
+    private func changePlaybackSpeed(to speed: Double) {
+        if PlaybackManager.shared.isPlaying { startHideControlsTimer() }
+        let effects = PlaybackManager.shared.effects
+        effects.playbackSpeed = speed
+        PlaybackManager.shared.changeEffects(effects)
+    }
+
     deinit {
         teardownPictureInPicturePlayback()
     }
@@ -243,6 +365,7 @@ class VideoViewController: SimpleNotificationsViewController, AVPictureInPicture
 
         setupCastInfoView()
         setupChapterBar()
+        setupCaptionsAndSpeed()
     }
 
     private func setupChapterBar() {
@@ -259,6 +382,7 @@ class VideoViewController: SimpleNotificationsViewController, AVPictureInPicture
     /// and the arrows are disabled at the ends rather than wrapping.
     private func updateChapterBar() {
         let chapterCount = PlaybackManager.shared.chapterCount()
+        defer { positionTranscriptCaption() }
         guard chapterCount > 0, let visible = PlaybackManager.shared.currentChapters().visibleChapter else {
             chapterBar.isHidden = true
             return
@@ -478,6 +602,7 @@ class VideoViewController: SimpleNotificationsViewController, AVPictureInPicture
         // Chapters arrive asynchronously (file parse + remote fetch) and change as playback moves.
         addCustomObserver(Constants.Notifications.podcastChaptersDidUpdate, selector: #selector(update))
         addCustomObserver(Constants.Notifications.podcastChapterChanged, selector: #selector(update))
+        addCustomObserver(Constants.Notifications.playbackEffectsChanged, selector: #selector(update))
     }
 
     @objc private func playbackFinished() {
@@ -488,6 +613,8 @@ class VideoViewController: SimpleNotificationsViewController, AVPictureInPicture
         if timeSlider.isScrubbing() || PlaybackManager.shared.isSeeking { return }
 
         updateUpTo(upTo: PlaybackManager.shared.currentTime(), duration: PlaybackManager.shared.duration(), moveSlider: true)
+        // Catches seeks while paused, when the caption's own refresh has nothing new to draw.
+        captions.updateTranscriptCaption()
     }
 
     @objc private func trackChanged() {
@@ -515,6 +642,8 @@ class VideoViewController: SimpleNotificationsViewController, AVPictureInPicture
         updateFillScreenBtn()
         updateCastInfoView()
         updateChapterBar()
+        updateCaptionsButton()
+        updateSpeedButton()
     }
 
     private func updateFillScreenBtn() {
@@ -540,6 +669,7 @@ class VideoViewController: SimpleNotificationsViewController, AVPictureInPicture
         willAttachPlayer?()
         videoPlayerView.player = PlaybackManager.shared.internalPlayerForVideoPlayback()
         setupPictureInPicturePlayback()
+        captions.reload()
         // A nil player here IS the black surface — keep the explanation in step with it.
         updateCastInfoView()
     }
