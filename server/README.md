@@ -1,9 +1,24 @@
 # Pocket Casts Sessions (PCS)
 
 The Pocket Casts Sessions (PCS) server (`pcs`) — companion to the Pocket Casts iOS
-fork's Sessions feature: session-state sync (sessions, seen-ledger,
-offeredThrough, filter presets) with push-based sync between devices, a
-background Pocket Casts mirror (M2), and a query / automation API (M2/M3).
+fork's Sessions feature. It provides:
+
+- **Session-state sync** (sessions, seen-ledger, offeredThrough, filter
+  presets) between devices, with APNs pushes so other devices fetch
+  straight away, and the *Follow Now Playing* pointer that lets an idle
+  device pick up what another one is playing.
+- **A Pocket Casts replica**: every sync record the account produces, kept
+  as Pocket Casts sent it, plus the full listening history (Pocket Casts
+  itself keeps only the newest 100), behind a query / automation API.
+- **New-episode alerts**: a watcher that checks subscribed podcasts and pushes
+  alerts, honouring the app's per-podcast and global notification switches.
+- **The playback mesh**: playback events (progress, played, archived) run
+  local hook scripts and webhook sinks such as n8n, delivered from a retrying
+  outbox; external players report back through `POST /api/v1/playback`,
+  which writes to Pocket Casts. Loop guards stop the two sides echoing.
+- **An optional `/pcapi` relay** that carries the app's Pocket Casts traffic,
+  so the server sees changes the moment they happen.
+
 Full design: `ios/SESSIONS_SERVER_PLAN.md` in this monorepo.
 The complete system map — feeds, relay, replica, hooks, guards, operations —
 is in `ARCHITECTURE.md`; the design analysis behind it in
@@ -15,8 +30,8 @@ into the database. `pcs link` uses PC's device-pairing flow by default (approve
 the printed code at pocketcasts.com/pair — yields a self-renewing refresh-token
 lineage); `pcs link -password` does a one-shot email+password login instead,
 which never stores the password but only yields an expiring access token. The
-normal path is neither: the app's Settings → Synchronization → Link Pocket
-Casts drives the same device flow end-to-end, approval included.
+normal path is neither: saving the server URL in the app's Settings →
+Synchronization drives the same device flow end-to-end, approval included.
 
 By default the app does not route Pocket Casts traffic through this server —
 it is a side-service, and the app keeps working with stock PC when no server
@@ -59,12 +74,20 @@ curl -s 'localhost:8080/session/v1/changes?since=0'
 | `PCS_DB`             | `pcsessions.db`  | SQLite path                                                     |
 | `PCS_AUTH_TOKEN`     | *(empty)*        | Operator bearer token for user 1 (curl/scripts; devices don't need it) |
 | `PCS_ALLOWED_EMAILS` | *(empty)*        | PC accounts allowed to enroll (comma-separated); empty = the already-linked account, or anyone on a fresh server |
-| `PCS_APNS_KEY`       | *(empty)*        | Path to the APNs `AuthKey_<KEYID>.p8`; unset = log pusher       |
+| `PCS_APNS_KEY`       | *(empty)*        | Path to the APNs `AuthKey_<KEYID>.p8` (production, or both environments); unset = log pusher |
 | `PCS_APNS_KEY_ID`    | *(empty)*        | The key's 10-char id                                            |
+| `PCS_APNS_KEY_SANDBOX` | *(empty)*      | Optional second key for the sandbox environment (Debug builds), for portal keys restricted to one environment |
+| `PCS_APNS_KEY_ID_SANDBOX` | *(empty)*   | That key's id                                                   |
 | `PCS_APNS_TEAM_ID`   | *(empty)*        | Apple developer team id; unset = log pusher                     |
 | `PCS_APNS_TOPIC`     | *(empty)*        | App bundle id (the push topic); unset = log pusher              |
 | `PCS_EPISODE_POLL`   | `10m`            | New-episode watcher cadence (`off` disables; 1m floor)          |
 | `PCS_NOTIFY`         | `synced`         | Visible new-episode alerts: `synced` (per-podcast toggle), `all`, `off` |
+| `PCS_PROGRESS_POLL`  | `15m`            | Playback watcher cadence (`off` disables); relayed syncs also trigger it |
+| `PCS_FEED_MATCH`     | *(empty)*        | Enclosure substring naming first-party feeds; scopes outage burst exemption and hook replay |
+| `PCS_HOOKS_DIR`      | *(empty)*        | Directory of executables run per playback event (see `hooks/README.md`) |
+| `PCS_HOOK_TIMEOUT`   | `30s`            | Time limit for each hook run                                    |
+| `PCS_WEBHOOK_URLS`   | *(empty)*        | Comma-separated webhook sinks for playback events (e.g. n8n; see `n8n/README.md`) |
+| `PCS_WEBHOOK_TOKEN`  | *(empty)*        | Sent to webhook sinks as `X-Webhook-Token`                      |
 | `PCS_DEBUG`          | *(empty)*        | Debug logging when set                                          |
 
 ## Deployment
@@ -106,5 +129,10 @@ the account and issues the device its own `pcs_…` bearer token — in the app
 this all happens automatically when the server URL is saved. The gate is
 `PCS_ALLOWED_EMAILS` (or, unset: the already-linked account; a fresh server
 trusts its first link). `PCS_AUTH_TOKEN` remains as an operator credential
-for curl and scripts. APNs (token-based `.p8` key) slots in behind
-`push.Pusher` next.
+for curl and scripts.
+
+APNs uses a token-based `.p8` key: put `AuthKey_<KEYID>.p8` in the deploy
+directory's `data/`, set `PCS_APNS_KEY_ID`, `PCS_APNS_TEAM_ID` and
+`PCS_APNS_TOPIC` in `.env` (plus `PCS_APNS_KEY_ID_SANDBOX` for a sandbox-only
+key), and redeploy. Without them the server logs
+the pushes it would have sent.
