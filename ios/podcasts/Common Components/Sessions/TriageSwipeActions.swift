@@ -171,7 +171,7 @@ enum TriageSwipes {
         return image.withRenderingMode(.alwaysTemplate)
     }
 
-    static func rightActions(for episode: BaseEpisode, inLocalSession: Bool = false, removeLabel: String = L10n.sessionRemoveFrom, removeFromSession: @escaping () -> Void = {}, reload: @escaping () -> Void) -> [SwipeAction] {
+    static func rightActions(for episode: BaseEpisode, inLocalSession: Bool = false, removeLabel: String = L10n.sessionRemoveFrom, removeImage: UIImage? = nil, removeFromSession: @escaping () -> Void = {}, reload: @escaping () -> Void) -> [SwipeAction] {
         var actions = [SwipeAction]()
 
         // Remove from Session (red) leads the trailing swipe when the episode is in this page's session.
@@ -179,7 +179,7 @@ enum TriageSwipes {
             let remove = SwipeAction(style: .default, title: nil) { _, _ in
                 removeFromSession()
             }
-            remove.image = sessionRemoveImage()?.withTintColor(.white, renderingMode: .alwaysOriginal)
+            remove.image = (removeImage ?? sessionRemoveImage())?.withTintColor(.white, renderingMode: .alwaysOriginal)
             remove.backgroundColor = ThemeColor.support05() // red
             remove.accessibilityLabel = removeLabel
             remove.hidesWhenSelected = true

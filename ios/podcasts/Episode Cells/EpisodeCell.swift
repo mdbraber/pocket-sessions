@@ -903,6 +903,14 @@ class EpisodeCell: ThemeableSwipeCell, MainEpisodeActionViewDelegate {
 
     /// Membership of the Inbox playlist is what this reflects — so callers must pass a value
     /// read from a Set fetched ONCE per list load. Never query membership per row.
+    /// Fork: dims the row like a played one — the Inbox's "already in a session or Up Next".
+    /// Call after `populateFrom`, which resets the dimming.
+    func setShelvedDimmed(_ dimmed: Bool) {
+        guard dimmed else { return }
+        episodeImage.alpha = EpisodeCell.playedAlpha
+        contentStackView.alpha = EpisodeCell.playedAlpha
+    }
+
     func setUnseenIndicator(visible: Bool) {
         if visible, unseenIndicator.superview == nil {
             if let stack = upNextIndicator.superview as? UIStackView, let index = stack.arrangedSubviews.firstIndex(of: upNextIndicator) {

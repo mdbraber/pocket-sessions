@@ -171,6 +171,10 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
         // Membership of the Inbox playlist IS the list, so playlistChanged is the primary signal.
         NotificationCenter.default.addObserver(self, selector: #selector(reloadData), name: Constants.Notifications.playlistChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(reloadData), name: SessionStore.changed, object: nil)
+        // Rows in Up Next are dimmed, so queue changes redraw the list too.
+        NotificationCenter.default.addObserver(self, selector: #selector(reloadData), name: Constants.Notifications.upNextQueueChanged, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(reloadData), name: Constants.Notifications.upNextEpisodeAdded, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(reloadData), name: Constants.Notifications.upNextEpisodeRemoved, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(reloadData), name: Constants.Notifications.episodeDownloadStatusChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(reloadData), name: Constants.Notifications.episodePlayStatusChanged, object: nil)
         reloadData()
@@ -307,19 +311,57 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
         optionsPicker.addAction(action: OptionAction(label: unseen ? L10n.episodeMarkSeen : L10n.episodeMarkUnseen, icon: nil) { [weak self] in
             self?.toggleSeen(episodeUuid: episode.uuid)
         })
-        if SessionMembership.shared.inAnySession.contains(episode.uuid) {
-            let remove = OptionAction(label: L10n.sessionRemoveFromAll, icon: nil) { [weak self] in
-                self?.removeFromAllSessions(episodeUuid: episode.uuid)
-            }
-            remove.destructive = true
-            optionsPicker.addAction(action: remove)
+        for option in removalOptions(for: episode) {
+            optionsPicker.addAction(action: option)
         }
         optionsPicker.present(from: self)
     }
 
-    /// Takes the episode out of every session; it stays in the Inbox.
-    private func removeFromAllSessions(episodeUuid: String) {
-        SessionManager.shared.removeFromAllSessions(episodeUuids: [episodeUuid])
+    private func isInAnySession(_ episode: BaseEpisode) -> Bool {
+        SessionMembership.shared.inAnySession.contains(episode.uuid)
+    }
+
+    /// The red remove choices for a row, as menu items: from every session, from Up Next, and
+    /// from both when it's in both. The episode always stays in the Inbox.
+    private func removalOptions(for episode: BaseEpisode) -> [OptionAction] {
+        let inSession = isInAnySession(episode)
+        let inUpNext = PlaybackManager.shared.inUpNext(episode: episode)
+        var options: [OptionAction] = []
+        func add(_ label: String, sessions: Bool, upNext: Bool) {
+            let option = OptionAction(label: label, icon: nil) { [weak self] in
+                self?.remove(episode, fromSessions: sessions, fromUpNext: upNext)
+            }
+            option.destructive = true
+            options.append(option)
+        }
+        if inSession { add(L10n.sessionRemoveFromAll, sessions: true, upNext: false) }
+        if inUpNext { add(L10n.removeFromUpNext, sessions: false, upNext: true) }
+        if inSession, inUpNext { add(L10n.sessionRemoveFromBoth, sessions: true, upNext: true) }
+        return options
+    }
+
+    /// The red swipe: removes straight away when the episode is only in sessions or only in Up
+    /// Next; when it's in both, asks which.
+    private func removeFromSwipe(_ episode: BaseEpisode) {
+        let options = removalOptions(for: episode)
+        if options.count == 1 {
+            options[0].action()
+            return
+        }
+        guard !options.isEmpty else { return }
+        let picker = OptionsPicker(title: episode.displayableTitle().localizedUppercase)
+        options.forEach { picker.addAction(action: $0) }
+        picker.present(from: self)
+    }
+
+    /// Takes the episode out of every session and/or Up Next; it stays in the Inbox.
+    private func remove(_ episode: BaseEpisode, fromSessions: Bool, fromUpNext: Bool) {
+        if fromSessions {
+            SessionManager.shared.removeFromAllSessions(episodeUuids: [episode.uuid])
+        }
+        if fromUpNext, let fresh = DataManager.shared.findBaseEpisode(uuid: episode.uuid) {
+            PlaybackManager.shared.removeIfPlayingOrQueued(episode: fresh, fireNotification: true, userInitiated: true)
+        }
         reloadData()
     }
 
@@ -530,6 +572,8 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
         cell.setSessionIndicator(SessionIndicatorState.resolve(episode.uuid, thisSession: []))
         // Every row here is in the Inbox by construction, so every row carries the unread dot.
         cell.setUnseenIndicator(visible: true)
+        // Already in a session or Up Next: dimmed, like a played row.
+        cell.setShelvedDimmed(isInAnySession(episode) || PlaybackManager.shared.inUpNext(episode: episode))
         cell.shouldShowSelect = isMultiSelectEnabled
         if isMultiSelectEnabled {
             cell.showTick = selectedEpisodesContains(uuid: episode.uuid)
@@ -661,12 +705,17 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
                 }
             })
         case .right:
-            // Remove from All Sessions (red) leads when the episode is in any session.
+            // Remove (red) leads when the episode is in a session or Up Next: from all sessions,
+            // from Up Next, or — when it's in both — a choice.
+            let inSession = isInAnySession(episode)
+            let inUpNext = PlaybackManager.shared.inUpNext(episode: episode)
+            let upNextOnly = inUpNext && !inSession
             return TriageSwipes.rightActions(
                 for: episode,
-                inLocalSession: SessionMembership.shared.inAnySession.contains(episode.uuid),
-                removeLabel: L10n.sessionRemoveFromAll,
-                removeFromSession: { [weak self] in self?.removeFromAllSessions(episodeUuid: episode.uuid) },
+                inLocalSession: inSession || inUpNext,
+                removeLabel: upNextOnly ? L10n.removeFromUpNext : (inUpNext ? L10n.remove : L10n.sessionRemoveFromAll),
+                removeImage: upNextOnly ? UIImage(named: "episode-removenext") : nil,
+                removeFromSession: { [weak self] in self?.removeFromSwipe(episode) },
                 reload: { [weak self] in self?.reloadData() }
             )
         }

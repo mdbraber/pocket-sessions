@@ -5523,6 +5523,9 @@
 /* Inbox action removing an episode from every session that holds it */
 "session_remove_from_all" = "Remove from All Sessions";
 
+/* Inbox action removing an episode from every session and from Up Next */
+"session_remove_from_both" = "Remove from Both";
+
 /* Title shown on the Session tab when the session has no episodes yet */
 "session_empty_title" = "Session is empty";
 
