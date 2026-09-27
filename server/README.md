@@ -83,6 +83,7 @@ curl -s 'localhost:8080/session/v1/changes?since=0'
 | `PCS_EPISODE_POLL`   | `10m`            | New-episode watcher cadence (`off` disables; 1m floor)          |
 | `PCS_NOTIFY`         | `synced`         | Visible new-episode alerts: `synced` (per-podcast toggle), `all`, `off` |
 | `PCS_PROGRESS_POLL`  | `15m`            | Playback watcher cadence (`off` disables); relayed syncs also trigger it |
+| `PCS_PROGRESS_MIN_DELTA` | `30`         | Seconds playback must move before a `progress` event fires     |
 | `PCS_FEED_MATCH`     | *(empty)*        | Enclosure substring naming first-party feeds; scopes outage burst exemption and hook replay |
 | `PCS_HOOKS_DIR`      | *(empty)*        | Directory of executables run per playback event (see `hooks/README.md`) |
 | `PCS_HOOK_TIMEOUT`   | `30s`            | Time limit for each hook run                                    |
