@@ -25,6 +25,8 @@ protocol NavigationProtocol: AnyObject {
     func presentManualPlaylistsChooser(for episode: Episode, rootViewController: UIViewController?, source: String)
 
     func navigateToUpNext(_ animated: Bool)
+    /// Fork: the Queue tab, opened on this session's lineup (by its store playlist uuid).
+    func navigateToSession(storePlaylistUuid: String)
 
     func navigateToFiles()
     func navigateToAddCustom(_ fileURL: URL)

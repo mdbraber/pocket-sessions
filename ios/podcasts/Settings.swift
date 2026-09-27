@@ -2078,11 +2078,17 @@ struct PlaybackSession: Equatable {
         Self.episodeSource?.orderedEpisodes(for: self) ?? []
     }
 
+    /// Whether an episode is still to be played: not finished and not archived. A manual
+    /// playlist's session keeps its played and archived episodes, so playback skips them.
+    static func isPlayable(_ episode: BaseEpisode) -> Bool {
+        !episode.played() && !episode.archived
+    }
+
     /// The session's unfinished episodes in order, excluding the given (currently playing)
     /// one. Episodes only leave the session when they finish — jumping around the list
     /// doesn't discard the ones skipped over.
     func remainingEpisodes(excluding episodeUuid: String?) -> [BaseEpisode] {
-        orderedEpisodes().filter { !$0.played() && $0.uuid != episodeUuid }
+        orderedEpisodes().filter { Self.isPlayable($0) && $0.uuid != episodeUuid }
     }
 
     /// The episode to play after the given one finishes: the first unfinished episode
@@ -2090,7 +2096,7 @@ struct PlaybackSession: Equatable {
     /// the tail is done. nil only when everything is finished (the session is over).
     func nextEpisode(after episodeUuid: String?) -> BaseEpisode? {
         let episodes = orderedEpisodes()
-        let isCandidate: (BaseEpisode) -> Bool = { !$0.played() && $0.uuid != episodeUuid }
+        let isCandidate: (BaseEpisode) -> Bool = { Self.isPlayable($0) && $0.uuid != episodeUuid }
         let startIndex = episodeUuid.flatMap { uuid in episodes.firstIndex(where: { $0.uuid == uuid }).map { $0 + 1 } } ?? 0
         if startIndex < episodes.count, let next = episodes[startIndex...].first(where: isCandidate) {
             return next

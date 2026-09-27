@@ -215,7 +215,7 @@ enum SessionListRows {
             let ordered = episodeSource.playlistEpisodes(for: store).map { $0.episode }
             // Episodes only leave a session when they finish — the same rule
             // `PlaybackSession.remainingEpisodes` uses.
-            let remaining = ordered.filter { !$0.played() }
+            let remaining = ordered.filter(PlaybackSession.isPlayable)
 
             // Fork: "Hide empty sessions" — nothing left to play. The active session stays put.
             if !isActive, hideEmpty, remaining.isEmpty { return nil }

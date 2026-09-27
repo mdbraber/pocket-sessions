@@ -108,7 +108,7 @@ struct PlaylistHeaderView: View {
                 .animation(.easeInOut(duration: 0.2), value: viewModel.isSearching)
                 Spacer().frame(height: itemMargin)
 
-                if viewModel.usesTriageTabs, !viewModel.isSearching {
+                if viewModel.showsTriageTabStrip, !viewModel.isSearching {
                     triageTabs
                         .padding(.horizontal, 16.0)
                 }

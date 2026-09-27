@@ -40,7 +40,17 @@ enum SessionFeeder: Codable, Equatable {
     /// happen by construction. Manual sessions keep random uuids: two hand-made sessions
     /// are genuinely two different sessions.
     var canonicalSessionUuid: String? {
-        guard let identityKey else { return nil }
+        identityKey.map(Self.canonicalUuid(for:))
+    }
+
+    /// Fork: the canonical session uuid for a manual playlist's session — keyed by the playlist
+    /// itself (the store IS a manual session's identity), so every device adopting the same
+    /// playlist mints the same record.
+    static func canonicalManualSessionUuid(storePlaylistUuid: String) -> String {
+        canonicalUuid(for: "store:\(storePlaylistUuid)")
+    }
+
+    private static func canonicalUuid(for identityKey: String) -> String {
         var hasher = Insecure.SHA1()
         hasher.update(data: Data("pocket-casts-sessions:".utf8))
         hasher.update(data: Data(identityKey.utf8))

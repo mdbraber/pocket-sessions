@@ -1074,6 +1074,18 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         resetLineupScrollToTop()
     }
 
+    /// Fork: land on a session's lineup from outside the Queue tab (e.g. right after "Play Session"),
+    /// from whichever world or level the screen was left on.
+    func openSession(storePlaylistUuid: String) {
+        clearLineupSearch()
+        lineupReorderMode = false
+        displayedWorld = .session
+        browsedSessionUuid = storePlaylistUuid
+        sessionLevel = .lineup
+        reloadTable()
+        resetLineupScrollToTop()
+    }
+
     /// Reset the lineup's scroll so its first row sits just below the nav bar, after forcing any pending
     /// layout so `adjustedContentInset` reflects the (now transparent) nav bar's safe area.
     func resetLineupScrollToTop() {

@@ -1294,6 +1294,10 @@ class PodcastViewController: PCViewController, PodcastActionsDelegate, MultiSele
         // Explicit USER add — pinned, so the feeder's prune never removes it.
         SessionManager.shared.addToLineup(episodeUuids: group.map { $0.episode.uuid }, session: session, pinning: true)
         SessionManager.shared.play(episode: first, in: session)
+        // Land on the session's lineup in the Queue tab — the page it now plays from.
+        if let storeUuid = session.storePlaylistUuid {
+            NavigationManager.shared.navigateTo(NavigationManager.sessionPageKey, data: [NavigationManager.sessionStoreUuidKey: storeUuid])
+        }
     }
 
     /// Fork: standard Add to Session routing for the whole group.

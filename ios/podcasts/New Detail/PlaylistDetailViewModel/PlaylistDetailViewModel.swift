@@ -32,7 +32,13 @@ class PlaylistDetailViewModel: ObservableObject {
     }
 
     /// Pages open on Episodes; only explicit navigation (`pendingInitialTab`) opens the Session tab.
-    @Published var selectedTriageTab: TriageTab = .browse
+    /// A manual playlist's session has no Episodes to browse (no feeder), so it is always its list.
+    var selectedTriageTab: TriageTab {
+        get { isManualSession ? .lineup : chosenTriageTab }
+        set { chosenTriageTab = newValue }
+    }
+
+    @Published private var chosenTriageTab: TriageTab = .browse
     @Published private(set) var triageLineupCount = 0
     private(set) var triageLineupDuration: TimeInterval = 0
     private(set) var triageBrowseCount = 0
@@ -129,9 +135,9 @@ class PlaylistDetailViewModel: ObservableObject {
 
     /// Fork: "Queue Session" — an outline button beside "Play Session" that floats this session to the
     /// TOP of the session list on the Queue page (without playing). Needs a real session behind the
-    /// page: an existing one (manual session store) or a lens that can create one.
+    /// page: an existing one, or a lens or manual playlist that can become one.
     var showsQueueSession: Bool {
-        session != nil || isLensPage
+        session != nil || isLensPage || isManualPlaylist
     }
 
     let onButtonTapped: (ButtonTag) -> Void
@@ -186,6 +192,13 @@ class PlaylistDetailViewModel: ObservableObject {
 
     /// Fork: pages showing the Inbox | Session | Episodes strip.
     var usesTriageTabs: Bool { session != nil || isLensPage }
+
+    /// Fork: a manual playlist's session — the playlist IS the lineup, with no feeder to browse.
+    /// It behaves as the Session tab throughout, but shows no tab strip.
+    var isManualSession: Bool { session?.feeder == SessionFeeder.none }
+
+    /// Whether the Episodes | Session strip is on screen.
+    var showsTriageTabStrip: Bool { usesTriageTabs && !isManualSession }
 
     /// Fork: the header's play button normally plays the SESSION lineup. A smart playlist that
     /// opted out of being a session playlist has no session to play, so it reads (and behaves

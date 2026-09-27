@@ -76,6 +76,9 @@ class NavigationManager {
     static let settingsGeneralRowKey = "generalSettingsRow"
 
     static let upNextPageKey = "upNextPage"
+    /// Fork: the Queue tab on one session's lineup; pass the store playlist uuid as `sessionStoreUuidKey`.
+    static let sessionPageKey = "sessionPage"
+    static let sessionStoreUuidKey = "sessionStoreUuid"
     static let signUpPageKey = "signUpPage"
 
     static let featurePageKey = "featurePageKey"
@@ -244,6 +247,10 @@ class NavigationManager {
             mainController?.showGeneralSettings(row: data?[NavigationManager.settingsGeneralRowKey] as? GeneralSettingsViewController.TableRow)
         } else if place == NavigationManager.upNextPageKey {
             mainController?.navigateToUpNext(true)
+        } else if place == NavigationManager.sessionPageKey {
+            if let storeUuid = data?[NavigationManager.sessionStoreUuidKey] as? String {
+                mainController?.navigateToSession(storePlaylistUuid: storeUuid)
+            }
         } else if place == NavigationManager.signUpPageKey {
             mainController?.showSignUp()
         } else if place == NavigationManager.settingsPageKey {

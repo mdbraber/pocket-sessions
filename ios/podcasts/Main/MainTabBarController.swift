@@ -537,6 +537,15 @@ class MainTabBarController: UITabBarController, NavigationProtocol {
         switchToTab(.upNext)
     }
 
+    func navigateToSession(storePlaylistUuid: String) {
+        guard switchToTab(.upNext),
+              let navController = selectedViewController as? UINavigationController else { return }
+        navController.popToRootViewController(animated: false)
+        guard let upNext = navController.viewControllers.first as? UpNextViewController else { return }
+        upNext.loadViewIfNeeded()
+        upNext.openSession(storePlaylistUuid: storePlaylistUuid)
+    }
+
     func navigateToProfile(row: ProfileViewController.TableRow? = nil, animated: Bool) {
         switchToTab(.profile)
         guard let navController = selectedViewController as? UINavigationController else {

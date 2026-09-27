@@ -98,7 +98,11 @@ struct PodcastHeaderView: View {
             AnalyticsPlaybackHelper.shared.currentSource = .podcastScreen
             // A fresh session seeds from the podcast page's current order; afterwards
             // the store mirrors sort changes and keeps manual rearranging.
-            SessionManager.shared.playPodcastSession(for: viewModel.podcast)
+            if SessionManager.shared.playPodcastSession(for: viewModel.podcast),
+               let storeUuid = SessionStore.shared.session(forPodcast: viewModel.podcast.uuid)?.storePlaylistUuid {
+                // Land on the session's lineup in the Queue tab — the page it now plays from.
+                NavigationManager.shared.navigateTo(NavigationManager.sessionPageKey, data: [NavigationManager.sessionStoreUuidKey: storeUuid])
+            }
         } label: {
             // Mirrors the smart playlist header's Play as Session button.
             HStack(alignment: .center, spacing: 8.0) {

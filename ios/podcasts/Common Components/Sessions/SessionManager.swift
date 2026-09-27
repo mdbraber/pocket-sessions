@@ -73,6 +73,9 @@ class SessionManager {
         // podcast loses its session.
         NotificationCenter.default.addObserver(self, selector: #selector(syncFolderScopedPodcastSessions), name: Constants.Notifications.folderChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(podcastDeleted(_:)), name: Constants.Notifications.podcastDeleted, object: nil)
+        // Fork: every manual playlist is a session — new and synced-in ones join as they appear.
+        NotificationCenter.default.addObserver(self, selector: #selector(adoptManualPlaylistsSoon), name: Constants.Notifications.playlistChanged, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(adoptManualPlaylistsSoon), name: ServerNotifications.syncCompleted, object: nil)
         // Fork: a smart playlist that feeds a session defines that session's contents. When its
         // rules change, bring the store back in line with the new filter (see reconcile below).
         NotificationCenter.default.addObserver(self, selector: #selector(feederSmartPlaylistChanged(_:)), name: Constants.Notifications.playlistChanged, object: nil)
@@ -382,7 +385,9 @@ class SessionManager {
         for group in groups.values where group.count > 1 {
             // The canonical (deterministic) uuid wins outright when present; otherwise the
             // lowest uuid — either rule is computable on every device without coordination.
-            let canonical = group.first?.feeder.canonicalSessionUuid
+            let canonical = group.first.flatMap { first in
+                first.feeder.canonicalSessionUuid ?? first.storePlaylistUuid.map(SessionFeeder.canonicalManualSessionUuid(storePlaylistUuid:))
+            }
             let sorted = group.sorted { a, b in
                 if let canonical {
                     if a.uuid == canonical { return true }
@@ -392,6 +397,13 @@ class SessionManager {
             }
             guard let winner = sorted.first else { continue }
             for loser in sorted.dropFirst() {
+                // Two records over the SAME store (a manual playlist adopted on two devices): the
+                // store is the winner's too — drop only the loser's record, never the playlist.
+                if loser.storePlaylistUuid != nil, loser.storePlaylistUuid == winner.storePlaylistUuid {
+                    SessionStore.shared.delete(sessionUuid: loser.uuid)
+                    removed += 1
+                    continue
+                }
                 if let loserStore = store(for: loser) {
                     let winnerMembers = Set(SessionFeederEngine.storeMemberUuids(for: winner))
                     let toMove = DataManager.shared.positionedEpisodeUuids(for: loserStore).filter { !winnerMembers.contains($0) }
@@ -1183,7 +1195,7 @@ class SessionManager {
     /// by this rule, so the filter leaves plain playlists alone.
     func sessionIsEmpty(storePlaylistUuid: String) -> Bool {
         guard SessionStore.shared.session(forStore: storePlaylistUuid) != nil else { return false }
-        return PlaybackSession(type: .playlist, uuid: storePlaylistUuid).orderedEpisodes().allSatisfy { $0.played() }
+        return PlaybackSession(type: .playlist, uuid: storePlaylistUuid).orderedEpisodes().allSatisfy { !PlaybackSession.isPlayable($0) }
     }
 
     /// Whether this playlist is the STORE of a smart-playlist session whose feeder is the user's
@@ -1238,9 +1250,10 @@ class SessionManager {
     /// Play as Session on a podcast: plays the podcast's session lineup, nothing
     /// else — the Inbox and Episodes tabs never leak in. Created empty on first use
     /// (subscribed podcasts only).
-    func playPodcastSession(for podcast: Podcast) {
-        guard let session = findOrCreateSession(forPodcast: podcast) else { return }
-        play(session: session)
+    @discardableResult
+    func playPodcastSession(for podcast: Podcast) -> Bool {
+        guard let session = findOrCreateSession(forPodcast: podcast) else { return false }
+        return play(session: session)
     }
 
     /// Fork: this session is fed by a smart playlist the user has declared "not a session
@@ -1263,6 +1276,55 @@ class SessionManager {
         guard !Settings.playlistOptedOutOfSession(uuid: lens.uuid) else { return nil }
         if let existing = SessionStore.shared.session(forSmartPlaylistFeeder: lens.uuid) { return existing }
         return createSession(name: lens.playlistName, feeder: .smartPlaylist(uuid: lens.uuid), seedEpisodeUuids: seedEpisodeUuids)
+    }
+
+    /// A manual playlist's session. Every manual playlist IS a session: the playlist itself is
+    /// the store, in place (no second playlist), with no feeder — episodes join only by hand.
+    /// `adoptManualPlaylists` gives every manual playlist its session; this covers one that
+    /// hasn't been swept yet.
+    ///
+    /// Nil for smart playlists (see `findOrCreateSession(forSmartPlaylist:)`).
+    func findOrCreateSession(forManualPlaylist playlist: EpisodeFilter) -> Session? {
+        guard playlist.manual, !playlist.wasDeleted, playlist.uuid != DataManager.inboxPlaylistUuid else { return nil }
+        if let existing = SessionStore.shared.session(forStore: playlist.uuid) { return existing }
+        let session = Self.manualSession(for: playlist)
+        SessionStore.shared.upsert(session)
+        NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged)
+        return session
+    }
+
+    /// Fork: gives every manual playlist that isn't a session's store yet its manual session.
+    /// Idempotent and cheap (one playlist query, an in-memory store set); runs at launch, after
+    /// sync, and whenever playlists change, so a new or synced-in manual playlist joins too.
+    /// The session uuid is derived from the playlist, so devices adopting the same playlist
+    /// converge on one record.
+    func adoptManualPlaylists() {
+        let storeUuids = Set(SessionStore.shared.sessions.compactMap(\.storePlaylistUuid))
+        let unadopted = DataManager.shared.allManualPlaylists(includeDeleted: false).filter { !storeUuids.contains($0.uuid) }
+        guard !unadopted.isEmpty else { return }
+        for playlist in unadopted {
+            SessionStore.shared.upsert(Self.manualSession(for: playlist))
+        }
+        FileLog.shared.addMessage("SessionManager: adopted \(unadopted.count) manual playlist(s) as sessions")
+        NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged)
+    }
+
+    private var adoptManualPlaylistsPending = false
+
+    /// Coalesces bursts of playlist changes into one adoption pass.
+    @objc private func adoptManualPlaylistsSoon() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, !self.adoptManualPlaylistsPending else { return }
+            self.adoptManualPlaylistsPending = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                self.adoptManualPlaylistsPending = false
+                DispatchQueue.global(qos: .utility).async { self.adoptManualPlaylists() }
+            }
+        }
+    }
+
+    private static func manualSession(for playlist: EpisodeFilter) -> Session {
+        Session(uuid: SessionFeeder.canonicalManualSessionUuid(storePlaylistUuid: playlist.uuid), storePlaylistUuid: playlist.uuid, feeder: .none)
     }
 
     /// Fork: a just-created smart playlist inherits the episodes already shelved in sessions.
@@ -1290,15 +1352,21 @@ class SessionManager {
     /// The folder's session, created lazily on first use.
     /// Starts a session — the lineup only, never the Inbox or Episodes list. An
     /// empty lineup is a no-op with a hint; filling it is triage's job.
-    func play(session: Session) {
+    /// Returns whether the session started (false when there's nothing left to play).
+    @discardableResult
+    func play(session: Session) -> Bool {
         // A play-status feeder mirrors lazily — sync it to the filter right before playing.
         reconcileOnView(session: session)
-        guard let storeUuid = session.storePlaylistUuid else { return }
-        guard !SessionFeederEngine.storeMemberUuids(for: session).isEmpty else {
+        guard let storeUuid = session.storePlaylistUuid else { return false }
+        // Nothing left to play — a manual playlist's session keeps its finished episodes, so
+        // "empty" means no unfinished one, not no members.
+        let playback = PlaybackSession(type: .playlist, uuid: storeUuid)
+        guard playback.nextEpisode(after: nil) != nil else {
             DispatchQueue.main.async { Toast.show(L10n.sessionEmptyToast) }
-            return
+            return false
         }
-        PlaybackManager.shared.startPlaybackSession(PlaybackSession(type: .playlist, uuid: storeUuid))
+        PlaybackManager.shared.startPlaybackSession(playback)
+        return Settings.playbackSession == playback
     }
 
     /// The podcast page's session mirrors the page order — sort/group changes reseed.
@@ -1338,11 +1406,13 @@ class SessionManager {
 
     /// Removes decided (played/archived) episodes from every lineup. A nil filter
     /// checks every member; otherwise only matching uuids are considered.
-    private func sweepLineups(decidedFilter: ((String) -> Bool)?) {
+    func sweepLineups(decidedFilter: ((String) -> Bool)?) {
         // Nothing is in any lineup — skip the per-session store queries entirely (matters when
         // many empty sessions exist, e.g. a folder-scoped session per podcast).
         guard !SessionMembership.shared.inAnySession.isEmpty else { return }
-        for session in SessionStore.shared.sessions {
+        // A manual playlist's session keeps its played and archived episodes (the playlist stays
+        // whole — e.g. a full season); playback skips finished ones instead.
+        for session in SessionStore.shared.sessions where session.feeder != SessionFeeder.none {
             guard let store = store(for: session) else { continue }
             let members = DataManager.shared.positionedEpisodeUuids(for: store)
             let decided = members.filter { uuid in
@@ -1354,27 +1424,6 @@ class SessionManager {
             DataManager.shared.deleteEpisodes(decided, from: store)
             SessionStore.shared.unpin(episodeUuids: decided, for: session.uuid) // pins never outlive membership
             NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged, object: store)
-            promptIfSessionFinished(session, store: store, remaining: members.count - decided.count)
-        }
-    }
-
-    /// The playing session just drained: ephemeral stores offer to clean themselves up
-    /// via a toast — dismissing it keeps the playlist. This can't stack with
-    /// PlaybackManager's plain "session finished" toast: that path clears the
-    /// playback-session pointer synchronously before this (main-async) sweep runs,
-    /// so the `Settings.playbackSession` guard below fails whenever it fired.
-    private func promptIfSessionFinished(_ session: Session, store: EpisodeFilter, remaining: Int) {
-        guard remaining <= 0,
-              session.feeder == SessionFeeder.none,
-              let playing = Settings.playbackSession, playing.uuid == store.uuid else { return }
-        let name = store.playlistName
-        DispatchQueue.main.async { [weak self] in
-            Toast.show(L10n.sessionFinishedTitle(name), actions: [
-                Toast.Action(title: L10n.sessionFinishedDelete, action: {
-                    PlaybackManager.shared.endPlaybackSession()
-                    self?.deleteSession(session)
-                })
-            ])
         }
     }
 

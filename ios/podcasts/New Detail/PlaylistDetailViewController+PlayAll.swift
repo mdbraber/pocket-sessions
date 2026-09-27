@@ -19,16 +19,27 @@ extension PlaylistDetailViewController: UISheetPresentationControllerDelegate, P
         // the Inbox and Episodes views never leak in. Sessions are created
         // empty on first use; an empty lineup hints instead of playing.
         if let session = viewModel.session {
-            SessionManager.shared.play(session: session)
+            playAndOpen(session)
             return
         }
         // Opted-out smart playlists have no session — they fall through to stock Play All.
         if viewModel.isLensPage, let session = SessionManager.shared.findOrCreateSession(forSmartPlaylist: playlist) {
-            SessionManager.shared.play(session: session)
+            playAndOpen(session)
+            return
+        }
+        // A plain manual playlist becomes its own session (the playlist is the lineup).
+        if let session = SessionManager.shared.findOrCreateSession(forManualPlaylist: playlist) {
+            playAndOpen(session)
             return
         }
 
         startSession()
+    }
+
+    /// Starts the session and lands on its lineup in the Queue tab — the page it now plays from.
+    private func playAndOpen(_ session: Session) {
+        guard SessionManager.shared.play(session: session), let storeUuid = session.storePlaylistUuid else { return }
+        NavigationManager.shared.navigateTo(NavigationManager.sessionPageKey, data: [NavigationManager.sessionStoreUuidKey: storeUuid])
     }
 
     private func startSession() {
@@ -46,7 +57,7 @@ extension PlaylistDetailViewController: UISheetPresentationControllerDelegate, P
         } else if viewModel.isLensPage {
             resolved = SessionManager.shared.findOrCreateSession(forSmartPlaylist: viewModel.playlist)
         } else {
-            resolved = nil
+            resolved = SessionManager.shared.findOrCreateSession(forManualPlaylist: viewModel.playlist)
         }
         guard let session = resolved else { return }
 

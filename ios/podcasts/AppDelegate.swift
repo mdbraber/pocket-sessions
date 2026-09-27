@@ -384,6 +384,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         DispatchQueue.global(qos: .utility).async {
             SessionManager.shared.pruneEmptyUnsubscribedPodcastSessions()
             SessionManager.shared.deleteOrphanedStoreCopies()
+            // After the orphan sweep, so leftover store copies it deletes never become sessions.
+            SessionManager.shared.adoptManualPlaylists()
             Self.removeDuplicateEpisodesOnce()
         }
         DispatchQueue.main.async {
