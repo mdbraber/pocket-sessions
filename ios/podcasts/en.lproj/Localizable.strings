@@ -5590,7 +5590,6 @@
 "inbox_group_starred" = "Starred";
 "inbox_group_playing" = "Playing Status";
 "inbox_group_duration" = "Duration";
-"inbox_group_reverse" = "Reverse Order";
 
 /* Duration group headers */
 "inbox_group_duration_under10" = "Under 10 min";
@@ -7268,7 +7267,7 @@
 /* Fork: the Sort By choice for a session lineup that is hand-ordered (no automatic sort). */
 "lineup_sort_manual" = "Manual";
 /* Fork: toggle in the Group By menu — shows (and, for a session, plays) the groups in reverse order; episodes inside each group keep their order. */
-"group_reverse_order" = "Reverse Groups Order";
+"group_reverse_order" = "Reverse Group Order";
 
 /* Fork: lineup reorder picker — heading above the one-shot orders (Newest to oldest, Title A–Z, …). */
 "lineup_reorder_arrange_by" = "Arrange By";

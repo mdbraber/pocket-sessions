@@ -456,17 +456,13 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
                     self.groupBy = option
                 })
             }
+            picker.addSectionTitle("")
+            picker.addAction(action: OptionAction(label: L10n.groupReverseOrder, selected: self.reverseGroup) {
+                self.reverseGroup.toggle()
+            })
             return picker
         }
         optionsPicker.addAction(action: groupAction)
-
-        if groupBy != .none {
-            let reverseAction = OptionAction(label: L10n.inboxGroupReverse, selected: reverseGroup) { [weak self] in
-                guard let self else { return }
-                self.reverseGroup.toggle()
-            }
-            optionsPicker.addAction(action: reverseAction)
-        }
 
         let addedOnTopAction = OptionAction(label: L10n.inboxGroupAddedOnTop, selected: groupAddedOnTop) { [weak self] in
             self?.groupAddedOnTop.toggle()

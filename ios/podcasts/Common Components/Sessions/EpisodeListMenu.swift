@@ -89,8 +89,8 @@ enum EpisodeListMenu {
         OptionAction(label: L10n.lineupReorderEpisodes, icon: "line.3.horizontal", action: action)
     }
 
-    /// A session lineup's rows: Sort By, Group By (its submenu also holds Reverse Group Order once
-    /// grouped), and Reorder Episodes. Each arrangement change is saved on the session and sets its
+    /// A session lineup's rows: Sort By, Group By (its submenu also holds Reverse Group Order),
+    /// and Reorder Episodes. Each arrangement change is saved on the session and sets its
     /// play order (see `LineupSort`); `onChange` repaints the host.
     static func addLineupArrangementActions(to optionsPicker: OptionsPicker, session: Session, themeOverride: Theme.ThemeType? = nil, onChange: @escaping () -> Void, onReorderEpisodes: @escaping () -> Void) {
         optionsPicker.addAction(action: lineupSortAction(current: LineupSort.order(of: session), themeOverride: themeOverride) { order in
@@ -108,14 +108,12 @@ enum EpisodeListMenu {
                     onChange()
                 })
             }
-            if grouping != .none {
-                let reversed = LineupSort.groupsReversed(of: session)
-                picker.addSectionTitle("")
-                picker.addAction(action: OptionAction(label: L10n.groupReverseOrder, selected: reversed) {
-                    LineupSort.setGroupsReversed(!reversed, for: session)
-                    onChange()
-                })
-            }
+            let reversed = LineupSort.groupsReversed(of: session)
+            picker.addSectionTitle("")
+            picker.addAction(action: OptionAction(label: L10n.groupReverseOrder, selected: reversed) {
+                LineupSort.setGroupsReversed(!reversed, for: session)
+                onChange()
+            })
             return picker
         }
         optionsPicker.addAction(action: groupAction)
@@ -142,8 +140,8 @@ enum EpisodeListMenu {
         return picker
     }
 
-    /// Group By for a browsed list. Its submenu holds everything about groups: the grouping, then —
-    /// once grouped — how many episodes each group shows and Reverse Group Order.
+    /// Group By for a browsed list. Its submenu holds everything about groups: the grouping, how many
+    /// episodes each group shows (once grouped), and Reverse Group Order.
     static func addGroupByActions(to optionsPicker: OptionsPicker, grouping: EpisodeListGrouping, themeOverride: Theme.ThemeType? = nil, onChange: @escaping () -> Void) {
         let groupAction = OptionAction(label: L10n.inboxGroupBy, secondaryLabel: grouping.groupBy.title, icon: "option-group") {}
         groupAction.submenu = {
@@ -154,18 +152,18 @@ enum EpisodeListMenu {
                     onChange()
                 })
             }
-            guard grouping.groupBy != .none else { return picker }
-
-            picker.addSectionTitle(L10n.episodeGroupLimit.localizedUppercase)
-            picker.addAction(action: OptionAction(label: L10n.off, selected: grouping.limit == 0) {
-                grouping.limit = 0
-                onChange()
-            })
-            for limit in EpisodeGrouper.limitOptions {
-                picker.addAction(action: OptionAction(label: "\(limit)", selected: grouping.limit == limit) {
-                    grouping.limit = limit
+            if grouping.groupBy != .none {
+                picker.addSectionTitle(L10n.episodeGroupLimit.localizedUppercase)
+                picker.addAction(action: OptionAction(label: L10n.off, selected: grouping.limit == 0) {
+                    grouping.limit = 0
                     onChange()
                 })
+                for limit in EpisodeGrouper.limitOptions {
+                    picker.addAction(action: OptionAction(label: "\(limit)", selected: grouping.limit == limit) {
+                        grouping.limit = limit
+                        onChange()
+                    })
+                }
             }
 
             picker.addSectionTitle("")

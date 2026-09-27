@@ -34,10 +34,6 @@ class MainTabBarController: UITabBarController, NavigationProtocol {
     /// when the queue actually changes (not on every refresh notification).
     private var previousUpNextCount: Int?
 
-    /// Fork: the untinted Queue-tab images (icon, optionally with a count badge). Kept so the green
-    /// "a session owns the now-playing card" tint can be applied/removed without rebuilding them.
-    private var upNextTabBaseImage: UIImage?
-    private var upNextTabBaseSelectedImage: UIImage?
     /// Keeps the account-creation modal off the same launch that just showed initial onboarding.
     private var didPresentInitialOnboardingThisLaunch = false
 
@@ -185,12 +181,6 @@ class MainTabBarController: UITabBarController, NavigationProtocol {
         NotificationCenter.default.addObserver(self, selector: #selector(refreshUpNextTabBadge), name: Constants.Notifications.upNextQueueChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(refreshUpNextTabBadge), name: Constants.Notifications.upNextEpisodeRemoved, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(refreshUpNextTabBadge), name: Constants.Notifications.playbackTrackChanged, object: nil)
-        // Fork: the Queue tab turns green when a session owns the now-playing card — refresh that tint
-        // whenever playback starts/stops/switches source (count-independent, so it's its own hook).
-        NotificationCenter.default.addObserver(self, selector: #selector(refreshUpNextTabTint), name: Constants.Notifications.playbackTrackChanged, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(refreshUpNextTabTint), name: Constants.Notifications.playbackSessionChanged, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(refreshUpNextTabTint), name: Constants.Notifications.playbackStarted, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(refreshUpNextTabTint), name: Constants.Notifications.playbackEnded, object: nil)
         // The tab mirrors the active session (title + count), so session and playlist
         // changes both redraw it.
         NotificationCenter.default.addObserver(self, selector: #selector(refreshUpNextTabBadge), name: Constants.Notifications.playbackSessionChanged, object: nil)
@@ -1422,41 +1412,11 @@ extension MainTabBarController {
         setUpNextTabImage(UIImage(named: "upnext_tab"), selected: nil)
     }
 
-    /// Fork: stores the untinted Queue-tab images, then applies the session-green tint if a session
-    /// currently owns the now-playing card.
+    /// The Queue tab's icon (optionally with a count badge). Template images, so the tab bar tints
+    /// them like every other tab — the tab keeps the standard colour whatever is playing.
     func setUpNextTabImage(_ base: UIImage?, selected: UIImage?) {
-        upNextTabBaseImage = base
-        upNextTabBaseSelectedImage = selected
-        applyUpNextTabSessionTint()
-    }
-
-    /// Fork: re-apply the session tint over the stored base images (count-independent — driven by
-    /// playback source changes, which don't necessarily change the badge count).
-    @objc func refreshUpNextTabTint() {
-        applyUpNextTabSessionTint()
-    }
-
-    private func applyUpNextTabSessionTint() {
-        // "The active card is a Session" → tint the Queue tab green, ignoring selection/theme so it
-        // reads the same as the session accent everywhere. Otherwise the untinted template images
-        // let the tab bar tint them like every other tab. Falls back to the plain icon when no base
-        // has been composed yet (e.g. pre-iOS-26, where there's no count badge).
-        let base = upNextTabBaseImage ?? UIImage(named: "upnext_tab")
-        guard PlaybackManager.shared.currentEpisodeIsSessionSourced else {
-            upNextTabBarItem.image = base
-            upNextTabBarItem.selectedImage = upNextTabBaseSelectedImage
-            // nil attributes → the title follows the tab bar's normal tint again.
-            upNextTabBarItem.setTitleTextAttributes(nil, for: .normal)
-            upNextTabBarItem.setTitleTextAttributes(nil, for: .selected)
-            return
-        }
-        let green = ThemeColor.support02()
-        // Only the SELECTED Queue tab reads green when a session is playing; unselected keeps the
-        // normal (template) icon + title so it isn't coloured when you're on another tab.
-        upNextTabBarItem.image = base
-        upNextTabBarItem.selectedImage = (upNextTabBaseSelectedImage ?? base)?.withTintColor(green, renderingMode: .alwaysOriginal)
-        upNextTabBarItem.setTitleTextAttributes(nil, for: .normal)
-        upNextTabBarItem.setTitleTextAttributes([.foregroundColor: green], for: .selected)
+        upNextTabBarItem.image = base ?? UIImage(named: "upnext_tab")
+        upNextTabBarItem.selectedImage = selected
     }
 }
 
