@@ -22,6 +22,8 @@ class ToastViewModel: ObservableObject {
     let actions: [Toast.Action]
     let dismissPolicy: ToastViewDismissPolicy
     let aboveMiniPlayer: Bool
+    /// Fork: extra bottom padding that lifts the toast clear of the tab bar and mini player.
+    var bottomInset: CGFloat = 0
 
     deinit {
         autoDismissTimer?.invalidate()

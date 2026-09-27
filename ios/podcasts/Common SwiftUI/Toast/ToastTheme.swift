@@ -33,9 +33,10 @@ extension ToastTheme where Self == ToastPlayerTheme {
 // MARK: - ToastDefaultTheme
 
 /// A default theme for use in the general app
+/// Fork: in dark themes the toast is a raised dark card instead of the always-light player colours.
 class ToastDefaultTheme: ThemeObserver, ToastTheme {
-    var background: Color { theme.playerContrast01 }
-    var title: Color { theme.playerBackground01 }
+    var background: Color { theme.activeTheme.isDark ? theme.primaryUi05 : theme.playerContrast01 }
+    var title: Color { theme.activeTheme.isDark ? theme.primaryText01 : theme.playerBackground01 }
     var iconColor: Color? { nil }
     var iconName: String? { nil }
     var button: Color {
@@ -55,8 +56,8 @@ extension ToastTheme where Self == ToastDefaultTheme {
 
 /// A default theme for use in the general app
 class ToastIconTheme: ThemeObserver, ToastTheme {
-    var background: Color { theme.playerContrast01 }
-    var title: Color { theme.playerBackground01 }
+    var background: Color { theme.activeTheme.isDark ? theme.primaryUi05 : theme.playerContrast01 }
+    var title: Color { theme.activeTheme.isDark ? theme.primaryText01 : theme.playerBackground01 }
     var button: Color { theme.primaryText02Selected }
     let iconName: String?
     let iconColor: Color?

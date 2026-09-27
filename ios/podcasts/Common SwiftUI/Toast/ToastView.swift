@@ -119,7 +119,8 @@ struct ToastView<Style: ToastTheme>: View {
         .shadow(color: .black.opacity(0.3), radius: 10)
 
         // Animates the toast in from the bottom of the screen
-        .miniPlayerSafeAreaInset(multiplier: viewModel.aboveMiniPlayer ? 1.5 : 0)
+        // Fork: sit above the tab bar and mini player (measured when shown) instead of over them.
+        .padding(.bottom, viewModel.bottomInset)
         .offset(y: isVisible ? 0 : contentSize.height)
         .opacity(isVisible ? 1 : 0)
         .animation(ToastConstants.animation, value: isVisible)

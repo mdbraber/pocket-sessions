@@ -28,6 +28,7 @@ class Toast {
         guard let scene = SceneHelper.connectedScene() else { return }
 
         let viewModel = ToastViewModel(coordinator: shared, title: title, actions: actions, dismissPolicy: dismissAfter, aboveMiniPlayer: aboveMiniPlayer)
+        viewModel.bottomInset = bottomObstruction(in: scene)
         let view = ToastView(viewModel: viewModel, style: theme)
         let controller = ThemedHostingController(rootView: view)
 
@@ -35,6 +36,24 @@ class Toast {
         window.makeKeyAndVisible()
 
         shared.window = window
+    }
+
+    /// Fork: how far above the bottom safe area the toast has to sit to clear the tab bar and
+    /// the mini player, so it never covers them. Zero while a modal (the full-screen player, a
+    /// sheet) is up, since that hides both.
+    private static func bottomObstruction(in scene: UIWindowScene) -> CGFloat {
+        guard let window = scene.windows.first(where: { !($0 is ToastWindow) && $0.rootViewController is UITabBarController }),
+              let tabBarController = window.rootViewController as? UITabBarController,
+              tabBarController.presentedViewController == nil else { return 0 }
+        var top = window.bounds.maxY
+        let tabBar = tabBarController.tabBar
+        if !tabBar.isHidden, tabBar.alpha > 0.01 {
+            top = min(top, tabBar.convert(tabBar.bounds, to: window).minY)
+        }
+        if let miniPlayer = (UIApplication.shared.delegate as? AppDelegate)?.miniPlayer()?.view, miniPlayer.window == window, !miniPlayer.isHidden {
+            top = min(top, miniPlayer.convert(miniPlayer.bounds, to: window).minY)
+        }
+        return max(0, window.bounds.maxY - top - window.safeAreaInsets.bottom)
     }
 
     /// Dismisses any visible toasts
