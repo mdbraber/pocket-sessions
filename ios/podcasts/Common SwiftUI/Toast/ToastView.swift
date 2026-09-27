@@ -119,8 +119,6 @@ struct ToastView<Style: ToastTheme>: View {
         .shadow(color: .black.opacity(0.3), radius: 10)
 
         // Animates the toast in from the bottom of the screen
-        // Fork: sit above the tab bar and mini player (measured when shown) instead of over them.
-        .padding(.bottom, viewModel.bottomInset)
         .offset(y: isVisible ? 0 : contentSize.height)
         .opacity(isVisible ? 1 : 0)
         .animation(ToastConstants.animation, value: isVisible)
@@ -137,6 +135,10 @@ struct ToastView<Style: ToastTheme>: View {
         .opacity(dragOpacity)
         .animation(ToastConstants.animation, value: dragPosition)
         .gesture(dismissGesture)
+        // Fork: sit above the tab bar and mini player (measured when shown) instead of over them.
+        // Applied after the frame is measured, so the gap stays outside the toast's tap area and
+        // taps there reach the tab bar and mini player.
+        .padding(.bottom, viewModel.bottomInset)
     }
 
     /// Allow the view to be dragged to dismiss
