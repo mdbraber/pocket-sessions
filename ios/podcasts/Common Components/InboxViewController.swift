@@ -29,7 +29,6 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
     private var searchTerm = ""
     private var searchController: PCSearchBarController?
     private var searchHeaderContainer: UIView?
-    private var clearButton: UIBarButtonItem?
     private var ellipsisButton: UIBarButtonItem?
     private var clearFooterHost: UIHostingController<AnyView>?
 
@@ -153,9 +152,6 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
             chromeBackground.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor)
         ])
 
-        let clear = UIBarButtonItem(title: L10n.inboxMarkAllSeen, style: .plain, target: self, action: #selector(clearTapped))
-        clearButton = clear
-        navigationItem.leftBarButtonItem = clear
         // PCViewController manages the right slot — setting rightBarButtonItem directly
         // gets clobbered.
         let ellipsis = UIBarButtonItem(image: UIImage(systemName: "ellipsis"), style: .plain, target: self, action: #selector(optionsTapped))
@@ -259,7 +255,6 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
             self.allEpisodes = InboxManager.shared.unseenEpisodes()
             self.rebuildGroups()
             self.refreshMultiSelectEpisodes()
-            self.navigationItem.leftBarButtonItem?.isEnabled = self.isMultiSelectEnabled || !self.allEpisodes.isEmpty
             self.updateCountsLabel()
             self.updateClearFooter()
             self.updateSearchHeaderVisibility()
@@ -346,7 +341,7 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
         InboxManager.shared.markSeen(episodeUuids: allEpisodes.map(\.uuid))
     }
 
-    @objc private func clearTapped() {
+    private func clearTapped() {
         let optionsPicker = OptionsPicker(title: L10n.inboxMarkAllSeen.localizedUppercase)
 
         // Mark All as Seen: the soft clear — one DELETE and one notification, however many
@@ -742,7 +737,7 @@ extension InboxViewController: MultiSelectActionDelegate {
         } else {
             multiSelectAllBarButton = nil
             customRightBtn = ellipsisButton
-            navigationItem.setLeftBarButton(clearButton, animated: false)
+            navigationItem.setLeftBarButton(nil, animated: false)
         }
     }
 
