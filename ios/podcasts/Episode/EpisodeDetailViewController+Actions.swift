@@ -72,6 +72,24 @@ extension EpisodeDetailViewController {
         }
     }
 
+    /// Fork: a started (not played) episode only offers Mark as Played — the button toggles on
+    /// `played()`. A long press offers Mark as Unplayed, which starts it over from the beginning
+    /// and, unlike Mark as Played, keeps it in its sessions.
+    @objc func episodeStatusLongPressed(_ recognizer: UILongPressGestureRecognizer) {
+        guard recognizer.state == .began, !episode.played(), episode.playedUpTo > 0 || episode.inProgress() else { return }
+        let picker = OptionsPicker(title: episode.displayableTitle().localizedUppercase)
+        picker.addAction(action: OptionAction(label: L10n.markUnplayed, icon: "episode-markunplayed") { [weak self] in
+            guard let self else { return }
+            AnalyticsEpisodeHelper.shared.currentSource = self.analyticsSource
+            EpisodeManager.markAsUnplayed(episode: self.episode, fireNotification: true)
+            // The player would otherwise write its position straight back.
+            if PlaybackManager.shared.isCurrentEpisode(uuid: self.episode.uuid) {
+                PlaybackManager.shared.seekTo(time: 0)
+            }
+        })
+        picker.present(from: self)
+    }
+
     @IBAction func archiveTapped(_ sender: Any) {
         if episode.archived {
             EpisodeManager.unarchiveEpisode(episode: episode, fireNotification: true)

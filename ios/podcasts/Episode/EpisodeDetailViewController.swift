@@ -124,6 +124,8 @@ class EpisodeDetailViewController: FakeNavViewController, UIDocumentInteractionC
             playStatusButton.titleLabel?.font = UIFont.font(ofSize: 13, weight: .regular, scalingWith: .footnote)
             playStatusButton.titleLabel?.adjustsFontForContentSizeCategory = true
             playStatusButton.titleLabel?.numberOfLines = 3
+            // Fork: long-pressing Mark as Played offers Mark as Unplayed for a started episode.
+            playStatusButton.addGestureRecognizer(UILongPressGestureRecognizer(target: self, action: #selector(episodeStatusLongPressed(_:))))
         }
     }
 
