@@ -18,7 +18,7 @@ extension UpNextViewController: SwipeTableViewCellDelegate, SwipeHandler {
         if showingSessionList {
             guard !sessionListReorderMode,
                   let listIndex = sessionListIndex(forTableRow: indexPath.row),
-                  let row = sessionListRows[safe: listIndex], !row.isUpNext else { return nil }
+                  let row = sessionListRows[safe: listIndex], !row.isUpNext, !row.isGroupHeading else { return nil }
             switch orientation {
             case .right:
                 guard !row.isActive else { return nil }

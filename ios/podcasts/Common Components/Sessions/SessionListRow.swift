@@ -44,6 +44,24 @@ struct SessionListRow: Equatable {
     /// routing). Distinct from `isActive`: a session can hold the active pointer while parked behind
     /// the queue — then the queue owns the card, not the session.
     var ownsCard: Bool = false
+    /// Fork: what feeds the session — the Session Type grouping reads it. `.none` for Up Next.
+    var feeder: SessionFeeder = .none
+    /// Fork: when the session was last the one playing (`Session.lastUsed`) — the Last Played grouping.
+    var lastUsed: Date?
+    /// Fork: set on a GROUP HEADING the Queue interleaves into a grouped pool. A heading is not a
+    /// session: it can't be opened, played, swiped or dragged.
+    var groupHeading: String?
+
+    var isGroupHeading: Bool { groupHeading != nil }
+
+    /// A group heading row. Its uuid is unique per title, so the list's row identities stay distinct.
+    static func heading(_ title: String) -> SessionListRow {
+        var row = SessionListRow(sessionUuid: "heading:\(title)", storeUuid: nil, name: title, nextEpisodePodcastUuid: nil,
+                                 isPlaying: false, isActive: false, nextEpisodeTitle: nil, nextEpisodePodcast: nil,
+                                 nextEpisodeDuration: nil, progress: 0, episodeCount: 0, timeLeft: nil)
+        row.groupHeading = title
+        return row
+    }
 }
 
 /// Fork: how the session chooser orders its rows. Persisted (see `Settings.sessionListSort`);
@@ -74,7 +92,7 @@ enum SessionListSort: Int, CaseIterable {
         case .name: L10n.sessionSortName
         case .timeLeft: L10n.sessionSortTimeLeft
         case .recentlyUpdated: L10n.sessionSortUpdated
-        case .manual: L10n.sessionSortManual
+        case .manual: L10n.lineupSortManual
         // Fork: session-specific labels rather than the podcast page's. These date/measure the
         // SESSION by its episodes, so "(episode)" says so outright — otherwise "Newest to Oldest"
         // reads as "when I last touched this session", which is the separate Last Played sort.
@@ -96,13 +114,71 @@ enum SessionListSort: Int, CaseIterable {
         }
     }
 
-    /// Fork: the options the session list's ⋯ Reorder menu offers, in order — Manual (the drag
-    /// order) first, then the arrangements.
-    ///
-    /// The three that describe the SESSION lead: Last Played, Progress, Session Type. The
-    /// episode-derived orders (dates and durations, Serial deliberately excluded) follow, since they
-    /// rank a session by what happens to be inside it rather than by the session itself.
-    static let sessionMenuOrder: [SessionListSort] = [.manual, .recentlyPlayed, .progress, .type, .newestToOldest, .oldestToNewest, .shortestToLongest, .longestToShortest]
+    /// Fork: the session list's Sort By menu, in order — Manual (the drag order) first, then the
+    /// sorts that describe the SESSION: when it last played, when it last gained an episode, its
+    /// name, and how much is left in it.
+    static let sessionMenuOrder: [SessionListSort] = [.manual, .recentlyPlayed, .recentlyUpdated, .name, .timeLeft]
+}
+
+/// Fork: how the session list groups its pool (the sessions under Up Next and the current one).
+/// Grouping splits the list as it is already sorted, so each group keeps the chosen sort.
+enum SessionListGroupBy: Int, CaseIterable {
+    case none = 0
+    case type = 1
+    case lastPlayed = 2
+
+    var title: String {
+        switch self {
+        case .none: L10n.inboxGroupNone
+        case .type: L10n.sessionSortType
+        case .lastPlayed: L10n.sessionSortRecent
+        }
+    }
+
+    static let menuOrder: [SessionListGroupBy] = [.none, .type, .lastPlayed]
+
+    /// The rows split into titled groups, empty groups dropped. `reversed` flips the order the
+    /// groups appear in; the rows inside each keep their order.
+    func group(_ rows: [SessionListRow], reversed: Bool = false, now: Date = Date()) -> [(title: String, rows: [SessionListRow])] {
+        let titles: [String]
+        let index: (SessionListRow) -> Int
+        switch self {
+        case .none:
+            return rows.isEmpty ? [] : [("", rows)]
+        case .type:
+            titles = [L10n.sessionGroupPodcasts, L10n.sessionGroupSmartPlaylists, L10n.sessionGroupManualPlaylists]
+            index = { row in
+                switch row.feeder {
+                case .podcast, .allPodcasts: 0
+                case .smartPlaylist: 1
+                case .none: 2
+                }
+            }
+        case .lastPlayed:
+            let calendar = Calendar.current
+            // The Release Date grouping's age buckets, plus one for sessions never played.
+            titles = [L10n.inboxGroupToday, L10n.inboxGroupLast7Days, L10n.inboxGroupLastMonth, L10n.inboxGroupOlder, L10n.sessionGroupNeverPlayed]
+            index = { row in
+                guard let lastUsed = row.lastUsed else { return 4 }
+                if calendar.isDate(lastUsed, inSameDayAs: now) { return 0 }
+                let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: lastUsed), to: calendar.startOfDay(for: now)).day ?? .max
+                if days < 0 { return 0 }
+                if days <= 7 { return 1 }
+                if days <= 31 { return 2 }
+                return 3
+            }
+        }
+        var buckets: [[SessionListRow]] = Array(repeating: [], count: titles.count)
+        for row in rows { buckets[index(row)].append(row) }
+        let groups = zip(titles, buckets).filter { !$0.1.isEmpty }.map { (title: $0.0, rows: $0.1) }
+        return reversed ? groups.reversed() : groups
+    }
+
+    /// The rows with a heading before each group — what the Queue shows. Ungrouped rows pass through.
+    func headed(_ rows: [SessionListRow], reversed: Bool = false) -> [SessionListRow] {
+        guard self != .none else { return rows }
+        return group(rows, reversed: reversed).flatMap { [SessionListRow.heading($0.title)] + $0.rows }
+    }
 }
 
 /// Fork: which sessions the chooser shows. Every `SessionFeeder` case maps to exactly one
@@ -252,7 +328,9 @@ enum SessionListRows {
                 // Owns the card only when active, not parked, AND the current card is actually this
                 // session's episode — otherwise a session holding the pointer while the queue plays
                 // would wrongly read as owning the card (both lanes then look like they're playing).
-                ownsCard: isActive && !sessionPaused && PlaybackManager.shared.currentEpisodeIsSessionSourced
+                ownsCard: isActive && !sessionPaused && PlaybackManager.shared.currentEpisodeIsSessionSourced,
+                feeder: session.feeder,
+                lastUsed: session.lastUsed
             )
             return Entry(
                 row: row,
@@ -468,6 +546,21 @@ extension Settings {
 
     class func setSessionListSort(_ sort: SessionListSort) {
         UserDefaults.standard.set(sort.rawValue, forKey: Settings.sessionListSortKey)
+    }
+
+    static let sessionListGroupByKey = "SJSessionListGroupBy"
+    static let sessionListGroupsReversedKey = "SJSessionListGroupsReversed"
+
+    /// How the Up Next tab's session list groups its pool. None by default.
+    static var sessionListGroupBy: SessionListGroupBy {
+        get { SessionListGroupBy(rawValue: UserDefaults.standard.integer(forKey: sessionListGroupByKey)) ?? .none }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: sessionListGroupByKey) }
+    }
+
+    /// Shows the session list's groups in reverse order.
+    static var sessionListGroupsReversed: Bool {
+        get { UserDefaults.standard.bool(forKey: sessionListGroupsReversedKey) }
+        set { UserDefaults.standard.set(newValue, forKey: sessionListGroupsReversedKey) }
     }
 
     static let sessionListHideEmptyKey = "SJSessionListHideEmpty"

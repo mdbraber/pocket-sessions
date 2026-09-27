@@ -32,6 +32,8 @@ final class SessionListRowTests: DBTestCase {
     /// from the shipped defaults rather than whatever a previous test left behind.
     private func resetChooserPreferences() {
         for key in [Settings.sessionListSortKey,
+                    Settings.sessionListGroupByKey,
+                    Settings.sessionListGroupsReversedKey,
                     Settings.sessionListHideEmptyKey,
                     Settings.sessionListHideUnplayedKey,
                     Settings.sessionListShowPodcastsKey,
@@ -406,6 +408,46 @@ final class SessionListRowTests: DBTestCase {
 
         let row = try row(for: session, in: SessionListRows.current())
         XCTAssertNil(row.nextEpisodePodcastUuid, "no next episode means no episode art")
+    }
+
+    // MARK: - Grouping
+
+    private func listRow(_ name: String, feeder: SessionFeeder = .none, lastUsed: Date? = nil) -> SessionListRow {
+        var row = SessionListRow(sessionUuid: name, storeUuid: nil, name: name, nextEpisodePodcastUuid: nil, isPlaying: false,
+                                 isActive: false, nextEpisodeTitle: nil, nextEpisodePodcast: nil, nextEpisodeDuration: nil,
+                                 progress: 0, episodeCount: 1, timeLeft: nil)
+        row.feeder = feeder
+        row.lastUsed = lastUsed
+        return row
+    }
+
+    /// Podcasts, then smart playlists, then manual playlists — each group keeping the list's order.
+    func testGroupByTypeKeepsSortInsideGroups() {
+        let rows = [listRow("Hand", feeder: .none), listRow("Pod B", feeder: .podcast(uuid: "b")),
+                    listRow("Smart", feeder: .smartPlaylist(uuid: "s")), listRow("Pod A", feeder: .podcast(uuid: "a"))]
+        let groups = SessionListGroupBy.type.group(rows)
+        XCTAssertEqual(groups.map(\.title), [L10n.sessionGroupPodcasts, L10n.sessionGroupSmartPlaylists, L10n.sessionGroupManualPlaylists])
+        XCTAssertEqual(groups.map { $0.rows.map(\.name) }, [["Pod B", "Pod A"], ["Smart"], ["Hand"]])
+        XCTAssertEqual(SessionListGroupBy.type.group(rows, reversed: true).map(\.title).first, L10n.sessionGroupManualPlaylists)
+    }
+
+    /// Age buckets by last play, with never-played sessions last; empty buckets are dropped.
+    func testGroupByLastPlayed() {
+        let now = Date()
+        let rows = [listRow("Never"), listRow("Old", lastUsed: now.addingTimeInterval(-90 * 86400)),
+                    listRow("Today", lastUsed: now), listRow("Week", lastUsed: now.addingTimeInterval(-3 * 86400))]
+        let groups = SessionListGroupBy.lastPlayed.group(rows, now: now)
+        XCTAssertEqual(groups.map(\.title), [L10n.inboxGroupToday, L10n.inboxGroupLast7Days, L10n.inboxGroupOlder, L10n.sessionGroupNeverPlayed])
+        XCTAssertEqual(groups.map { $0.rows.map(\.name) }, [["Today"], ["Week"], ["Old"], ["Never"]])
+    }
+
+    /// `headed` puts a heading row before each group; ungrouped lists pass through untouched.
+    func testHeadedInsertsHeadingRows() {
+        let rows = [listRow("Hand"), listRow("Pod", feeder: .podcast(uuid: "p"))]
+        XCTAssertEqual(SessionListGroupBy.none.headed(rows), rows)
+        let headed = SessionListGroupBy.type.headed(rows)
+        XCTAssertEqual(headed.map(\.name), [L10n.sessionGroupPodcasts, "Pod", L10n.sessionGroupManualPlaylists, "Hand"])
+        XCTAssertEqual(headed.map(\.isGroupHeading), [true, false, true, false])
     }
 
     // MARK: - Sorting

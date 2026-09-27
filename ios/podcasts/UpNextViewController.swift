@@ -956,6 +956,8 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         // (or is what's playing, where hiding it would strand the now-playing lane).
         let upNext = upNextListRow()
         sessionListHasUpNext = !Settings.hideEmptyUpNext || upNext.episodeCount > 0 || upNext.isActive
+        // Group By splits the pool (already in the chosen sort) under headings; the pinned rows stay out of it.
+        pool = Settings.sessionListGroupBy.headed(pool, reversed: Settings.sessionListGroupsReversed)
         sessionListRows = (sessionListHasUpNext ? [upNext] : []) + (currentRow.map { [$0] } ?? []) + pool
     }
 
@@ -977,7 +979,10 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     private func makeCurrentSession(_ newUuid: String) {
         let previous = currentSessionUuid
         currentSessionUuid = newUuid
-        guard let previous, previous != newUuid,
+        // Under a sort the list isn't in the hand order, so there is nothing to float up — and writing
+        // the sorted order back would overwrite the hand order Manual returns to.
+        guard Settings.sessionListSort() == .manual,
+              let previous, previous != newUuid,
               let idx = lastSessionSource.firstIndex(where: { $0.sessionUuid == previous }) else { return }
         let row = lastSessionSource.remove(at: idx)
         lastSessionSource.insert(row, at: 0)
@@ -1052,9 +1057,10 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     /// Fork: the chooser's counts line — "N sessions", plus "· k empty" when some
     /// sessions have nothing left to play.
     func sessionListCountsText() -> String {
-        let count = sessionListRows.count
+        let sessions = sessionListRows.filter { !$0.isGroupHeading }
+        let count = sessions.count
         let base = count == 1 ? L10n.sessionCountSingular : L10n.sessionCountPluralFormat(count.localized())
-        let emptyCount = sessionListRows.filter { $0.episodeCount == 0 }.count
+        let emptyCount = sessions.filter { $0.episodeCount == 0 }.count
         guard emptyCount > 0 else { return base }
         return base + " · " + L10n.sessionCountEmptySuffix(emptyCount.localized())
     }
@@ -1228,6 +1234,10 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         // rows actually change (a pool session becoming current, order shifts, etc.).
         guard showingSessionList else { reloadTable(); return }
 
+        // Headings are part of the shape: a session moving into another group (or a sort moving a
+        // group) shifts where they sit, and a heading cell can't be re-populated in place.
+        let shape = { (rows: [SessionListRow]) in rows.enumerated().filter { $0.element.isGroupHeading }.map { "\($0.offset)\($0.element.sessionUuid)" } }
+        let beforeHeadings = shape(sessionListRows)
         let before = Set(sessionListRows.map(\.sessionUuid))
         refreshSessionState()
         let after = Set(sessionListRows.map(\.sessionUuid))
@@ -1237,7 +1247,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         // into the current slot and the other back into the pool — so re-populate the visible cells
         // IN PLACE at their new positions; a reloadData here would dequeue fresh cells and flash
         // their artwork.
-        guard before == after else {
+        guard before == after, beforeHeadings == shape(sessionListRows) else {
             refreshSections()
             updateStickyChrome()
             updateNavBarButtons()
@@ -1249,7 +1259,7 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
             guard let indexPath = upNextTable.indexPath(for: cell),
                   tableData[safe: indexPath.section] == .sessionSection,
                   let listIndex = sessionListIndex(forTableRow: indexPath.row),
-                  let row = sessionListRows[safe: listIndex] else { continue }
+                  let row = sessionListRows[safe: listIndex], !row.isGroupHeading else { continue }
             cell.onPlayTapped = { [weak self] in self?.playSessionLane(row) }
             cell.populate(from: row, placement: sessionPlacement(at: listIndex), reordering: sessionListReorderMode)
         }
@@ -1899,22 +1909,42 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
         makeSessionSortPicker().present(from: self)
     }
 
-    /// The Sort sub-picker (Manual + episode-style sorts). Returned so the ⋯ menu can present it as
-    /// a submenu — matching the podcast page's "Sort Episodes" row.
+    /// Sort By for the session list: Manual (the drag order) first, then the sorts, the one in force
+    /// checked. A sort stays until the user picks another, or moves a session by hand.
     private func makeSessionSortPicker() -> OptionsPicker {
-        let picker = OptionsPicker(title: L10n.sessionSortOnce.localizedUppercase, themeOverride: themeOverride)
-        // One-shot: sorting is NOT a sticky mode. The list is always drag-and-drop; each option here
-        // re-arranges that drag order ONCE (baked into the synced `sortIndex`), then it stays manual.
-        // So there's no "Manual"/"Drag & Drop" option (that's the base state) and no persistent selection.
-        for option in SessionListSort.sessionMenuOrder where option != .manual {
-            picker.addAction(action: OptionAction(label: option.title) { [weak self] in
-                guard let self else { return }
-                let sorted = SessionListRows.current(sort: option, filters: .unfiltered).map(\.sessionUuid)
-                SessionStore.shared.reorderSessions(sorted)
-                self.reloadSessionListAndScrollToTop()
+        let picker = OptionsPicker(title: L10n.sortBy.localizedUppercase, themeOverride: themeOverride)
+        let current = Settings.sessionListSort()
+        for option in SessionListSort.sessionMenuOrder {
+            picker.addAction(action: OptionAction(label: option.title, selected: current == option) { [weak self] in
+                Settings.setSessionListSort(option)
+                self?.sessionListArrangementChanged()
             })
         }
         return picker
+    }
+
+    /// Group By for the session list, with Reverse Group Order below the groupings.
+    private func makeSessionGroupPicker() -> OptionsPicker {
+        let picker = OptionsPicker(title: L10n.inboxGroupBy.localizedUppercase, themeOverride: themeOverride)
+        let current = Settings.sessionListGroupBy
+        for option in SessionListGroupBy.menuOrder {
+            picker.addAction(action: OptionAction(label: option.title, selected: current == option) { [weak self] in
+                Settings.sessionListGroupBy = option
+                self?.sessionListArrangementChanged()
+            })
+        }
+        let reversed = Settings.sessionListGroupsReversed
+        picker.addSectionTitle("")
+        picker.addAction(action: OptionAction(label: L10n.groupReverseOrder, selected: reversed) { [weak self] in
+            Settings.sessionListGroupsReversed = !reversed
+            self?.sessionListArrangementChanged()
+        })
+        return picker
+    }
+
+    private func sessionListArrangementChanged() {
+        refreshSessionState()
+        reloadSessionListAndScrollToTop()
     }
 
     @objc private func sessionListMoreTapped() {
@@ -1928,10 +1958,12 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
             Settings.hideEmptyUpNext = !emptyUpNextHidden
             self?.reloadSessionListAndScrollToTop()
         })
-        // "Reorder Sessions" — a one-shot re-arrange of the drag order (submenu, no sticky selection).
-        let sortAction = OptionAction(label: L10n.sessionSortOnce, icon: "podcastlist_sort") {}
+        let sortAction = OptionAction(label: L10n.sortBy, secondaryLabel: Settings.sessionListSort().title, icon: "podcastlist_sort") {}
         sortAction.submenu = { [weak self] in self?.makeSessionSortPicker() }
         picker.addAction(action: sortAction)
+        let groupAction = OptionAction(label: L10n.inboxGroupBy, secondaryLabel: Settings.sessionListGroupBy.title, icon: "option-group") {}
+        groupAction.submenu = { [weak self] in self?.makeSessionGroupPicker() }
+        picker.addAction(action: groupAction)
         let emptyHidden = Settings.hideEmptySessions
         picker.addAction(action: OptionAction(label: L10n.sessionEmptySessions, secondaryLabel: emptyHidden ? L10n.settingsGeneralHide : L10n.settingsGeneralShow, icon: "square.stack") { [weak self] in
             Settings.hideEmptySessions = !emptyHidden
@@ -1970,12 +2002,40 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
     /// source is updated immediately so it matches the moved row; persisting posts
     /// SessionStore.changed, which rebuilds the list in the same order (no flash).
     func reorderSessionList(from: Int, to: Int) {
-        guard from != to, sessionListRows.indices.contains(from) else { return }
+        guard from != to, sessionListRows.indices.contains(from), !sessionListRows[from].isGroupHeading else { return }
         var reordered = sessionListRows
         let moved = reordered.remove(at: from)
         reordered.insert(moved, at: min(max(0, to), reordered.count))
+        guard sessionListIsArranged else {
+            sessionListRows = reordered
+            SessionStore.shared.reorderSessions(reordered.map(\.sessionUuid))
+            return
+        }
+        // A hand move on a sorted or grouped list: the list becomes Manual exactly as it now stands.
+        // Sessions the search is hiding keep their sorted place after the shown ones.
+        let shown = reordered.filter { !$0.isGroupHeading }.map(\.sessionUuid)
+        let hidden = lastSessionSource.map(\.sessionUuid).filter { !shown.contains($0) }
+        Settings.setSessionListSort(.manual)
+        Settings.sessionListGroupBy = .none
+        SessionStore.shared.reorderSessions(shown + hidden)
+        // Keep the headings for now: UIKit is mid-move and expects the row count it started with.
+        // The rebuild after it drops them.
         sessionListRows = reordered
-        SessionStore.shared.reorderSessions(reordered.map(\.sessionUuid))
+        DispatchQueue.main.async { [weak self] in
+            self?.refreshSessionState()
+            self?.reloadTable()
+            Toast.show(L10n.sessionListSwitchedToManual)
+        }
+    }
+
+    /// The session list has a sort or a grouping in force, so it isn't showing the hand order.
+    var sessionListIsArranged: Bool {
+        Settings.sessionListSort() != .manual || Settings.sessionListGroupBy != .none
+    }
+
+    /// Whether the session-list row at `listIndex` is a Group By heading rather than a session.
+    func isSessionListHeading(at listIndex: Int) -> Bool {
+        sessionListRows[safe: listIndex]?.isGroupHeading == true
     }
 
     @objc private func sessionSortTapped() {
@@ -2206,14 +2266,13 @@ class UpNextViewController: UIViewController, UIGestureRecognizerDelegate, Filte
 
         // Fork: the session list is [Up Next, current session, ...pool]. Up Next is always row 0.
         // Row 1 is the "current" session — the one playing, else the last one opened/played, else the
-        // top of the sorted order. The pool below is every other session in the MANUAL (drag) order —
-        // the list is always drag-and-drop; ⋯ → "Sort Session (once)" only re-arranges that order once
-        // (it's not a sticky sort), so the display always reads the manual `sortIndex`.
+        // top of the sorted order. The pool below is every other session in the ⋯ menu's Sort By order
+        // (Manual = the synced drag order, `sortIndex`), under Group By headings when grouped.
         //
         // The expensive part — building the source from the DB — happens here; deriving the displayed
         // rows (current extraction + search filter) is cheap and factored out so a search keystroke
         // can reuse the cached source (see `applySessionSearch`).
-        let all = SessionListRows.current(sort: .manual, filters: .unfiltered)
+        let all = SessionListRows.current(sort: Settings.sessionListSort(), filters: .unfiltered)
         lastSessionSource = all
         deriveSessionListRows(from: all)
 

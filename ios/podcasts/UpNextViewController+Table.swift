@@ -329,6 +329,9 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
                         ])
                     return emptyCell
                 }
+                if let heading = row.groupHeading {
+                    return sessionBrowseHeaderCell(title: heading, at: indexPath)
+                }
                 let sessionCell = tableView.dequeueReusableCell(withIdentifier: SessionListCell.reuseIdentifier, for: indexPath) as! SessionListCell
                 sessionCell.themeOverride = themeOverride
                 // Tapping the row opens the lane's page (see didSelect); the play button plays it, and
@@ -565,7 +568,8 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
             // raw row made the last pool row (index == count) unselectable when the search bar showed.
             if showingSessionList {
                 guard let listIndex = sessionListIndex(forTableRow: indexPath.row) else { return nil } // search row
-                return sessionListRows[safe: listIndex] == nil ? nil : indexPath
+                guard let row = sessionListRows[safe: listIndex], !row.isGroupHeading else { return nil }
+                return indexPath
             }
             // The empty state is inert when there's no session to show a lineup for.
             if browsedPlaybackSession == nil { return nil }
@@ -605,7 +609,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
             // Items mode are not drill-ins.
             guard !sessionListReorderMode, !isSessionSearchRow(indexPath),
                   let listIndex = sessionListIndex(forTableRow: indexPath.row),
-                  let row = sessionListRows[safe: listIndex] else { return }
+                  let row = sessionListRows[safe: listIndex], !row.isGroupHeading else { return }
             openSessionLanePage(row)
             return
         }
@@ -797,7 +801,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
         }
 
         guard sessionListReorderMode, let listIndex = sessionListIndex(forTableRow: indexPath.row) else { return false }
-        return sessionPlacement(at: listIndex) == .pool
+        return sessionPlacement(at: listIndex) == .pool && !isSessionListHeading(at: listIndex)
     }
 
     func tableView(_ tableView: UITableView, moveRowAt sourceIndexPath: IndexPath, to destinationIndexPath: IndexPath) {
@@ -912,7 +916,7 @@ extension UpNextViewController: UITableViewDelegate, UITableViewDataSource {
             // (Swipe-to-remove is separately gated in +Swipe.)
             if showingSessionList {
                 guard let listIndex = sessionListIndex(forTableRow: indexPath.row) else { return false } // search row
-                return sessionPlacement(at: listIndex) == .pool
+                return sessionPlacement(at: listIndex) == .pool && !isSessionListHeading(at: listIndex)
             }
             // Episodes-tab rows only swipe (Add to / Remove from this session, archive, played).
             if usesSessionSectionRows { return sessionRowEpisode(at: indexPath.row) != nil }
@@ -1154,7 +1158,7 @@ extension UpNextViewController: UITableViewDragDelegate, UITableViewDropDelegate
         case .sessionSection:
             if showingSessionList {
                 guard !isSessionSearchRow(indexPath), let listIndex = sessionListIndex(forTableRow: indexPath.row) else { return false }
-                return sessionPlacement(at: listIndex) == .pool
+                return sessionPlacement(at: listIndex) == .pool && !isSessionListHeading(at: listIndex)
             }
             // Fork: the lineup has ONE saved order, so there is no sorted state left that would make
             // dragging write the wrong thing — reorder is always live. (In "Reorder Episodes" mode

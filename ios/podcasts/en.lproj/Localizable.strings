@@ -7276,6 +7276,16 @@
 "lineup_sort_manual" = "Manual";
 /* Fork: toggle in the Group By menu — shows (and, for a session, plays) the groups in reverse order; episodes inside each group keep their order. */
 "group_reverse_order" = "Reverse Group Order";
+/* Fork: session list Group By (Session Type) — heading over sessions that follow a podcast. */
+"session_group_podcasts" = "Podcasts";
+/* Fork: session list Group By (Session Type) — heading over sessions fed by a smart playlist. */
+"session_group_smart_playlists" = "Smart Playlists";
+/* Fork: session list Group By (Session Type) — heading over sessions that are hand-made playlists. */
+"session_group_manual_playlists" = "Manual Playlists";
+/* Fork: session list Group By (Last Played) — heading over sessions that have never been played. */
+"session_group_never_played" = "Never Played";
+/* Fork: toast shown when moving a session by hand turns the session list's sort or grouping off. */
+"session_list_switched_to_manual" = "Session list order is now Manual";
 
 /* Fork: lineup reorder picker — heading above the one-shot orders (Newest to oldest, Title A–Z, …). */
 "lineup_reorder_arrange_by" = "Arrange By";
