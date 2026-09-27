@@ -1479,6 +1479,19 @@ class Settings: NSObject {
         }
     }
 
+    private static let translateGeneratedChaptersKey = "TranslateGeneratedChapters"
+
+    /// Fork: translate generated chapter titles, which Pocket Casts only produces in English, into the
+    /// podcast's own language. On by default; local to the device.
+    static var translateGeneratedChapters: Bool {
+        get {
+            UserDefaults.standard.object(forKey: translateGeneratedChaptersKey) as? Bool ?? true
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: translateGeneratedChaptersKey)
+        }
+    }
+
     // MARK: - What's New
 
     /// Whether Profile shows a dot when What's New has unread messages. Turning it off leaves the messages

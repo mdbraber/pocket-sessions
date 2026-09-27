@@ -2857,6 +2857,12 @@
 /* Subtitle explaining the toggle to show automatically generated chapters. */
 "settings_general_generated_chapters_subtitle" = "Show automatically generated chapters when available.";
 
+/* Fork: setting toggle to translate generated chapter titles (which are always English) into the podcast's own language, on-device. */
+"settings_general_translate_generated_chapters" = "Translate generated chapters";
+
+/* Fork: footer explaining the translate generated chapters toggle. */
+"settings_general_translate_generated_chapters_subtitle" = "Generated chapter titles are in English. Translate them into the podcast's language on this device, when that language is downloaded in the Translate app.";
+
 /* Setting toggle to show a dot on Profile when there are unread What's New messages. */
 "settings_general_whats_new_unread_dot" = "Show unread dot";
 

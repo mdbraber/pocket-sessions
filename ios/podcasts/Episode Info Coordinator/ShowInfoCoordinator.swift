@@ -87,6 +87,19 @@ actor ShowInfoCoordinator: ShowInfoCoordinating {
            !Settings.disableAiChapters,
            let chapters = try? await generatedEpisodeMetadataRetriever.loadMetadata(podcastUuid: podcastUuid, episodeUuid: episodeUuid).chapters,
            !chapters.isEmpty {
+            #if os(iOS)
+            if Settings.translateGeneratedChapters {
+                let episode = dataManager.findEpisode(uuid: episodeUuid)
+                let podcast = dataManager.findPodcast(uuid: podcastUuid, includeUnsubscribed: true)
+                let translated = await GeneratedChapterTranslator.shared.translated(
+                    chapters,
+                    episodeUuid: episodeUuid,
+                    transcriptLanguage: metadata?.pocketCastsTranscripts?.first?.language,
+                    languageHints: [podcast?.title, podcast?.podcastDescription, episode?.title, episode?.episodeDescription]
+                )
+                return (nil, nil, translated)
+            }
+            #endif
             return (nil, nil, chapters)
         }
 

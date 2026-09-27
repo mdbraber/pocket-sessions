@@ -12,14 +12,18 @@ class GeneralSettingsViewController: PCViewController, UITableViewDelegate, UITa
 
     let debounce = Debounce(delay: Constants.defaultDebounceTime)
 
-    enum TableRow { case skipForward, skipBack, keepScreenAwake, openPlayer, intelligentPlaybackResumption, defaultRowAction, extraMediaActions, defaultAddToUpNextSwipe, defaultGrouping, defaultArchive, playUpNextOnTap, legacyBluetooth, multiSelectGesture, openLinksInBrowser, publishChapterTitles, generatedChapters, autoplay, autoRestartSleepTimer, shakeToRestartSleepTimer, isLockScreenScrubberDisabled, voiceBoostN, audioOnly, whatsNewUnreadDot }
+    enum TableRow { case skipForward, skipBack, keepScreenAwake, openPlayer, intelligentPlaybackResumption, defaultRowAction, extraMediaActions, defaultAddToUpNextSwipe, defaultGrouping, defaultArchive, playUpNextOnTap, legacyBluetooth, multiSelectGesture, openLinksInBrowser, publishChapterTitles, generatedChapters, translateGeneratedChapters, autoplay, autoRestartSleepTimer, shakeToRestartSleepTimer, isLockScreenScrubberDisabled, voiceBoostN, audioOnly, whatsNewUnreadDot }
     private var tableData: [[TableRow]] {
         var data: [[TableRow]] = [[.defaultRowAction, .defaultGrouping, .defaultArchive, .defaultAddToUpNextSwipe, .openLinksInBrowser], [.skipForward, .skipBack, .keepScreenAwake, .openPlayer, .isLockScreenScrubberDisabled, .intelligentPlaybackResumption], [.autoRestartSleepTimer], [.shakeToRestartSleepTimer], [.playUpNextOnTap], [.extraMediaActions], [.legacyBluetooth], [.multiSelectGesture], [.publishChapterTitles], [.autoplay]]
         if FeatureFlag.hls.enabled {
             data.insert([.audioOnly], at: 2)
         }
         if FeatureFlag.generatedChapters.enabled {
-            data.append([.generatedChapters])
+            var chapterRows: [TableRow] = [.generatedChapters]
+            if #available(iOS 26.0, *), !Settings.disableAiChapters {
+                chapterRows.append(.translateGeneratedChapters)
+            }
+            data.append(chapterRows)
         }
         if FeatureFlag.voiceBoostN.enabled {
             data.append([.voiceBoostN])
@@ -282,6 +286,17 @@ class GeneralSettingsViewController: PCViewController, UITableViewDelegate, UITa
 
             return cell
 
+        case .translateGeneratedChapters:
+            let cell = tableView.dequeueReusableCell(withIdentifier: switchCellId, for: indexPath) as! SwitchCell
+
+            cell.cellLabel.text = L10n.settingsGeneralTranslateGeneratedChapters
+            cell.cellSwitch.isOn = Settings.translateGeneratedChapters
+
+            cell.cellSwitch.removeTarget(self, action: nil, for: .valueChanged)
+            cell.cellSwitch.addTarget(self, action: #selector(translateGeneratedChaptersToggled(_:)), for: .valueChanged)
+
+            return cell
+
         case .autoplay:
             let cell = tableView.dequeueReusableCell(withIdentifier: switchCellId, for: indexPath) as! SwitchCell
 
@@ -494,6 +509,8 @@ class GeneralSettingsViewController: PCViewController, UITableViewDelegate, UITa
             return L10n.settingsGeneralPublishChapterTitlesSubtitle
         case .generatedChapters:
             return L10n.settingsGeneralGeneratedChaptersSubtitle
+        case .translateGeneratedChapters:
+            return L10n.settingsGeneralGeneratedChaptersSubtitle + " " + L10n.settingsGeneralTranslateGeneratedChaptersSubtitle
         case .autoplay:
             return L10n.settingsGeneralAutoplaySubtitle
         case .audioOnly:
@@ -608,11 +625,19 @@ class GeneralSettingsViewController: PCViewController, UITableViewDelegate, UITa
     @objc private func generatedChaptersToggled(_ sender: UISwitch) {
         Settings.disableAiChapters = !sender.isOn
         ServerSettings.syncSettings()
+        // The translate row only shows while generated chapters are on
+        settingsTable.reloadData()
 
         // Re-parse the current episode's chapters so the player and Now Playing info react immediately
         PlaybackManager.shared.forceUpdateChapterInfo()
 
         Settings.trackValueToggled(.settingsGeneralGeneratedChaptersToggled, enabled: sender.isOn)
+    }
+
+    @objc private func translateGeneratedChaptersToggled(_ sender: UISwitch) {
+        Settings.translateGeneratedChapters = sender.isOn
+
+        PlaybackManager.shared.forceUpdateChapterInfo()
     }
 
     @objc private func audioOnlyToggled(_ sender: UISwitch) {
