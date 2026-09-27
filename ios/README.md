@@ -25,8 +25,8 @@ A personal fork by [@mdbraber](https://github.com/mdbraber) on the `feature/sess
 listening workflow on top of Pocket Casts: episodes arrive in an **Inbox** to be triaged, get shelved into
 **Sessions** — curated lineups you play *beside* the Up Next queue — and are found again through named
 **Filter Presets**. Fork state that has nowhere to live upstream (session lineups, the seen-ledger,
-preferences) syncs privately between the author's own devices via CloudKit; nothing fork-specific is ever
-sent to Pocket Casts' servers.
+preferences) syncs privately between the author's own devices via CloudKit or a self-hosted server; nothing
+fork-specific is ever sent to Pocket Casts' servers.
 
 <table>
   <tr>
@@ -40,44 +40,84 @@ sent to Pocket Casts' servers.
 ### Inbox
 
 - A tab of its own: every new episode from a subscribed podcast lands here to be triaged. **Membership *is*
-  the unseen state** — the Inbox is a synced manual playlist, so there is no separate "seen" column, and the
+  the unseen state**: the Inbox is a synced manual playlist, so there is no separate "seen" column, and the
   unread dot on an episode row anywhere in the app means "still in the Inbox".
-- Episodes leave when you decide something: play it, archive it, queue it, add it to a session, or clear it
-  explicitly. A watermark per podcast means a fresh install or a full sync never floods the Inbox with a
-  backlog.
+- Episodes leave when you decide something: play it, archive it or mark it seen. Adding an episode to a
+  session or Up Next keeps it in the Inbox, marked "In Session", "In Up Next" or "In Session & Up Next", and
+  gathered in a group at the top (the ⋯ menu's *Group Added Episodes on Top* turns that off). A podcast set to
+  *When not in Session or Up Next* takes its episodes out as soon as they are added. A watermark per podcast
+  means a fresh install or a full sync never floods the Inbox with a backlog.
+- The red swipe removes an episode from every session and from Up Next, asking which when it is in both;
+  the episode stays in the Inbox either way.
 - Decisions are recorded in a **synced seen-ledger**, so an episode you triaged on one device cannot be
   resurrected by another device's older view of the playlist.
-- Group by release date, podcast, folder, duration and more; one-tap *Clear Inbox*, with Archive All behind
-  a long press.
+- Group by release date, podcast, folder, duration and more, with Reverse Group Order. The *Mark All as Seen*
+  pill at the bottom clears the Inbox; a long press offers Archive All.
 
 ### Sessions
 
-- A **session** is a lineup you play off to the side of Up Next — one per podcast, playlist or folder, or
-  hand-made. Starting one leaves the queue untouched; when the lineup runs dry, playback returns to it.
-- The Up Next tab has two worlds behind a pill switcher (**Up Next** and **Session**), with the world that
-  owns playback marked. The Session side is two levels: a **chooser** listing your sessions — each row
-  showing the episode it would actually play next, its duration and progress — and the **lineup** you reach
-  by tapping one. Opening a session is navigation only: nothing plays until you play it.
-- The chooser sorts by Recently Played (sessions you're mid-episode in first), Name, Time Left or Recently
-  Updated, and can hide empty or unplayed sessions and filter by type.
+- A **session** is a lineup you play off to the side of Up Next: one per podcast or smart playlist, and every
+  manual playlist is one too. Starting one leaves the queue untouched; when the lineup runs dry, playback
+  returns to it. Only subscribed podcasts get sessions.
+- The Queue tab lists **Up Next** first, then the current session, then the rest of your sessions. Each row
+  shows the episode it would actually play next, its duration and progress. Tapping a row opens its lineup;
+  nothing plays until you press play. Search, swipe to remove or move to top/bottom, and drag to reorder.
+- The session list's ⋯ menu offers **Sort By** (Manual, Last Played, Recently Updated, Name, Time Left) and
+  **Group By** (Session Type or Last Played, with Reverse Group Order). Both stick and sync; Manual brings
+  back your own order, and dragging a session on a sorted list makes it Manual with a toast saying so. The
+  same menu hides empty sessions, an empty Up Next, and podcast sessions a smart playlist already covers.
+- A session's lineup has **Episodes | Session** tabs when something feeds it (a podcast or smart playlist):
+  Episodes browses the source with search, presets and grouping, and adds or removes episodes; Session is the
+  lineup itself. A lineup has one saved play order: Sort By (or Manual) and Group By are saved on the session,
+  synced, and decide what plays next. The same tabs appear on playlist and podcast pages.
+- **Play Session** (on playlist and podcast pages) opens the session in the Queue tab; a long press queues it
+  without playing.
 - Episodes you add by hand are **pinned**: the reconciler may prune what it gathered, but never what you
   put there. Smart-playlist sessions can be set to **Fill Session: Automatic** (mirrors the playlist) or
   **Manual** (hand-curated), and any smart playlist can opt out of being a session entirely.
+- **Episodes per Session** (per podcast) keeps only a podcast's newest N episodes in every session. Older
+  ones leave the session without being archived; hand-added and started episodes are kept.
 
 ### Filter Presets
 
-- Named, reorderable, synced filters — status, list membership, playing and download state, media type,
-  release window, duration, podcast/folder scope, plus the sort and grouping to apply. One labelled control
-  on every episode list replaces the stock funnel.
+- Named, reorderable, synced filters: status, list membership (including *Not in Session*), playing and
+  download state, media type, release window, duration, podcast/folder scope, plus the sort and grouping to
+  apply. One labelled control on every episode list replaces the stock funnel; a session's lineup can be
+  narrowed by a preset without changing what plays.
+
+### Sync
+
+- Fork state syncs through iCloud by default. Settings → Synchronization can switch it to the self-hosted
+  **Pocket Casts Sessions server** ([`../server/`](../server/)): enter its URL and the app enrolls through your
+  Pocket Casts account. With the server, devices get pushes for new episodes and changes, **Follow Now
+  Playing** lets an idle device pick up the session another device is playing, and Pocket Casts' own sync can
+  optionally be routed through the server.
+- Per-podcast settings (speed, effects, skips) sync both ways through the Pocket Casts account, and archive
+  and mark-as-played are sent straight away instead of waiting for the next refresh.
+
+### Video and chapters
+
+- Video episodes get chapters, with the chapter title, position and previous/next in the video player, and
+  the episode screen lists any episode's chapters without playing it.
+- A captions menu in the video player chooses the video's own caption track or the episode transcript.
+- Pocket Casts' generated chapter titles are translated on-device into the podcast's language (a General
+  setting, on by default).
+- Episodes from the author's own OwnTube feeds stream as HLS and load their chapters from the feed host.
 
 ### Everywhere else
 
 - **Swipes** speak one vocabulary: left is *Add to Session* and *Add to…* (Up Next top/bottom, or a
   playlist), with *Move to top* / *Move to bottom* added in queue contexts. Right keeps the stock
   remove/archive verbs.
-- **Playlist folders** group playlists the way podcast folders group podcasts.
-- **Badges** can count Inbox or session membership, on podcasts, playlists and the app icon.
-- **CarPlay** puts Up Next and every session on one tab, ordered by recency and honoring the phone's filters.
+- **Pocket Casts web links** open in the app: from Safari (a Safari extension), from the Share sheet (links
+  and podcast feed URLs), and through `pktc://weblink` and `pktc://podcast`.
+- **Playlist folders** group playlists the way podcast folders group podcasts. Podcast pages have a
+  **Playlists** tab listing the playlists that hold that podcast's episodes.
+- **Badges** can count Inbox or session membership, on podcasts, playlists and the app icon; the Queue tab
+  shows 99+ past 99.
+- **CarPlay** puts Up Next and every session on one tab, ordered by recency; tapping a session opens it.
+- **Home-screen quick actions** lead with whichever of Up Next or the session is playing.
+- A long press on *Mark as Played* on an episode page offers *Mark as Unplayed*.
 - **Per-podcast settings** are grouped as Inbox → Up Next → Session, with linking overrides on their own page.
 
 Built for personal use, so the fork favours a coherent workflow over configurability. The upstream README
