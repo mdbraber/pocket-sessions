@@ -58,7 +58,7 @@ fork-specific is ever sent to Pocket Casts' servers.
 
 - A **session** is a lineup you play off to the side of Up Next: one per podcast or smart playlist, and every
   manual playlist is one too. Starting one leaves the queue untouched; when the lineup runs dry, playback
-  returns to it. Only subscribed podcasts get sessions.
+  returns to it.
 - The Queue tab lists **Up Next** first, then the current session, then the rest of your sessions. Each row
   shows the episode it would actually play next, its duration and progress. Tapping a row opens its lineup;
   nothing plays until you press play. Search, swipe to remove or move to top/bottom, and drag to reorder.
@@ -92,8 +92,7 @@ fork-specific is ever sent to Pocket Casts' servers.
   Pocket Casts account. With the server, devices get pushes for new episodes and changes, **Follow Now
   Playing** lets an idle device pick up the session another device is playing, and Pocket Casts' own sync can
   optionally be routed through the server.
-- Per-podcast settings (speed, effects, skips) sync both ways through the Pocket Casts account, and archive
-  and mark-as-played are sent straight away instead of waiting for the next refresh.
+- Per-podcast settings (speed, effects, skips) sync both ways through the Pocket Casts account.
 
 ### Video and chapters
 
@@ -113,11 +112,8 @@ fork-specific is ever sent to Pocket Casts' servers.
   and podcast feed URLs), and through `pktc://weblink` and `pktc://podcast`.
 - **Playlist folders** group playlists the way podcast folders group podcasts. Podcast pages have a
   **Playlists** tab listing the playlists that hold that podcast's episodes.
-- **Badges** can count Inbox or session membership, on podcasts, playlists and the app icon; the Queue tab
-  shows 99+ past 99.
-- **CarPlay** puts Up Next and every session on one tab, ordered by recency; tapping a session opens it.
-- **Home-screen quick actions** lead with whichever of Up Next or the session is playing.
-- A long press on *Mark as Played* on an episode page offers *Mark as Unplayed*.
+- **Badges** can count Inbox or session membership, on podcasts, playlists and the app icon.
+- **CarPlay** puts Up Next and every session on one tab, ordered by recency.
 - **Per-podcast settings** are grouped as Inbox → Up Next → Session, with linking overrides on their own page.
 
 Built for personal use, so the fork favours a coherent workflow over configurability. The upstream README
