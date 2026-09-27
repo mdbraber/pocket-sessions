@@ -312,7 +312,20 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
         optionsPicker.addAction(action: OptionAction(label: unseen ? L10n.episodeMarkSeen : L10n.episodeMarkUnseen, icon: nil) { [weak self] in
             self?.toggleSeen(episodeUuid: episode.uuid)
         })
+        if SessionMembership.shared.inAnySession.contains(episode.uuid) {
+            let remove = OptionAction(label: L10n.sessionRemoveFromAll, icon: nil) { [weak self] in
+                self?.removeFromAllSessions(episodeUuid: episode.uuid)
+            }
+            remove.destructive = true
+            optionsPicker.addAction(action: remove)
+        }
         optionsPicker.present(from: self)
+    }
+
+    /// Takes the episode out of every session; it stays in the Inbox.
+    private func removeFromAllSessions(episodeUuid: String) {
+        SessionManager.shared.removeFromAllSessions(episodeUuids: [episodeUuid])
+        reloadData()
     }
 
     /// Seen/unseen toggle behind the row long-press. Resolves the state at invocation time so
@@ -517,9 +530,11 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
         let cell = tableView.dequeueReusableCell(withIdentifier: Self.episodeCellId, for: indexPath) as! EpisodeCell
         cell.delegate = self
         cell.populateFrom(episode: episode, tintColor: nil)
-        // The Inbox has no session of its own, so an in-session episode always reads as "other
-        // session" (dimmed green). The Up Next indicator is set automatically by populateFrom.
+        // The Inbox has no session of its own, so an in-session episode resolves as "other
+        // session". The Up Next indicator is set automatically by populateFrom.
         cell.setSessionIndicator(SessionIndicatorState.resolve(episode.uuid, thisSession: []))
+        // Every row here is in the Inbox by construction, so every row carries the unread dot.
+        cell.setUnseenIndicator(visible: true)
         cell.shouldShowSelect = isMultiSelectEnabled
         if isMultiSelectEnabled {
             cell.showTick = selectedEpisodesContains(uuid: episode.uuid)
@@ -645,16 +660,20 @@ class InboxViewController: PCViewController, UITableViewDataSource, UITableViewD
                 guard let self, let episode = episode as? Episode else { return }
                 SessionManager.shared.addToSessions(episodeUuids: [episode.uuid], preferred: nil, presenting: self) { landed in
                     guard !landed.isEmpty else { return }
-                    // Lineup membership hides it from every inbox — no dismissal, so a
-                    // later remove-from-lineup returns it to triage.
+                    // It stays in the Inbox (now with the session badge) until marked seen.
                     let names = landed.compactMap { SessionManager.shared.store(for: $0)?.playlistName }
                     Toast.show(L10n.inboxShelvedToast(names.joined(separator: ", ")))
                 }
             })
         case .right:
-            return TriageSwipes.rightActions(for: episode) { [weak self] in
-                self?.reloadData()
-            }
+            // Remove from All Sessions (red) leads when the episode is in any session.
+            return TriageSwipes.rightActions(
+                for: episode,
+                inLocalSession: SessionMembership.shared.inAnySession.contains(episode.uuid),
+                removeLabel: L10n.sessionRemoveFromAll,
+                removeFromSession: { [weak self] in self?.removeFromAllSessions(episodeUuid: episode.uuid) },
+                reload: { [weak self] in self?.reloadData() }
+            )
         }
     }
 

@@ -3,9 +3,9 @@ import XCTest
 
 @testable import podcasts
 
-/// Fork: automatic adds to a session leave new episodes in the Inbox (showing the session
-/// marker), like auto-add to Up Next already does — so you still see that something new
-/// arrived. Only adds you make yourself count as a decision and take the episode out.
+/// Fork: adding to a session — automatic or your own — leaves the episode in the Inbox (showing
+/// the session marker and its unread dot), so it stays there until you mark it seen. Only a
+/// podcast set to "When not in Session or Up Next" takes it out.
 final class SessionAutoAddInboxTests: DBTestCase {
 
     private var conditionalPodcastUuids: [String] = []
@@ -99,14 +99,43 @@ final class SessionAutoAddInboxTests: DBTestCase {
         XCTAssertEqual(members(session), [], "a removal must stick while the episode is still in the Inbox")
     }
 
-    func testAddingItYourselfStillTakesItOutOfTheInbox() {
+    func testAddingItYourselfKeepsItInTheInbox() {
         let podcast = makePodcast()
         let episode = makeEpisode(podcast: podcast)
         let session = makeAutoAddSession(podcast: podcast, newEpisode: episode)
 
         SessionManager.shared.addToLineup(episodeUuids: [episode.uuid], session: session, pinning: true)
 
+        XCTAssertEqual(members(session), [episode.uuid])
+        XCTAssertTrue(inInbox(episode), "adding to a session doesn't mark the episode seen")
+    }
+
+    func testWhenNotInSessionPolicyTakesYourOwnAddsOutOfTheInbox() {
+        let podcast = makePodcast()
+        conditionalPodcastUuids.append(podcast.uuid)
+        SessionFeederEngine.setInboxAddPolicy(.whenNotInSessionOrUpNext, forPodcast: podcast.uuid)
+        let episode = makeEpisode(podcast: podcast)
+        let session = makeAutoAddSession(podcast: podcast, newEpisode: episode)
+
+        SessionManager.shared.addToLineup(episodeUuids: [episode.uuid], session: session, pinning: true)
+
         XCTAssertFalse(inInbox(episode))
+    }
+
+    func testRemovingFromEverySessionKeepsItInTheInbox() {
+        let podcast = makePodcast()
+        let episode = makeEpisode(podcast: podcast)
+        let own = makeAutoAddSession(podcast: podcast, newEpisode: episode)
+        let other = SessionManager.shared.createSession(name: "Other", feeder: .none, seedEpisodeUuids: [])
+        SessionManager.shared.addToLineup(episodeUuids: [episode.uuid], session: own, pinning: true)
+        SessionManager.shared.addToLineup(episodeUuids: [episode.uuid], session: other, pinning: true)
+
+        SessionManager.shared.removeFromAllSessions(episodeUuids: [episode.uuid])
+
+        XCTAssertEqual(members(own), [])
+        XCTAssertEqual(members(other), [])
+        XCTAssertFalse(SessionMembership.shared.inAnySession.contains(episode.uuid))
+        XCTAssertTrue(inInbox(episode), "removing from sessions must not take it out of the Inbox")
     }
 
     func testWhenNotInSessionPolicyStillTakesAutoAddsOutOfTheInbox() {
@@ -133,16 +162,5 @@ final class SessionAutoAddInboxTests: DBTestCase {
         let session = SessionStore.shared.session(forPodcast: podcast.uuid)
         XCTAssertEqual(session.map(members), [episode.uuid])
         XCTAssertTrue(inInbox(episode))
-    }
-
-    func testQueueingItYourselfStillTakesItOutOfTheInbox() {
-        Settings.mirrorUpNextToSession = true
-        let podcast = makePodcast()
-        let episode = makeEpisode(podcast: podcast)
-        InboxManager.shared.markUnseen(episodeUuids: [episode.uuid])
-
-        SessionLinking.mirrorQueueAdd(episodes: [episode])
-
-        XCTAssertFalse(inInbox(episode))
     }
 }

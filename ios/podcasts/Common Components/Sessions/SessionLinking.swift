@@ -11,7 +11,7 @@ import PocketCastsUtils
 enum SessionLinking {
     /// After a user-initiated Up Next add: mirror the episodes into their podcasts'
     /// sessions (created on demand), at each session's insert position. `automatic` is the
-    /// auto-add-to-Up-Next copy, which keeps the episodes in the Inbox like auto-add does.
+    /// auto-add-to-Up-Next copy, which isn't pinned as a hand-add.
     static func mirrorQueueAdd(episodes: [BaseEpisode], automatic: Bool = false) {
         let grouped = Dictionary(grouping: episodes.compactMap { $0 as? Episode }, by: \.podcastUuid)
         for (podcastUuid, podcastEpisodes) in grouped {
@@ -25,7 +25,7 @@ enum SessionLinking {
             guard !toAdd.isEmpty else { continue }
             // Your own queue add is a hand-add in the session too (pinned: the feeder's prune and the
             // Episodes per Session limit leave it alone); the auto-add copy stays automatic.
-            SessionManager.shared.addToLineup(episodeUuids: toAdd, session: session, pinning: !automatic, keepInInbox: automatic)
+            SessionManager.shared.addToLineup(episodeUuids: toAdd, session: session, pinning: !automatic)
         }
     }
 

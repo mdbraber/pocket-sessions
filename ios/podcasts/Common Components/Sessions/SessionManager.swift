@@ -234,7 +234,7 @@ class SessionManager {
         // Manual fill: prune-only. Gathering shelved episodes here would grow a
         // hand-curated lineup behind the user's back.
         if session.autoFill, !toAdd.isEmpty {
-            addToLineup(episodeUuids: toAdd, session: session, keepInInbox: true)
+            addToLineup(episodeUuids: toAdd, session: session)
         }
     }
 
@@ -395,7 +395,7 @@ class SessionManager {
                 if let loserStore = store(for: loser) {
                     let winnerMembers = Set(SessionFeederEngine.storeMemberUuids(for: winner))
                     let toMove = DataManager.shared.positionedEpisodeUuids(for: loserStore).filter { !winnerMembers.contains($0) }
-                    if !toMove.isEmpty { addToLineup(episodeUuids: toMove, session: winner, keepInInbox: true) }
+                    if !toMove.isEmpty { addToLineup(episodeUuids: toMove, session: winner) }
                 }
                 if !loser.pinnedEpisodeUuids.isEmpty {
                     SessionStore.shared.mutateSession(winner) { updated in
@@ -591,10 +591,7 @@ class SessionManager {
     /// session, so the feeder's prune (`reconcileStoreToFeeder`) never removes them.
     /// Automatic paths (feeder gathers, backfills, auto-add ingest, queue mirrors,
     /// seeding) leave it false — what was gathered stays prunable.
-    ///
-    /// `keepInInbox` marks an automatic add: it isn't a decision about the episode, so the
-    /// episode stays in the Inbox (showing the session marker) and you still see it arrived.
-    func addToLineup(episodeUuids: [String], session: Session, pinning: Bool = false, keepInInbox: Bool = false) {
+    func addToLineup(episodeUuids: [String], session: Session, pinning: Bool = false) {
         guard let store = store(for: session), !episodeUuids.isEmpty else { return }
         unarchiveIfNeeded(episodeUuids: episodeUuids)
         unplayIfNeeded(episodeUuids: episodeUuids)
@@ -608,20 +605,17 @@ class SessionManager {
         DataManager.shared.insertSessionMembers(episodeUuids: episodeUuids, insertMode: insertMode, anchorUuid: session.lastInsertedUuid, below: head, for: store)
         markStoreChanged(store)
 
-        // Deciding to play something is deciding about it: it leaves the Inbox.
+        // Adding to a session — automatic or your own — leaves the episode in the Inbox (with its
+        // session marker and unread dot) until you mark it seen. It only leaves when its podcast's
+        // Inbox setting is "When not in Session or Up Next" — which is exactly what that asks for.
         //
         // This is a PRIMITIVE call, not a verb — nothing mirrors from an Inbox removal, so
         // the Up Next <-> Session mirroring stays a two-party relationship with the Inbox as
         // a leaf. Calling a verb here is what would make recursion possible.
-        //
-        // An automatic add only leaves the Inbox when its podcast's Inbox setting is "When not
-        // in Session or Up Next" — which is exactly what that setting asks for.
-        let leavingInbox = keepInInbox
-            ? episodeUuids.filter { uuid in
-                DataManager.shared.findEpisode(uuid: uuid)
-                    .map { SessionFeederEngine.inboxAddPolicy(forPodcast: $0.podcastUuid) == .whenNotInSessionOrUpNext } ?? false
-            }
-            : episodeUuids
+        let leavingInbox = episodeUuids.filter { uuid in
+            DataManager.shared.findEpisode(uuid: uuid)
+                .map { SessionFeederEngine.inboxAddPolicy(forPodcast: $0.podcastUuid) == .whenNotInSessionOrUpNext } ?? false
+        }
         InboxManager.shared.markSeen(episodeUuids: leavingInbox)
 
         // One transaction, re-reading the live row: sets lastInserted and (optionally) the pins
@@ -809,16 +803,10 @@ class SessionManager {
         }
     }
 
-    /// Removes each episode from every session whose store currently holds it — the inverse of the
-    /// "Add to Session" swipe when the episode is already in a session.
+    /// Removes the episodes from every session holding them, whatever the Remove from Session
+    /// setting says — the Inbox's "Remove from All Sessions". The Inbox itself is untouched.
     func removeFromAllSessions(episodeUuids: [String]) {
-        for uuid in episodeUuids {
-            let holding = Set(DataManager.shared.manualPlaylistUUIDs(for: uuid))
-            guard !holding.isEmpty else { continue }
-            for session in SessionStore.shared.sessions where session.storePlaylistUuid.map(holding.contains) == true {
-                removeFromLineup(episodeUuids: [uuid], session: session)
-            }
-        }
+        removeFromSessionStores(episodeUuids: episodeUuids, sessions: sessionsHolding(episodeUuids: episodeUuids))
     }
 
     /// Whether any session's store currently holds this episode.
@@ -924,26 +912,8 @@ class SessionManager {
         let holding = sessionsHolding(episodeUuids: episodeUuids)
         guard !holding.isEmpty else { onRemoved?(); return }
 
-        // Batched: delete from every target store, THEN one membership invalidation + one
-        // notification. Removing from K sessions used to post K playlistChanged (K full reloads);
-        // now it's one — the slow swipe.
         let doRemove: ([Session]) -> Void = { [weak self] sessions in
-            guard let self else { return }
-            var removedPlaying = false
-            for session in sessions {
-                guard let store = self.store(for: session) else { continue }
-                let members = Set(SessionFeederEngine.storeMemberUuids(for: session))
-                let toRemove = episodeUuids.filter { members.contains($0) }
-                guard !toRemove.isEmpty else { continue }
-                DataManager.shared.deleteEpisodes(toRemove, from: store) // marks the store dirty
-                SessionStore.shared.unpin(episodeUuids: toRemove, for: session.uuid) // pins never outlive membership
-                if let playing = PlaybackManager.shared.currentEpisode, toRemove.contains(playing.uuid) { removedPlaying = true }
-            }
-            SessionMembership.shared.invalidate()
-            if removedPlaying, let playing = PlaybackManager.shared.currentEpisode {
-                PlaybackManager.shared.removeIfPlayingOrQueued(episode: playing, fireNotification: true, userInitiated: true)
-            }
-            NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged)
+            self?.removeFromSessionStores(episodeUuids: episodeUuids, sessions: sessions)
             onRemoved?()
         }
 
@@ -966,6 +936,28 @@ class SessionManager {
                 presentRemovePicker(holding: holding, presenting: presenting, doRemove: doRemove)
             }
         }
+    }
+
+    /// Batched: delete from every target store, THEN one membership invalidation + one
+    /// notification. Removing from K sessions used to post K playlistChanged (K full reloads);
+    /// now it's one — the slow swipe.
+    private func removeFromSessionStores(episodeUuids: [String], sessions: [Session]) {
+        guard !sessions.isEmpty else { return }
+        var removedPlaying = false
+        for session in sessions {
+            guard let store = store(for: session) else { continue }
+            let members = Set(SessionFeederEngine.storeMemberUuids(for: session))
+            let toRemove = episodeUuids.filter { members.contains($0) }
+            guard !toRemove.isEmpty else { continue }
+            DataManager.shared.deleteEpisodes(toRemove, from: store) // marks the store dirty
+            SessionStore.shared.unpin(episodeUuids: toRemove, for: session.uuid) // pins never outlive membership
+            if let playing = PlaybackManager.shared.currentEpisode, toRemove.contains(playing.uuid) { removedPlaying = true }
+        }
+        SessionMembership.shared.invalidate()
+        if removedPlaying, let playing = PlaybackManager.shared.currentEpisode {
+            PlaybackManager.shared.removeIfPlayingOrQueued(episode: playing, fireNotification: true, userInitiated: true)
+        }
+        NotificationCenter.postOnMainThread(notification: Constants.Notifications.playlistChanged)
     }
 
     private func presentRemovePicker(holding: [Session], presenting: UIViewController?, doRemove: @escaping ([Session]) -> Void) {
@@ -1424,7 +1416,7 @@ class SessionManager {
             guard capacity > 0 else { return }
             offers = Array(offers.prefix(capacity))
         }
-        addToLineup(episodeUuids: offers, session: session, keepInInbox: true)
+        addToLineup(episodeUuids: offers, session: session)
         InboxManager.shared.recordDeliveredToSession(episodeUuids: offers, sessionUuid: session.uuid)
         // Fork: auto-add to a Session honors the Session -> Up Next link, so an auto-added episode
         // also lands in Up Next when linking is on. mirrorSessionAdd honors the per-podcast setting,
