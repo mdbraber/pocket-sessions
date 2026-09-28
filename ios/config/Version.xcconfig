@@ -5,4 +5,4 @@
 // TestFlight then reads e.g. "0.7 (8.21.0.1)" — clearly the sessions fork, cut from
 // 8.21.0.x, and in a separate version train so a regular 8.21.0.x can't collide.
 VERSION_LONG = 8.21.0.1
-VERSION_SHORT = 0.8
+VERSION_SHORT = 0.8.1

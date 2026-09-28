@@ -4,11 +4,6 @@ import UIKit
 
 extension PlaylistDetailViewController: UISheetPresentationControllerDelegate, PlaylistPlayAllSheetHostDelegate {
     func playAll() {
-        if viewModel.episodes.isEmpty, viewModel.session == nil {
-            Toast.show(L10n.playlistManualPlayAllEmptyList)
-            return
-        }
-
         track(.filterPlayAllTapped)
 
         // Play All starts a playback session: the playlist plays instead of the queue, and
@@ -33,6 +28,12 @@ extension PlaylistDetailViewController: UISheetPresentationControllerDelegate, P
             return
         }
 
+        // Only stock Play All plays what the page shows. Session paths above check their
+        // own lineup, and a smart playlist's visible tab says nothing about it.
+        if viewModel.episodes.isEmpty {
+            Toast.show(L10n.playlistManualPlayAllEmptyList)
+            return
+        }
         startSession()
     }
 
