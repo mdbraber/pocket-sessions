@@ -9,8 +9,8 @@
 #   PCS_APNS_KEY_ID=ABC123DEFG                  # with the .p8 dropped in ./data (optional)
 #   PCS_APNS_TEAM_ID=ABCDE12345                 # Apple developer team id (with a key)
 #   PCS_APNS_TOPIC=com.example.podcasts         # the app's bundle id (with a key)
-#   PCS_DNS=2001:db8::1                         # resolver on the tier network (split DNS)
-#   PCS_TIER_NETWORK=seg15-media                # the host's tier network (default seg15-media)
+#   TS_VERSION=v1.102.4                         # tailscale/tailscale image tag (match the host)
+#   TS_AUTHKEY=<one-time Headscale key>         # first start only; remove once ./tailscale has state
 services:
   pocket-sessions:
     container_name: pocket-sessions
@@ -49,22 +49,51 @@ services:
       - OWNTUBE_TOKEN=${OWNTUBE_TOKEN:-}
     volumes:
       - ./data:/data
-    # tier: host-level site-to-site tier network, named by PCS_TIER_NETWORK
-    # in .env so a host on another segment needs no edit to this file — `make
-    # deploy` copies it over the host's copy every time (replaces the old
-    # per-stack WireGuard sidecar; see docker-compose.wireguard.yml, retired).
-    # gw_priority makes it the default route so home-bound and public egress
-    # carry the media-tier source identity; Caddy still reaches :8080 over the
-    # caddy network. dns: is the segment gateway (split DNS: home zone via
-    # the tunnel). cap_drop NET_RAW: container can't forge tier sources.
-    networks:
-      caddy:
-      tier:
-        gw_priority: 100
-    dns:
-      - ${PCS_DNS:?set PCS_DNS in .env}
+    # Home access (OwnTube) via the ts-pocket-sessions sidecar: its Tailscale
+    # identity carries tag:svc-owntube-client; the grant lives in the Headscale
+    # policy. Caddy reaches :8080 through the sidecar on the caddy network.
+    network_mode: service:ts-pocket-sessions
+    depends_on:
+      ts-pocket-sessions:
+        condition: service_healthy
+        restart: true
     cap_drop:
       - NET_RAW
+
+  ts-pocket-sessions:
+    container_name: ts-pocket-sessions
+    image: tailscale/tailscale:${TS_VERSION:?set TS_VERSION in .env}
+    restart: always
+    environment:
+      - TS_AUTHKEY=${TS_AUTHKEY:-}
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_USERSPACE=false
+      - TS_HOSTNAME=svc-pocket-sessions
+      - TS_ACCEPT_DNS=false
+      # The tag comes from the registration key; Headscale rejects --advertise-tags with a tagged key.
+      - TS_EXTRA_ARGS=--login-server=https://hs.nedworks.org --accept-routes
+      - TS_TAILSCALED_EXTRA_ARGS=--no-logs-no-support
+      - TS_NO_LOGS_NO_SUPPORT=true
+      - TS_ENABLE_HEALTH_CHECK=true
+      - TS_LOCAL_ADDR_PORT=127.0.0.1:9002
+    volumes:
+      - ./tailscale:/var/lib/tailscale
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+    # Home names resolve at OPNsense (allowed by the policy); Docker's embedded
+    # DNS still answers container names on caddy first.
+    dns:
+      - 172.30.10.1
+    networks:
+      caddy:
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://127.0.0.1:9002/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     labels:
       caddy: ${PCS_DOMAIN}
       caddy.reverse_proxy: "{{upstreams 8080}}"
@@ -77,6 +106,3 @@ services:
 networks:
   caddy:
     external: true
-  tier:
-    external: true
-    name: ${PCS_TIER_NETWORK:-seg15-media}
